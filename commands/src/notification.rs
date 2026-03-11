@@ -8,6 +8,13 @@ use common::error::AppError;
 use common::{HasDbRouter, HasNatsProvider};
 use models::notification::{Notification, NotificationRow, NotificationSeverity};
 
+const ERR_CONVERT_NOTIFICATION: &str = "Failed to convert notification";
+const ERR_SERIALIZE_CTAS: &str = "Failed to serialize notification ctas";
+
+fn notification_subject(deployment_id: i64, user_id: i64) -> String {
+    format!("notifications.{deployment_id}.{user_id}")
+}
+
 // NATS notification message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationMessage {
@@ -146,11 +153,11 @@ impl CreateNotificationCommand {
 
         // Convert row to strongly typed Notification
         let notification = Notification::try_from(row)
-            .map_err(|e| AppError::Internal(format!("Failed to convert notification: {}", e)))?;
+            .map_err(|e| AppError::Internal(format!("{ERR_CONVERT_NOTIFICATION}: {}", e)))?;
 
         // Publish to NATS for real-time delivery
         if let Some(user_id) = notification.user_id {
-            let subject = format!("notifications.{}.{}", notification.deployment_id, user_id);
+            let subject = notification_subject(notification.deployment_id, user_id);
 
             // Serialize ctas back to JSON for NATS message
             let ctas_json = notification
@@ -158,7 +165,7 @@ impl CreateNotificationCommand {
                 .as_ref()
                 .map(serde_json::to_value)
                 .transpose()
-                .map_err(|e| AppError::Internal(format!("Failed to serialize notification ctas: {}", e)))?;
+                .map_err(|e| AppError::Internal(format!("{ERR_SERIALIZE_CTAS}: {}", e)))?;
 
             let message = NotificationMessage {
                 id: notification.id,

@@ -6,6 +6,18 @@ use tracing::warn;
 
 const LOW_BALANCE_THRESHOLD_CENTS: i64 = 500;
 const DISABLE_THRESHOLD_CENTS: i64 = -500;
+const AMOUNT_MUST_BE_POSITIVE: &str = "amount_pulse_cents must be greater than zero";
+
+fn require_positive_amount(amount_pulse_cents: i64) -> Result<(), AppError> {
+    if amount_pulse_cents <= 0 {
+        return Err(AppError::BadRequest(AMOUNT_MUST_BE_POSITIVE.to_string()));
+    }
+    Ok(())
+}
+
+fn require_transaction_id(transaction_id: Option<i64>) -> Result<i64, AppError> {
+    transaction_id.ok_or_else(|| AppError::Validation("transaction_id is required".to_string()))
+}
 
 struct BillingPulseState {
     account_id: i64,
@@ -156,14 +168,8 @@ impl AddPulseCreditsCommand {
     where
         Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        if self.amount_pulse_cents <= 0 {
-            return Err(AppError::BadRequest(
-                "amount_pulse_cents must be greater than zero".to_string(),
-            ));
-        }
-        let transaction_id = self
-            .transaction_id
-            .ok_or_else(|| AppError::Validation("transaction_id is required".to_string()))?;
+        require_positive_amount(self.amount_pulse_cents)?;
+        let transaction_id = require_transaction_id(self.transaction_id)?;
 
         let mut tx = db.begin().await?;
 
@@ -266,11 +272,7 @@ impl DeductPulseCreditsCommand {
         let transaction_id = self
             .transaction_id
             .unwrap_or(deps.id_provider().next_id()? as i64);
-        if self.amount_pulse_cents <= 0 {
-            return Err(AppError::BadRequest(
-                "amount_pulse_cents must be greater than zero".to_string(),
-            ));
-        }
+        require_positive_amount(self.amount_pulse_cents)?;
 
         let mut tx = deps.writer_pool().begin().await?;
 

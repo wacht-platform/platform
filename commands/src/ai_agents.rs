@@ -3,6 +3,12 @@ use common::{HasDbRouter, error::AppError};
 use models::AiAgent;
 use serde::de::DeserializeOwned;
 
+const AGENT_NOT_FOUND: &str = "Agent not found";
+const SUB_AGENT_NOT_FOUND: &str = "Sub-agent not found";
+const ERR_SERIALIZE_SUB_AGENTS: &str = "Failed to serialize sub_agents";
+const ERR_INVALID_TOOL_IDS: &str = "One or more tool IDs are invalid for this deployment";
+const ERR_INVALID_KB_IDS: &str = "One or more knowledge base IDs are invalid for this deployment";
+
 fn parse_optional_json<T: DeserializeOwned>(
     value: Option<serde_json::Value>,
     field: &str,
@@ -13,6 +19,11 @@ fn parse_optional_json<T: DeserializeOwned>(
                 .map_err(|e| AppError::Internal(format!("Failed to parse {}: {}", field, e)))
         })
         .transpose()
+}
+
+fn serialize_sub_agents(sub_agents: Vec<i64>) -> Result<serde_json::Value, AppError> {
+    serde_json::to_value(sub_agents)
+        .map_err(|e| AppError::Internal(format!("{ERR_SERIALIZE_SUB_AGENTS}: {}", e)))
 }
 
 pub struct CreateAiAgentCommand {
@@ -494,7 +505,7 @@ impl AttachSubAgentToAgentCommand {
         .map_err(AppError::Database)?;
 
         if parent_exists.is_none() {
-            return Err(AppError::NotFound("Agent not found".to_string()));
+            return Err(AppError::NotFound(AGENT_NOT_FOUND.to_string()));
         }
 
         let child_exists: Option<i64> = sqlx::query_scalar!(
@@ -507,7 +518,7 @@ impl AttachSubAgentToAgentCommand {
         .map_err(AppError::Database)?;
 
         if child_exists.is_none() {
-            return Err(AppError::NotFound("Sub-agent not found".to_string()));
+            return Err(AppError::NotFound(SUB_AGENT_NOT_FOUND.to_string()));
         }
 
         let sub_agents_json: Option<serde_json::Value> = sqlx::query_scalar!(
@@ -530,8 +541,7 @@ impl AttachSubAgentToAgentCommand {
             sub_agents.push(self.sub_agent_id);
         }
 
-        let updated_sub_agents = serde_json::to_value(sub_agents)
-            .map_err(|e| AppError::Internal(format!("Failed to serialize sub_agents: {}", e)))?;
+        let updated_sub_agents = serialize_sub_agents(sub_agents)?;
 
         sqlx::query!(
             "UPDATE ai_agents SET sub_agents = $1, updated_at = NOW() WHERE id = $2 AND deployment_id = $3",
@@ -589,15 +599,14 @@ impl DetachSubAgentFromAgentCommand {
         .fetch_optional(&mut *tx)
         .await
         .map_err(AppError::Database)?
-        .ok_or_else(|| AppError::NotFound("Agent not found".to_string()))?;
+        .ok_or_else(|| AppError::NotFound(AGENT_NOT_FOUND.to_string()))?;
 
         let mut sub_agents: Vec<i64> =
             parse_optional_json(sub_agents_json, "sub_agents")?.unwrap_or_default();
 
         sub_agents.retain(|id| *id != self.sub_agent_id);
 
-        let updated_sub_agents = serde_json::to_value(sub_agents)
-            .map_err(|e| AppError::Internal(format!("Failed to serialize sub_agents: {}", e)))?;
+        let updated_sub_agents = serialize_sub_agents(sub_agents)?;
 
         sqlx::query!(
             "UPDATE ai_agents SET sub_agents = $1, updated_at = NOW() WHERE id = $2 AND deployment_id = $3",
@@ -785,9 +794,7 @@ async fn validate_tool_ids(
     .unwrap_or(0);
 
     if valid_count != ids.len() as i64 {
-        return Err(AppError::BadRequest(
-            "One or more tool IDs are invalid for this deployment".to_string(),
-        ));
+        return Err(AppError::BadRequest(ERR_INVALID_TOOL_IDS.to_string()));
     }
 
     Ok(())
@@ -818,9 +825,7 @@ async fn validate_knowledge_base_ids(
     .unwrap_or(0);
 
     if valid_count != ids.len() as i64 {
-        return Err(AppError::BadRequest(
-            "One or more knowledge base IDs are invalid for this deployment".to_string(),
-        ));
+        return Err(AppError::BadRequest(ERR_INVALID_KB_IDS.to_string()));
     }
 
     Ok(())

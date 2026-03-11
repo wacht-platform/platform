@@ -4,6 +4,7 @@ use serde_json::Value;
 use sqlx::query;
 
 use common::{HasDbRouter, HasRedisProvider, error::AppError};
+const SUBSCRIPTION_CACHE_TTL_SECONDS: u64 = 300;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EndpointWithRules {
@@ -27,6 +28,31 @@ fn subscription_cache_key(deployment_id: i64, app_slug: &str, event_name: &str) 
     format!("webhook:subs:{deployment_id}:{app_slug}:{event_name}")
 }
 
+async fn get_cached_endpoints<D>(deps: &D, cache_key: &str) -> Option<Vec<EndpointWithRules>>
+where
+    D: HasRedisProvider + ?Sized,
+{
+    let mut redis_conn = deps
+        .redis_provider()
+        .get_multiplexed_async_connection()
+        .await
+        .ok()?;
+    let cached = redis_conn.get::<_, String>(cache_key).await.ok()?;
+    serde_json::from_str::<Vec<EndpointWithRules>>(&cached).ok()
+}
+
+async fn cache_endpoints<D>(deps: &D, cache_key: &str, endpoints: &[EndpointWithRules])
+where
+    D: HasRedisProvider + ?Sized,
+{
+    if let Ok(json) = serde_json::to_string(endpoints)
+        && let Ok(mut redis_conn) = deps.redis_provider().get_multiplexed_async_connection().await
+    {
+        let _: Result<(), _> =
+            redis_conn.set_ex(cache_key, json, SUBSCRIPTION_CACHE_TTL_SECONDS).await;
+    }
+}
+
 impl GetSubscribedEndpointsCommand {
     pub fn new(deployment_id: i64, app_slug: String, event_name: String) -> Self {
         Self {
@@ -42,12 +68,8 @@ impl GetSubscribedEndpointsCommand {
     {
         let cache_key = subscription_cache_key(self.deployment_id, &self.app_slug, &self.event_name);
 
-        if let Ok(mut redis_conn) = deps.redis_provider().get_multiplexed_async_connection().await {
-            if let Ok(cached) = redis_conn.get::<_, String>(&cache_key).await {
-                if let Ok(endpoints) = serde_json::from_str::<Vec<EndpointWithRules>>(&cached) {
-                    return Ok(endpoints);
-                }
-            }
+        if let Some(endpoints) = get_cached_endpoints(deps, &cache_key).await {
+            return Ok(endpoints);
         }
 
         let endpoints = query!(
@@ -89,12 +111,7 @@ impl GetSubscribedEndpointsCommand {
             })
             .collect();
 
-        if let Ok(json) = serde_json::to_string(&endpoints) {
-            if let Ok(mut redis_conn) = deps.redis_provider().get_multiplexed_async_connection().await
-            {
-                let _: Result<(), _> = redis_conn.set_ex(&cache_key, json, 300).await;
-            }
-        }
+        cache_endpoints(deps, &cache_key, &endpoints).await;
 
         Ok(endpoints)
     }

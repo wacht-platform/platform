@@ -16,6 +16,9 @@ use super::{
     webhook_subscription::evaluate_filter,
 };
 
+const ERR_WEBHOOK_APP_NOT_FOUND: &str = "Webhook app not found";
+const ERR_WEBHOOK_ENDPOINT_NOT_FOUND: &str = "Webhook endpoint not found";
+
 #[derive(Debug, Deserialize)]
 pub struct TriggerWebhookEventCommand {
     pub deployment_id: i64,
@@ -60,7 +63,7 @@ impl TriggerWebhookEventCommand {
 
         let app_info = match app_info {
             Some(app) => app,
-            None => return Err(AppError::NotFound("Webhook app not found".to_string())),
+            None => return Err(AppError::NotFound(ERR_WEBHOOK_APP_NOT_FOUND.to_string())),
         };
 
         let payload_json = self.payload.to_string();
@@ -265,7 +268,7 @@ impl ReplayWebhookDeliveryCommand {
         )
         .fetch_optional(pool)
         .await?
-        .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?;
+        .ok_or_else(|| AppError::NotFound(ERR_WEBHOOK_ENDPOINT_NOT_FOUND.to_string()))?;
 
         if !endpoint_active.is_active.unwrap_or(false) {
             return Err(AppError::BadRequest(

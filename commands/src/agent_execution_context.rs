@@ -5,6 +5,10 @@ use models::{
 };
 use std::collections::VecDeque;
 
+const EXECUTION_CONTEXT_NOT_FOUND: &str = "Execution context not found";
+const STATUS_UPDATE_ID_REQUIRED: &str = "status_update_id is required";
+const CONTEXT_ID_REQUIRED: &str = "context_id is required";
+
 pub struct CreateExecutionContextCommand {
     pub context_id: i64,
     pub deployment_id: i64,
@@ -436,7 +440,7 @@ impl UpdateExecutionContextCommand {
         .fetch_optional(executor)
         .await
         .map_err(AppError::Database)?
-        .ok_or_else(|| AppError::NotFound("Execution context not found".to_string()))?;
+        .ok_or_else(|| AppError::NotFound(EXECUTION_CONTEXT_NOT_FOUND.to_string()))?;
 
         use std::str::FromStr;
         let status = ExecutionContextStatus::from_str(&row.status)
@@ -511,7 +515,7 @@ impl PostStatusUpdateCommand {
     {
         let id = self
             .status_update_id
-            .ok_or_else(|| AppError::Validation("status_update_id is required".to_string()))?;
+            .ok_or_else(|| AppError::Validation(STATUS_UPDATE_ID_REQUIRED.to_string()))?;
         let row = sqlx::query!(
             r#"
             WITH inserted AS (
@@ -594,7 +598,7 @@ impl CreateChildContextCommand {
     {
         let context_id = self
             .context_id
-            .ok_or_else(|| AppError::Validation("context_id is required".to_string()))?;
+            .ok_or_else(|| AppError::Validation(CONTEXT_ID_REQUIRED.to_string()))?;
         let now = Utc::now();
 
         sqlx::query!(
