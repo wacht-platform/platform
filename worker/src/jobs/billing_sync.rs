@@ -1,12 +1,8 @@
 use anyhow::Result;
 use chrono::Datelike;
 use commands::SyncBillingMetricsCommand;
-use commands::{
-    billing::{CompleteBillingSyncRunCommand, CreateBillingSyncRunCommand},
-    pulse::DeductPulseCreditsCommand,
-};
+use commands::billing::{CompleteBillingSyncRunCommand, CreateBillingSyncRunCommand};
 use common::{DodoClient, ReadConsistency, state::AppState};
-use models::pulse_transaction::PulseTransactionType;
 use queries::billing::{GetDeploymentProviderSubscriptionQuery, ProviderSubscriptionInfo};
 use redis::AsyncCommands as _;
 use tracing::{error, info, warn};
@@ -41,22 +37,6 @@ fn get_metric_config(metric: &str) -> MetricConfig {
         "webhooks" => MetricConfig {
             event_name: "webhooks.total",
             use_last_aggregation: true,
-        },
-        "ai_token_input_cost_cents" => MetricConfig {
-            event_name: "ai.token.input.cost",
-            use_last_aggregation: false,
-        },
-        "ai_token_output_cost_cents" => MetricConfig {
-            event_name: "ai.token.output.cost",
-            use_last_aggregation: false,
-        },
-        "ai_search_queries" => MetricConfig {
-            event_name: "ai.search.queries",
-            use_last_aggregation: true,
-        },
-        "ai_search_query_cost_cents" => MetricConfig {
-            event_name: "ai.search.query.cost",
-            use_last_aggregation: false,
         },
         "sms_cost" => MetricConfig {
             event_name: "sms.cost",
@@ -172,7 +152,6 @@ async fn sync_deployment(
     dirty_key: &str,
     dodo_client: Option<&DodoClient>,
 ) -> Result<i64> {
-    let db_nats_id_deps = common::deps::from_app(app_state).db().nats().id();
     let db_redis_deps = common::deps::from_app(app_state).db().redis();
 
     let subscription_info = GetDeploymentProviderSubscriptionQuery::new(*deployment_id)
@@ -218,10 +197,6 @@ async fn sync_deployment(
         local metrics_key = prefix .. ':metrics'
         local emails_current = tonumber(redis.call('ZSCORE', metrics_key, 'emails') or 0)
         local webhooks_current = tonumber(redis.call('ZSCORE', metrics_key, 'webhooks') or 0)
-        local ai_input_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_token_input_cost_cents') or 0)
-        local ai_output_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_token_output_cost_cents') or 0)
-        local ai_search_queries_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_search_queries') or 0)
-        local ai_search_query_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_search_query_cost_cents') or 0)
         local sms_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'sms_cost_cents') or 0)
         local api_checks_current = tonumber(redis.call('ZSCORE', metrics_key, 'api_checks') or 0)
 
@@ -232,10 +207,6 @@ async fn sync_deployment(
         local projects_last = tonumber(redis.call('ZSCORE', last_synced_key, 'projects') or 0)
         local emails_last = tonumber(redis.call('ZSCORE', last_synced_key, 'emails') or 0)
         local webhooks_last = tonumber(redis.call('ZSCORE', last_synced_key, 'webhooks') or 0)
-        local ai_input_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_token_input_cost_cents') or redis.call('ZSCORE', last_synced_key, 'ai_token_input_cost') or 0)
-        local ai_output_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_token_output_cost_cents') or redis.call('ZSCORE', last_synced_key, 'ai_token_output_cost') or 0)
-        local ai_search_queries_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_search_queries') or 0)
-        local ai_search_query_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_search_query_cost_cents') or redis.call('ZSCORE', last_synced_key, 'ai_search_query_cost') or 0)
         local sms_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'sms_cost') or redis.call('ZSCORE', last_synced_key, 'sms_cost_cents') or 0)
         local api_checks_last = tonumber(redis.call('ZSCORE', last_synced_key, 'api_checks') or 0)
 
@@ -245,10 +216,6 @@ async fn sync_deployment(
         local projects_delta = projects_current - projects_last
         local emails_delta = emails_current - emails_last
         local webhooks_delta = webhooks_current - webhooks_last
-        local ai_input_cost_delta = ai_input_cost_current - ai_input_cost_last
-        local ai_output_cost_delta = ai_output_cost_current - ai_output_cost_last
-        local ai_search_queries_delta = ai_search_queries_current - ai_search_queries_last
-        local ai_search_query_cost_delta = ai_search_query_cost_current - ai_search_query_cost_last
         local sms_cost_delta = sms_cost_current - sms_cost_last
         local api_checks_delta = api_checks_current - api_checks_last
 
@@ -259,10 +226,6 @@ async fn sync_deployment(
             tostring(projects_current), tostring(projects_delta),
             tostring(emails_current), tostring(emails_delta),
             tostring(webhooks_current), tostring(webhooks_delta),
-            tostring(ai_input_cost_current), tostring(ai_input_cost_delta),
-            tostring(ai_output_cost_current), tostring(ai_output_cost_delta),
-            tostring(ai_search_queries_current), tostring(ai_search_queries_delta),
-            tostring(ai_search_query_cost_current), tostring(ai_search_query_cost_delta),
             tostring(sms_cost_current), tostring(sms_cost_delta),
             tostring(api_checks_current), tostring(api_checks_delta)
         }
@@ -293,23 +256,7 @@ async fn sync_deployment(
         ("projects", aggregate(6, 6), aggregate(7, 7)),
         ("emails", aggregate(8, 8), aggregate(9, 9)),
         ("webhooks", aggregate(10, 10), aggregate(11, 11)),
-        (
-            "ai_token_input_cost_cents",
-            aggregate(12, 12),
-            aggregate(13, 13),
-        ),
-        (
-            "ai_token_output_cost_cents",
-            aggregate(14, 14),
-            aggregate(15, 15),
-        ),
-        ("ai_search_queries", aggregate(16, 16), aggregate(17, 17)),
-        (
-            "ai_search_query_cost_cents",
-            aggregate(18, 18),
-            aggregate(19, 19),
-        ),
-        ("sms_cost", aggregate(20, 20), aggregate(21, 21)),
+        ("sms_cost", aggregate(12, 12), aggregate(13, 13)),
     ];
     let mut total_units_synced = 0i64;
     let mut metrics_to_sync = Vec::new();
@@ -318,82 +265,7 @@ async fn sync_deployment(
         if *delta <= 0 {
             continue;
         }
-        if matches!(
-            *metric_name,
-            "ai_token_input_cost_cents"
-                | "ai_token_output_cost_cents"
-                | "ai_search_query_cost_cents"
-                | "sms_cost"
-        ) {
-            let transaction_type = if metric_name.starts_with("ai") {
-                PulseTransactionType::UsageAi
-            } else {
-                PulseTransactionType::UsageSms
-            };
-
-            let deduct_pulse_command = DeductPulseCreditsCommand {
-                transaction_id: Some(app_state.sf.next_id()? as i64),
-                owner_id: subscription_info.owner_id.clone(),
-                amount_pulse_cents: *delta,
-                transaction_type,
-                reference_id: Some((app_state.sf.next_id()? as i64).to_string()),
-            };
-            match deduct_pulse_command
-                .execute_with_deps(&db_nats_id_deps)
-                .await
-            {
-                Ok(_) => {
-                    info!(
-                        "[BILLING SYNC] Deducted {} Pulse cents for {} from deployment {}",
-                        delta, metric_name, deployment_id
-                    );
-
-                    let last_synced_key = format!("{}:last_synced", current_prefix);
-                    let (canonical_key, legacy_key): (&str, Option<&str>) = match *metric_name {
-                        "ai_token_input_cost_cents" => {
-                            ("ai_token_input_cost_cents", Some("ai_token_input_cost"))
-                        }
-                        "ai_token_output_cost_cents" => {
-                            ("ai_token_output_cost_cents", Some("ai_token_output_cost"))
-                        }
-                        "ai_search_query_cost_cents" => {
-                            ("ai_search_query_cost_cents", Some("ai_search_query_cost"))
-                        }
-                        "sms_cost" => ("sms_cost", Some("sms_cost_cents")),
-                        _ => ("", None),
-                    };
-
-                    if !canonical_key.is_empty() {
-                        let _: () = redis::cmd("ZADD")
-                            .arg(&last_synced_key)
-                            .arg(*current)
-                            .arg(canonical_key)
-                            .query_async(redis)
-                            .await?;
-
-                        if let Some(legacy_key) = legacy_key {
-                            let _: () = redis::cmd("ZADD")
-                                .arg(&last_synced_key)
-                                .arg(*current)
-                                .arg(legacy_key)
-                                .query_async(redis)
-                                .await?;
-                        }
-
-                        let _: () = redis::cmd("EXPIRE")
-                            .arg(&last_synced_key)
-                            .arg(5184000)
-                            .query_async(redis)
-                            .await?;
-                    }
-                }
-                Err(e) => {
-                    error!(
-                        "[BILLING SYNC] Failed to deduct Pulse credits for deployment {}: {}",
-                        deployment_id, e
-                    );
-                }
-            }
+        if *metric_name == "sms_cost" {
             continue;
         }
 

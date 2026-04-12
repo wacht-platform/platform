@@ -19,7 +19,8 @@ pub struct PulseTransaction {
 pub enum PulseTransactionType {
     Purchase,
     UsageSms,
-    UsageAi,
+    UsageWebSearch,
+    UsageUrlContent,
     Refund,
     Adjustment,
 }
@@ -29,7 +30,8 @@ impl std::fmt::Display for PulseTransactionType {
         let s = match self {
             Self::Purchase => "purchase",
             Self::UsageSms => "usage_sms",
-            Self::UsageAi => "usage_ai",
+            Self::UsageWebSearch => "usage_web_search",
+            Self::UsageUrlContent => "usage_url_content",
             Self::Refund => "refund",
             Self::Adjustment => "adjustment",
         };

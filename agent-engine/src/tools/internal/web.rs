@@ -1,10 +1,15 @@
 use super::ToolExecutor;
 use common::error::AppError;
+use commands::DeductPulseCreditsCommand;
 use dto::json::agent_executor::{UrlContentParams, WebSearchParams};
 use models::AiTool;
+use models::pulse_transaction::PulseTransactionType;
+use queries::billing::GetOwnerIdByDeploymentIdQuery;
+use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
+use tracing::warn;
 
 const PARALLEL_API_BASE_URL: &str = "https://api.parallel.ai/v1beta";
 const PARALLEL_REQUEST_TIMEOUT_SECS: u64 = 240;
@@ -12,6 +17,9 @@ const PARALLEL_TOOL_CHAR_BUDGET: u32 = 200_000;
 const MIN_CHAR_LIMIT: u32 = 1_000;
 const DEFAULT_WEB_SEARCH_MAX_RESULTS: u32 = 10;
 const MAX_WEB_SEARCH_RESULTS: u32 = 50;
+const PULSE_MILLI_CENTS_PER_CENT: i64 = 10;
+const PARALLEL_SEARCH_COST_MILLI_CENTS: i64 = 5;
+const PARALLEL_EXTRACT_COST_MILLI_CENTS: i64 = 1;
 
 #[derive(Debug, Serialize)]
 struct SearchRequest {
@@ -254,6 +262,14 @@ impl ToolExecutor {
             .post_parallel_json("/search", &request, "search")
             .await?;
 
+        self.charge_parallel_tool_usage(
+            PARALLEL_SEARCH_COST_MILLI_CENTS,
+            "web_search",
+            PulseTransactionType::UsageWebSearch,
+            Some(response.search_id.as_str()),
+        )
+        .await;
+
         Ok(json!({
             "success": true,
             "tool": tool.name,
@@ -322,6 +338,14 @@ impl ToolExecutor {
             .post_parallel_json("/extract", &request, "extract")
             .await?;
 
+        self.charge_parallel_tool_usage(
+            PARALLEL_EXTRACT_COST_MILLI_CENTS,
+            "url_content",
+            PulseTransactionType::UsageUrlContent,
+            Some(response.extract_id.as_str()),
+        )
+        .await;
+
         Ok(json!({
             "success": true,
             "partial": !response.errors.is_empty(),
@@ -387,5 +411,121 @@ impl ToolExecutor {
                 compact_error_body(&body)
             ))
         })
+    }
+
+    async fn charge_parallel_tool_usage(
+        &self,
+        milli_cents: i64,
+        tool_name: &str,
+        transaction_type: PulseTransactionType,
+        request_id: Option<&str>,
+    ) {
+        if milli_cents <= 0 {
+            return;
+        }
+
+        let deployment_id = self.agent().deployment_id;
+        let owner_id = match GetOwnerIdByDeploymentIdQuery::new(deployment_id)
+            .execute_with_db(self.app_state().db_router.reader(common::ReadConsistency::Strong))
+            .await
+        {
+            Ok(Some(owner_id)) => owner_id,
+            Ok(None) => {
+                warn!(
+                    deployment_id,
+                    tool_name,
+                    "Skipping Parallel pulse charge because billing owner was not found"
+                );
+                return;
+            }
+            Err(error) => {
+                warn!(
+                    deployment_id,
+                    tool_name,
+                    error = %error,
+                    "Failed to resolve billing owner for Parallel pulse charge"
+                );
+                return;
+            }
+        };
+
+        let mut redis = match self
+            .app_state()
+            .redis_client
+            .get_multiplexed_async_connection()
+            .await
+        {
+            Ok(conn) => conn,
+            Err(error) => {
+                warn!(
+                    deployment_id,
+                    tool_name,
+                    error = %error,
+                    "Failed to acquire Redis connection for Parallel pulse charge"
+                );
+                return;
+            }
+        };
+
+        let accumulator_key = format!("pulse:parallel:milli_cents:{owner_id}:{tool_name}");
+        let updated_total = match redis.incr::<_, _, i64>(&accumulator_key, milli_cents).await {
+            Ok(total) => total,
+            Err(error) => {
+                warn!(
+                    deployment_id,
+                    tool_name,
+                    error = %error,
+                    "Failed to increment Parallel pulse accumulator"
+                );
+                return;
+            }
+        };
+
+        let cents_to_deduct = updated_total / PULSE_MILLI_CENTS_PER_CENT;
+        if cents_to_deduct <= 0 {
+            return;
+        }
+
+        let remainder = updated_total % PULSE_MILLI_CENTS_PER_CENT;
+        let mut pipe = redis::pipe();
+        pipe.atomic()
+            .set(&accumulator_key, remainder)
+            .ignore()
+            .expire(&accumulator_key, 60 * 60 * 24 * 90)
+            .ignore();
+
+        if let Err(error) = pipe.query_async::<()>(&mut redis).await {
+            warn!(
+                deployment_id,
+                tool_name,
+                error = %error,
+                "Failed to persist Parallel pulse accumulator remainder"
+            );
+            return;
+        }
+
+        let reference_id = Some(match request_id {
+            Some(request_id) => format!("parallel:{tool_name}:{request_id}"),
+            None => format!("parallel:{tool_name}"),
+        });
+        let deps = common::deps::from_app(self.app_state()).db().nats().id();
+        if let Err(error) = (DeductPulseCreditsCommand {
+            transaction_id: None,
+            owner_id,
+            amount_pulse_cents: cents_to_deduct,
+            transaction_type,
+            reference_id,
+        })
+        .execute_with_deps(&deps)
+        .await
+        {
+            warn!(
+                deployment_id,
+                tool_name,
+                error = %error,
+                amount_pulse_cents = cents_to_deduct,
+                "Failed to deduct pulse credits for Parallel tool usage"
+            );
+        }
     }
 }

@@ -57,24 +57,6 @@ pub async fn process_billing_event(
             pipe.zincr(&format!("{}:metrics", prefix), "api_checks", 1);
             pipe.expire(&format!("{}:metrics", prefix), 5184000);
         }
-        "ai_token_input" => {
-            let cost = task.cost_cents.unwrap_or(0);
-            pipe.zincr(
-                &format!("{}:metrics", prefix),
-                "ai_token_input_cost_cents",
-                cost,
-            );
-            pipe.expire(&format!("{}:metrics", prefix), 5184000);
-        }
-        "ai_token_output" => {
-            let cost = task.cost_cents.unwrap_or(0);
-            pipe.zincr(
-                &format!("{}:metrics", prefix),
-                "ai_token_output_cost_cents",
-                cost,
-            );
-            pipe.expire(&format!("{}:metrics", prefix), 5184000);
-        }
         "sms_sent" => {
             let cost = task.cost_cents.unwrap_or(0);
             pipe.zincr(&format!("{}:metrics", prefix), "sms_cost_cents", cost);
