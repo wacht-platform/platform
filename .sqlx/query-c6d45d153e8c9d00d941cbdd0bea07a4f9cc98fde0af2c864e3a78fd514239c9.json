@@ -1,0 +1,161 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO agent_threads (\n                id, deployment_id, actor_id, project_id,\n                title, thread_purpose, responsibility, reusable, accepts_assignments,\n                capability_tags, status, system_instructions, last_activity_at, completed_at,\n                execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at\n            ) VALUES (\n                $1, $2, $3, $4,\n                $5, $6, $7, $8, $9,\n                $10, $11, $12, $14, NULL,\n                NULL, 0, $13, $14, $14, NULL\n            )\n            RETURNING id, deployment_id, actor_id, project_id,\n                      title, thread_purpose as \"thread_kind!\", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as \"thread_visibility!\",\n                      thread_purpose, responsibility,\n                      reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,\n                      execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "actor_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "project_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "thread_kind!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "thread_visibility!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "thread_purpose",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "responsibility",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "reusable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "accepts_assignments",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "capability_tags",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 12,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "system_instructions",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "last_activity_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "completed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "execution_state",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 17,
+        "name": "next_event_sequence",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 18,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 19,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 20,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 21,
+        "name": "archived_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Bool",
+        "TextArray",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "c6d45d153e8c9d00d941cbdd0bea07a4f9cc98fde0af2c864e3a78fd514239c9"
+}

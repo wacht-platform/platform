@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                u.id,\n                u.first_name,\n                u.last_name,\n                u.username,\n                u.profile_picture_url,\n                u.created_at,\n                u.disabled,\n                u.password,\n                u.public_metadata,\n                u.private_metadata,\n                primary_email.email_address AS primary_email_address,\n                primary_phone.phone_number AS \"primary_phone_number?\"\n            FROM user_email_addresses target_email\n            JOIN users u\n              ON u.id = target_email.user_id\n             AND u.deployment_id = target_email.deployment_id\n            LEFT JOIN user_email_addresses primary_email\n              ON primary_email.id = u.primary_email_address_id\n            LEFT JOIN user_phone_numbers primary_phone\n              ON primary_phone.id = u.primary_phone_number_id\n            WHERE target_email.deployment_id = $1\n              AND lower(target_email.email_address) = lower($2)\n              AND target_email.verified = true\n              AND target_email.user_id IS NOT NULL\n            ORDER BY target_email.is_primary DESC,\n                     target_email.verified_at DESC NULLS LAST,\n                     target_email.id DESC\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "first_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "last_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "username",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "profile_picture_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "disabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "password",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "public_metadata",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "private_metadata",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "primary_email_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "primary_phone_number?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "ae157fb42ac3412043fbdec10acf200532d92e318dfa59bf568f481f854e5a67"
+}

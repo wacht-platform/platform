@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                t.id, t.created_at, t.updated_at, t.name, t.description,\n                t.tool_type, t.deployment_id, t.requires_user_approval, t.configuration\n            FROM ai_tools t\n            JOIN ai_agent_tools aat ON aat.tool_id = t.id\n            WHERE t.deployment_id = $1 AND aat.agent_id = $2 AND aat.deployment_id = $1\n            ORDER BY t.created_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "tool_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "requires_user_approval",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "configuration",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c1bf39f79050c1d9c6089a8639ac9fd5a6bcc37dcff76cae0fae47dfa6a08fbc"
+}

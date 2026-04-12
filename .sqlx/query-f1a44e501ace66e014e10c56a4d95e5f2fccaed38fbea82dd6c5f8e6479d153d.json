@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO thread_task_edges (graph_id, from_node_id, to_node_id, dependency_type, created_at)\n            VALUES ($1, $2, $3, 'hard', NOW())\n            ON CONFLICT (graph_id, from_node_id, to_node_id) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f1a44e501ace66e014e10c56a4d95e5f2fccaed38fbea82dd6c5f8e6479d153d"
+}

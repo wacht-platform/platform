@@ -1,0 +1,91 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id, thread_id, thread_event_id, execution_run_id,\n                reason_code, reason_detail, status, retry_count, last_recovery_attempt_at,\n                resolved_at, created_at, updated_at\n            FROM agent_execution_recovery_queue\n            WHERE thread_id = $1\n              AND thread_event_id IS NOT DISTINCT FROM $2\n              AND execution_run_id IS NOT DISTINCT FROM $3\n              AND reason_code = $4\n              AND resolved_at IS NULL\n            ORDER BY created_at DESC\n            LIMIT 1\n            FOR UPDATE\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "thread_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "thread_event_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "execution_run_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "reason_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "reason_detail",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "retry_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "last_recovery_attempt_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "resolved_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "2485ccc1ed9d974e7476a30ce3439cc8a817c19cd579e5473ce5a16c61726fa5"
+}

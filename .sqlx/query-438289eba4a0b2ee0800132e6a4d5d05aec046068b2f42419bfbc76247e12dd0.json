@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id\n            FROM project_task_schedules\n            WHERE status = 'active'\n              AND next_run_at <= $1\n            ORDER BY next_run_at ASC\n            LIMIT $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "438289eba4a0b2ee0800132e6a4d5d05aec046068b2f42419bfbc76247e12dd0"
+}

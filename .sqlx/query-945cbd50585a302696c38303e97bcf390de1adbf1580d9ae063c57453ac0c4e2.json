@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE project_task_board_items\n                SET assigned_thread_id = $2, updated_at = $3\n                WHERE id = $1\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "945cbd50585a302696c38303e97bcf390de1adbf1580d9ae063c57453ac0c4e2"
+}

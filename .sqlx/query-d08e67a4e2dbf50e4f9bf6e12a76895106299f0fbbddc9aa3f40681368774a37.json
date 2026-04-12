@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agent_threads SET updated_at = $1, last_activity_at = $1, status = $2 WHERE id = $3 AND deployment_id = $4 AND status IS DISTINCT FROM $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d08e67a4e2dbf50e4f9bf6e12a76895106299f0fbbddc9aa3f40681368774a37"
+}

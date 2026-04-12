@@ -1,0 +1,125 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                created_at,\n                updated_at,\n                deployment_id,\n                actor_id,\n                project_id,\n                title,\n                CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as \"thread_visibility!\",\n                thread_purpose,\n                responsibility,\n                reusable,\n                accepts_assignments,\n                capability_tags,\n                system_instructions,\n                last_activity_at,\n                completed_at,\n                execution_state,\n                status\n            FROM agent_threads\n            WHERE id = $1 AND deployment_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "actor_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "project_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "thread_visibility!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "thread_purpose",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "responsibility",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "reusable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "accepts_assignments",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "capability_tags",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 13,
+        "name": "system_instructions",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "last_activity_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "completed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "execution_state",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 17,
+        "name": "status",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "cfa63a9a90ff3ca8388d6aea5bff3362cd9444e7a09a0002bb9e1621ad243be7"
+}

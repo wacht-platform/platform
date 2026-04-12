@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE project_task_board_items\n                SET assigned_thread_id = CASE\n                        WHEN assigned_thread_id = $2 THEN NULL\n                        ELSE assigned_thread_id\n                    END,\n                    updated_at = $3\n                WHERE id = $1\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e463c7f538ff0160e789dd1e8a30460d022247049c74c7206df4e6af131f9c9a"
+}

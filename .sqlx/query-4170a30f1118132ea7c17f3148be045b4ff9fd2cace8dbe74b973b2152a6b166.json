@@ -1,0 +1,134 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE thread_task_nodes\n            SET\n                retry_count = retry_count + 1,\n                error = COALESCE($1, error, '{}'::jsonb),\n                lease_owner = NULL,\n                lease_until = NULL,\n                status = CASE\n                    WHEN retry_count + 1 <= max_retries THEN $2\n                    ELSE $3\n                END,\n                completed_at = CASE\n                    WHEN retry_count + 1 <= max_retries THEN NULL\n                    ELSE NOW()\n                END,\n                updated_at = NOW()\n            WHERE graph_id = $4 AND id = $5\n            RETURNING\n                id, graph_id, board_item_id, title, description, status, priority,\n                owner_agent_id, assigned_thread_id, retry_count, max_retries,\n                input, output, error, lease_owner, lease_until, completed_at, created_at, updated_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "graph_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "board_item_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "priority",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "owner_agent_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "assigned_thread_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "retry_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "max_retries",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "input",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 12,
+        "name": "output",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 13,
+        "name": "error",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 14,
+        "name": "lease_owner",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "lease_until",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "completed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "4170a30f1118132ea7c17f3148be045b4ff9fd2cace8dbe74b973b2152a6b166"
+}

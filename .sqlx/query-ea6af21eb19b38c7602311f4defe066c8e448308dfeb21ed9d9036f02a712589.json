@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            p.coordinator_thread_id,\n            t.deployment_id,\n            t.project_id,\n            t.status\n        FROM project_task_boards b\n        INNER JOIN actor_projects p\n            ON p.id = b.project_id\n        INNER JOIN agent_threads t\n            ON t.id = p.coordinator_thread_id\n           AND t.archived_at IS NULL\n        WHERE b.id = $1\n          AND p.coordinator_thread_id IS NOT NULL\n          AND b.archived_at IS NULL\n          AND p.archived_at IS NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "coordinator_thread_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "project_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ea6af21eb19b38c7602311f4defe066c8e448308dfeb21ed9d9036f02a712589"
+}

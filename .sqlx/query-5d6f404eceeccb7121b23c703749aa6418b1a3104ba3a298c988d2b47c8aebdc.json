@@ -1,0 +1,75 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH ready_nodes AS (\n                SELECT n.id\n                FROM thread_task_nodes n\n                WHERE\n                    n.graph_id = $1\n                    AND n.status = $2\n                    AND NOT EXISTS (\n                        SELECT 1\n                        FROM thread_task_edges e\n                        JOIN thread_task_nodes dep\n                          ON dep.id = e.from_node_id AND dep.graph_id = e.graph_id\n                        WHERE\n                            e.graph_id = n.graph_id\n                            AND e.to_node_id = n.id\n                            AND dep.status != $3\n                    )\n            )\n            SELECT\n                g.id,\n                g.status,\n                COUNT(n.id)::bigint AS \"total_nodes!\",\n                COUNT(*) FILTER (WHERE n.status = $2)::bigint AS \"pending_nodes!\",\n                COUNT(*) FILTER (WHERE n.id IN (SELECT id FROM ready_nodes))::bigint AS \"ready_nodes!\",\n                COUNT(*) FILTER (WHERE n.status = $4)::bigint AS \"in_progress_nodes!\",\n                COUNT(*) FILTER (WHERE n.status = $3)::bigint AS \"completed_nodes!\",\n                COUNT(*) FILTER (WHERE n.status = $5)::bigint AS \"failed_nodes!\",\n                COUNT(*) FILTER (WHERE n.status = $6)::bigint AS \"cancelled_nodes!\"\n            FROM thread_task_graphs g\n            LEFT JOIN thread_task_nodes n ON n.graph_id = g.id\n            WHERE g.id = $1\n            GROUP BY g.id, g.status\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "total_nodes!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "pending_nodes!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "ready_nodes!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "in_progress_nodes!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "completed_nodes!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "failed_nodes!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "cancelled_nodes!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "5d6f404eceeccb7121b23c703749aa6418b1a3104ba3a298c988d2b47c8aebdc"
+}

@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT status, reusable, accepts_assignments\n            FROM agent_threads\n            WHERE id = $1\n              AND deployment_id = $2\n              AND archived_at IS NULL\n            FOR UPDATE SKIP LOCKED\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "reusable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "accepts_assignments",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dad111c01ddfa9454a4917aefb3462118bb23df7a759f793fcfa4b3ea39d21ec"
+}

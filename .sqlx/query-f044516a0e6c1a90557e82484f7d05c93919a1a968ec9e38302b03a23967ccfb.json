@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE thread_events\n                SET status = 'pending', claimed_at = NULL, updated_at = NOW()\n                WHERE id = $1 AND caused_by_run_id IS NULL\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f044516a0e6c1a90557e82484f7d05c93919a1a968ec9e38302b03a23967ccfb"
+}

@@ -1,0 +1,94 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE agent_execution_recovery_queue\n            SET\n                status = COALESCE($2, status),\n                reason_detail = COALESCE($3, reason_detail),\n                retry_count = CASE WHEN $4 THEN retry_count + 1 ELSE retry_count END,\n                last_recovery_attempt_at = CASE\n                    WHEN $5 THEN $1\n                    ELSE last_recovery_attempt_at\n                END,\n                resolved_at = CASE\n                    WHEN $6 THEN $1\n                    ELSE resolved_at\n                END,\n                updated_at = $1\n            WHERE id = $7\n            RETURNING\n                id, thread_id, thread_event_id, execution_run_id,\n                reason_code, reason_detail, status, retry_count, last_recovery_attempt_at,\n                resolved_at, created_at, updated_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "thread_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "thread_event_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "execution_run_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "reason_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "reason_detail",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "retry_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "last_recovery_attempt_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "resolved_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Jsonb",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "d38aef1ccd0c5339febc23897cfdd943d6d49354d3d779d87f8db615d2764d6b"
+}

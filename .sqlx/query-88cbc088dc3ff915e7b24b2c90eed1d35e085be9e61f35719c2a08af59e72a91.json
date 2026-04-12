@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                tracked_row_count,\n                vector_index_created_at,\n                last_index_attempt_at,\n                last_optimized_at\n            FROM deployment_vector_index_states\n            WHERE deployment_id = $1 AND store_name = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tracked_row_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "vector_index_created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "last_index_attempt_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "last_optimized_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "88cbc088dc3ff915e7b24b2c90eed1d35e085be9e61f35719c2a08af59e72a91"
+}

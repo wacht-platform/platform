@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                e.deployment_id,\n                e.thread_id,\n                t.status AS thread_status,\n                t.updated_at AS thread_updated_at,\n                e.id AS thread_event_id,\n                e.board_item_id,\n                e.event_type,\n                e.claimed_at AS \"claimed_at!\",\n                e.caused_by_run_id AS execution_run_id,\n                r.status AS execution_run_status,\n                r.started_at AS execution_run_started_at,\n                r.updated_at AS execution_run_updated_at\n            FROM thread_events e\n            INNER JOIN agent_threads t\n                ON t.id = e.thread_id\n               AND t.deployment_id = e.deployment_id\n            LEFT JOIN execution_runs r\n                ON r.id = e.caused_by_run_id\n               AND r.deployment_id = e.deployment_id\n            WHERE e.status = 'claimed'\n              AND e.claimed_at IS NOT NULL\n              AND e.claimed_at < $1\n            ORDER BY e.claimed_at ASC\n            LIMIT $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "thread_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "thread_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "thread_updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "thread_event_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "board_item_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "event_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "claimed_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "execution_run_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "execution_run_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "execution_run_started_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "execution_run_updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "130bb11ef774ceaf98270863ef325037817fb38cae4b2b264ff449426f9d1f7e"
+}

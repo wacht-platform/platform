@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT parent_board_item_id\n        FROM project_task_board_item_relations\n        WHERE child_board_item_id = $1\n          AND relation_type = 'child_of'\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "parent_board_item_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "556031a1cc4cb9dbe97df65a1f60525ab478471d713ed4c07c6aa7c9a56c4237"
+}

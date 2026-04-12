@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE thread_task_graphs\n            SET status = $2, updated_at = NOW()\n            WHERE id = $1 AND status != $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "583328727047ebe24a3b5f0c2898b2efe455f8dc0b21341ddd950648ddb319c3"
+}

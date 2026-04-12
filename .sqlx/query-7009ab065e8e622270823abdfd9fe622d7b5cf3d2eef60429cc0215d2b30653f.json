@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agent_threads SET updated_at = $1, last_activity_at = $1, execution_state = $2 WHERE id = $3 AND deployment_id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Jsonb",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7009ab065e8e622270823abdfd9fe622d7b5cf3d2eef60429cc0215d2b30653f"
+}

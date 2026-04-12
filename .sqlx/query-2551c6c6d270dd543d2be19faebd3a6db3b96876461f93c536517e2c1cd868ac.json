@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE deployment_vector_index_states\n                SET\n                    tracked_row_count = $3,\n                    vector_index_created_at = CASE\n                        WHEN vector_index_created_at IS NULL AND $4::boolean THEN $5\n                        ELSE vector_index_created_at\n                    END,\n                    updated_at = $5\n                WHERE deployment_id = $1 AND store_name = $2\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8",
+        "Bool",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2551c6c6d270dd543d2be19faebd3a6db3b96876461f93c536517e2c1cd868ac"
+}

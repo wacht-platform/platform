@@ -1,0 +1,81 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH updated_run AS (\n                UPDATE execution_runs\n                SET status = COALESCE($1, status),\n                    completed_at = CASE WHEN $2 THEN $4 ELSE completed_at END,\n                    failed_at = CASE WHEN $3 THEN $4 ELSE failed_at END,\n                    updated_at = $4\n                WHERE id = $5 AND deployment_id = $6\n                RETURNING id, deployment_id, thread_id, agent_id, status,\n                          started_at, completed_at, failed_at, created_at, updated_at\n            ),\n            updated_thread AS (\n                UPDATE agent_threads\n                SET updated_at = $4,\n                    status = updated_run.status\n                FROM updated_run\n                WHERE agent_threads.id = updated_run.thread_id\n                  AND agent_threads.deployment_id = updated_run.deployment_id\n            )\n            SELECT id, deployment_id, thread_id, agent_id, status,\n                   started_at, completed_at, failed_at, created_at, updated_at\n            FROM updated_run\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "thread_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "agent_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "started_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "completed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "failed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool",
+        "Bool",
+        "Timestamptz",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "e5318de24a80eb98673d09eb0701490dc3d2a30bae20af2e1b3f34cf4fac79de"
+}

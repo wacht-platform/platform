@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE project_task_schedules\n            SET\n                status = $2,\n                next_run_at = COALESCE($3, next_run_at),\n                last_enqueued_at = $4,\n                updated_at = $4\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "247e52e65a4bb6d8c82dd697d1a6dcf0e0d41672385afd72dbd50fb8ea4eeeba"
+}
