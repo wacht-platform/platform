@@ -19,10 +19,6 @@ path = "src/bin/oauth-api.rs"
 name = "gateway-api"
 path = "src/bin/gateway-api.rs"
 
-[[bin]]
-name = "realtime-api"
-path = "src/bin/realtime-api.rs"
-
 [dependencies]
 models = { path = "../models" }
 dto = { path = "../dto" }
@@ -58,7 +54,6 @@ futures = "0.3"
 zstd = "0.13"
 bincode = "1.3"
 dashmap = "6.1"
-fastwebsockets = { version = "0.10.0", features = ["upgrade", "with_axum"] }
 handlebars = "6.2.0"
 tiktoken-rs = "0.5"
 quick-xml = { version = "0.38.0", features = ["serialize"] }
