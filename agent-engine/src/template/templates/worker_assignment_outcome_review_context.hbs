@@ -1,0 +1,86 @@
+Assigned work has returned to the coordinator for review.
+
+Task key: {{task_key}}
+Board item id: {{board_item_id}}
+Task title: {{title}}
+Task description: {{description}}
+Current task status: {{status}}
+Priority: {{priority}}
+Assignment id: {{assignment_id}}
+Assignment role: {{assignment_role}}
+Returned result status: {{result_status}}
+Returned result summary: {{result_summary}}
+Linked handoff file: {{handoff_file_path}}
+
+Canonical task workspace: {{workspace_dir}}
+Source-of-truth task brief: {{task_file}}
+Task history journal: {{journal_file}}
+{{#if runbook_file}}Recurring task runbook: {{runbook_file}}
+{{/if}}
+Precreated task directories: `/task/handoffs/`, `/task/artifacts/`, `/task/notes/`
+Related task mounts, when present: `/task/related/parent/` and `/task/related/children/<task_key>/`
+
+Review this returned work as an independent task-routing decision.
+
+The board item is the workflow source of truth and the task workspace is the filesystem source of truth.
+The runtime created `/task/JOURNAL.md`, `/task/handoffs/`, `/task/artifacts/`, and `/task/notes/`.
+
+`/task/TASK.md` is agent-owned and should exist as the operative task brief.
+If it is missing or too thin, treat that as incomplete task setup rather than a clean handoff.
+
+On every wake-up for returned task work, read `/task/JOURNAL.md` first before rerouting, reviewing, or concluding.
+If the journal is long, inspect the latest relevant portion first with `tail`, `sed -n`, or another targeted read, but do not skip the journal.
+
+{{#if runbook_file}}Because this task is recurring, read `{{runbook_file}}` after the journal.
+Keep it small and store only critical carry-forward facts such as key file paths, data locations, reusable commands, scripts, or non-obvious operational gotchas.
+{{/if}}
+Inspect mounted parent/child workspaces if the returned work depends on related tasks.
+Decide the next routing step based on the actual returned outcome, not on unrelated workspace files.
+
+Recent assignment history for this task, shown in order from oldest to newest:
+{{#if recent_assignment_history_summary}}{{recent_assignment_history_summary}}
+{{else}}- none
+{{/if}}
+
+Latest journal state:
+{{#if task_journal_tail}}
+```markdown
+{{task_journal_tail}}
+```
+{{else}}- none
+{{/if}}
+
+Recommended handling sequence:
+1. Read `/task/JOURNAL.md` first to understand the latest known state and whether this returned result supersedes or conflicts with earlier work.
+{{#if runbook_file}}2. Read `{{runbook_file}}` next for small durable facts from prior recurring runs.
+3. Read `/task/TASK.md` and confirm the real success bar for the task.
+4. Read the linked handoff and any new artifacts before judging the returned stage.
+5. Compare the returned work against the assignment scope, task brief, journal trail, runbook, and actual files on disk.
+6. Decide whether the task should:
+{{else}}2. Read `/task/TASK.md` and confirm the real success bar for the task.
+3. Read the linked handoff and any new artifacts before judging the returned stage.
+4. Compare the returned work against the assignment scope, task brief, journal trail, and actual files on disk.
+5. Decide whether the task should:
+{{/if}}
+   - continue in the same lane with tighter guidance,
+   - move to another lane,
+   - split into additional lanes,
+   - or return to coordinator for a broader reroute.
+{{#if runbook_file}}7. Record the decision and rationale durably in the journal and handoff, not just in transient reasoning.
+{{else}}6. Record the decision and rationale durably in the journal and handoff, not just in transient reasoning.
+{{/if}}
+
+Routing guidance for multi-lane work:
+- Split across multiple lanes when the work clearly contains distinct execution and review responsibilities, or when different specialties are needed.
+- Do not keep bouncing the same thin result between lanes without adding sharper instructions, narrower ownership, or a clearer acceptance bar.
+- If one lane can finish the task safely, do not split just for ceremony.
+- If one lane cannot responsibly finish because the scope is too broad or needs independent verification, explicitly route the missing slices instead of accepting partial work.
+
+Acceptance check before you accept or conclude:
+- compare the result against the task brief, assignment instructions, handoff, and actual artifacts
+- verify breadth against the implied coverage dimensions for broad asks
+- verify evidence quality and call out unsupported claims
+- identify explicit missing gaps instead of quietly accepting a thin result
+- prefer complete, decision-ready work over quick closure
+- if the returned stage lacks a handoff, substantive artifact, and meaningful journal update, treat that as an incomplete transfer rather than a clean finish
+- when you update `/task/JOURNAL.md`, prefer a substantive note over a terse one-liner

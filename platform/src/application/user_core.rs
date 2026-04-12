@@ -135,9 +135,7 @@ pub async fn update_user_password(
         request.skip_password_check,
     );
     let deps = deps::from_app(app_state).db();
-    password_command
-        .execute_with_deps(&deps)
-        .await?;
+    password_command.execute_with_deps(&deps).await?;
     Ok(())
 }
 

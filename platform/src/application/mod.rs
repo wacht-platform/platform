@@ -1,8 +1,9 @@
-pub mod agent_integrations;
+pub mod agent_thread_execution;
+pub mod agent_threads;
 pub mod ai_agents;
-pub mod ai_execution_context;
 pub mod ai_knowledge_base;
 pub mod ai_settings;
+pub mod ai_skills;
 pub mod ai_tools;
 pub mod analytics;
 pub mod api_key_app;

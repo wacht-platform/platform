@@ -2,8 +2,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::{query, query_as};
 
-use common::{HasDbRouter, HasIdProvider, error::AppError};
 use common::utils::ssrf::validate_webhook_url;
+use common::{HasDbRouter, HasIdProvider, error::AppError};
 use models::WebhookEndpoint;
 
 use super::validation::{
@@ -67,7 +67,8 @@ fn build_event_subscriptions(
 
 fn validate_endpoint_url(url: &str) -> Result<(), AppError> {
     url::Url::parse(url).map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
-    validate_webhook_url(url).map_err(|e| AppError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
+    validate_webhook_url(url)
+        .map_err(|e| AppError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
     Ok(())
 }
 
@@ -152,8 +153,7 @@ impl CreateWebhookEndpointCommand {
         .await?;
 
         validate_requested_max_retries(self.max_retries)?;
-        let max_allowed_retries =
-            max_attempts_for_retry_window(MAX_ENDPOINT_RETRY_WINDOW_SECONDS);
+        let max_allowed_retries = max_attempts_for_retry_window(MAX_ENDPOINT_RETRY_WINDOW_SECONDS);
         let endpoint_max_retries = self.max_retries.unwrap_or(max_allowed_retries);
 
         let mut tx = deps.writer_pool().begin().await?;

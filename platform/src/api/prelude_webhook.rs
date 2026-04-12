@@ -6,6 +6,7 @@ use chrono::{Datelike, Utc};
 use serde::Deserialize;
 use tracing::{error, info, warn};
 
+use crate::application::response::ApiErrorResponse;
 use common::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -44,15 +45,15 @@ pub async fn handle_prelude_webhook(
     Path(deployment_id): Path<i64>,
     headers: HeaderMap,
     body: String,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, ApiErrorResponse> {
     if let Err(e) = verify_signature(&headers, &body) {
         warn!("[PRELUDE WEBHOOK] Signature verification failed: {}", e);
-        return Err((StatusCode::UNAUTHORIZED, "Invalid signature".to_string()));
+        return Err(ApiErrorResponse::unauthorized("Invalid signature"));
     }
 
     let event: PreludeWebhookEvent = serde_json::from_str(&body).map_err(|e| {
         error!("[PRELUDE WEBHOOK] Failed to parse payload: {}", e);
-        (StatusCode::BAD_REQUEST, format!("Invalid payload: {}", e))
+        ApiErrorResponse::bad_request(format!("Invalid payload: {}", e))
     })?;
 
     info!(
@@ -77,10 +78,7 @@ pub async fn handle_prelude_webhook(
     .await
     .map_err(|e| {
         error!("[PRELUDE WEBHOOK] Currency conversion failed: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Currency conversion failed: {}", e),
-        )
+        ApiErrorResponse::internal(format!("Currency conversion failed: {}", e))
     })?;
 
     info!(
@@ -93,10 +91,7 @@ pub async fn handle_prelude_webhook(
             "[PRELUDE WEBHOOK] Failed to track SMS cost for deployment {}: {}",
             deployment_id, e
         );
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to track cost".to_string(),
-        ));
+        return Err(ApiErrorResponse::internal("Failed to track cost"));
     }
 
     info!(

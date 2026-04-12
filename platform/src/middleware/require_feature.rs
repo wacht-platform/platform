@@ -1,6 +1,6 @@
+use crate::application::response::ApiErrorResponse;
 use axum::{
     extract::Request,
-    http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -20,19 +20,14 @@ pub async fn require_feature(
             let deployment_id = req.extensions().get::<i64>().copied().unwrap_or_default();
 
             if deployment_id == 0 {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Deployment context not found",
-                )
-                    .into_response();
+                return ApiErrorResponse::internal("Deployment context not found").into_response();
             }
 
             // Get app state from extensions
             let state = match req.extensions().get::<common::state::AppState>() {
                 Some(s) => s.clone(),
                 None => {
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "App state not found")
-                        .into_response();
+                    return ApiErrorResponse::internal("App state not found").into_response();
                 }
             };
 
@@ -43,14 +38,11 @@ pub async fn require_feature(
                 .unwrap_or(false);
 
             if !has_access {
-                return (
-                    StatusCode::FORBIDDEN,
-                    format!(
-                        "This feature requires a plan upgrade. Feature: {:?}",
-                        feature
-                    ),
-                )
-                    .into_response();
+                return ApiErrorResponse::forbidden(format!(
+                    "This feature requires a plan upgrade. Feature: {:?}",
+                    feature
+                ))
+                .into_response();
             }
 
             next.run(req).await
@@ -64,25 +56,19 @@ pub async fn check_feature_access(
     deployment_id: i64,
     feature: PlanFeature,
     state: &common::state::AppState,
-) -> Result<(), (StatusCode, String)> {
+) -> Result<(), ApiErrorResponse> {
     let has_access = CheckDeploymentFeatureAccessQuery::new(deployment_id, feature)
         .execute_with_db(state.db_router.writer())
         .await
         .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to check feature access: {}", e),
-            )
+            ApiErrorResponse::internal(format!("Failed to check feature access: {}", e))
         })?;
 
     if !has_access {
-        return Err((
-            StatusCode::FORBIDDEN,
-            format!(
-                "This feature requires a plan upgrade. Feature: {:?}",
-                feature
-            ),
-        ));
+        return Err(ApiErrorResponse::forbidden(format!(
+            "This feature requires a plan upgrade. Feature: {:?}",
+            feature
+        )));
     }
 
     Ok(())

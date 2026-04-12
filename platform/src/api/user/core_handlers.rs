@@ -40,8 +40,7 @@ pub async fn get_active_user_list(
     RequireDeployment(deployment_id): RequireDeployment,
     QueryParams(params): QueryParams<ActiveUserListQueryParams>,
 ) -> ApiResult<PaginatedResponse<UserWithIdentifiers>> {
-    let users =
-        user_core_app::get_active_user_list(&app_state, deployment_id, params).await?;
+    let users = user_core_app::get_active_user_list(&app_state, deployment_id, params).await?;
     Ok(users.into())
 }
 
@@ -94,8 +93,7 @@ pub async fn create_user(
     validate_create_user_request(&app_state, deployment_id, &request).await?;
 
     let user =
-        user_core_app::create_user(&app_state, deployment_id, request, profile_image_data)
-            .await?;
+        user_core_app::create_user(&app_state, deployment_id, request, profile_image_data).await?;
     Ok(user.into())
 }
 
@@ -186,8 +184,7 @@ pub async fn update_user_password(
     Path(params): Path<UserParams>,
     Json(request): Json<UpdatePasswordRequest>,
 ) -> ApiResult<()> {
-    user_core_app::update_user_password(&app_state, deployment_id, params.user_id, request)
-        .await?;
+    user_core_app::update_user_password(&app_state, deployment_id, params.user_id, request).await?;
     Ok(().into())
 }
 

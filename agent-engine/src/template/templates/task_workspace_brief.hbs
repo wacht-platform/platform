@@ -1,0 +1,47 @@
+# Task {{task_key}}
+
+## Identity
+- board_item_id: {{board_item_id}}
+- title: {{title}}
+- status: {{status}}
+- priority: {{priority}}
+
+## Objective
+{{description}}
+
+## What To Do
+- Deliver the task described above without silently narrowing the scope.
+- Turn ambiguous work into explicit outputs instead of vague intent.
+- Keep the work product durable inside this task workspace.
+
+## How To Work
+- Put handoffs in `/task/handoffs/`.
+- Put durable artifacts in `/task/artifacts/`.
+- Put working notes in `/task/notes/`.
+- If `/task/RUNBOOK.md` exists, keep it small and use it only for recurring-task carry-forward facts:
+  - key file or script paths
+  - main data shape or storage location
+  - reusable commands or procedures
+  - non-obvious gotchas or invariants
+- Do not turn `/task/RUNBOOK.md` into a journal.
+- Reuse the existing task workspace structure instead of recreating it.
+- Treat unrelated files elsewhere in `/workspace/` as out of scope unless explicitly linked.
+
+## Deliverables
+- Leave a durable handoff file when you finish a task stage.
+- Make sure the handoff explains what changed, what remains, and the key file paths.
+
+## Done Means
+- The requested work is actually completed, not merely explored.
+- Important constraints and gaps are called out explicitly.
+- The next agent can continue from the workspace without re-deriving context.
+
+## Good Examples
+- `Write /task/handoffs/final-review.md with the exact files changed, the result, and the remaining follow-up.`
+- `Store the working output in /task/artifacts/ and mention the artifact path in the handoff.`
+
+## Bad Examples
+- `done`
+- `looked into it`
+- `fixed some stuff`
+- `leave the result only in chat without a handoff or durable artifact`

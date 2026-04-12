@@ -118,7 +118,6 @@ pub struct MemoryUpdate {
     pub content: String,
     #[serde(rename = "type")]
     pub memory_type: String,
-    pub importance: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

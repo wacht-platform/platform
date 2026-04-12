@@ -276,10 +276,17 @@ impl UpdateAiAgentCommand {
         if let Some(tool_ids) = self.tool_ids {
             replace_agent_tools(&mut tx, agent_id, deployment_id, &tool_ids).await?;
         }
+
         if let Some(knowledge_base_ids) = self.knowledge_base_ids {
-            replace_agent_knowledge_bases(&mut tx, agent_id, deployment_id, &knowledge_base_ids)
-                .await?;
+            replace_agent_knowledge_bases(
+                &mut tx,
+                agent_id,
+                deployment_id,
+                &knowledge_base_ids,
+            )
+            .await?;
         }
+
         tx.commit().await.map_err(AppError::Database)?;
 
         let sub_agents = parse_optional_json(agent.sub_agents, "sub_agents")?;

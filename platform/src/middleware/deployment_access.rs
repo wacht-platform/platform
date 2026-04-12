@@ -1,6 +1,5 @@
 use axum::{
     extract::{Path, Request, State},
-    http::StatusCode,
     middleware::Next,
     response::Response,
 };
@@ -9,6 +8,7 @@ use tracing::{debug, warn};
 use wacht::middleware::auth::AuthContext;
 
 use super::deployment_context::DeploymentContext;
+use crate::application::response::ApiErrorResponse;
 use common::{db_router::ReadConsistency, state::AppState};
 use queries::deployment::GetDeploymentWithProjectQuery;
 
@@ -29,7 +29,7 @@ pub async fn deployment_access_middleware(
     Path(params): Path<DeploymentPathParams>,
     mut req: Request,
     next: Next,
-) -> Result<Response, (StatusCode, String)> {
+) -> Result<Response, ApiErrorResponse> {
     debug!(
         deployment_id = params.deployment_id,
         "Checking deployment access"
@@ -41,10 +41,7 @@ pub async fn deployment_access_middleware(
         .get::<AuthContext>()
         .ok_or_else(|| {
             warn!("No auth context found in request");
-            (
-                StatusCode::UNAUTHORIZED,
-                "Authentication required".to_string(),
-            )
+            ApiErrorResponse::unauthorized("Authentication required")
         })?
         .clone();
 
@@ -53,15 +50,12 @@ pub async fn deployment_access_middleware(
         .await
         .map_err(|e| {
             warn!("Failed to get deployment: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to verify access".to_string(),
-            )
+            ApiErrorResponse::internal("Failed to verify access")
         })?;
 
     let deployment_with_project = deployment_with_project.ok_or_else(|| {
         warn!(deployment_id = params.deployment_id, "Deployment not found");
-        (StatusCode::NOT_FOUND, "Deployment not found".to_string())
+        ApiErrorResponse::not_found("Deployment not found")
     })?;
 
     let has_access = match &deployment_with_project.project_owner_id {
@@ -93,9 +87,8 @@ pub async fn deployment_access_middleware(
             project_owner = ?deployment_with_project.project_owner_id,
             "User attempted to access deployment without permission"
         );
-        return Err((
-            StatusCode::FORBIDDEN,
-            "You don't have permission to access this deployment".to_string(),
+        return Err(ApiErrorResponse::forbidden(
+            "You don't have permission to access this deployment",
         ));
     }
 

@@ -11,11 +11,11 @@ pub enum AgentSessionIdentifierDto {
 pub struct CreateSessionTicketRequest {
     pub ticket_type: String,
     pub user_id: Option<String>,
+    pub actor_id: Option<String>,
     pub agent_ids: Option<Vec<String>>,
     pub agent_session_identifier: Option<AgentSessionIdentifierDto>,
     pub webhook_app_slug: Option<String>,
     pub api_auth_app_slug: Option<String>,
-    pub context_group: Option<String>,
     pub expires_in: Option<u64>,
 }
 

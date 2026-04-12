@@ -10,7 +10,7 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    platform::bootstrap::init_runtime_default_env();
+    platform::bootstrap::init_runtime_default_env("gateway-api");
 
     let app_state = AppState::new_from_env()
         .await

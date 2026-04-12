@@ -44,8 +44,7 @@ pub async fn invite_user(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<InviteUserRequest>,
 ) -> ApiResult<DeploymentInvitation> {
-    let invitation =
-        user_invitation_app::invite_user(&app_state, deployment_id, request).await?;
+    let invitation = user_invitation_app::invite_user(&app_state, deployment_id, request).await?;
     Ok(invitation.into())
 }
 
@@ -54,8 +53,7 @@ pub async fn delete_invitation(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<InvitationParams>,
 ) -> ApiResult<()> {
-    user_invitation_app::delete_invitation(&app_state, deployment_id, params.invitation_id)
-        .await?;
+    user_invitation_app::delete_invitation(&app_state, deployment_id, params.invitation_id).await?;
     Ok(().into())
 }
 

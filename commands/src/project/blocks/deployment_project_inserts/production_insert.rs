@@ -51,7 +51,10 @@ impl ProductionDeploymentInsert {
         self
     }
 
-    pub(in crate::project) fn publishable_key(mut self, publishable_key: impl Into<String>) -> Self {
+    pub(in crate::project) fn publishable_key(
+        mut self,
+        publishable_key: impl Into<String>,
+    ) -> Self {
         self.publishable_key = Some(publishable_key.into());
         self
     }

@@ -20,17 +20,17 @@ impl From<AppError> for ApiErrorResponse {
             AppError::BadRequest(message) => (StatusCode::BAD_REQUEST, message).into(),
             AppError::Internal(message) => {
                 error!(message = %message, "AppError::Internal");
-                (StatusCode::INTERNAL_SERVER_ERROR, message).into()
+                (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong").into()
             }
             AppError::Conflict(message) => (StatusCode::CONFLICT, message).into(),
             AppError::Validation(message) => (StatusCode::BAD_REQUEST, message).into(),
             AppError::Serialization(message) => {
                 error!(message = %message, "AppError::Serialization");
-                (StatusCode::INTERNAL_SERVER_ERROR, message).into()
+                (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong").into()
             }
             AppError::S3(message) => {
                 error!(message = %message, "AppError::S3");
-                (StatusCode::INTERNAL_SERVER_ERROR, message).into()
+                (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong").into()
             }
             AppError::External(message) => {
                 warn!(message = %message, "AppError::External");

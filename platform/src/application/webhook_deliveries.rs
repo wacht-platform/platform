@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use axum::http::StatusCode;
-use common::deps;
 use common::db_router::ReadConsistency;
+use common::deps;
 use common::error::AppError;
 use common::state::AppState;
 use dto::{

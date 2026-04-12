@@ -8,38 +8,14 @@ use dto::{
     json::deployment::{CreateAgentRequest, UpdateAgentRequest},
     query::deployment::GetAgentsQuery,
 };
-use models::{AgentIntegration, AiAgent, AiAgentWithDetails, IntegrationType};
-use queries::{
-    GetAgentIntegrationsQuery, GetAiAgentByIdQuery, GetAiAgentsByIdsQuery, GetAiAgentsQuery,
-};
+use models::{AiAgent, AiAgentWithDetails};
+use queries::{GetAiAgentByIdQuery, GetAiAgentsByIdsQuery, GetAiAgentsQuery};
 
 use crate::{
     api::pagination::paginate_results,
     application::{AppState, response::PaginatedResponse},
 };
 use common::deps;
-
-#[derive(serde::Serialize)]
-pub struct IntegrationWithUrl {
-    #[serde(with = "models::utils::serde::i64_as_string")]
-    pub id: i64,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-    #[serde(with = "models::utils::serde::i64_as_string")]
-    pub deployment_id: i64,
-    #[serde(with = "models::utils::serde::i64_as_string")]
-    pub agent_id: i64,
-    pub integration_type: models::IntegrationType,
-    pub name: String,
-    pub config: serde_json::Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub webhook_url: Option<String>,
-}
-
-#[derive(serde::Serialize)]
-pub struct IntegrationsResponse {
-    pub integrations: Vec<IntegrationWithUrl>,
-}
 
 #[derive(serde::Serialize)]
 pub struct AgentDetailsResponse {
@@ -54,49 +30,10 @@ pub struct AgentDetailsResponse {
     pub configuration: serde_json::Value,
     pub tools_count: i64,
     pub knowledge_bases_count: i64,
-    pub integrations: Vec<IntegrationWithUrl>,
     pub tools: Vec<serde_json::Value>,
     pub knowledge_bases: Vec<serde_json::Value>,
     pub sub_agents: Option<Vec<i64>>,
     pub spawn_config: Option<models::SpawnConfig>,
-}
-
-fn map_integrations_with_urls(
-    integrations: Vec<AgentIntegration>,
-    agent_id: i64,
-) -> Vec<IntegrationWithUrl> {
-    let base_url = "https://agentlink.wacht.services".to_string();
-    integrations
-        .into_iter()
-        .filter(|integration| {
-            matches!(
-                integration.integration_type,
-                IntegrationType::Teams | IntegrationType::ClickUp
-            )
-        })
-        .map(|integration| {
-            let webhook_url = match integration.integration_type {
-                IntegrationType::Teams => Some(format!(
-                    "{}/service/{}/{}/message",
-                    base_url,
-                    integration.integration_type.to_string().to_lowercase(),
-                    agent_id
-                )),
-                _ => None,
-            };
-            IntegrationWithUrl {
-                id: integration.id,
-                created_at: integration.created_at,
-                updated_at: integration.updated_at,
-                deployment_id: integration.deployment_id,
-                agent_id: integration.agent_id,
-                integration_type: integration.integration_type,
-                name: integration.name,
-                config: integration.config,
-                webhook_url,
-            }
-        })
-        .collect()
 }
 
 pub async fn get_ai_agents(
@@ -169,13 +106,6 @@ pub async fn get_ai_agent_details(
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
-    let integrations = GetAgentIntegrationsQuery::new(deployment_id, agent_id)
-        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
-        .await
-        .unwrap_or_default();
-
-    let integrations_with_urls = map_integrations_with_urls(integrations, agent_id);
-
     Ok(AgentDetailsResponse {
         id: agent.id,
         created_at: agent.created_at,
@@ -186,7 +116,6 @@ pub async fn get_ai_agent_details(
         configuration: agent.configuration,
         tools_count: agent.tools_count,
         knowledge_bases_count: agent.knowledge_bases_count,
-        integrations: integrations_with_urls,
         tools: vec![],
         knowledge_bases: vec![],
         sub_agents: agent.sub_agents,
@@ -281,20 +210,4 @@ pub async fn detach_sub_agent_from_agent(
         .execute_with_deps(&db_deps)
         .await?;
     Ok(())
-}
-
-pub async fn get_agent_integrations(
-    app_state: &AppState,
-    deployment_id: i64,
-    agent_id: i64,
-) -> Result<IntegrationsResponse, AppError> {
-    let integrations = GetAgentIntegrationsQuery::new(deployment_id, agent_id)
-        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
-        .await?;
-
-    let integrations_with_urls = map_integrations_with_urls(integrations, agent_id);
-
-    Ok(IntegrationsResponse {
-        integrations: integrations_with_urls,
-    })
 }

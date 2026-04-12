@@ -2,9 +2,7 @@ use commands::{
     CreateProductionDeploymentCommand, CreateProjectWithStagingDeploymentCommand,
     CreateStagingDeploymentCommand, DeleteProjectCommand, VerifyDeploymentDnsRecordsCommand,
 };
-use common::{
-    db_router::ReadConsistency,
-};
+use common::db_router::ReadConsistency;
 
 use crate::application::{AppError, AppState};
 use common::deps;

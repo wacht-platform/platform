@@ -1,15 +1,15 @@
+use common::HasIdProvider;
 use common::error::AppError;
 use common::validators::ProjectValidator;
-use common::HasIdProvider;
 use models::{
     AuthFactorsEnabled, CustomSmtpConfig, DarkModeSettings, Deployment, DeploymentAuthSettings,
     DeploymentB2bSettings, DeploymentB2bSettingsWithRoles, DeploymentEmailTemplate, DeploymentMode,
     DeploymentOrganizationRole, DeploymentRestrictions, DeploymentSmsTemplate,
-    DeploymentUISettings, DeploymentWorkspaceRole, EmailProvider, EmailSettings,
-    EmailVerificationRecords, FirstFactor, IndividualAuthSettings, LightModeSettings,
-    DomainVerificationRecords,
-    OauthCredentials, PasswordSettings, PhoneSettings, ProjectWithDeployments, SecondFactorPolicy,
-    SocialConnectionProvider, UsernameSettings, VerificationPolicy, VerificationStatus,
+    DeploymentUISettings, DeploymentWorkspaceRole, DomainVerificationRecords, EmailProvider,
+    EmailSettings, EmailVerificationRecords, FirstFactor, IndividualAuthSettings,
+    LightModeSettings, OauthCredentials, PasswordSettings, PhoneSettings, ProjectWithDeployments,
+    SecondFactorPolicy, SocialConnectionProvider, UsernameSettings, VerificationPolicy,
+    VerificationStatus,
 };
 
 use base64::{Engine, engine::general_purpose::STANDARD, prelude::BASE64_STANDARD};

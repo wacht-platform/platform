@@ -174,7 +174,9 @@ impl GetProjectsWithDeploymentQuery {
 
             if let Some(project) = projects_map.get_mut(&project_id) {
                 if row.get::<Option<i64>, _>("deployment_id").is_some() {
-                    project.deployments.push(Self::create_deployment_from_row(&row)?);
+                    project
+                        .deployments
+                        .push(Self::create_deployment_from_row(&row)?);
                 }
             } else {
                 let mut deployments = Vec::new();

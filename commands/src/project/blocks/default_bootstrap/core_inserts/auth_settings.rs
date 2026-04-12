@@ -15,7 +15,10 @@ impl DeploymentAuthSettingsInsert {
         DeploymentAuthSettingsInsertBuilder::default()
     }
 
-    pub(in crate::project) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(in crate::project) async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -81,7 +84,10 @@ impl DeploymentAuthSettingsInsertBuilder {
         self
     }
 
-    pub(in crate::project) fn auth_settings(mut self, auth_settings: DeploymentAuthSettings) -> Self {
+    pub(in crate::project) fn auth_settings(
+        mut self,
+        auth_settings: DeploymentAuthSettings,
+    ) -> Self {
         self.auth_settings = Some(auth_settings);
         self
     }
@@ -97,4 +103,3 @@ impl DeploymentAuthSettingsInsertBuilder {
         Ok(DeploymentAuthSettingsInsert { id, auth_settings })
     }
 }
-

@@ -76,10 +76,6 @@ pub trait HasS3Provider {
     fn s3_provider(&self) -> &S3Client;
 }
 
-pub trait HasAgentStorageProvider {
-    fn agent_storage_provider(&self) -> Result<&S3Client, AppError>;
-}
-
 pub trait HasTextProcessingProvider {
     fn text_processing_provider(&self) -> &TextProcessingService;
 }
@@ -187,14 +183,6 @@ impl HasS3Provider for AppState {
 impl HasS3Provider for S3Client {
     fn s3_provider(&self) -> &S3Client {
         self
-    }
-}
-
-impl HasAgentStorageProvider for AppState {
-    fn agent_storage_provider(&self) -> Result<&S3Client, AppError> {
-        self.agent_storage_client
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))
     }
 }
 

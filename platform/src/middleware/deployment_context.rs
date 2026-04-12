@@ -1,8 +1,8 @@
 use super::api_key_context::ApiKeyContext;
+use crate::application::response::ApiErrorResponse;
 use axum::{
     body::Body,
     extract::{Request, State},
-    http::StatusCode,
     response::Response,
 };
 use common::state::AppState;
@@ -18,7 +18,7 @@ pub async fn backend_deployment_middleware(
     State(state): State<AppState>,
     mut req: Request<Body>,
     next: axum::middleware::Next,
-) -> Result<Response, (StatusCode, String)> {
+) -> Result<Response, ApiErrorResponse> {
     let api_key = req
         .headers()
         .get("authorization")
@@ -28,9 +28,8 @@ pub async fn backend_deployment_middleware(
     let api_key = match api_key {
         Some(key) => key,
         None => {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                "Authorization header must be Bearer token".to_string(),
+            return Err(ApiErrorResponse::unauthorized(
+                "Authorization header must be Bearer token",
             ));
         }
     };
@@ -66,25 +65,19 @@ pub async fn backend_deployment_middleware(
     }
 
     let response = authz_response.ok_or_else(|| {
-        (
-            StatusCode::UNAUTHORIZED,
-            format!(
-                "Authentication failed: {}",
-                last_error.unwrap_or_else(|| "invalid token".to_string())
-            ),
-        )
+        if let Some(err) = &last_error {
+            tracing::warn!("Authentication failed in deployment middleware: {}", err);
+        }
+        ApiErrorResponse::unauthorized("Authentication failed")
     })?;
 
     if !response.allowed {
         return Err(
             if response.reason == Some(GatewayDenyReason::PermissionDenied) {
-                (
-                    StatusCode::FORBIDDEN,
-                    "Permission denied for this resource".to_string(),
-                )
+                ApiErrorResponse::forbidden("Permission denied for this resource")
             } else {
-                (
-                    StatusCode::TOO_MANY_REQUESTS,
+                ApiErrorResponse::new(
+                    axum::http::StatusCode::TOO_MANY_REQUESTS,
                     format!(
                         "Rate limit exceeded. Retry after {} seconds",
                         response.retry_after.unwrap_or(60)

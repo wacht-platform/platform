@@ -37,4 +37,3 @@ impl RevokeApiKeyCommand {
         Ok(())
     }
 }
-

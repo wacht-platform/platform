@@ -1,12 +1,7 @@
 use super::ToolExecutor;
 use common::error::AppError;
-use dto::json::{
-    ApiToolResult, PlatformEventResult, PlatformFunctionData, PlatformFunctionResult, StreamEvent,
-};
-use models::{
-    AiTool, ApiToolConfiguration, HttpMethod, PlatformEventToolConfiguration,
-    PlatformFunctionToolConfiguration,
-};
+use dto::json::{ApiToolResult, PlatformEventResult, StreamEvent};
+use models::{AiTool, ApiToolConfiguration, HttpMethod, PlatformEventToolConfiguration};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -142,49 +137,6 @@ impl ToolExecutor {
             event_label: config.event_label.clone(),
             event_data,
             message: "Platform event emitted successfully".to_string(),
-        })
-    }
-
-    pub(super) async fn execute_platform_function_tool(
-        &self,
-        tool: &AiTool,
-        config: &PlatformFunctionToolConfiguration,
-        execution_params: &Value,
-    ) -> Result<PlatformFunctionResult, AppError> {
-        let mut function_params = HashMap::new();
-
-        if let Some(schema) = &config.input_schema {
-            for field in schema {
-                if let Some(value) = execution_params.get(&field.name) {
-                    function_params.insert(field.name.clone(), value.clone());
-                }
-            }
-        }
-
-        let execution_id = self.app_state().sf.next_id()? as u64;
-
-        let function_data = PlatformFunctionData {
-            execution_id: execution_id.to_string(),
-            function_name: config.function_name.clone(),
-            parameters: function_params.clone(),
-            is_overridable: config.is_overridable,
-        };
-
-        if let Some(channel) = &self.channel {
-            let event = StreamEvent::PlatformFunction(
-                config.function_name.clone(),
-                serde_json::to_value(&function_data)?,
-            );
-
-            let _ = channel.send(event).await;
-        }
-
-        Ok(PlatformFunctionResult {
-            success: true,
-            tool: tool.name.clone(),
-            function: config.function_name.clone(),
-            execution_id: execution_id.to_string(),
-            status: "pending".to_string(),
         })
     }
 }

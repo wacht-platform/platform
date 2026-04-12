@@ -15,6 +15,7 @@ fn build_ai_tool(
     description: Option<String>,
     tool_type: AiToolType,
     deployment_id: i64,
+    requires_user_approval: bool,
     configuration: serde_json::Value,
 ) -> AiTool {
     AiTool {
@@ -25,6 +26,7 @@ fn build_ai_tool(
         description,
         tool_type,
         deployment_id,
+        requires_user_approval,
         configuration: parse_ai_tool_configuration(configuration),
     }
 }
@@ -37,6 +39,7 @@ fn build_ai_tool_with_details(
     description: Option<String>,
     tool_type: AiToolType,
     deployment_id: i64,
+    requires_user_approval: bool,
     configuration: serde_json::Value,
 ) -> AiToolWithDetails {
     AiToolWithDetails {
@@ -47,6 +50,7 @@ fn build_ai_tool_with_details(
         description,
         tool_type,
         deployment_id,
+        requires_user_approval,
         configuration: parse_ai_tool_configuration(configuration),
     }
 }
@@ -93,7 +97,7 @@ impl GetAiToolsQuery {
         let mut query = r#"
             SELECT
                 t.id, t.created_at, t.updated_at, t.name, t.description,
-                t.tool_type, t.deployment_id, t.configuration,
+                t.tool_type, t.deployment_id, t.requires_user_approval, t.configuration,
                 COALESCE(a.agents_count, 0) as agents_count
             FROM ai_tools t
             LEFT JOIN (
@@ -152,6 +156,7 @@ impl GetAiToolsQuery {
                     row.get("description"),
                     AiToolType::from(row.get::<String, _>("tool_type")),
                     row.get("deployment_id"),
+                    row.get("requires_user_approval"),
                     row.get("configuration"),
                 )
             })
@@ -180,7 +185,7 @@ impl GetAiToolByIdQuery {
             r#"
             SELECT
                 t.id, t.created_at, t.updated_at, t.name, t.description,
-                t.tool_type, t.deployment_id, t.configuration,
+                t.tool_type, t.deployment_id, t.requires_user_approval, t.configuration,
                 COALESCE(a.agents_count, 0) as agents_count
             FROM ai_tools t
             LEFT JOIN (
@@ -205,6 +210,7 @@ impl GetAiToolByIdQuery {
             tool.description,
             AiToolType::from(tool.tool_type),
             tool.deployment_id,
+            tool.requires_user_approval,
             tool.configuration,
         ))
     }
@@ -231,7 +237,7 @@ impl GetAgentToolsQuery {
             r#"
             SELECT
                 t.id, t.created_at, t.updated_at, t.name, t.description,
-                t.tool_type, t.deployment_id, t.configuration
+                t.tool_type, t.deployment_id, t.requires_user_approval, t.configuration
             FROM ai_tools t
             JOIN ai_agent_tools aat ON aat.tool_id = t.id
             WHERE t.deployment_id = $1 AND aat.agent_id = $2 AND aat.deployment_id = $1
@@ -255,6 +261,7 @@ impl GetAgentToolsQuery {
                     tool.description,
                     AiToolType::from(tool.tool_type),
                     tool.deployment_id,
+                    tool.requires_user_approval,
                     tool.configuration,
                 )
             })
@@ -285,6 +292,7 @@ impl GetToolByIdQuery {
                 description,
                 deployment_id,
                 tool_type,
+                requires_user_approval,
                 configuration
             FROM ai_tools
             WHERE id = $1
@@ -308,6 +316,7 @@ impl GetToolByIdQuery {
             tool.description,
             AiToolType::from(tool.tool_type),
             tool.deployment_id,
+            tool.requires_user_approval,
             tool.configuration,
         ))
     }
@@ -340,7 +349,7 @@ impl GetAiToolsByIdsQuery {
             .join(",");
 
         let query = format!(
-            "SELECT id, created_at, updated_at, name, description, tool_type, deployment_id, configuration
+            "SELECT id, created_at, updated_at, name, description, tool_type, deployment_id, requires_user_approval, configuration
              FROM ai_tools
              WHERE deployment_id = $1 AND id IN ({})",
             placeholders
@@ -368,6 +377,7 @@ impl GetAiToolsByIdsQuery {
                     row.get("description"),
                     AiToolType::from(row.get::<String, _>("tool_type")),
                     row.get("deployment_id"),
+                    row.get("requires_user_approval"),
                     row.get("configuration"),
                 )
             })

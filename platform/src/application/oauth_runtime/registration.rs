@@ -145,7 +145,6 @@ pub async fn oauth_delete_registered_client(
     Ok(())
 }
 
-
 async fn resolve_registered_client_with_access(
     app_state: &AppState,
     headers: &HeaderMap,
@@ -161,7 +160,6 @@ async fn resolve_registered_client_with_access(
     ensure_registration_access_token(headers, client.registration_access_token_hash.as_deref())?;
     Ok((oauth_app, client))
 }
-
 
 fn map_oauth_client_registration_response(
     client: queries::oauth::OAuthClientData,

@@ -31,7 +31,10 @@ impl ProjectInsert {
         self
     }
 
-    pub(in crate::project) fn owner_id_fragment(mut self, owner_id_fragment: impl Into<String>) -> Self {
+    pub(in crate::project) fn owner_id_fragment(
+        mut self,
+        owner_id_fragment: impl Into<String>,
+    ) -> Self {
         self.owner_id_fragment = Some(owner_id_fragment.into());
         self
     }

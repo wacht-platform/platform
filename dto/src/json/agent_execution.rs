@@ -62,10 +62,3 @@ pub struct ApiToolParameters {
 pub struct KnowledgeBaseParameters {
     pub query: String,
 }
-
-// Platform Function Result Storage
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlatformFunctionResultStorage {
-    pub execution_id: String,
-    pub result: Value,
-}

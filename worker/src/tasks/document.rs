@@ -17,7 +17,7 @@ pub async fn process_document_impl(
     app_state: &AppState,
 ) -> Result<String> {
     use commands::ProcessDocumentCommand;
-    let command_deps = common::deps::from_app(app_state).db().nats();
+    let command_deps = common::deps::from_app(app_state).db().enc().nats();
 
     info!(
         "Processing document {} in knowledge base {} for deployment {}",

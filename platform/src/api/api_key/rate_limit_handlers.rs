@@ -22,8 +22,7 @@ pub async fn get_rate_limit_scheme(
     Path(slug): Path<String>,
 ) -> ApiResult<RateLimitSchemeData> {
     let scheme =
-        api_key_rate_limit_app::get_rate_limit_scheme(&app_state, deployment_id, slug)
-            .await?;
+        api_key_rate_limit_app::get_rate_limit_scheme(&app_state, deployment_id, slug).await?;
     Ok(scheme.into())
 }
 
@@ -44,13 +43,9 @@ pub async fn update_rate_limit_scheme(
     Path(slug): Path<String>,
     Json(request): Json<UpdateRateLimitSchemeRequest>,
 ) -> ApiResult<RateLimitSchemeData> {
-    let scheme = api_key_rate_limit_app::update_rate_limit_scheme(
-        &app_state,
-        deployment_id,
-        slug,
-        request,
-    )
-    .await?;
+    let scheme =
+        api_key_rate_limit_app::update_rate_limit_scheme(&app_state, deployment_id, slug, request)
+            .await?;
 
     Ok(scheme.into())
 }

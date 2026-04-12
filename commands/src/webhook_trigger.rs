@@ -3,16 +3,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::query;
 
-use common::{
-    HasClickHouseProvider, HasDbRouter, HasIdProvider, HasNatsProvider, HasRedisProvider, error::AppError,
-};
 use common::utils::webhook::generate_webhook_signature;
+use common::{
+    HasClickHouseProvider, HasDbRouter, HasIdProvider, HasNatsProvider, HasRedisProvider,
+    error::AppError,
+};
 use dto::clickhouse::webhook::WebhookLog;
 use queries::GetWebhookSubscriptionFilterRulesQuery;
 
 use super::{
-    GetSubscribedEndpointsCommand,
-    webhook_delivery::EnqueueWebhookDeliveryCommand,
+    GetSubscribedEndpointsCommand, webhook_delivery::EnqueueWebhookDeliveryCommand,
     webhook_subscription::evaluate_filter,
 };
 
@@ -46,7 +46,12 @@ impl TriggerWebhookEventCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<TriggerWebhookEventResult, AppError>
     where
-        D: HasDbRouter + HasRedisProvider + HasClickHouseProvider + HasNatsProvider + HasIdProvider + ?Sized,
+        D: HasDbRouter
+            + HasRedisProvider
+            + HasClickHouseProvider
+            + HasNatsProvider
+            + HasIdProvider
+            + ?Sized,
     {
         let pool = deps.db_router().writer();
         let app_info = query!(

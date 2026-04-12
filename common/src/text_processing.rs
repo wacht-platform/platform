@@ -1,7 +1,10 @@
 use crate::error::AppError;
+use lopdf::{Document, Object, ObjectId};
 use pulldown_cmark::{Parser, html};
 use quick_xml::Reader;
 use quick_xml::events::Event;
+use std::collections::BTreeMap;
+use tiktoken_rs::cl100k_base;
 
 #[derive(Clone)]
 pub struct TextProcessingService;
@@ -10,6 +13,13 @@ pub struct TextProcessingService;
 pub struct TextChunk {
     pub content: String,
     pub chunk_index: usize,
+}
+
+#[derive(Clone)]
+pub struct PdfPageChunk {
+    pub content: Vec<u8>,
+    pub start_page: u32,
+    pub end_page: u32,
 }
 
 impl TextProcessingService {
@@ -42,6 +52,48 @@ impl TextProcessingService {
     fn extract_text_from_pdf(&self, content: &[u8]) -> Result<String, AppError> {
         pdf_extract::extract_text_from_mem(content)
             .map_err(|e| AppError::Internal(format!("Failed to extract text from PDF: {}", e)))
+    }
+
+    pub fn split_pdf_into_page_groups(
+        &self,
+        content: &[u8],
+        pages_per_chunk: usize,
+    ) -> Result<Vec<PdfPageChunk>, AppError> {
+        if pages_per_chunk == 0 {
+            return Err(AppError::Internal(
+                "pages_per_chunk must be greater than zero".to_string(),
+            ));
+        }
+
+        let document = Document::load_mem(content)
+            .map_err(|e| AppError::Internal(format!("Failed to load PDF: {}", e)))?;
+        let pages = document.get_pages();
+        let page_numbers = pages.keys().copied().collect::<Vec<_>>();
+
+        if page_numbers.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut chunks = Vec::new();
+        for page_group in page_numbers.chunks(pages_per_chunk) {
+            let mut subset = build_pdf_subset(&document, page_group)?;
+            let mut bytes = Vec::new();
+            subset
+                .save_to(&mut bytes)
+                .map_err(|e| AppError::Internal(format!("Failed to save PDF subset: {}", e)))?;
+
+            chunks.push(PdfPageChunk {
+                content: bytes,
+                start_page: *page_group
+                    .first()
+                    .ok_or_else(|| AppError::Internal("Missing start page".to_string()))?,
+                end_page: *page_group
+                    .last()
+                    .ok_or_else(|| AppError::Internal("Missing end page".to_string()))?,
+            });
+        }
+
+        Ok(chunks)
     }
 
     fn extract_text_from_txt(&self, content: &[u8]) -> Result<String, AppError> {
@@ -166,18 +218,50 @@ impl TextProcessingService {
         &self,
         text: &str,
         chunk_size: usize,
-        _overlap: usize,
+        overlap: usize,
     ) -> Result<Vec<TextChunk>, AppError> {
+        if text.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        if chunk_size == 0 {
+            return Err(AppError::Internal(
+                "chunk_size must be greater than zero".to_string(),
+            ));
+        }
+
+        let bpe = cl100k_base()
+            .map_err(|e| AppError::Internal(format!("Failed to initialize tokenizer: {}", e)))?;
+        let tokens = bpe
+            .split_by_token_ordinary(text)
+            .map_err(|e| AppError::Internal(format!("Failed to tokenize text: {}", e)))?;
+
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let step = chunk_size.saturating_sub(overlap).max(1);
         let mut chunks = Vec::new();
-        let chars: Vec<char> = text.chars().collect();
+        let mut start = 0usize;
+        let mut index = 0usize;
 
-        for (index, chunk_chars) in chars.chunks(chunk_size).enumerate() {
-            let chunk_text = chunk_chars.iter().collect::<String>();
+        while start < tokens.len() {
+            let end = (start + chunk_size).min(tokens.len());
+            let chunk_text = tokens[start..end].concat().trim().to_string();
 
-            chunks.push(TextChunk {
-                content: chunk_text.clone(),
-                chunk_index: index,
-            });
+            if !chunk_text.is_empty() {
+                chunks.push(TextChunk {
+                    content: chunk_text,
+                    chunk_index: index,
+                });
+                index += 1;
+            }
+
+            if end == tokens.len() {
+                break;
+            }
+
+            start += step;
         }
 
         Ok(chunks)
@@ -194,4 +278,111 @@ impl TextProcessingService {
             .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
             .collect()
     }
+}
+
+fn build_pdf_subset(source: &Document, page_numbers: &[u32]) -> Result<Document, AppError> {
+    let source_pages = source.get_pages();
+    let selected_pages = page_numbers
+        .iter()
+        .filter_map(|page_number| source_pages.get(page_number).copied())
+        .collect::<Vec<_>>();
+
+    if selected_pages.is_empty() {
+        return Err(AppError::Internal(
+            "No PDF pages selected for subset".to_string(),
+        ));
+    }
+
+    let mut document = Document::with_version(source.version.as_str());
+    let mut catalog_object: Option<(ObjectId, Object)> = None;
+    let mut pages_object: Option<(ObjectId, Object)> = None;
+    let selected_set = selected_pages
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    let mut selected_page_objects = BTreeMap::new();
+
+    for (object_id, object) in source.objects.iter() {
+        match object.type_name().unwrap_or(b"") {
+            b"Catalog" => {
+                catalog_object = Some((
+                    catalog_object.map(|(id, _)| id).unwrap_or(*object_id),
+                    object.clone(),
+                ));
+            }
+            b"Pages" => {
+                if let Ok(dictionary) = object.as_dict() {
+                    let mut dictionary = dictionary.clone();
+                    if let Some((_, ref existing)) = pages_object {
+                        if let Ok(existing_dictionary) = existing.as_dict() {
+                            dictionary.extend(existing_dictionary);
+                        }
+                    }
+                    pages_object = Some((
+                        pages_object.map(|(id, _)| id).unwrap_or(*object_id),
+                        Object::Dictionary(dictionary),
+                    ));
+                }
+            }
+            b"Page" if selected_set.contains(object_id) => {
+                selected_page_objects.insert(*object_id, object.clone());
+            }
+            b"Page" | b"Outlines" | b"Outline" => {}
+            _ => {
+                document.objects.insert(*object_id, object.clone());
+            }
+        }
+    }
+
+    let catalog_object = catalog_object
+        .ok_or_else(|| AppError::Internal("Catalog root not found in PDF".to_string()))?;
+    let pages_object = pages_object
+        .ok_or_else(|| AppError::Internal("Pages root not found in PDF".to_string()))?;
+
+    for (object_id, object) in selected_page_objects.iter() {
+        if let Ok(dictionary) = object.as_dict() {
+            let mut dictionary = dictionary.clone();
+            dictionary.set("Parent", pages_object.0);
+            document
+                .objects
+                .insert(*object_id, Object::Dictionary(dictionary));
+        }
+    }
+
+    if let Ok(dictionary) = pages_object.1.as_dict() {
+        let mut dictionary = dictionary.clone();
+        dictionary.set("Count", selected_page_objects.len() as u32);
+        dictionary.set(
+            "Kids",
+            selected_page_objects
+                .keys()
+                .copied()
+                .map(Object::Reference)
+                .collect::<Vec<_>>(),
+        );
+        document
+            .objects
+            .insert(pages_object.0, Object::Dictionary(dictionary));
+    }
+
+    if let Ok(dictionary) = catalog_object.1.as_dict() {
+        let mut dictionary = dictionary.clone();
+        dictionary.set("Pages", pages_object.0);
+        dictionary.remove(b"Outlines");
+        document
+            .objects
+            .insert(catalog_object.0, Object::Dictionary(dictionary));
+    }
+
+    document.trailer.set("Root", catalog_object.0);
+    document.max_id = document
+        .objects
+        .keys()
+        .map(|(object_id, _)| *object_id)
+        .max()
+        .unwrap_or(1);
+    document.renumber_objects();
+    document.compress();
+
+    Ok(document)
 }

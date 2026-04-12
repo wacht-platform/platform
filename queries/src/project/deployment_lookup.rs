@@ -110,4 +110,3 @@ impl ActiveDeploymentIdsByProjectQuery {
         Ok(rows.into_iter().map(|r| r.id).collect())
     }
 }
-

@@ -23,7 +23,10 @@ impl DeploymentB2bBootstrapInsert {
         DeploymentB2bBootstrapInsertBuilder::default()
     }
 
-    pub(in crate::project) async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<(), AppError>
+    pub(in crate::project) async fn execute_with_db<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres> + Send,
     {
@@ -197,12 +200,18 @@ impl DeploymentB2bBootstrapInsertBuilder {
         self
     }
 
-    pub(in crate::project) fn workspace_creator_role_id(mut self, workspace_creator_role_id: i64) -> Self {
+    pub(in crate::project) fn workspace_creator_role_id(
+        mut self,
+        workspace_creator_role_id: i64,
+    ) -> Self {
         self.workspace_creator_role_id = Some(workspace_creator_role_id);
         self
     }
 
-    pub(in crate::project) fn workspace_member_role_id(mut self, workspace_member_role_id: i64) -> Self {
+    pub(in crate::project) fn workspace_member_role_id(
+        mut self,
+        workspace_member_role_id: i64,
+    ) -> Self {
         self.workspace_member_role_id = Some(workspace_member_role_id);
         self
     }
@@ -217,7 +226,10 @@ impl DeploymentB2bBootstrapInsertBuilder {
         self
     }
 
-    pub(in crate::project) fn b2b_settings(mut self, b2b_settings: DeploymentB2bSettingsWithRoles) -> Self {
+    pub(in crate::project) fn b2b_settings(
+        mut self,
+        b2b_settings: DeploymentB2bSettingsWithRoles,
+    ) -> Self {
         self.b2b_settings = Some(b2b_settings);
         self
     }

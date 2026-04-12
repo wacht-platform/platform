@@ -21,7 +21,6 @@ use crate::{
 pub struct AppState {
     pub db_router: DbRouter,
     pub s3_client: S3Client,
-    pub agent_storage_client: Option<S3Client>,
     pub sf: sonyflake::Sonyflake,
     pub redis_client: RedisClient,
     pub handlebars: handlebars::Handlebars<'static>,
@@ -133,34 +132,10 @@ impl AppState {
         let embedding_provider = EmbeddingProvider::new(
             env("GEMINI_API_KEY").unwrap_or_default(),
             env("GEMINI_EMBEDDING_MODEL")
-                .unwrap_or_else(|_| "models/gemini-embedding-001".to_string()),
+                .unwrap_or_else(|_| "models/gemini-embedding-2-preview".to_string()),
         );
 
         let encryption_service = EncryptionService::new(&env("ENCRYPTION_KEY")?)?;
-
-        let agent_storage_client = if let Ok(gateway_url) = env("AGENT_STORAGE_GATEWAY_URL") {
-            let access_key = env("AGENT_STORAGE_ACCESS_KEY").unwrap();
-            let secret_key = env("AGENT_STORAGE_SECRET_KEY").unwrap();
-
-            let client = S3Client::new(
-                &aws_config::defaults(BehaviorVersion::latest())
-                    .endpoint_url(gateway_url)
-                    .credentials_provider(aws_sdk_s3::config::Credentials::new(
-                        access_key,
-                        secret_key,
-                        None,
-                        None,
-                        "AgentStorage",
-                    ))
-                    .region(Region::new("us-east-1"))
-                    .load()
-                    .await,
-            );
-
-            Some(client)
-        } else {
-            None
-        };
 
         let wacht_client = WachtConfig::from_env()
             .ok()
@@ -169,7 +144,6 @@ impl AppState {
         Ok(Self {
             db_router,
             s3_client,
-            agent_storage_client,
             sf,
             redis_client,
             handlebars,

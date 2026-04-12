@@ -15,7 +15,10 @@ impl DeploymentSmsTemplatesInsert {
         DeploymentSmsTemplatesInsertBuilder::default()
     }
 
-    pub(in crate::project) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(in crate::project) async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -57,7 +60,10 @@ impl DeploymentSmsTemplatesInsertBuilder {
         self
     }
 
-    pub(in crate::project) fn sms_templates(mut self, sms_templates: DeploymentSmsTemplate) -> Self {
+    pub(in crate::project) fn sms_templates(
+        mut self,
+        sms_templates: DeploymentSmsTemplate,
+    ) -> Self {
         self.sms_templates = Some(sms_templates);
         self
     }
@@ -73,4 +79,3 @@ impl DeploymentSmsTemplatesInsertBuilder {
         Ok(DeploymentSmsTemplatesInsert { id, sms_templates })
     }
 }
-

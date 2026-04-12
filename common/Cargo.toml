@@ -27,6 +27,12 @@ regex = "1.10.2"
 argon2 = "0.5.3"
 totp-rs = "5.4.0"
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json", "registry"] }
+tracing-opentelemetry = "0.32.0"
+opentelemetry = { version = "0.31", features = ["logs"] }
+opentelemetry_sdk = { version = "0.31", features = ["trace", "logs", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.31", default-features = false, features = ["trace", "logs", "http-proto", "reqwest-blocking-client"] }
+opentelemetry-appender-tracing = "0.31.1"
 base64 = "0.22.1"
 jsonwebtoken = "9.3"
 hmac = "0.12"
@@ -47,9 +53,13 @@ encoding_rs = "0.8"
 pgvector = { version = "0.4.1", features = ["sqlx", "serde", "halfvec"] }
 pulldown-cmark = "0.12.2"
 pdf-extract = "0.7.9"
+lopdf = "0.40.0"
 quick-xml = { version = "0.37.2", features = ["serialize"] }
 rust_decimal = "1.36"
 aes-gcm = "0.10"
 lettre = { version = "0.11", features = ["tokio1", "tokio1-native-tls", "smtp-transport", "builder"] }
 tokio = { version = "1", features = ["rt"] }
 wacht = { version = "0.1.0-beta.1" }
+lancedb = { version = "0.27.2", features = ["aws"] }
+arrow-array = "57.3.0"
+arrow-schema = "57.3.0"

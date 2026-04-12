@@ -15,7 +15,10 @@ impl DeleteDeploymentSocialConnectionsByIds {
         self
     }
 
-    pub(in crate::project) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(in crate::project) async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -57,7 +60,10 @@ impl DeleteDeploymentAuthSettingsByIds {
         self
     }
 
-    pub(in crate::project) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(in crate::project) async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -99,7 +105,10 @@ impl DeleteDeploymentUiSettingsByIds {
         self
     }
 
-    pub(in crate::project) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(in crate::project) async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -141,7 +150,10 @@ impl DeleteDeploymentB2bSettingsByIds {
         self
     }
 
-    pub(in crate::project) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(in crate::project) async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -183,7 +195,10 @@ impl DeleteDeploymentsByProject {
         self
     }
 
-    pub(in crate::project) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(in crate::project) async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -220,7 +235,10 @@ impl DeleteProjectById {
         self
     }
 
-    pub(in crate::project) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(in crate::project) async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {

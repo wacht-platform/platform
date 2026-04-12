@@ -1,28 +1,16 @@
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-pub fn init_tracing() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-}
-
-pub fn init_runtime_default_env() {
+pub fn init_runtime_default_env(service_name: &str) {
     dotenvy::dotenv().ok();
-    init_tracing();
+    common::init_telemetry(service_name).expect("failed to initialize telemetry");
 }
 
-pub fn init_runtime_default_env_with_rustls() {
+pub fn init_runtime_default_env_with_rustls(service_name: &str) {
     dotenvy::dotenv().ok();
     let _ = rustls::crypto::ring::default_provider().install_default();
-    init_tracing();
+    common::init_telemetry(service_name).expect("failed to initialize telemetry");
 }
 
-pub fn init_runtime_override_env_with_rustls() {
+pub fn init_runtime_override_env_with_rustls(service_name: &str) {
     dotenvy::dotenv_override().ok();
     let _ = rustls::crypto::ring::default_provider().install_default();
-    init_tracing();
+    common::init_telemetry(service_name).expect("failed to initialize telemetry");
 }

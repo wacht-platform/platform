@@ -1,5 +1,5 @@
 use common::error::AppError;
-use models::{AiAgent, AiAgentWithDetails, AiAgentWithFeatures};
+use models::{AiAgentWithDetails, AiAgentWithFeatures};
 use serde::de::DeserializeOwned;
 
 fn parse_optional_json<T: DeserializeOwned>(
@@ -268,179 +268,6 @@ impl GetAiAgentsByIdsQuery {
     }
 }
 
-pub struct GetAiAgentByNameQuery {
-    pub deployment_id: i64,
-    pub agent_name: String,
-}
-
-impl GetAiAgentByNameQuery {
-    pub fn new(deployment_id: i64, agent_name: String) -> Self {
-        Self {
-            deployment_id,
-            agent_name,
-        }
-    }
-
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<AiAgent, AppError>
-    where
-        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-    {
-        let agent = sqlx::query!(
-            r#"
-            SELECT id, created_at, updated_at, name, description, configuration, deployment_id, sub_agents, spawn_config
-            FROM ai_agents
-            WHERE name = $1 AND deployment_id = $2
-            "#,
-            self.agent_name,
-            self.deployment_id
-        )
-        .fetch_one(executor)
-        .await
-        .map_err(|e| AppError::Database(e))?;
-
-        let sub_agents = parse_optional_json(agent.sub_agents, "sub_agents")?;
-        let spawn_config = parse_optional_json(agent.spawn_config, "spawn_config")?;
-
-        Ok(AiAgent {
-            id: agent.id,
-            created_at: agent.created_at,
-            updated_at: agent.updated_at,
-            name: agent.name,
-            description: agent.description,
-            configuration: agent.configuration,
-            deployment_id: agent.deployment_id,
-            sub_agents,
-            spawn_config,
-        })
-    }
-}
-
-pub struct GetAiAgentByNameWithFeatures {
-    pub deployment_id: i64,
-    pub agent_name: String,
-}
-
-impl GetAiAgentByNameWithFeatures {
-    pub fn new(deployment_id: i64, agent_name: String) -> Self {
-        Self {
-            deployment_id,
-            agent_name,
-        }
-    }
-
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<AiAgentWithFeatures, AppError>
-    where
-        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-    {
-        let row = sqlx::query!(
-            r#"
-            SELECT
-                a.id,
-                a.created_at,
-                a.updated_at,
-                a.name,
-                a.description,
-                a.deployment_id,
-                a.configuration,
-                a.sub_agents,
-                a.spawn_config,
-                tools.list as "tools!: serde_json::Value",
-                knowledge_bases.list as "knowledge_bases!: serde_json::Value",
-                integrations.list as "integrations!: serde_json::Value"
-            FROM
-                ai_agents a
-            LEFT JOIN LATERAL (
-                SELECT COALESCE(jsonb_agg(
-                    jsonb_build_object(
-                        'id', t.id::text,
-                        'created_at', t.created_at,
-                        'updated_at', t.updated_at,
-                        'name', t.name,
-                        'description', t.description,
-                        'tool_type', t.tool_type,
-                        'deployment_id', t.deployment_id::text,
-                        'configuration', t.configuration
-                    )
-                ), '[]'::jsonb) as list
-                FROM ai_tools t
-                JOIN ai_agent_tools at ON at.tool_id = t.id
-                WHERE t.deployment_id = a.deployment_id
-                    AND at.agent_id = a.id
-                    AND at.deployment_id = a.deployment_id
-            ) tools ON true
-            LEFT JOIN LATERAL (
-                SELECT COALESCE(jsonb_agg(
-                    jsonb_build_object(
-                        'id', k.id::text,
-                        'created_at', k.created_at,
-                        'updated_at', k.updated_at,
-                        'name', k.name,
-                        'description', k.description,
-                        'deployment_id', k.deployment_id::text,
-                        'configuration', k.configuration
-                    )
-                ), '[]'::jsonb) as list
-                FROM ai_knowledge_bases k
-                JOIN ai_agent_knowledge_bases ak ON ak.knowledge_base_id = k.id
-                WHERE k.deployment_id = a.deployment_id
-                    AND ak.agent_id = a.id
-                    AND ak.deployment_id = a.deployment_id
-            ) knowledge_bases ON true
-            LEFT JOIN LATERAL (
-                SELECT COALESCE(jsonb_agg(
-                    jsonb_build_object(
-                        'id', i.id::text,
-                        'created_at', i.created_at,
-                        'updated_at', i.updated_at,
-                        'name', i.name,
-                        'deployment_id', i.deployment_id::text,
-                        'agent_id', i.agent_id::text,
-                        'integration_type', i.integration_type,
-                        'config', i.config
-                    )
-                ), '[]'::jsonb) as list
-                FROM agent_integrations i
-                WHERE i.deployment_id = a.deployment_id
-                    AND i.agent_id = a.id
-            ) integrations ON true
-            WHERE
-                a.name = $1 AND a.deployment_id = $2
-            "#,
-            self.agent_name,
-            self.deployment_id
-        )
-        .fetch_one(executor)
-        .await
-        .map_err(AppError::Database)?;
-
-        let tools = serde_json::from_value(row.tools)
-            .map_err(|e| AppError::Internal(format!("Failed to deserialize tools: {}", e)))?;
-        let knowledge_bases = serde_json::from_value(row.knowledge_bases).map_err(|e| {
-            AppError::Internal(format!("Failed to deserialize knowledge bases: {}", e))
-        })?;
-        let integrations = serde_json::from_value(row.integrations).map_err(|e| {
-            AppError::Internal(format!("Failed to deserialize integrations: {}", e))
-        })?;
-
-        let sub_agents = parse_optional_json(row.sub_agents, "sub_agents")?;
-        let spawn_config = parse_optional_json(row.spawn_config, "spawn_config")?;
-
-        Ok(AiAgentWithFeatures {
-            id: row.id,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            description: row.description,
-            name: row.name,
-            deployment_id: row.deployment_id,
-            configuration: row.configuration,
-            tools,
-            knowledge_bases,
-            integrations,
-            sub_agents,
-            spawn_config,
-        })
-    }
-}
 
 pub struct GetAiAgentByIdWithFeatures {
     pub agent_id: i64,
@@ -468,8 +295,7 @@ impl GetAiAgentByIdWithFeatures {
                 a.sub_agents,
                 a.spawn_config,
                 tools.list as "tools!: serde_json::Value",
-                knowledge_bases.list as "knowledge_bases!: serde_json::Value",
-                integrations.list as "integrations!: serde_json::Value"
+                knowledge_bases.list as "knowledge_bases!: serde_json::Value"
             FROM ai_agents a
             LEFT JOIN LATERAL (
                 SELECT COALESCE(jsonb_agg(
@@ -481,6 +307,7 @@ impl GetAiAgentByIdWithFeatures {
                         'description', t.description,
                         'tool_type', t.tool_type,
                         'deployment_id', t.deployment_id::text,
+                        'requires_user_approval', t.requires_user_approval,
                         'configuration', t.configuration
                     )
                 ), '[]'::jsonb) as list
@@ -508,23 +335,6 @@ impl GetAiAgentByIdWithFeatures {
                     AND ak.agent_id = a.id
                     AND ak.deployment_id = a.deployment_id
             ) knowledge_bases ON true
-            LEFT JOIN LATERAL (
-                SELECT COALESCE(jsonb_agg(
-                    jsonb_build_object(
-                        'id', i.id::text,
-                        'created_at', i.created_at,
-                        'updated_at', i.updated_at,
-                        'name', i.name,
-                        'deployment_id', i.deployment_id::text,
-                        'agent_id', i.agent_id::text,
-                        'integration_type', i.integration_type,
-                        'config', i.config
-                    )
-                ), '[]'::jsonb) as list
-                FROM agent_integrations i
-                WHERE i.deployment_id = a.deployment_id
-                    AND i.agent_id = a.id
-            ) integrations ON true
             WHERE a.id = $1
             "#,
             self.agent_id
@@ -538,10 +348,6 @@ impl GetAiAgentByIdWithFeatures {
         let knowledge_bases = serde_json::from_value(row.knowledge_bases).map_err(|e| {
             AppError::Internal(format!("Failed to deserialize knowledge bases: {}", e))
         })?;
-        let integrations = serde_json::from_value(row.integrations).map_err(|e| {
-            AppError::Internal(format!("Failed to deserialize integrations: {}", e))
-        })?;
-
         let sub_agents = parse_optional_json(row.sub_agents, "sub_agents")?;
         let spawn_config = parse_optional_json(row.spawn_config, "spawn_config")?;
 
@@ -555,7 +361,6 @@ impl GetAiAgentByIdWithFeatures {
             configuration: row.configuration,
             tools,
             knowledge_bases,
-            integrations,
             sub_agents,
             spawn_config,
         })

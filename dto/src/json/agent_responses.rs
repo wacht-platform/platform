@@ -13,9 +13,6 @@ pub struct IdeationResponse {
     pub needs_more_iteration: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_search_request: Option<String>,
-    pub requires_user_input: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user_input_request: Option<String>,
     pub execution_plan: ExecutionPlan,
 }
 
@@ -72,9 +69,6 @@ pub struct ContextGatheringResponse {
     pub needs_more_context: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strategic_context_request: Option<String>,
-    pub requires_user_input: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user_input_request: Option<String>,
     pub strategic_readiness: bool,
 }
 

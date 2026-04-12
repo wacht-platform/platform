@@ -1,6 +1,6 @@
 use axum::http::StatusCode;
 use commands::notification::CreateNotificationCommand;
-use dto::json::FlexibleI64;
+use models::FlexibleI64;
 use models::notification::{Notification, NotificationSeverity};
 use queries::{
     GetOrganizationNotificationRecipientUserIdsQuery, GetWorkspaceNotificationRecipientUserIdsQuery,
@@ -10,8 +10,8 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeSet;
 
 use crate::application::AppState;
-use common::deps;
 use crate::application::response::ApiResult;
+use common::deps;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateNotificationRequest {
@@ -208,12 +208,7 @@ pub async fn create_notification(
             expires_hours,
         );
 
-        created.push(
-            command
-                .build()?
-                .execute_with_deps(&command_deps)
-                .await?,
-        );
+        created.push(command.build()?.execute_with_deps(&command_deps).await?);
     }
 
     Ok(created.into())

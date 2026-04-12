@@ -17,7 +17,10 @@ impl ConsoleAppBootstrapInsert {
         ConsoleAppBootstrapInsertBuilder::default()
     }
 
-    pub(in crate::project) async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<(), AppError>
+    pub(in crate::project) async fn execute_with_db<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres> + Send,
     {
@@ -75,7 +78,10 @@ impl ConsoleAppBootstrapInsertBuilder {
         self
     }
 
-    pub(in crate::project) fn event_catalog_slug(mut self, event_catalog_slug: impl Into<String>) -> Self {
+    pub(in crate::project) fn event_catalog_slug(
+        mut self,
+        event_catalog_slug: impl Into<String>,
+    ) -> Self {
         self.event_catalog_slug = Some(event_catalog_slug.into());
         self
     }

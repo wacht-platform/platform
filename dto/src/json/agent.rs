@@ -3,16 +3,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::str::FromStr;
 
-use crate::json::{PlatformEventPayload, PlatformFunctionPayload};
+use crate::json::PlatformEventPayload;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentStreamMessageType {
     ConversationMessage,
     PlatformEvent,
-    PlatformFunction,
-    UserInputRequest,
-    ChildAgentCompleted,
 }
 
 impl AgentStreamMessageType {
@@ -20,19 +17,13 @@ impl AgentStreamMessageType {
         match self {
             Self::ConversationMessage => "conversation_message",
             Self::PlatformEvent => "platform_event",
-            Self::PlatformFunction => "platform_function",
-            Self::UserInputRequest => "user_input_request",
-            Self::ChildAgentCompleted => "child_agent_completed",
         }
     }
 
     pub fn webhook_event_name(self) -> &'static str {
         match self {
-            Self::ConversationMessage => "execution_context.message",
-            Self::PlatformEvent => "execution_context.platform_event",
-            Self::PlatformFunction => "execution_context.platform_function",
-            Self::UserInputRequest => "execution_context.user_input_request",
-            Self::ChildAgentCompleted => "execution_context.child_agent_completed",
+            Self::ConversationMessage => "execution_thread.message",
+            Self::PlatformEvent => "execution_thread.platform_event",
         }
     }
 }
@@ -44,9 +35,6 @@ impl FromStr for AgentStreamMessageType {
         match value {
             "conversation_message" => Ok(Self::ConversationMessage),
             "platform_event" => Ok(Self::PlatformEvent),
-            "platform_function" => Ok(Self::PlatformFunction),
-            "user_input_request" => Ok(Self::UserInputRequest),
-            "child_agent_completed" => Ok(Self::ChildAgentCompleted),
             _ => Err(()),
         }
     }
@@ -55,33 +43,16 @@ impl FromStr for AgentStreamMessageType {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StreamEvent {
     PlatformEvent(String, serde_json::Value),
-    PlatformFunction(String, serde_json::Value),
     ConversationMessage(ConversationRecord),
-    UserInputRequest(models::ConversationContent),
-    ChildAgentCompleted {
-        child_context_id: i64,
-        status: String,
-        summary: Option<Value>,
-    },
 }
 
 impl StreamEvent {
     pub fn message_type(&self) -> AgentStreamMessageType {
         match self {
             StreamEvent::PlatformEvent(_, _) => AgentStreamMessageType::PlatformEvent,
-            StreamEvent::PlatformFunction(_, _) => AgentStreamMessageType::PlatformFunction,
             StreamEvent::ConversationMessage(_) => AgentStreamMessageType::ConversationMessage,
-            StreamEvent::UserInputRequest(_) => AgentStreamMessageType::UserInputRequest,
-            StreamEvent::ChildAgentCompleted { .. } => AgentStreamMessageType::ChildAgentCompleted,
         }
     }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ChildAgentCompletedPayload {
-    pub child_context_id: i64,
-    pub status: String,
-    pub summary: Option<Value>,
 }
 
 pub fn encode_stream_event(
@@ -98,29 +69,6 @@ pub fn encode_stream_event(
                 event_data: event_data.clone(),
             })?;
             Ok((AgentStreamMessageType::PlatformEvent, payload))
-        }
-        StreamEvent::PlatformFunction(function_name, function_data) => {
-            let payload = serde_json::to_vec(&PlatformFunctionPayload {
-                function_name: function_name.clone(),
-                function_data: function_data.clone(),
-            })?;
-            Ok((AgentStreamMessageType::PlatformFunction, payload))
-        }
-        StreamEvent::UserInputRequest(user_input_content) => {
-            let payload = serde_json::to_vec(user_input_content)?;
-            Ok((AgentStreamMessageType::UserInputRequest, payload))
-        }
-        StreamEvent::ChildAgentCompleted {
-            child_context_id,
-            status,
-            summary,
-        } => {
-            let payload = serde_json::to_vec(&ChildAgentCompletedPayload {
-                child_context_id: *child_context_id,
-                status: status.clone(),
-                summary: summary.clone(),
-            })?;
-            Ok((AgentStreamMessageType::ChildAgentCompleted, payload))
         }
     }
 }
@@ -141,26 +89,6 @@ pub fn decode_stream_event(
                 event.event_label,
                 event.event_data,
             ))
-        }
-        AgentStreamMessageType::PlatformFunction => {
-            let event = serde_json::from_slice::<PlatformFunctionPayload>(payload)?;
-            Ok(StreamEvent::PlatformFunction(
-                event.function_name,
-                event.function_data,
-            ))
-        }
-        AgentStreamMessageType::UserInputRequest => {
-            Ok(StreamEvent::UserInputRequest(serde_json::from_slice::<
-                models::ConversationContent,
-            >(payload)?))
-        }
-        AgentStreamMessageType::ChildAgentCompleted => {
-            let event = serde_json::from_slice::<ChildAgentCompletedPayload>(payload)?;
-            Ok(StreamEvent::ChildAgentCompleted {
-                child_context_id: event.child_context_id,
-                status: event.status,
-                summary: event.summary,
-            })
         }
     }
 }

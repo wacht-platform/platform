@@ -91,12 +91,9 @@ pub async fn create_deployment_jwt_template(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(template): Json<NewDeploymentJwtTemplate>,
 ) -> ApiResult<DeploymentJwtTemplate> {
-    let jwt_template = deployment_settings::create_deployment_jwt_template(
-        &app_state,
-        deployment_id,
-        template,
-    )
-    .await?;
+    let jwt_template =
+        deployment_settings::create_deployment_jwt_template(&app_state, deployment_id, template)
+            .await?;
     Ok(jwt_template.into())
 }
 

@@ -343,21 +343,9 @@ impl GetApiKeyIdentifiersByHashQuery {
         Ok(rec.map(|rec| ApiKeyWithIdentifers {
             id: rec.id,
             app_slug: rec.app_slug,
-            permissions: json_default(
-                rec.permissions
-                    .clone()
-                    .unwrap_or_else(|| serde_json::json!([])),
-            ),
-            org_role_permissions: if rec.org_role_permissions.is_null() {
-                vec![]
-            } else {
-                json_default(rec.org_role_permissions.clone())
-            },
-            workspace_role_permissions: if rec.workspace_role_permissions.is_null() {
-                vec![]
-            } else {
-                json_default(rec.workspace_role_permissions.clone())
-            },
+            permissions: parse_json_array(rec.permissions),
+            org_role_permissions: parse_json_array(Some(rec.org_role_permissions)),
+            workspace_role_permissions: parse_json_array(Some(rec.workspace_role_permissions)),
             organization_id: rec.organization_id,
             workspace_id: rec.workspace_id,
             organization_membership_id: rec.organization_membership_id,

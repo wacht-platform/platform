@@ -2,7 +2,9 @@ use super::*;
 
 pub(super) fn backend_domain(backend_host: &str) -> &str {
     if backend_host.starts_with("frontend.") {
-        backend_host.strip_prefix("frontend.").unwrap_or(backend_host)
+        backend_host
+            .strip_prefix("frontend.")
+            .unwrap_or(backend_host)
     } else {
         backend_host
     }
@@ -20,7 +22,9 @@ where
     let records = value
         .map(serde_json::from_value)
         .transpose()
-        .map_err(|e| AppError::Internal(format!("Invalid domain_verification_records JSON: {}", e)))?
+        .map_err(|e| {
+            AppError::Internal(format!("Invalid domain_verification_records JSON: {}", e))
+        })?
         .unwrap_or_else(|| {
             deps.cloudflare_provider()
                 .generate_domain_verification_records(frontend_host, backend_host)

@@ -15,8 +15,7 @@ use super::types::OAuthAppPathParams;
 
 async fn parse_create_oauth_app_input(
     multipart: Multipart,
-) -> Result<oauth_app_app::CreateOAuthAppInput, crate::application::response::ApiErrorResponse>
-{
+) -> Result<oauth_app_app::CreateOAuthAppInput, crate::application::response::ApiErrorResponse> {
     let mut slug: Option<String> = None;
     let mut name: Option<String> = None;
     let mut description: Option<String> = None;
@@ -89,12 +88,9 @@ pub(crate) async fn verify_oauth_app_domain(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OAuthAppPathParams>,
 ) -> ApiResult<VerifyOAuthAppDomainResponse> {
-    let result = oauth_app_app::verify_oauth_app_domain(
-        &app_state,
-        deployment_id,
-        params.oauth_app_slug,
-    )
-    .await?;
+    let result =
+        oauth_app_app::verify_oauth_app_domain(&app_state, deployment_id, params.oauth_app_slug)
+            .await?;
     Ok(result.into())
 }
 
@@ -122,12 +118,8 @@ pub(crate) async fn update_oauth_app(
     Path(params): Path<OAuthAppPathParams>,
     Json(request): Json<UpdateOAuthAppRequest>,
 ) -> ApiResult<OAuthAppResponse> {
-    let app = oauth_app_app::update_oauth_app(
-        &app_state,
-        deployment_id,
-        params.oauth_app_slug,
-        request,
-    )
-    .await?;
+    let app =
+        oauth_app_app::update_oauth_app(&app_state, deployment_id, params.oauth_app_slug, request)
+            .await?;
     Ok(app.into())
 }

@@ -1,5 +1,5 @@
-use common::{EncryptionService, HasDbRouter, HasEncryptionProvider, error::AppError};
 use common::json_utils::json_default;
+use common::{EncryptionService, HasDbRouter, HasEncryptionProvider, error::AppError};
 use models::api_key::JwksDocument;
 use queries::oauth::OAuthClientData;
 use sha2::{Digest, Sha256};
@@ -49,7 +49,10 @@ fn validate_optional_url(field_name: &str, value: Option<&str>) -> Result<(), Ap
     Ok(())
 }
 
-fn validate_redirect_uris(redirect_uris: &[String], grant_types: &[String]) -> Result<(), AppError> {
+fn validate_redirect_uris(
+    redirect_uris: &[String],
+    grant_types: &[String],
+) -> Result<(), AppError> {
     let requires_redirect = grant_types.iter().any(|g| g == "authorization_code");
     if requires_redirect && redirect_uris.is_empty() {
         return Err(AppError::Validation(

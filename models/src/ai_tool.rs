@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AiTool {
@@ -13,6 +14,8 @@ pub struct AiTool {
     pub tool_type: AiToolType,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
+    #[serde(default)]
+    pub requires_user_approval: bool,
     pub configuration: AiToolConfiguration,
 }
 
@@ -28,6 +31,8 @@ pub struct AiToolWithDetails {
     pub tool_type: AiToolType,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
+    #[serde(default)]
+    pub requires_user_approval: bool,
     pub configuration: AiToolConfiguration,
 }
 
@@ -36,7 +41,7 @@ pub struct AiToolWithDetails {
 pub enum AiToolType {
     Api,
     PlatformEvent,
-    PlatformFunction,
+    CodeRunner,
     Internal,
     UseExternalService,
 }
@@ -46,7 +51,7 @@ pub enum AiToolType {
 pub enum AiToolConfiguration {
     Api(ApiToolConfiguration),
     PlatformEvent(PlatformEventToolConfiguration),
-    PlatformFunction(PlatformFunctionToolConfiguration),
+    CodeRunner(CodeRunnerToolConfiguration),
     Internal(InternalToolConfiguration),
     UseExternalService(UseExternalServiceToolConfiguration),
 }
@@ -54,6 +59,7 @@ pub enum AiToolConfiguration {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ApiToolConfiguration {
     pub endpoint: String,
+    #[serde(default)]
     pub method: HttpMethod,
     pub authorization: Option<AuthorizationConfiguration>,
     pub request_body_schema: Option<Vec<SchemaField>>,
@@ -67,16 +73,33 @@ pub struct PlatformEventToolConfiguration {
     pub event_data: Option<serde_json::Value>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct PlatformFunctionToolConfiguration {
-    pub function_name: String,
-    pub function_description: Option<String>,
-    pub input_schema: Option<Vec<SchemaField>>,
-    pub output_schema: Option<Vec<SchemaField>>,
-    pub is_overridable: bool,
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum CodeRunnerRuntime {
+    Python,
 }
 
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CodeRunnerToolConfiguration {
+    #[serde(default)]
+    pub runtime: CodeRunnerRuntime,
+    pub code: String,
+    pub input_schema: Option<Vec<SchemaField>>,
+    pub output_schema: Option<Vec<SchemaField>>,
+    #[serde(default)]
+    pub env_variables: Option<Vec<CodeRunnerEnvVariable>>,
+    pub timeout_seconds: Option<u32>,
+    #[serde(default)]
+    pub allow_network: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CodeRunnerEnvVariable {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct SchemaField {
     #[serde(default)]
     pub name: String,
@@ -85,35 +108,155 @@ pub struct SchemaField {
     #[serde(default)]
     pub required: bool,
     #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
+    pub enum_values: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub format: Option<String>,
+    #[serde(default)]
+    pub minimum: Option<f64>,
+    #[serde(default)]
+    pub maximum: Option<f64>,
+    #[serde(default)]
     pub items_type: Option<String>,
+    #[serde(default)]
+    pub items_schema: Option<Box<SchemaField>>,
+    #[serde(default)]
+    pub min_items: Option<usize>,
+    #[serde(default)]
+    pub max_items: Option<usize>,
+    #[serde(default)]
+    pub properties: Option<Vec<SchemaField>>,
+}
+
+impl SchemaField {
+    pub fn to_json_schema(&self) -> Value {
+        let field_type = match self.field_type.as_str() {
+            "STRING" => "string",
+            "INTEGER" => "integer",
+            "NUMBER" => "number",
+            "BOOLEAN" => "boolean",
+            "ARRAY" => "array",
+            "OBJECT" => "object",
+            _ => "string",
+        };
+
+        let mut schema = serde_json::Map::new();
+        schema.insert("type".to_string(), json!(field_type));
+        if let Some(title) = &self.title {
+            schema.insert("title".to_string(), json!(title));
+        }
+        if let Some(description) = &self.description {
+            schema.insert("description".to_string(), json!(description));
+        }
+        if let Some(enum_values) = &self.enum_values {
+            schema.insert("enum".to_string(), json!(enum_values));
+        }
+        if let Some(format) = &self.format {
+            schema.insert("format".to_string(), json!(format));
+        }
+        if let Some(minimum) = self.minimum {
+            schema.insert("minimum".to_string(), json!(minimum));
+        }
+        if let Some(maximum) = self.maximum {
+            schema.insert("maximum".to_string(), json!(maximum));
+        }
+
+        if field_type == "array" {
+            if let Some(items_type) = &self.items_type {
+                let item_type = match items_type.as_str() {
+                    "STRING" => "string",
+                    "INTEGER" => "integer",
+                    "NUMBER" => "number",
+                    "BOOLEAN" => "boolean",
+                    "OBJECT" => "object",
+                    _ => "string",
+                };
+                schema.insert("items".to_string(), json!({ "type": item_type }));
+            } else if let Some(items_schema) = &self.items_schema {
+                schema.insert("items".to_string(), items_schema.to_json_schema());
+            }
+            if let Some(min_items) = self.min_items {
+                schema.insert("minItems".to_string(), json!(min_items));
+            }
+            if let Some(max_items) = self.max_items {
+                schema.insert("maxItems".to_string(), json!(max_items));
+            }
+        } else if field_type == "object" {
+            let object_schema =
+                Self::object_json_schema(self.properties.as_deref().unwrap_or(&[]));
+            if let Some(properties) = object_schema.get("properties") {
+                schema.insert("properties".to_string(), properties.clone());
+            }
+            if let Some(required) = object_schema.get("required") {
+                schema.insert("required".to_string(), required.clone());
+            }
+            if let Some(additional_properties) = object_schema.get("additionalProperties") {
+                schema.insert(
+                    "additionalProperties".to_string(),
+                    additional_properties.clone(),
+                );
+            }
+        }
+
+        Value::Object(schema)
+    }
+
+    pub fn object_json_schema(fields: &[SchemaField]) -> Value {
+        let mut properties = serde_json::Map::new();
+        let mut required = Vec::new();
+
+        for field in fields {
+            if field.required {
+                required.push(field.name.clone());
+            }
+            properties.insert(field.name.clone(), field.to_json_schema());
+        }
+
+        let mut schema = serde_json::Map::new();
+        schema.insert("type".to_string(), json!("object"));
+        schema.insert("properties".to_string(), Value::Object(properties));
+        schema.insert("additionalProperties".to_string(), Value::Bool(false));
+        if !required.is_empty() {
+            schema.insert("required".to_string(), json!(required));
+        }
+        Value::Object(schema)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum InternalToolType {
     ReadImage,
+    ReadFile,
     WriteFile,
+    EditFile,
     ExecuteCommand,
     Sleep,
-    SwitchExecutionMode,
-    UpdateTaskBoard,
-    ExitSupervisorMode,
+    SnapshotExecutionState,
+    WebSearch,
+    UrlContent,
+    SearchKnowledgebase,
+    LoadMemory,
+    SearchTools,
+    LoadTools,
+    CreateProjectTask,
+    UpdateProjectTask,
+    AssignProjectTask,
+    AppendTaskJournal,
+    ListThreads,
+    CreateThread,
+    UpdateThread,
     SaveMemory,
-    UpdateStatus,
-    GetChildStatus,
-    SpawnContext,
-    SpawnControl,
-    GetCompletionSummary,
-    NotifyParent,
-    GetChildMessages,
     TaskGraphAddNode,
     TaskGraphAddDependency,
     TaskGraphMarkInProgress,
     TaskGraphCompleteNode,
     TaskGraphFailNode,
     TaskGraphMarkCompleted,
+    TaskGraphMarkFailed,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -133,7 +276,6 @@ pub enum UseExternalServiceToolType {
     TeamsTranscribeMeeting,
     TeamsSaveAttachment,
     TeamsListContexts,
-    SpawnContextExecution,
     #[serde(rename = "clickup_create_task")]
     ClickUpCreateTask,
     #[serde(rename = "clickup_create_list")]
@@ -195,8 +337,7 @@ impl UseExternalServiceToolType {
 
             UseExternalServiceToolType::McpCallTool => Some("mcp"),
 
-            UseExternalServiceToolType::SpawnContextExecution
-            | UseExternalServiceToolType::TeamsSendContextMessage => None,
+            UseExternalServiceToolType::TeamsSendContextMessage => None,
         }
     }
 
@@ -264,7 +405,7 @@ impl From<String> for AiToolType {
         match tool_type.as_str() {
             "api" => AiToolType::Api,
             "platform_event" => AiToolType::PlatformEvent,
-            "platform_function" => AiToolType::PlatformFunction,
+            "code_runner" => AiToolType::CodeRunner,
             "internal" => AiToolType::Internal,
             "use_external_service" => AiToolType::UseExternalService,
             _ => AiToolType::Api,
@@ -277,7 +418,7 @@ impl From<AiToolType> for String {
         match tool_type {
             AiToolType::Api => "api".to_string(),
             AiToolType::PlatformEvent => "platform_event".to_string(),
-            AiToolType::PlatformFunction => "platform_function".to_string(),
+            AiToolType::CodeRunner => "code_runner".to_string(),
             AiToolType::Internal => "internal".to_string(),
             AiToolType::UseExternalService => "use_external_service".to_string(),
         }
@@ -335,14 +476,28 @@ impl Default for ApiToolConfiguration {
     }
 }
 
-impl Default for PlatformFunctionToolConfiguration {
+impl Default for HttpMethod {
+    fn default() -> Self {
+        Self::GET
+    }
+}
+
+impl Default for CodeRunnerRuntime {
+    fn default() -> Self {
+        Self::Python
+    }
+}
+
+impl Default for CodeRunnerToolConfiguration {
     fn default() -> Self {
         Self {
-            function_name: "".to_string(),
-            function_description: None,
+            runtime: CodeRunnerRuntime::Python,
+            code: String::new(),
             input_schema: None,
             output_schema: None,
-            is_overridable: true,
+            env_variables: None,
+            timeout_seconds: Some(30),
+            allow_network: false,
         }
     }
 }

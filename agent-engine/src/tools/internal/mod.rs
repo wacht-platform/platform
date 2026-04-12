@@ -1,100 +1,108 @@
+mod delegation;
 mod filesystem;
+mod knowledge;
 mod memory;
-mod swarm;
 mod task_graph;
+mod web;
 
 use super::ToolExecutor;
 use common::error::AppError;
-use models::{AiTool, InternalToolConfiguration, InternalToolType};
-use serde::de::DeserializeOwned;
+use dto::json::agent_executor::ToolCallRequest;
+use models::AiTool;
 use serde_json::Value;
 
 impl ToolExecutor {
-    pub(super) async fn execute_internal_tool(
+    pub(super) async fn execute_internal_tool_request(
         &self,
         tool: &AiTool,
-        config: &InternalToolConfiguration,
-        execution_params: &Value,
+        request: &ToolCallRequest,
         filesystem: &crate::filesystem::AgentFilesystem,
         shell: &crate::filesystem::shell::ShellExecutor,
     ) -> Result<Value, AppError> {
-        tracing::info!(
-            tool_name = %tool.name,
-            params = %execution_params,
-            "Executing internal tool"
-        );
-
-        match config.tool_type {
-            InternalToolType::ReadImage
-            | InternalToolType::WriteFile
-            | InternalToolType::ExecuteCommand => {
-                self.execute_filesystem_tool(
-                    tool,
-                    config.tool_type.clone(),
-                    execution_params,
-                    filesystem,
-                    shell,
-                )
-                .await
-            }
-            InternalToolType::SaveMemory => {
-                self.execute_save_memory_tool(tool, execution_params).await
-            }
-            InternalToolType::Sleep => self.execute_sleep_tool(tool, execution_params).await,
-            InternalToolType::UpdateStatus => {
-                self.execute_update_status_tool(tool, execution_params)
+        match request {
+            ToolCallRequest::ReadImage { params, .. } => {
+                self.execute_read_image(tool, filesystem, params.clone())
                     .await
             }
-            InternalToolType::TaskGraphAddNode => {
-                self.execute_task_graph_add_node_tool(tool, execution_params)
+            ToolCallRequest::ReadFile { params, .. } => {
+                self.execute_read_file(tool, filesystem, params.clone())
                     .await
             }
-            InternalToolType::TaskGraphAddDependency => {
-                self.execute_task_graph_add_dependency_tool(tool, execution_params)
+            ToolCallRequest::WriteFile { params, .. } => {
+                self.execute_write_file(tool, filesystem, params.clone())
                     .await
             }
-            InternalToolType::TaskGraphMarkInProgress => {
-                self.execute_task_graph_mark_in_progress_tool(tool, execution_params)
+            ToolCallRequest::EditFile { params, .. } => {
+                self.execute_edit_file(tool, filesystem, params.clone())
                     .await
             }
-            InternalToolType::TaskGraphCompleteNode => {
-                self.execute_task_graph_complete_node_tool(tool, execution_params)
+            ToolCallRequest::ExecuteCommand { params, .. } => {
+                self.execute_command(tool, shell, params.clone()).await
+            }
+            ToolCallRequest::WebSearch { params, .. } => {
+                self.execute_web_search_tool(tool, params.clone()).await
+            }
+            ToolCallRequest::UrlContent { params, .. } => {
+                self.execute_url_content_tool(tool, params.clone()).await
+            }
+            ToolCallRequest::SearchKnowledgebase { params, .. } => {
+                self.execute_search_knowledgebase_tool(params.clone())
                     .await
             }
-            InternalToolType::TaskGraphFailNode => {
-                self.execute_task_graph_fail_node_tool(tool, execution_params)
+            ToolCallRequest::LoadMemory { params, .. } => {
+                self.execute_load_memory(tool, params.clone()).await
+            }
+            ToolCallRequest::SaveMemory { params, .. } => {
+                self.execute_save_memory(tool, params.clone()).await
+            }
+            ToolCallRequest::Sleep { params, .. } => self.execute_sleep(tool, params.clone()).await,
+            ToolCallRequest::SnapshotExecutionState { .. } => Err(AppError::BadRequest(
+                "snapshot_execution_state must be executed by the agent runtime".to_string(),
+            )),
+            ToolCallRequest::ListThreads { params, .. } => {
+                self.execute_list_threads(tool, params.clone()).await
+            }
+            ToolCallRequest::CreateThread { params, .. } => {
+                self.execute_create_thread(tool, params.clone()).await
+            }
+            ToolCallRequest::UpdateThread { params, .. } => {
+                self.execute_update_thread(tool, params.clone()).await
+            }
+            ToolCallRequest::TaskGraphAddNode { params, .. } => {
+                self.execute_task_graph_add_node(tool, params.clone()).await
+            }
+            ToolCallRequest::TaskGraphAddDependency { params, .. } => {
+                self.execute_task_graph_add_dependency(tool, params.clone())
                     .await
             }
-            InternalToolType::TaskGraphMarkCompleted => {
-                self.execute_task_graph_mark_completed_tool(tool, execution_params, filesystem)
+            ToolCallRequest::TaskGraphMarkInProgress { params, .. } => {
+                self.execute_task_graph_mark_in_progress(tool, params.clone())
                     .await
             }
-            InternalToolType::GetChildStatus
-            | InternalToolType::SpawnContext
-            | InternalToolType::SpawnControl
-            | InternalToolType::GetCompletionSummary
-            | InternalToolType::SwitchExecutionMode
-            | InternalToolType::UpdateTaskBoard
-            | InternalToolType::ExitSupervisorMode
-            | InternalToolType::NotifyParent
-            | InternalToolType::GetChildMessages => {
-                self.execute_swarm_tool(tool, config.tool_type.clone(), execution_params)
+            ToolCallRequest::TaskGraphCompleteNode { params, .. } => {
+                self.execute_task_graph_complete_node(tool, params.clone())
                     .await
             }
+            ToolCallRequest::TaskGraphFailNode { params, .. } => {
+                self.execute_task_graph_fail_node(tool, params.clone())
+                    .await
+            }
+            ToolCallRequest::TaskGraphMarkCompleted { params, .. } => {
+                self.execute_task_graph_mark_completed(tool, params.clone(), filesystem)
+                    .await
+            }
+            ToolCallRequest::TaskGraphMarkFailed { params, .. } => {
+                self.execute_task_graph_mark_failed(tool, params.clone(), filesystem)
+                    .await
+            }
+            ToolCallRequest::SearchTools { .. }
+            | ToolCallRequest::LoadTools { .. }
+            | ToolCallRequest::CreateProjectTask { .. }
+            | ToolCallRequest::UpdateProjectTask { .. }
+            | ToolCallRequest::AssignProjectTask { .. }
+            | ToolCallRequest::External(_) => Err(AppError::BadRequest(
+                "Unsupported request kind for internal tool execution".to_string(),
+            )),
         }
     }
-}
-
-pub(super) fn parse_params<T: DeserializeOwned>(
-    execution_params: &Value,
-    tool_name: &str,
-) -> Result<T, AppError> {
-    let normalized = if execution_params.is_null() {
-        serde_json::json!({})
-    } else {
-        execution_params.clone()
-    };
-
-    serde_json::from_value::<T>(normalized)
-        .map_err(|e| AppError::BadRequest(format!("Invalid {tool_name} params: {e}")))
 }

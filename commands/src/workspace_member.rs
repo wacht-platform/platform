@@ -1,5 +1,5 @@
-use crate::membership_role::insert_organization_membership_role;
 use crate::member_common::{ensure_membership_exists, username_or_none};
+use crate::membership_role::insert_organization_membership_role;
 use common::error::AppError;
 use models::WorkspaceMemberDetails;
 use serde::{Deserialize, Serialize};

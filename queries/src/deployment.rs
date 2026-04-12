@@ -5,9 +5,8 @@ use dto::params::deployment::DeploymentNameParams;
 use models::{
     DeploymentAuthSettings, DeploymentB2bSettings, DeploymentB2bSettingsWithRoles,
     DeploymentJwtTemplate, DeploymentMode, DeploymentOrganizationRole, DeploymentRestrictions,
-    DeploymentSocialConnection, DeploymentUISettings,
-    DeploymentWithSettings, DeploymentWorkspaceRole, EmailTemplate, FirstFactor, OauthCredentials,
-    SecondFactorPolicy,
+    DeploymentSocialConnection, DeploymentUISettings, DeploymentWithSettings,
+    DeploymentWorkspaceRole, EmailTemplate, FirstFactor, OauthCredentials, SecondFactorPolicy,
 };
 use serde::de::DeserializeOwned;
 use sqlx::{Row, query};
@@ -44,6 +43,26 @@ where
     T: FromStr,
 {
     T::from_str(value).map_err(|_| AppError::Internal(format!("Invalid {field}: {value}")))
+}
+
+fn parse_json_badreq<T: DeserializeOwned>(
+    value: serde_json::Value,
+    field: &str,
+) -> Result<T, AppError> {
+    serde_json::from_value(value)
+        .map_err(|e| AppError::BadRequest(format!("Failed to parse {field}: {e}")))
+}
+
+fn parse_enum_or_default<T>(value: &str, default: T, field: &str) -> Result<T, AppError>
+where
+    T: FromStr,
+    <T as FromStr>::Err: std::fmt::Display,
+{
+    if value.trim().is_empty() {
+        return Ok(default);
+    }
+    T::from_str(value)
+        .map_err(|e| AppError::BadRequest(format!("Failed to parse {field} '{value}': {e}")))
 }
 
 pub struct GetDeploymentIdByBackendHostQuery {
@@ -1050,50 +1069,32 @@ impl GetDeploymentAuthSettingsQuery {
             created_at: Some(row.created_at),
             updated_at: Some(row.updated_at),
             deployment_id: row.deployment_id,
-            email_address: serde_json::from_value(row.email_address).map_err(|e| {
-                AppError::BadRequest(format!("Failed to parse email_address: {}", e))
-            })?,
-            phone_number: serde_json::from_value(row.phone_number).map_err(|e| {
-                AppError::BadRequest(format!("Failed to parse phone_number: {}", e))
-            })?,
-            username: serde_json::from_value(row.username)
-                .map_err(|e| AppError::BadRequest(format!("Failed to parse username: {}", e)))?,
-            first_name: serde_json::from_value(row.first_name)
-                .map_err(|e| AppError::BadRequest(format!("Failed to parse first_name: {}", e)))?,
-            last_name: serde_json::from_value(row.last_name)
-                .map_err(|e| AppError::BadRequest(format!("Failed to parse last_name: {}", e)))?,
-            password: serde_json::from_value(row.password)
-                .map_err(|e| AppError::BadRequest(format!("Failed to parse password: {}", e)))?,
+            email_address: parse_json_badreq(row.email_address, "email_address")?,
+            phone_number: parse_json_badreq(row.phone_number, "phone_number")?,
+            username: parse_json_badreq(row.username, "username")?,
+            first_name: parse_json_badreq(row.first_name, "first_name")?,
+            last_name: parse_json_badreq(row.last_name, "last_name")?,
+            password: parse_json_badreq(row.password, "password")?,
             magic_link: serde_json::from_value(row.magic_link).ok(),
             passkey: serde_json::from_value(row.passkey).ok(),
-            auth_factors_enabled: serde_json::from_value(row.auth_factors_enabled).map_err(
-                |e| AppError::BadRequest(format!("Failed to parse auth_factors_enabled: {}", e)),
+            auth_factors_enabled: parse_json_badreq(
+                row.auth_factors_enabled,
+                "auth_factors_enabled",
             )?,
-            verification_policy: serde_json::from_value(row.verification_policy).map_err(|e| {
-                AppError::BadRequest(format!("Failed to parse verification_policy: {}", e))
-            })?,
-            second_factor_policy: if row.second_factor_policy.trim().is_empty() {
-                SecondFactorPolicy::Optional
-            } else {
-                SecondFactorPolicy::from_str(&row.second_factor_policy).map_err(|e| {
-                    AppError::BadRequest(format!(
-                        "Failed to parse second_factor_policy '{}': {}",
-                        row.second_factor_policy, e
-                    ))
-                })?
-            },
-            first_factor: if row.first_factor.trim().is_empty() {
-                FirstFactor::EmailPassword
-            } else {
-                FirstFactor::from_str(&row.first_factor).map_err(|e| {
-                    AppError::BadRequest(format!(
-                        "Failed to parse first_factor '{}': {}",
-                        row.first_factor, e
-                    ))
-                })?
-            },
-            multi_session_support: serde_json::from_value(row.multi_session_support).map_err(
-                |e| AppError::BadRequest(format!("Failed to parse multi_session_support: {}", e)),
+            verification_policy: parse_json_badreq(row.verification_policy, "verification_policy")?,
+            second_factor_policy: parse_enum_or_default(
+                &row.second_factor_policy,
+                SecondFactorPolicy::Optional,
+                "second_factor_policy",
+            )?,
+            first_factor: parse_enum_or_default(
+                &row.first_factor,
+                FirstFactor::EmailPassword,
+                "first_factor",
+            )?,
+            multi_session_support: parse_json_badreq(
+                row.multi_session_support,
+                "multi_session_support",
             )?,
             session_token_lifetime: row.session_token_lifetime,
             session_validity_period: row.session_validity_period,

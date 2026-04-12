@@ -29,4 +29,3 @@ impl DeleteApiAuthAppCommand {
         Ok(())
     }
 }
-

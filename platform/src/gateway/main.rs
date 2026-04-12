@@ -6,24 +6,14 @@ use common::state::AppState;
 use dotenvy::dotenv;
 use gateway::handlers::{check_authz, health};
 use gateway::{GatewayState, RateLimiter};
+use platform::http_tracing::apply_http_trace_layer;
 use std::net::SocketAddr;
 use tracing::info;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-fn init_tracing() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     dotenv().ok();
-    init_tracing();
+    common::init_telemetry("gateway-api")?;
 
     let app_state = AppState::new_from_env()
         .await
@@ -36,10 +26,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         app_state,
     };
 
-    let app = Router::new()
-        .route("/v1/authz/check", post(check_authz))
-        .route("/health", get(health))
-        .with_state(gateway_state);
+    let app = apply_http_trace_layer(
+        Router::new()
+            .route("/v1/authz/check", post(check_authz))
+            .route("/health", get(health))
+            .with_state(gateway_state),
+    );
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3002").await?;
 

@@ -6,11 +6,11 @@ use futures::StreamExt;
 use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::tasks::{
-    agent, analytics, api_audit, api_key_role_permissions_sync, billing, document, email, embedding,
-    token, webhook, webhook_event, webhook_replay_batch,
+    agent, analytics, api_audit, api_key_role_permissions_sync, billing, conversation, document,
+    email, thread_schedule, token, vector_store, webhook, webhook_event, webhook_replay_batch,
 };
 
 const AGENT_EXECUTION_BUSY_RETRY_DELAY_SECONDS: u64 = 30;
@@ -61,6 +61,8 @@ enum WorkerTask {
     EmailSendWaitlistApproval(email::WaitlistApprovalTask),
     #[serde(rename = "token.clean")]
     TokenClean(token::TokenCleanupTask),
+    #[serde(rename = "conversation.cleanup_compacted")]
+    ConversationCleanupCompacted(conversation::CompactedConversationCleanupTask),
     #[serde(rename = "webhook.deliver")]
     WebhookDeliver(webhook::WebhookDeliveryTask),
     #[serde(rename = "webhook.batch")]
@@ -73,8 +75,10 @@ enum WorkerTask {
     DocumentProcess(document::ProcessDocumentTask),
     #[serde(rename = "agent.execution_request")]
     AgentExecutionRequest(dto::json::AgentExecutionRequest),
-    #[serde(rename = "embedding.process_batch")]
-    EmbeddingProcessBatch(embedding::ProcessDocumentBatchTask),
+    #[serde(rename = "agent.thread_schedule")]
+    AgentThreadSchedule(dto::json::ThreadScheduleRequest),
+    #[serde(rename = "vector_store.maintain")]
+    VectorStoreMaintain(vector_store::VectorStoreMaintenanceTask),
     #[serde(rename = "webhook.event")]
     WebhookEvent(webhook_event::WebhookEventTask),
     #[serde(rename = "analytics.event")]
@@ -101,8 +105,12 @@ impl WorkerTask {
             Self::EmailSendMagicLink(_) => "email.send_magic_link",
             Self::EmailSendSignInNotification(_) => "email.send_signin_notification",
             Self::EmailSendEmailChangeNotification(_) => "email.send_email_change_notification",
-            Self::EmailSendPasswordChangeNotification(_) => "email.send_password_change_notification",
-            Self::EmailSendPasswordRemoveNotification(_) => "email.send_password_remove_notification",
+            Self::EmailSendPasswordChangeNotification(_) => {
+                "email.send_password_change_notification"
+            }
+            Self::EmailSendPasswordRemoveNotification(_) => {
+                "email.send_password_remove_notification"
+            }
             Self::EmailSendWaitlistSignup(_) => "email.send_waitlist_signup",
             Self::EmailSendOrganizationMembershipInvite(_) => {
                 "email.send_organization_membership_invite"
@@ -110,13 +118,15 @@ impl WorkerTask {
             Self::EmailSendDeploymentInvite(_) => "email.send_deployment_invite",
             Self::EmailSendWaitlistApproval(_) => "email.send_waitlist_approval",
             Self::TokenClean(_) => "token.clean",
+            Self::ConversationCleanupCompacted(_) => "conversation.cleanup_compacted",
             Self::WebhookDeliver(_) => "webhook.deliver",
             Self::WebhookBatch(_) => "webhook.batch",
             Self::WebhookRetry(_) => "webhook.retry",
             Self::WebhookReplayBatch(_) => "webhook.replay_batch",
             Self::DocumentProcess(_) => "document.process",
             Self::AgentExecutionRequest(_) => "agent.execution_request",
-            Self::EmbeddingProcessBatch(_) => "embedding.process_batch",
+            Self::AgentThreadSchedule(_) => "agent.thread_schedule",
+            Self::VectorStoreMaintain(_) => "vector_store.maintain",
             Self::WebhookEvent(_) => "webhook.event",
             Self::AnalyticsEvent(_) => "analytics.event",
             Self::ApiAuditEvent(_) => "audit.api_key_verification",
@@ -128,7 +138,9 @@ impl WorkerTask {
                 "api_key.sync_workspace_membership_permissions"
             }
             Self::ApiKeySyncOrgRolePermissions(_) => "api_key.sync_org_role_permissions",
-            Self::ApiKeySyncWorkspaceRolePermissions(_) => "api_key.sync_workspace_role_permissions",
+            Self::ApiKeySyncWorkspaceRolePermissions(_) => {
+                "api_key.sync_workspace_role_permissions"
+            }
         }
     }
 }
@@ -139,6 +151,10 @@ pub struct NatsConsumer {
 }
 
 impl NatsConsumer {
+    fn is_webhook_task(task: &WorkerTask) -> bool {
+        matches!(task, WorkerTask::WebhookEvent(_))
+    }
+
     pub async fn new(app_state: AppState) -> Result<Self> {
         Ok(Self {
             jetstream: app_state.nats_jetstream.clone(),
@@ -281,24 +297,40 @@ impl NatsConsumer {
                 .await
                 .map_err(|e| TaskError::Permanent(e.to_string()))?;
             }
+            WorkerTask::ConversationCleanupCompacted(task) => {
+                conversation::cleanup_compacted_conversations(task, &self.app_state)
+                    .await
+                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
             WorkerTask::WebhookDeliver(task) => {
-                let result =
-                    webhook::process_webhook_delivery(task.delivery_id, task.deployment_id, &self.app_state)
-                        .await
-                        .map_err(|e| TaskError::Permanent(e.to_string()))?;
+                let result = webhook::process_webhook_delivery(
+                    task.delivery_id,
+                    task.deployment_id,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
                 if let webhook::DeliveryResult::RetryAfter(duration) = result {
                     return Err(TaskError::RetryWithDelay(duration));
                 }
             }
             WorkerTask::WebhookBatch(task) => {
-                webhook::process_webhook_batch(task.delivery_ids, task.deployment_id, &self.app_state)
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
+                webhook::process_webhook_batch(
+                    task.delivery_ids,
+                    task.deployment_id,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
             }
             WorkerTask::WebhookRetry(task) => {
-                webhook::process_webhook_retry(task.delivery_id, task.deployment_id, &self.app_state)
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
+                webhook::process_webhook_retry(
+                    task.delivery_id,
+                    task.deployment_id,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
             }
             WorkerTask::WebhookReplayBatch(mut payload) => {
                 if let Some(obj) = payload.as_object_mut() {
@@ -339,28 +371,32 @@ impl NatsConsumer {
                 })?;
             }
             WorkerTask::AgentExecutionRequest(request) => {
-                agent::process_agent_execution(&self.app_state, request)
+                agent::process_agent_execution(&self.app_state, task_id, request)
                     .await
-                    .map_err(|e| {
-                        match e {
-                            agent::AgentExecutionError::ExecutionBusy { .. } => {
-                                TaskError::RetryWithDelay(Duration::from_secs(
-                                    AGENT_EXECUTION_BUSY_RETRY_DELAY_SECONDS,
-                                ))
-                            }
-                            other => TaskError::Permanent(other.to_string()),
+                    .map_err(|e| match e {
+                        agent::AgentExecutionError::ExecutionBusy { .. } => {
+                            TaskError::RetryWithDelay(Duration::from_secs(
+                                AGENT_EXECUTION_BUSY_RETRY_DELAY_SECONDS,
+                            ))
                         }
+                        other => TaskError::Permanent(other.to_string()),
                     })?;
             }
-            WorkerTask::EmbeddingProcessBatch(task) => {
-                embedding::process_document_batch_impl(
+            WorkerTask::AgentThreadSchedule(request) => {
+                let outcome = thread_schedule::process_thread_schedule(&self.app_state, request)
+                    .await
+                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
+                info!(task_id, outcome = %outcome, "Thread schedule task finished");
+            }
+            WorkerTask::VectorStoreMaintain(task) => {
+                let outcome = vector_store::maintain_vector_store_impl(
                     task.deployment_id,
-                    task.knowledge_base_id,
-                    task.batch_size,
+                    task.store_name,
                     &self.app_state,
                 )
                 .await
                 .map_err(|e| TaskError::Permanent(e.to_string()))?;
+                info!(task_id, outcome = %outcome, "Vector store maintenance task finished");
             }
             WorkerTask::WebhookEvent(task) => {
                 webhook_event::trigger_webhook_event(task, &self.app_state).await?;
@@ -461,27 +497,114 @@ impl NatsConsumer {
             }
         };
 
-        info!(
-            "Received JetStream task: {} (ID: {})",
-            task_message.task.task_type(),
-            task_message.task_id
-        );
+        if Self::is_webhook_task(&task_message.task) {
+            debug!(
+                "Received JetStream task: {} (ID: {})",
+                task_message.task.task_type(),
+                task_message.task_id
+            );
+        } else {
+            info!(
+                "Received JetStream task: {} (ID: {})",
+                task_message.task.task_type(),
+                task_message.task_id
+            );
+        }
 
+        if let WorkerTask::AgentExecutionRequest(request) = task_message.task {
+            match agent::prepare_agent_execution(&self.app_state, &task_message.task_id, request)
+                .await
+            {
+                Ok(agent::PreparedAgentExecutionOutcome::Noop(reason)) => {
+                    info!(
+                        "Task {} completed successfully: {}",
+                        task_message.task_id, reason
+                    );
+                    if let Err(e) = message.ack().await {
+                        error!("Failed to acknowledge task {}: {}", task_message.task_id, e);
+                    }
+                }
+                Ok(agent::PreparedAgentExecutionOutcome::Ready(execution)) => {
+                    if let Err(e) = message.ack().await {
+                        error!(
+                            "Failed to acknowledge task {} before execution: {}",
+                            task_message.task_id, e
+                        );
+                    }
+
+                    match execution.execute().await {
+                        Ok(result) => info!(
+                            "Task {} completed successfully: {}",
+                            task_message.task_id, result
+                        ),
+                        Err(error) => error!(
+                            "Task {} failed after early acknowledgment: {}",
+                            task_message.task_id, error
+                        ),
+                    }
+                }
+                Err(agent::AgentExecutionError::ExecutionBusy { .. }) => {
+                    info!(
+                        "Task {} will retry after {:?}",
+                        task_message.task_id,
+                        Duration::from_secs(AGENT_EXECUTION_BUSY_RETRY_DELAY_SECONDS)
+                    );
+                    if let Err(e) = message
+                        .ack_with(AckKind::Nak(Some(Duration::from_secs(
+                            AGENT_EXECUTION_BUSY_RETRY_DELAY_SECONDS,
+                        ))))
+                        .await
+                    {
+                        error!(
+                            "Failed to NAK with delay for task {}: {}",
+                            task_message.task_id, e
+                        );
+                    }
+                }
+                Err(other) => {
+                    error!(
+                        "Task {} permanently failed: {}",
+                        task_message.task_id, other
+                    );
+                    if let Err(e) = message.ack().await {
+                        error!(
+                            "Failed to acknowledge failed task {}: {}",
+                            task_message.task_id, e
+                        );
+                    }
+                }
+            }
+
+            return Ok(());
+        }
+
+        let is_webhook_task = Self::is_webhook_task(&task_message.task);
         match self
             .execute_task(&task_message.task_id, task_message.task)
             .await
         {
             Ok(_) => {
-                info!("Task {} completed successfully", task_message.task_id);
+                if is_webhook_task {
+                    debug!("Task {} completed successfully", task_message.task_id);
+                } else {
+                    info!("Task {} completed successfully", task_message.task_id);
+                }
                 if let Err(e) = message.ack().await {
                     error!("Failed to acknowledge task {}: {}", task_message.task_id, e);
                 }
             }
             Err(TaskError::RetryWithDelay(duration)) => {
-                info!(
-                    "Task {} will retry after {:?}",
-                    task_message.task_id, duration
-                );
+                if is_webhook_task {
+                    debug!(
+                        "Task {} will retry after {:?}",
+                        task_message.task_id, duration
+                    );
+                } else {
+                    info!(
+                        "Task {} will retry after {:?}",
+                        task_message.task_id, duration
+                    );
+                }
                 if let Err(e) = message.ack_with(AckKind::Nak(Some(duration))).await {
                     error!(
                         "Failed to NAK with delay for task {}: {}",
@@ -490,7 +613,17 @@ impl NatsConsumer {
                 }
             }
             Err(TaskError::Permanent(error_msg)) => {
-                error!("Task {} permanently failed: {}", task_message.task_id, error_msg);
+                if is_webhook_task {
+                    debug!(
+                        "Task {} permanently failed: {}",
+                        task_message.task_id, error_msg
+                    );
+                } else {
+                    error!(
+                        "Task {} permanently failed: {}",
+                        task_message.task_id, error_msg
+                    );
+                }
                 if let Err(e) = message.ack().await {
                     error!(
                         "Failed to acknowledge failed task {}: {}",

@@ -22,13 +22,9 @@ pub async fn list_webhook_endpoints(
     Path(app_slug): Path<String>,
     Query(params): Query<ListWebhookEndpointsQuery>,
 ) -> ApiResult<PaginatedResponse<WebhookEndpointDto>> {
-    let endpoints = webhook_endpoints_app::list_webhook_endpoints(
-        &app_state,
-        deployment_id,
-        app_slug,
-        params,
-    )
-    .await?;
+    let endpoints =
+        webhook_endpoints_app::list_webhook_endpoints(&app_state, deployment_id, app_slug, params)
+            .await?;
 
     Ok(endpoints.into())
 }
@@ -39,8 +35,7 @@ pub async fn create_webhook_endpoint(
     Json(request): Json<CreateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
     let endpoint =
-        webhook_endpoints_app::create_webhook_endpoint(&app_state, deployment_id, request)
-            .await?;
+        webhook_endpoints_app::create_webhook_endpoint(&app_state, deployment_id, request).await?;
 
     Ok(endpoint.into())
 }
@@ -105,8 +100,7 @@ pub async fn delete_webhook_endpoint(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(endpoint_id): Path<i64>,
 ) -> ApiResult<()> {
-    webhook_endpoints_app::delete_webhook_endpoint(&app_state, deployment_id, endpoint_id)
-        .await?;
+    webhook_endpoints_app::delete_webhook_endpoint(&app_state, deployment_id, endpoint_id).await?;
 
     Ok(().into())
 }
@@ -138,12 +132,9 @@ pub async fn reactivate_webhook_endpoint(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(endpoint_id): Path<i64>,
 ) -> ApiResult<ReactivateEndpointResponse> {
-    let response = webhook_endpoints_app::reactivate_webhook_endpoint(
-        &app_state,
-        deployment_id,
-        endpoint_id,
-    )
-    .await?;
+    let response =
+        webhook_endpoints_app::reactivate_webhook_endpoint(&app_state, deployment_id, endpoint_id)
+            .await?;
 
     Ok(response.into())
 }

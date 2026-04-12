@@ -26,8 +26,15 @@ pub(super) async fn cleanup_external_resources_on_failure(
         );
     }
 
-    if let Err(e) = cloudflare_service.delete_custom_hostname(backend_hostname).await {
-        tracing::error!("Failed to cleanup backend hostname {}: {}", backend_hostname, e);
+    if let Err(e) = cloudflare_service
+        .delete_custom_hostname(backend_hostname)
+        .await
+    {
+        tracing::error!(
+            "Failed to cleanup backend hostname {}: {}",
+            backend_hostname,
+            e
+        );
     } else {
         tracing::info!(
             "Successfully cleaned up backend hostname: {}",
@@ -190,7 +197,10 @@ pub(super) async fn setup_postmark_email_verification<D>(
 where
     D: common::HasPostmarkProvider,
 {
-    let postmark_domain = deps.postmark_provider().create_domain(mail_from_host).await?;
+    let postmark_domain = deps
+        .postmark_provider()
+        .create_domain(mail_from_host)
+        .await?;
     let postmark_domain_id = postmark_domain.id;
     let email_verification_records = deps
         .postmark_provider()

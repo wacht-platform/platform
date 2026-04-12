@@ -12,8 +12,7 @@ pub async fn get_api_audit_logs(
     Query(params): Query<ListApiAuditLogsQuery>,
 ) -> ApiResult<ApiAuditLogsResponse> {
     let result =
-        api_key_audit_app::get_api_audit_logs(&app_state, deployment_id, app_slug, params)
-            .await?;
+        api_key_audit_app::get_api_audit_logs(&app_state, deployment_id, app_slug, params).await?;
     Ok(result.into())
 }
 
@@ -23,13 +22,9 @@ pub async fn get_api_audit_analytics(
     Path(app_slug): Path<String>,
     Query(params): Query<GetApiAuditAnalyticsQuery>,
 ) -> ApiResult<ApiAuditAnalyticsResponse> {
-    let result = api_key_audit_app::get_api_audit_analytics(
-        &app_state,
-        deployment_id,
-        app_slug,
-        params,
-    )
-    .await?;
+    let result =
+        api_key_audit_app::get_api_audit_analytics(&app_state, deployment_id, app_slug, params)
+            .await?;
     Ok(result.into())
 }
 
@@ -39,13 +34,9 @@ pub async fn get_api_audit_timeseries(
     Path(app_slug): Path<String>,
     Query(params): Query<GetApiAuditTimeseriesQuery>,
 ) -> ApiResult<ApiAuditTimeseriesResponse> {
-    let result = api_key_audit_app::get_api_audit_timeseries(
-        &app_state,
-        deployment_id,
-        app_slug,
-        params,
-    )
-    .await?;
+    let result =
+        api_key_audit_app::get_api_audit_timeseries(&app_state, deployment_id, app_slug, params)
+            .await?;
 
     Ok(result.into())
 }

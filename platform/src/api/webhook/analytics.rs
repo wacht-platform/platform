@@ -12,13 +12,9 @@ pub async fn get_webhook_analytics(
     Path(app_slug): Path<String>,
     Query(params): Query<WebhookAnalyticsQuery>,
 ) -> ApiResult<WebhookAnalyticsResult> {
-    let result = webhook_analytics_app::get_webhook_analytics(
-        &app_state,
-        deployment_id,
-        app_slug,
-        params,
-    )
-    .await?;
+    let result =
+        webhook_analytics_app::get_webhook_analytics(&app_state, deployment_id, app_slug, params)
+            .await?;
 
     Ok(result.into())
 }
@@ -29,13 +25,9 @@ pub async fn get_webhook_timeseries(
     Path(app_slug): Path<String>,
     Query(params): Query<WebhookTimeseriesQuery>,
 ) -> ApiResult<WebhookTimeseriesResult> {
-    let result = webhook_analytics_app::get_webhook_timeseries(
-        &app_state,
-        deployment_id,
-        app_slug,
-        params,
-    )
-    .await?;
+    let result =
+        webhook_analytics_app::get_webhook_timeseries(&app_state, deployment_id, app_slug, params)
+            .await?;
 
     Ok(result.into())
 }

@@ -20,13 +20,9 @@ pub async fn add_user_email(
     Path(params): Path<UserParams>,
     Json(request): Json<AddEmailRequest>,
 ) -> ApiResult<UserEmailAddress> {
-    let email = user_identifier_app::add_user_email(
-        &app_state,
-        deployment_id,
-        params.user_id,
-        request,
-    )
-    .await?;
+    let email =
+        user_identifier_app::add_user_email(&app_state, deployment_id, params.user_id, request)
+            .await?;
     Ok(email.into())
 }
 
@@ -52,8 +48,7 @@ pub async fn delete_user_email(
     RequireDeployment(_): RequireDeployment,
     Path(params): Path<UserEmailParams>,
 ) -> ApiResult<()> {
-    user_identifier_app::delete_user_email(&app_state, params.user_id, params.email_id)
-        .await?;
+    user_identifier_app::delete_user_email(&app_state, params.user_id, params.email_id).await?;
     Ok(().into())
 }
 
@@ -63,13 +58,9 @@ pub async fn add_user_phone(
     Path(params): Path<UserParams>,
     Json(request): Json<AddPhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
-    let phone = user_identifier_app::add_user_phone(
-        &app_state,
-        deployment_id,
-        params.user_id,
-        request,
-    )
-    .await?;
+    let phone =
+        user_identifier_app::add_user_phone(&app_state, deployment_id, params.user_id, request)
+            .await?;
     Ok(phone.into())
 }
 
@@ -94,8 +85,7 @@ pub async fn delete_user_phone(
     RequireDeployment(_): RequireDeployment,
     Path(params): Path<UserPhoneParams>,
 ) -> ApiResult<()> {
-    user_identifier_app::delete_user_phone(&app_state, params.user_id, params.phone_id)
-        .await?;
+    user_identifier_app::delete_user_phone(&app_state, params.user_id, params.phone_id).await?;
     Ok(().into())
 }
 

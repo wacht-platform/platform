@@ -224,41 +224,49 @@ impl GetKnowledgeBaseDocumentsQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let documents = sqlx::query!(
+        let documents = sqlx::query(
             r#"
             SELECT
                 id, created_at, updated_at, title, description, file_name,
-                file_size, file_type, file_url, knowledge_base_id,
+                file_size, file_type, storage_object_key, knowledge_base_id,
                 processing_metadata
             FROM ai_knowledge_base_documents
             WHERE knowledge_base_id = $1
             ORDER BY created_at DESC
             LIMIT $2 OFFSET $3
             "#,
-            self.knowledge_base_id,
-            self.limit as i64,
-            self.offset as i64
         )
+        .bind(self.knowledge_base_id)
+        .bind(self.limit as i64)
+        .bind(self.offset as i64)
         .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
         Ok(documents
             .into_iter()
-            .map(|row| AiKnowledgeBaseDocument {
-                id: row.id,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                title: row.title,
-                description: row.description,
-                file_name: row.file_name,
-                file_size: row.file_size,
-                file_type: row.file_type,
-                file_url: row.file_url,
-                knowledge_base_id: row.knowledge_base_id,
-                processing_metadata: row.processing_metadata,
+            .map(|row| {
+                Ok(AiKnowledgeBaseDocument {
+                    id: row.try_get("id").map_err(AppError::Database)?,
+                    created_at: row.try_get("created_at").map_err(AppError::Database)?,
+                    updated_at: row.try_get("updated_at").map_err(AppError::Database)?,
+                    title: row.try_get("title").map_err(AppError::Database)?,
+                    description: row.try_get("description").map_err(AppError::Database)?,
+                    file_name: row.try_get("file_name").map_err(AppError::Database)?,
+                    file_size: row.try_get("file_size").map_err(AppError::Database)?,
+                    file_type: row.try_get("file_type").map_err(AppError::Database)?,
+                    storage_object_key: row
+                        .try_get("storage_object_key")
+                        .map_err(AppError::Database)?,
+                    knowledge_base_id: row
+                        .try_get("knowledge_base_id")
+                        .map_err(AppError::Database)?,
+                    processing_metadata: row
+                        .try_get("processing_metadata")
+                        .map_err(AppError::Database)?,
+                })
             })
-            .collect())
+            .collect::<Result<Vec<_>, AppError>>()?)
     }
 }
 
@@ -313,101 +321,6 @@ impl GetAiKnowledgeBasesByIdsQuery {
             .into_iter()
             .map(map_knowledge_base)
             .collect())
-    }
-}
-
-pub struct GetDocumentChunksQuery {
-    pub document_id: i64,
-    pub chunk_range: Option<(i32, i32)>,
-    pub keywords: Option<Vec<String>>,
-    pub limit: Option<usize>,
-}
-
-impl GetDocumentChunksQuery {
-    pub fn new(document_id: i64) -> Self {
-        Self {
-            document_id,
-            chunk_range: None,
-            keywords: None,
-            limit: Some(10),
-        }
-    }
-
-    pub fn with_chunk_range(mut self, start: i32, end: i32) -> Self {
-        self.chunk_range = Some((start, end));
-        self
-    }
-
-    pub fn with_keywords(mut self, keywords: Vec<String>) -> Self {
-        self.keywords = Some(keywords);
-        self
-    }
-
-    pub fn with_limit(mut self, limit: usize) -> Self {
-        self.limit = Some(limit);
-        self
-    }
-
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<DocumentChunk>, AppError>
-    where
-        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-    {
-        let mut query_str = String::from(
-            "SELECT content, chunk_index, knowledge_base_id, deployment_id
-             FROM knowledge_base_document_chunks
-             WHERE document_id = $1",
-        );
-
-        let mut param_count = 1;
-
-        if let Some((start, end)) = self.chunk_range {
-            param_count += 1;
-            query_str.push_str(&format!(" AND chunk_index >= ${}", start));
-            param_count += 1;
-            query_str.push_str(&format!(" AND chunk_index <= ${}", end));
-        }
-
-        if self.keywords.is_some() {
-            param_count += 1;
-            query_str.push_str(&format!(" AND content ~* ${}", param_count));
-        }
-
-        query_str.push_str(" ORDER BY chunk_index");
-
-        param_count += 1;
-        query_str.push_str(&format!(" LIMIT ${}", param_count));
-
-        let mut query = sqlx::query(&query_str);
-        query = query.bind(self.document_id);
-
-        if let Some((start, end)) = self.chunk_range {
-            query = query.bind(start);
-            query = query.bind(end);
-        }
-
-        if let Some(keywords) = &self.keywords {
-            let keyword_pattern = keywords.join("|");
-            query = query.bind(keyword_pattern);
-        }
-
-        query = query.bind(self.limit.unwrap_or(10) as i64);
-
-        let rows = query
-            .fetch_all(executor)
-            .await
-            .map_err(AppError::Database)?;
-
-        let mut chunks = Vec::new();
-        for row in rows {
-            chunks.push(DocumentChunk {
-                content: sqlx::Row::try_get(&row, "content")?,
-                chunk_index: sqlx::Row::try_get(&row, "chunk_index")?,
-                knowledge_base_id: sqlx::Row::try_get(&row, "knowledge_base_id")?,
-                deployment_id: sqlx::Row::try_get(&row, "deployment_id")?,
-            });
-        }
-
-        Ok(chunks)
     }
 }
 

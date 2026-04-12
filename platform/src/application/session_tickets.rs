@@ -1,9 +1,12 @@
-use commands::GenerateSessionTicketCommand;
 use commands::session_ticket::{AgentSessionIdentifier, SessionTicketType};
+use commands::{CreateActorCommand, GenerateSessionTicketCommand};
 use dto::json::session_ticket::{AgentSessionIdentifierDto, CreateSessionTicketRequest};
+use queries::GetActorByIdQuery;
 
 use crate::application::{AppError, AppState};
 use common::deps;
+
+const DEBUG_ACTOR_SUBJECT_TYPE: &str = "debug_actor";
 
 fn parse_ticket_type(ticket_type: &str) -> Result<SessionTicketType, AppError> {
     match ticket_type {
@@ -33,6 +36,75 @@ fn map_agent_session_identifier(identifier: AgentSessionIdentifierDto) -> AgentS
 
 fn bad_request(message: &str) -> AppError {
     AppError::BadRequest(message.to_string())
+}
+
+fn is_static_agent_access_request(
+    ticket_type: &SessionTicketType,
+    request: &CreateSessionTicketRequest,
+) -> bool {
+    matches!(ticket_type, SessionTicketType::AgentAccess)
+        && matches!(
+            request.agent_session_identifier,
+            None | Some(AgentSessionIdentifierDto::Static)
+        )
+}
+
+fn parse_actor_id(actor_id: &str) -> Result<i64, AppError> {
+    actor_id
+        .parse::<i64>()
+        .map_err(|_| bad_request("actor_id must be a valid integer"))
+}
+
+async fn ensure_debug_actor_exists(
+    app_state: &AppState,
+    deployment_id: i64,
+    actor_id: i64,
+) -> Result<(), AppError> {
+    if GetActorByIdQuery::new(actor_id, deployment_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await?
+        .is_some()
+    {
+        return Ok(());
+    }
+
+    let create_actor = CreateActorCommand::new(
+        actor_id,
+        deployment_id,
+        DEBUG_ACTOR_SUBJECT_TYPE.to_string(),
+        actor_id.to_string(),
+    )
+    .with_display_name(format!("Debug Actor {}", actor_id))
+    .with_metadata(serde_json::json!({
+        "auto_created": true,
+        "source": "console_debug_session",
+    }));
+
+    match create_actor
+        .execute_with_db(app_state.db_router.writer())
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(AppError::Database(db_err))
+            if db_err
+                .as_database_error()
+                .is_some_and(|db_err| db_err.code().as_deref() == Some("23505")) =>
+        {
+            if GetActorByIdQuery::new(actor_id, deployment_id)
+                .execute_with_db(app_state.db_router.writer())
+                .await?
+                .is_some()
+            {
+                Ok(())
+            } else {
+                Err(AppError::Conflict(format!(
+                    "actor_id {} is already in use",
+                    actor_id
+                )))
+            }
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn command_deployment_id(
@@ -69,6 +141,14 @@ fn require_non_empty_agent_ids(value: Option<Vec<String>>) -> Result<Vec<String>
         ));
     }
     Ok(value)
+}
+
+fn require_non_empty_actor_id(value: Option<String>) -> Result<String, AppError> {
+    require_non_empty_string(
+        value,
+        "actor_id is required for static agent_access tickets",
+        "actor_id cannot be empty for static agent_access tickets",
+    )
 }
 
 fn apply_ticket_type_fields(
@@ -125,21 +205,24 @@ pub async fn create_session_ticket(
     let command_deployment_id =
         command_deployment_id(&ticket_type, deployment_id, console_deployment_id);
 
+    if is_static_agent_access_request(&ticket_type, &request) {
+        let actor_id = require_non_empty_actor_id(request.actor_id.clone())?;
+        ensure_debug_actor_exists(app_state, deployment_id, parse_actor_id(&actor_id)?).await?;
+        request.actor_id = Some(actor_id);
+    }
+
     let command = GenerateSessionTicketCommand::builder()
         .deployment_id(command_deployment_id)
         .ticket_type(ticket_type.clone());
     let mut command = apply_ticket_type_fields(command, &ticket_type, &mut request)?;
 
-    if let Some(context_group) = request.context_group.take() {
-        command = command.context_group(context_group);
+    if let Some(actor_id) = request.actor_id.take() {
+        command = command.actor_id(actor_id);
     }
 
     if let Some(expires_in) = request.expires_in.take() {
         command = command.expires_in(expires_in);
     }
 
-    command
-        .build()?
-        .execute_with_deps(&session_deps)
-        .await
+    command.build()?.execute_with_deps(&session_deps).await
 }

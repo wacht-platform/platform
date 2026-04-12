@@ -1,6 +1,9 @@
 use crate::filesystem::sandbox::SandboxRunner;
 use common::error::AppError;
 use serde::{Deserialize, Serialize};
+use shellish_parse::{multiparse, ParseOptions};
+use std::env;
+use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Clone)]
@@ -18,6 +21,13 @@ pub struct ShellOutput {
     pub exit_code: i32,
 }
 
+#[derive(Debug, Clone)]
+struct ParsedCommandStage {
+    env: Vec<(String, String)>,
+    program: String,
+    args: Vec<String>,
+}
+
 impl ShellExecutor {
     pub fn new(working_dir: PathBuf) -> Self {
         Self {
@@ -32,17 +42,11 @@ impl ShellExecutor {
                 "rg",
                 "find",
                 "ls",
-                "tree",
                 "wc",
-                "du",
-                "df",
-                "touch",
                 "mkdir",
-                "echo",
                 "cp",
                 "mv",
                 "rm",
-                "chmod",
                 "sed",
                 "awk",
                 "sort",
@@ -51,10 +55,7 @@ impl ShellExecutor {
                 "cut",
                 "tr",
                 "diff",
-                "date",
-                "whoami",
-                "pwd",
-                "printf",
+                "which",
                 "pdftotext",
                 "file",
                 "python",
@@ -67,190 +68,222 @@ impl ShellExecutor {
     }
 
     pub async fn execute(&self, command_line: &str) -> Result<ShellOutput, AppError> {
-        let command_line = self.normalize_path_aliases(command_line);
+        let stages = self.parse_command_line(command_line)?;
+        let mut stdin_bytes: Option<Vec<u8>> = None;
+        let mut combined_stderr = String::new();
+        let mut last_stdout = String::new();
+        let mut last_exit_code = 0;
 
-        let cmd_parts: Vec<&str> = command_line.split_whitespace().collect();
-        let cmd_name = cmd_parts
-            .first()
-            .ok_or(AppError::BadRequest("Empty command".to_string()))?;
+        for stage in stages {
+            let mut options = shell_execution_options();
+            options.extra_env.extend(stage.env.clone());
 
-        if !self.allowed_commands.contains(&cmd_name.to_string()) {
-            return Err(AppError::Forbidden(format!(
-                "Command '{}' is not allowed",
-                cmd_name
-            )));
-        }
+            let output = self
+                .sandbox
+                .execute_program_with_input_and_options(
+                    &stage.program,
+                    &stage.args,
+                    stdin_bytes.as_deref(),
+                    self.timeout_secs,
+                    options,
+                )
+                .await?;
 
-        if command_line.contains("..") {
-            return Err(AppError::Forbidden(
-                "Path traversal (..) is not allowed in commands".to_string(),
-            ));
-        }
-
-        // Validate ALL commands in pipes, not just the first one
-        // Use quote-aware splitting to handle jq expressions like '.foo | .bar'
-        let command_segments = split_command_segments(&command_line);
-
-        for segment in &command_segments {
-            let trimmed = segment.trim();
-            if trimmed.is_empty() {
-                continue;
+            if !output.stderr.is_empty() {
+                if !combined_stderr.is_empty() {
+                    combined_stderr.push('\n');
+                }
+                combined_stderr.push_str(&output.stderr);
             }
 
-            // Get the first word of each segment (the command name)
-            let cmd_name = trimmed.split_whitespace().next();
+            last_exit_code = output.exit_code;
+            last_stdout = output.stdout.clone();
 
-            if let Some(cmd) = cmd_name {
-                // Skip if it's a subcommand indicator like "then", "else", "do", etc.
-                let shell_keywords = ["then", "else", "fi", "do", "done", "esac", "in"];
-                if shell_keywords.contains(&cmd) {
-                    continue;
-                }
-
-                if !self.allowed_commands.contains(&cmd.to_string()) {
-                    return Err(AppError::Forbidden(format!(
-                        "Command '{}' is not allowed. Allowed commands: cat, grep, jq, head, tail, python3, etc.",
-                        cmd
-                    )));
-                }
+            if output.exit_code != 0 {
+                return Ok(ShellOutput {
+                    stdout: output.stdout,
+                    stderr: combined_stderr,
+                    exit_code: output.exit_code,
+                });
             }
+
+            stdin_bytes = Some(output.stdout.into_bytes());
         }
-
-        for part in command_line.split_whitespace() {
-            if part.starts_with('/') {
-                // Allow "//" which is a common operator in jq (null coalescing) and other tools
-                if part == "//" {
-                    continue;
-                }
-
-                if !is_allowed_absolute_path(part) {
-                    return Err(AppError::Forbidden(format!(
-                        "Absolute path '{}' is outside allowed directories. Use /knowledge/, /uploads/, /scratch/, /workspace/, or /app/",
-                        part
-                    )));
-                }
-            }
-        }
-
-        let output = self
-            .sandbox
-            .execute_shell(&command_line, self.timeout_secs)
-            .await?;
 
         Ok(ShellOutput {
-            stdout: output.stdout,
-            stderr: output.stderr,
-            exit_code: output.exit_code,
+            stdout: last_stdout,
+            stderr: combined_stderr,
+            exit_code: last_exit_code,
         })
     }
 
-    fn normalize_path_aliases(&self, command_line: &str) -> String {
+    fn normalize_path_alias(&self, token: &str) -> String {
         if self.sandbox.uses_virtual_alias_paths() {
-            return command_line.to_string();
+            return token.to_string();
         }
 
         let working_dir_str = self.working_dir.to_string_lossy().to_string();
         let base = working_dir_str.trim_end_matches('/');
-
-        let words: Vec<&str> = command_line.split_whitespace().collect();
-        let processed_words: Vec<String> = words
-            .iter()
-            .map(|word| {
-                let aliases: Vec<(&str, String)> = vec![
-                    ("/knowledge/", format!("{}/knowledge/", base)),
-                    ("/knowledge", format!("{}/knowledge", base)),
-                    ("/uploads/", format!("{}/uploads/", base)),
-                    ("/uploads", format!("{}/uploads", base)),
-                    ("/scratch/", format!("{}/scratch/", base)),
-                    ("/scratch", format!("{}/scratch", base)),
-                    ("/workspace/", format!("{}/workspace/", base)),
-                    ("/workspace", format!("{}/workspace", base)),
-                ];
-
-                for (alias, replacement) in aliases {
-                    if word.starts_with(alias) {
-                        return format!("{}{}", replacement, &word[alias.len()..]);
-                    }
-                }
-                word.to_string()
-            })
-            .collect();
-
-        processed_words.join(" ")
-    }
-
-    pub async fn apply_pipeline(
-        &self,
-        input: &str,
-        pipeline: &[String],
-    ) -> Result<String, AppError> {
-        if pipeline.is_empty() {
-            return Ok(input.to_string());
-        }
-
-        let pipeline: Vec<String> = pipeline
-            .iter()
-            .map(|cmd| self.normalize_path_aliases(cmd))
-            .collect();
-
-        // Read-only commands allowed in pipeline (no rm, mv, cp, etc.)
-        let pipeline_allowed: Vec<&str> = vec![
-            "cat", "head", "tail", "grep", "rg", "wc", "sort", "uniq", "jq", "cut", "tr", "awk",
-            "sed", "diff", "tee",
+        let aliases: Vec<(&str, String)> = vec![
+            ("/knowledge/", format!("{}/knowledge/", base)),
+            ("/knowledge", format!("{}/knowledge", base)),
+            ("/skills/", format!("{}/skills/", base)),
+            ("/skills", format!("{}/skills", base)),
+            ("/uploads/", format!("{}/uploads/", base)),
+            ("/uploads", format!("{}/uploads", base)),
+            ("/scratch/", format!("{}/scratch/", base)),
+            ("/scratch", format!("{}/scratch", base)),
+            ("/workspace/", format!("{}/workspace/", base)),
+            ("/workspace", format!("{}/workspace", base)),
+            (
+                "/project_workspace/",
+                format!("{}/project_workspace/", base),
+            ),
+            ("/project_workspace", format!("{}/project_workspace", base)),
+            ("/task/", format!("{}/task/", base)),
+            ("/task", format!("{}/task", base)),
         ];
 
-        // Validate each pipeline command
-        for cmd in &pipeline {
-            let cmd_name = cmd.split_whitespace().next().unwrap_or("");
-            if !pipeline_allowed.contains(&cmd_name) {
-                return Err(AppError::Forbidden(format!(
-                    "Command '{}' is not allowed in pipeline. Allowed: {:?}",
-                    cmd_name, pipeline_allowed
-                )));
-            }
-            if cmd.contains("..") {
-                return Err(AppError::Forbidden(
-                    "Path traversal (..) is not allowed in pipeline".to_string(),
-                ));
-            }
-            // Block absolute paths outside working directory in pipeline
-            for part in cmd.split_whitespace() {
-                if part.starts_with('/') && !is_allowed_absolute_path(part) {
-                    // Allow "//" which is a common operator in jq (null coalescing)
-                    if part == "//" {
-                        continue;
-                    }
-
-                    return Err(AppError::Forbidden(format!(
-                        "Absolute path '{}' is outside allowed directories in pipeline. Use /knowledge/, /uploads/, /scratch/, /workspace/, or /app/",
-                        part
-                    )));
-                }
+        for (alias, replacement) in aliases {
+            if token.starts_with(alias) {
+                return format!("{}{}", replacement, &token[alias.len()..]);
             }
         }
 
-        // Build full pipeline command: echo "input" | cmd1 | cmd2 | cmd3
-        let pipeline_str = pipeline.join(" | ");
-        let full_command = format!("echo {} | {}", shell_escape(input), pipeline_str);
+        token.to_string()
+    }
 
-        let output = self.sandbox.execute_shell(&full_command, 10).await?;
-        if output.exit_code == 0 {
-            Ok(output.stdout)
-        } else {
-            Err(AppError::Internal(format!(
-                "Pipeline failed: {}",
-                output.stderr
-            )))
+    fn parse_command_line(&self, command_line: &str) -> Result<Vec<ParsedCommandStage>, AppError> {
+        const SEPARATORS: &[&str] = &["&&", "||", ";", "&", "|"];
+
+        let parsed = multiparse(command_line, ParseOptions::new(), SEPARATORS).map_err(|e| {
+            AppError::BadRequest(format!("Invalid command syntax in execute_command: {}", e))
+        })?;
+
+        if parsed.is_empty() {
+            return Err(AppError::BadRequest("Empty command".to_string()));
+        }
+
+        parsed
+            .into_iter()
+            .map(|(tokens, terminator)| self.parse_command_stage(tokens, terminator))
+            .collect()
+    }
+
+    fn parse_command_stage(
+        &self,
+        tokens: Vec<String>,
+        terminator: Option<usize>,
+    ) -> Result<ParsedCommandStage, AppError> {
+        if tokens.is_empty() {
+            return Err(AppError::BadRequest(
+                "Empty command stage in pipeline".to_string(),
+            ));
+        }
+
+        match terminator {
+            Some(4) | None => {}
+            Some(_) => {
+                return Err(AppError::Forbidden(
+                    "Unsupported shell syntax. Only simple commands, env assignments, and '|' pipelines are allowed.".to_string(),
+                ))
+            }
+        }
+
+        let mut env = Vec::new();
+        let mut idx = 0usize;
+        while idx < tokens.len() && is_env_assignment(&tokens[idx]) {
+            let (key, value) = parse_env_assignment(&tokens[idx])?;
+            env.push((key, value));
+            idx += 1;
+        }
+
+        if idx >= tokens.len() {
+            return Err(AppError::BadRequest(
+                "Command stage contains only environment assignments with no program".to_string(),
+            ));
+        }
+
+        let program = self.normalize_path_alias(&tokens[idx]);
+        let program_name = program
+            .rsplit('/')
+            .next()
+            .unwrap_or(program.as_str())
+            .to_string();
+
+        if !self.allowed_commands.contains(&program_name) {
+            return Err(AppError::Forbidden(format!(
+                "Command '{}' is not allowed",
+                program_name
+            )));
+        }
+
+        let mut args = Vec::new();
+        for token in tokens.into_iter().skip(idx + 1) {
+            let normalized = self.normalize_path_alias(&token);
+            validate_token_syntax(&normalized)?;
+            validate_token_path(&normalized)?;
+            args.push(normalized);
+        }
+
+        Ok(ParsedCommandStage { env, program, args })
+    }
+
+}
+
+fn shell_execution_options() -> crate::filesystem::sandbox::SandboxExecutionOptions {
+    let mut options = crate::filesystem::sandbox::SandboxExecutionOptions::default();
+
+    let python_path = shell_code_runner_python_path();
+    if let Some(env_root) = shell_code_runner_env_root(&python_path) {
+        let bin_dir = env_root.join("bin");
+        let path_value = format!("{}:/usr/bin:/bin", bin_dir.display());
+        options.extra_env.push(("PATH".to_string(), path_value));
+        options.extra_env.push((
+            "VIRTUAL_ENV".to_string(),
+            env_root.to_string_lossy().to_string(),
+        ));
+        options.extra_read_only_paths.push(env_root);
+    }
+
+    options
+}
+
+fn shell_code_runner_python_path() -> PathBuf {
+    if let Ok(path) = env::var("CODE_RUNNER_PYTHON_PATH") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
         }
     }
+
+    if cfg!(target_os = "macos") {
+        return PathBuf::from(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .expect("agent-engine crate should live under platform-api")
+                .join(".runtime/code_runner/venv/bin/python"),
+        );
+    }
+
+    PathBuf::from("/opt/wacht/code_runner/venv/bin/python")
+}
+
+fn shell_code_runner_env_root(python_path: &Path) -> Option<PathBuf> {
+    let bin_dir = python_path.parent()?;
+    let env_root = bin_dir.parent()?;
+    Some(env_root.to_path_buf())
 }
 
 fn is_allowed_absolute_path(path: &str) -> bool {
     [
         "/knowledge",
+        "/skills",
         "/uploads",
         "/scratch",
         "/workspace",
+        "/project_workspace",
+        "/task",
         "/app",
         "/tmp",
     ]
@@ -258,56 +291,63 @@ fn is_allowed_absolute_path(path: &str) -> bool {
     .any(|prefix| path == *prefix || path.starts_with(&format!("{}/", prefix)))
 }
 
-fn shell_escape(s: &str) -> String {
-    // Use $'...' syntax for proper escaping
-    format!(
-        "$'{}'",
-        s.replace('\\', "\\\\")
-            .replace('\'', "\\'")
-            .replace('\n', "\\n")
-    )
+fn is_env_assignment(token: &str) -> bool {
+    let Some((name, _)) = token.split_once('=') else {
+        return false;
+    };
+    if name.is_empty() {
+        return false;
+    }
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first == '_' || first.is_ascii_alphabetic()) {
+        return false;
+    }
+    chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
 }
 
-/// Split command line on |, ;, & but respect quoted strings.
-/// Fixes issues where jq expressions like '.foo | .bar' were incorrectly split.
-fn split_command_segments(cmd: &str) -> Vec<String> {
-    let mut segments = Vec::new();
-    let mut current = String::new();
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-    let mut chars = cmd.chars().peekable();
+fn parse_env_assignment(token: &str) -> Result<(String, String), AppError> {
+    let (name, value) = token.split_once('=').ok_or_else(|| {
+        AppError::BadRequest(format!("Invalid environment assignment '{}'", token))
+    })?;
+    Ok((name.to_string(), value.to_string()))
+}
 
-    while let Some(c) = chars.next() {
-        match c {
-            '\'' if !in_double_quote => {
-                in_single_quote = !in_single_quote;
-                current.push(c);
-            }
-            '"' if !in_single_quote => {
-                in_double_quote = !in_double_quote;
-                current.push(c);
-            }
-            '\\' => {
-                current.push(c);
-                if let Some(next) = chars.next() {
-                    current.push(next);
-                }
-            }
-            '|' | ';' | '&' if !in_single_quote && !in_double_quote => {
-                let trimmed = current.trim().to_string();
-                if !trimmed.is_empty() {
-                    segments.push(trimmed);
-                }
-                current.clear();
-            }
-            _ => current.push(c),
-        }
+fn validate_token_path(token: &str) -> Result<(), AppError> {
+    if token == "//" {
+        return Ok(());
     }
-
-    let trimmed = current.trim().to_string();
-    if !trimmed.is_empty() {
-        segments.push(trimmed);
+    if token.contains("..") {
+        return Err(AppError::Forbidden(
+            "Path traversal (..) is not allowed in commands".to_string(),
+        ));
     }
+    if token.starts_with('/') && !is_allowed_absolute_path(token) {
+        return Err(AppError::Forbidden(format!(
+            "Absolute path '{}' is outside allowed directories. Use /knowledge/, /skills/, /uploads/, /scratch/, /workspace/, /project_workspace/, /task/, or /app/",
+            token
+        )));
+    }
+    Ok(())
+}
 
-    segments
+fn validate_token_syntax(token: &str) -> Result<(), AppError> {
+    if token.contains('`') {
+        return Err(AppError::Forbidden(
+            "Backtick command substitution is not allowed".to_string(),
+        ));
+    }
+    if token.contains("$(") {
+        return Err(AppError::Forbidden(
+            "Command substitution '$(...)' is not allowed".to_string(),
+        ));
+    }
+    if token.contains('>') || token.contains('<') {
+        return Err(AppError::Forbidden(
+            "Redirection syntax is not allowed".to_string(),
+        ));
+    }
+    Ok(())
 }

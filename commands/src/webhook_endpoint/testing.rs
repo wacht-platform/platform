@@ -4,10 +4,11 @@ use serde_json::Value;
 use sqlx::{query, query_as};
 
 use crate::webhook_delivery::{ClearEndpointFailuresCommand, EnqueueWebhookDeliveryCommand};
-use common::{
-    HasClickHouseProvider, HasDbRouter, HasIdProvider, HasNatsProvider, HasRedisProvider, error::AppError,
-};
 use common::utils::webhook::generate_webhook_signature;
+use common::{
+    HasClickHouseProvider, HasDbRouter, HasIdProvider, HasNatsProvider, HasRedisProvider,
+    error::AppError,
+};
 use dto::clickhouse::webhook::WebhookLog;
 use models::WebhookEndpoint;
 use queries::GetWebhookSubscriptionFilterRulesQuery;

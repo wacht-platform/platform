@@ -17,13 +17,9 @@ pub async fn replay_webhook_delivery(
     Path(app_slug): Path<String>,
     Json(request): Json<ReplayWebhookDeliveryRequest>,
 ) -> ApiResult<ReplayWebhookDeliveryResponse> {
-    let response = webhook_replay_app::replay_webhook_delivery(
-        &app_state,
-        deployment_id,
-        app_slug,
-        request,
-    )
-    .await?;
+    let response =
+        webhook_replay_app::replay_webhook_delivery(&app_state, deployment_id, app_slug, request)
+            .await?;
 
     Ok(response.into())
 }
@@ -66,13 +62,9 @@ pub async fn list_webhook_replay_tasks(
     Path(app_slug): Path<String>,
     Query(params): Query<ReplayTaskListQuery>,
 ) -> ApiResult<ReplayTaskListResponse> {
-    let response = webhook_replay_app::list_webhook_replay_tasks(
-        &app_state,
-        deployment_id,
-        app_slug,
-        params,
-    )
-    .await?;
+    let response =
+        webhook_replay_app::list_webhook_replay_tasks(&app_state, deployment_id, app_slug, params)
+            .await?;
 
     Ok(response.into())
 }

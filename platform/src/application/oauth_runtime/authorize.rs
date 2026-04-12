@@ -121,7 +121,6 @@ pub async fn oauth_consent_submit(
     }
 }
 
-
 async fn authorize_impl(
     app_state: &AppState,
     headers: &HeaderMap,
@@ -319,7 +318,7 @@ async fn try_build_authorize_error_redirect(
         "authorization_code is not allowed for this client" | "OAuth client is inactive" => {
             "unauthorized_client"
         }
-        _ if err.staus_code == StatusCode::INTERNAL_SERVER_ERROR => "server_error",
+        _ if err.status_code == StatusCode::INTERNAL_SERVER_ERROR => "server_error",
         _ => "invalid_request",
     };
 
@@ -371,7 +370,6 @@ fn build_consent_redirect_uri(
 ) -> String {
     append_oauth_redirect_params(redirect_uri, params, state, Some(issuer.to_string()))
 }
-
 
 fn validate_public_client_pkce(
     client_auth_method: &str,

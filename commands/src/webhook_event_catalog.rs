@@ -31,7 +31,9 @@ async fn load_catalog_for_update(
     .ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))
 }
 
-fn parse_catalog_events(catalog: &WebhookEventCatalog) -> Result<Vec<WebhookEventDefinition>, AppError> {
+fn parse_catalog_events(
+    catalog: &WebhookEventCatalog,
+) -> Result<Vec<WebhookEventDefinition>, AppError> {
     serde_json::from_value(catalog.events.clone())
         .map_err(|e| AppError::Internal(format!("Failed to parse current events: {}", e)))
 }
@@ -83,7 +85,8 @@ where
     let catalog = load_catalog_for_update(&mut tx, deployment_id, slug).await?;
     let mut current_events = parse_catalog_events(&catalog)?;
     mutator(&mut current_events)?;
-    let updated_catalog = update_catalog_events(&mut tx, deployment_id, slug, &current_events).await?;
+    let updated_catalog =
+        update_catalog_events(&mut tx, deployment_id, slug, &current_events).await?;
     tx.commit().await?;
     Ok(updated_catalog)
 }

@@ -153,7 +153,6 @@ pub async fn oauth_token(
     }
 }
 
-
 async fn authenticate_management_endpoint(
     app_state: &AppState,
     headers: &HeaderMap,
@@ -192,7 +191,6 @@ async fn authenticate_management_endpoint(
 
     Ok((oauth_app, client, issuer))
 }
-
 
 fn inactive_introspection_response() -> Json<OAuthIntrospectResponse> {
     Json(OAuthIntrospectResponse {

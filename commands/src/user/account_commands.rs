@@ -113,9 +113,9 @@ impl CreateUserCommand {
         let mut primary_phone_number = None;
 
         if let Some(email) = &self.request.email_address {
-            let email_id = ids.1.ok_or_else(|| {
-                AppError::Internal(ERR_MISSING_EMAIL_ID.to_string())
-            })?;
+            let email_id = ids
+                .1
+                .ok_or_else(|| AppError::Internal(ERR_MISSING_EMAIL_ID.to_string()))?;
 
             sqlx::query!(
                 r#"
@@ -151,9 +151,9 @@ impl CreateUserCommand {
         }
 
         if let Some(phone) = &self.request.phone_number {
-            let phone_id = ids.2.ok_or_else(|| {
-                AppError::Internal(ERR_MISSING_PHONE_ID.to_string())
-            })?;
+            let phone_id = ids
+                .2
+                .ok_or_else(|| AppError::Internal(ERR_MISSING_PHONE_ID.to_string()))?;
 
             sqlx::query!(
                 r#"

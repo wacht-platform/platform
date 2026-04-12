@@ -1,0 +1,174 @@
+{
+  "response_json_schema": {{#if action_execution_mode}}{{json response_json_schema}}{{else}}{
+      "type": "OBJECT",
+      "properties": {
+        "next_step": {
+          "type": "STRING",
+          "enum": [
+            "steer",
+            {{#if discoverable_external_tool_names}}
+            "searchtools",
+            "loadtools",
+            {{/if}}
+            "startaction",
+            "continueaction",
+            "enablelongthink",
+            "abort"
+          ],
+          "description": "The next decision branch to take in the control flow. This is not itself a tool call. Actual concrete tool invocations are planned separately by action execution."
+        },
+        "reasoning": {
+          "type": "STRING",
+          "description": "Clear explanation of why this control-flow branch is the right next move based on current state and conversation history. The parent loop must inspect tool-result evidence itself, detect mistakes or gaps, and issue the next corrective or follow-up action when needed."
+        },
+        "confidence": {
+          "type": "NUMBER",
+          "description": "Confidence level in this decision (0.0 to 1.0)"
+        },
+        "steer": {
+          "type": "OBJECT",
+          "description": "Steering details (required when next_step is steer)",
+          "properties": {
+            "message": {
+              "type": "STRING",
+              "description": "A short steering message. Keep it brief. Do not embed long reports, plans, or multi-section artifacts here."
+            },
+            "further_actions_required": {
+              "type": "BOOLEAN",
+              "description": "Whether more work is still required after this steering message. Use false for terminal completion or direct final answers. Use true when you are sending one short visible steering message before continuing the work."
+            },
+            "attachments": {
+              "type": "ARRAY",
+              "items": {
+                "type": "OBJECT",
+                "properties": {
+                  "path": {
+                    "type": "STRING",
+                    "description": "Existing filesystem path to attach, such as `/workspace/report.md` or `/workspace/`."
+                  },
+                  "type": {
+                    "type": "STRING",
+                    "enum": ["file", "folder"],
+                    "description": "Whether this attachment path is a file or a folder."
+                  }
+                },
+                "required": ["path", "type"]
+              },
+              "maxItems": 8,
+              "description": "Attachments for the steering message. If the message mentions a concrete file, folder, report, workspace output, or produced artifact, include the relevant paths here instead of only mentioning them in text.",
+              "nullable": true
+            }
+          },
+          "required": ["message", "further_actions_required"]
+        },
+        {{#if discoverable_external_tool_names}}
+        "search_tools_directive": {
+          "type": "OBJECT",
+          "description": "MANDATORY when next_step is searchtools. Use this branch to discover relevant external tools before execution.",
+          "properties": {
+            "queries": {
+              "type": "ARRAY",
+              "items": { "type": "STRING" },
+              "maxItems": 4,
+              "description": "Natural-language tool discovery queries."
+            },
+            "max_results_per_query": {
+              "type": "INTEGER",
+              "description": "Optional cap on matches per query.",
+              "nullable": true
+            }
+          },
+          "required": ["queries"]
+        },
+        "load_tools_directive": {
+          "type": "OBJECT",
+          "description": "MANDATORY when next_step is loadtools. Use this branch to load specific external tools before execution.",
+          "properties": {
+            "tool_names": {
+              "type": "ARRAY",
+              "items": { "type": "STRING" },
+              "maxItems": 10,
+              "description": "Exact external tool names to load."
+            }
+          },
+          "required": ["tool_names"]
+        },
+        {{/if}}
+        "startaction_directive": {
+          "type": "OBJECT",
+          "description": "MANDATORY when next_step is startaction. Use this only to begin a new bounded action contract or deliberately replace the prior one. Do not use startaction just because one tool call finished. If the same action is still underway, prefer continueaction instead. Put any compact execution guidance directly into `tool_call_brief` instead of relying on a separate planning pass.",
+          "properties": {
+            "objective": {
+              "type": "STRING",
+              "description": "Exact immediate fetch/observe/read/list/search objective for information gathering, or exact mutation objective when already justified. Never ask action execution to analyze, verify, assess, review, compare, conclude, prepare for review, or decide what the fetched information means. Good: fetch the artifact and task brief. Bad: read the artifact and verify completeness."
+            },
+            "allowed_tools": {
+              "type": "ARRAY",
+              "items": { "type": "STRING" },
+              "maxItems": 10,
+              "description": "Required exact tool names action execution may use for the next immediate slice. This must contain at least one real tool name. Keep it minimal and specific."
+            },
+            "tool_call_brief": {
+              "type": "OBJECT",
+              "description": "Optional compact execution guidance that action execution should follow directly.",
+              "properties": {
+                "summary": {
+                  "type": "STRING",
+                  "description": "Optional one-line summary of the immediate execution shape."
+                },
+                "focus_points": {
+                  "type": "ARRAY",
+                  "items": { "type": "STRING" },
+                  "maxItems": 6,
+                  "description": "Compact operational points the next tool-call batch should cover."
+                },
+                "tool_parameter_briefs": {
+                  "type": "ARRAY",
+                  "items": { "type": "STRING" },
+                  "maxItems": 6,
+                  "description": "Name only the few important tool parameters that materially matter next and what should go in them."
+                },
+                "constraints": {
+                  "type": "ARRAY",
+                  "items": { "type": "STRING" },
+                  "maxItems": 8,
+                  "description": "Hard boundaries action execution must respect."
+                }
+              }
+            }
+          },
+          "required": ["objective", "allowed_tools"]
+        },
+        "continueaction_directive": {
+          "type": "OBJECT",
+          "description": "MANDATORY when next_step is continueaction. Use this when a bounded action is already in progress and the same action contract should continue. Do not redefine the original objective or tool whitelist here. If the objective or tool scope must materially change, choose startaction instead.",
+          "properties": {
+            "guidance": {
+              "type": "STRING",
+              "description": "Short incremental guidance for the next move inside the current action, based on the latest tool results. Keep it narrow and operational."
+            }
+          },
+          "required": ["guidance"]
+        },
+        "abort_directive": {
+          "type": "OBJECT",
+          "description": "MANDATORY when next_step is abort. Use only for assignment execution threads that must stop immediately. This is not a successful completion.",
+          "properties": {
+            "outcome": {
+              "type": "STRING",
+              "enum": ["blocked", "return_to_coordinator"],
+              "description": "blocked = task itself is blocked; return_to_coordinator = stop this lane and hand control back for replanning without blocking the task."
+            },
+            "reason": {
+              "type": "STRING",
+              "description": "Concise internal explanation of why execution is aborting."
+            }
+          },
+          "required": ["outcome", "reason"]
+        }
+      },
+      "required": ["next_step", "reasoning", "confidence"]
+    }{{/if}},
+  "max_output_tokens": {{#if action_execution_mode}}16384{{else}}2048{{/if}},
+  "reasoning_effort": {{#if runtime.long_think_mode_active}}"high"{{else}}"low"{{/if}}
+}

@@ -6,17 +6,17 @@ use crate::middleware::RequireDeployment;
 use axum::extract::{Json, Path, Query, State};
 use common::utils::ssrf::validate_webhook_url;
 use rmcp::{
-    ServiceExt,
     model::{ClientCapabilities, ClientInfo, Implementation},
     transport::{
         StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig,
     },
+    ServiceExt,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time::timeout;
 
-use common::{db_router::ReadConsistency, state::AppState};
+use common::{ReadConsistency, state::AppState};
 
 use models::{McpAuthConfig, McpServer, McpServerConfig};
 use queries::GetDeploymentWithSettingsQuery;
@@ -27,17 +27,6 @@ const MCP_OAUTH_CALLBACK_URL: &str =
 #[derive(Deserialize)]
 pub struct McpServerParams {
     pub mcp_server_id: i64,
-}
-
-#[derive(Deserialize)]
-pub struct AgentMcpServerParams {
-    pub agent_id: i64,
-    pub mcp_server_id: i64,
-}
-
-#[derive(Deserialize)]
-pub struct AgentParams {
-    pub agent_id: i64,
 }
 
 #[derive(Deserialize)]
@@ -186,10 +175,7 @@ async fn discover_auth_metadata(
     })?;
 
     let mut has_bearer_challenge = false;
-    for value in response
-        .headers()
-        .get_all(reqwest::header::WWW_AUTHENTICATE)
-    {
+    for value in response.headers().get_all(reqwest::header::WWW_AUTHENTICATE) {
         if let Ok(raw) = value.to_str() {
             if raw.to_lowercase().contains("bearer") {
                 has_bearer_challenge = true;
@@ -215,10 +201,7 @@ async fn discover_auth_metadata(
     }
 
     let mut resource_metadata_url: Option<String> = None;
-    for value in response
-        .headers()
-        .get_all(reqwest::header::WWW_AUTHENTICATE)
-    {
+    for value in response.headers().get_all(reqwest::header::WWW_AUTHENTICATE) {
         if let Ok(raw) = value.to_str() {
             if let Some(url) = parse_quoted_auth_param(raw, "resource_metadata") {
                 resource_metadata_url = Some(url);
@@ -896,23 +879,20 @@ async fn validate_mcp_server_runtime(
             common::error::AppError::BadRequest(format!("MCP validation failed to connect: {}", e))
         })?;
 
-    let validation_result = timeout(
-        Duration::from_secs(10),
-        client.list_tools(Default::default()),
-    )
-    .await
-    .map_err(|_| {
-        common::error::AppError::BadRequest(
-            "MCP validation timed out while listing tools".to_string(),
-        )
-    })?
-    .map(|_| ())
-    .map_err(|e| {
-        common::error::AppError::BadRequest(format!(
-            "MCP validation failed during list_tools: {}",
-            e
-        ))
-    });
+    let validation_result = timeout(Duration::from_secs(10), client.list_tools(Default::default()))
+        .await
+        .map_err(|_| {
+            common::error::AppError::BadRequest(
+                "MCP validation timed out while listing tools".to_string(),
+            )
+        })?
+        .map(|_| ())
+        .map_err(|e| {
+            common::error::AppError::BadRequest(format!(
+                "MCP validation failed during list_tools: {}",
+                e
+            ))
+        });
 
     if let Err(error) = client.cancel().await {
         tracing::warn!("Failed to close MCP validation client cleanly: {}", error);
@@ -1069,9 +1049,9 @@ pub async fn create_mcp_server(
                     || err_text.contains("auth required")
                     || err_text.contains("invalid_token")
                 {
-                    return Err(common::error::AppError::BadRequest(format!(
-                        "Authorization required for this MCP server. Configure auth and retry. Suggested mode: oauth_authorization_code_public_pkce.",
-                    ))
+                    return Err(common::error::AppError::BadRequest(
+                        "Authorization required for this MCP server. Configure auth and retry. Suggested mode: oauth_authorization_code_public_pkce.".to_string(),
+                    )
                     .into());
                 }
                 simple_discovery_result(false, None, format!("Validation note: {}", err))
@@ -1145,46 +1125,5 @@ pub async fn delete_mcp_server(
 ) -> ApiResult<()> {
     mcp_server_app::delete_mcp_server(&app_state, deployment_id, params.mcp_server_id)
         .await?;
-    Ok(().into())
-}
-
-pub async fn get_agent_mcp_servers(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Path(params): Path<AgentParams>,
-) -> ApiResult<PaginatedResponse<McpServer>> {
-    let servers =
-        mcp_server_app::get_agent_mcp_servers(&app_state, deployment_id, params.agent_id)
-            .await?;
-    Ok(servers.into())
-}
-
-pub async fn attach_mcp_server_to_agent(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Path(params): Path<AgentMcpServerParams>,
-) -> ApiResult<()> {
-    mcp_server_app::attach_mcp_server_to_agent(
-        &app_state,
-        deployment_id,
-        params.agent_id,
-        params.mcp_server_id,
-    )
-    .await?;
-    Ok(().into())
-}
-
-pub async fn detach_mcp_server_from_agent(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Path(params): Path<AgentMcpServerParams>,
-) -> ApiResult<()> {
-    mcp_server_app::detach_mcp_server_from_agent(
-        &app_state,
-        deployment_id,
-        params.agent_id,
-        params.mcp_server_id,
-    )
-    .await?;
     Ok(().into())
 }

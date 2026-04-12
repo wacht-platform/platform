@@ -31,6 +31,7 @@ futures = "0.3"
 aws-sdk-s3 = "1.91.0"
 zstd = "0.13"
 reqwest = { version = "0.12", features = ["json"] }
+aws-config = "1.5.14"
 url = "2.5"
 regex = "1.10.2"
 html2text = "0.16"
@@ -42,3 +43,4 @@ hickory-resolver = "0.24"
 validator = { version = "0.19", features = ["derive"] }
 scraper = "0.22"
 nanoid = "0.4"
+lancedb = "0.27.2"

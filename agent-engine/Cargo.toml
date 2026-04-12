@@ -33,3 +33,7 @@ base64 = "0.22.1"
 redis = { version = "0.29.5", features = ["tokio-comp"] }
 flate2 = "1.0"
 rmcp = { version = "0.8.5", features = ["client", "transport-streamable-http-client-reqwest"] }
+sha2 = "0.10"
+libc = "0.2"
+shellish_parse = "2.2"
+lancedb = { version = "0.27.2", features = ["aws"] }

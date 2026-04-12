@@ -49,8 +49,7 @@ pub async fn get_ai_knowledge_bases(
     Query(query): Query<GetKnowledgeBasesQuery>,
 ) -> ApiResult<KnowledgeBaseResponse> {
     let response =
-        ai_knowledge_base_app::get_ai_knowledge_bases(&app_state, deployment_id, query)
-            .await?;
+        ai_knowledge_base_app::get_ai_knowledge_bases(&app_state, deployment_id, query).await?;
     Ok(response.into())
 }
 
@@ -60,8 +59,7 @@ pub async fn create_ai_knowledge_base(
     Json(request): Json<CreateKnowledgeBaseRequest>,
 ) -> ApiResult<AiKnowledgeBase> {
     let knowledge_base =
-        ai_knowledge_base_app::create_ai_knowledge_base(&app_state, deployment_id, request)
-            .await?;
+        ai_knowledge_base_app::create_ai_knowledge_base(&app_state, deployment_id, request).await?;
     Ok(knowledge_base.into())
 }
 
@@ -70,12 +68,9 @@ pub async fn get_ai_knowledge_base_by_id(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<KnowledgeBaseParams>,
 ) -> ApiResult<AiKnowledgeBaseWithDetails> {
-    let knowledge_base = ai_knowledge_base_app::get_ai_knowledge_base_by_id(
-        &app_state,
-        deployment_id,
-        params.kb_id,
-    )
-    .await?;
+    let knowledge_base =
+        ai_knowledge_base_app::get_ai_knowledge_base_by_id(&app_state, deployment_id, params.kb_id)
+            .await?;
     Ok(knowledge_base.into())
 }
 

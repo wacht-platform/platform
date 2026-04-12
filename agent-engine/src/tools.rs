@@ -1,3 +1,4 @@
+mod code_runner;
 mod external;
 mod internal;
 mod platform;
@@ -6,19 +7,25 @@ mod result_shape;
 use crate::filesystem::{shell::ShellExecutor, AgentFilesystem};
 use common::error::AppError;
 use common::state::AppState;
-use dto::json::StreamEvent;
+use dto::json::{agent_executor::ToolCallRequest, StreamEvent};
 use models::AiAgentWithFeatures;
 use models::{AiTool, AiToolConfiguration};
 use rand::Rng;
+use serde::Serialize;
 use serde_json::Value;
 
 pub struct ToolExecutor {
-    ctx: std::sync::Arc<crate::execution_context::ExecutionContext>,
+    ctx: std::sync::Arc<crate::runtime::thread_execution_context::ThreadExecutionContext>,
     channel: Option<tokio::sync::mpsc::Sender<StreamEvent>>,
 }
 
+const DEFAULT_INLINE_OUTPUT_THRESHOLD_CHARS: usize = 60_000;
+const WEB_CONTEXT_INLINE_OUTPUT_THRESHOLD_CHARS: usize = 200_000;
+
 impl ToolExecutor {
-    pub fn new(ctx: std::sync::Arc<crate::execution_context::ExecutionContext>) -> Self {
+    pub fn new(
+        ctx: std::sync::Arc<crate::runtime::thread_execution_context::ThreadExecutionContext>,
+    ) -> Self {
         Self { ctx, channel: None }
     }
 
@@ -38,65 +45,45 @@ impl ToolExecutor {
     }
 
     #[inline]
-    fn context_id(&self) -> i64 {
-        self.ctx.context_id
+    fn thread_id(&self) -> i64 {
+        self.ctx.thread_id
     }
 
-    async fn create_lite_llm(&self) -> crate::GeminiClient {
-        self.ctx
-            .create_llm("gemini-2.5-flash-lite")
-            .await
-            .unwrap_or_else(|_| {
-                let api_key = std::env::var("GEMINI_API_KEY").unwrap();
-                crate::GeminiClient::new(api_key, "gemini-2.5-flash-lite".to_string())
-                    .with_billing(
-                        self.agent().deployment_id,
-                        self.app_state().redis_client.clone(),
-                    )
-                    .with_nats(self.app_state().nats_client.clone())
-            })
+    fn serialize_tool_output<T: Serialize>(&self, result: T) -> Result<Value, AppError> {
+        serde_json::to_value(result).map_err(AppError::from)
     }
 
-    pub async fn execute_tool_immediately(
+    async fn execute_tool_from_input(
         &self,
         tool: &AiTool,
         execution_params: Value,
         filesystem: &AgentFilesystem,
-        shell: &ShellExecutor,
+        _shell: &ShellExecutor,
         context_title: &str,
     ) -> Result<Value, AppError> {
-        let pipeline: Vec<String> = execution_params
-            .get("pipeline")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let result = match &tool.configuration {
+        let mut final_result = match &tool.configuration {
             AiToolConfiguration::Api(config) => {
                 let result = self
                     .execute_api_tool(tool, config, &execution_params)
                     .await?;
-                serde_json::to_value(result)?
+                self.serialize_tool_output(result)?
             }
             AiToolConfiguration::PlatformEvent(config) => {
                 let result = self
                     .execute_platform_event_tool(tool, config, &execution_params)
                     .await?;
-                serde_json::to_value(result)?
+                self.serialize_tool_output(result)?
             }
-            AiToolConfiguration::PlatformFunction(config) => {
+            AiToolConfiguration::CodeRunner(config) => {
                 let result = self
-                    .execute_platform_function_tool(tool, config, &execution_params)
+                    .execute_code_runner_tool(tool, config, &execution_params, filesystem)
                     .await?;
-                serde_json::to_value(result)?
+                self.serialize_tool_output(result)?
             }
-            AiToolConfiguration::Internal(config) => {
-                self.execute_internal_tool(tool, config, &execution_params, filesystem, shell)
-                    .await?
+            AiToolConfiguration::Internal(_config) => {
+                return Err(AppError::Internal(
+                    "Internal tools must execute from structured tool requests".to_string(),
+                ));
             }
             AiToolConfiguration::UseExternalService(config) => {
                 self.execute_external_service_tool(
@@ -110,11 +97,10 @@ impl ToolExecutor {
             }
         };
 
-        let mut result = result;
-        if result.is_object() && result.get("structure_hint").is_none() {
+        if final_result.is_object() && final_result.get("structure_hint").is_none() {
             let mut special_hint = None;
             for key in ["data", "result", "stdout"] {
-                if let Some(val) = result.get(key) {
+                if let Some(val) = final_result.get(key) {
                     if let Some(s) = val.as_str() {
                         if let Ok(parsed) = serde_json::from_str::<Value>(s) {
                             special_hint = Some(format!(
@@ -128,28 +114,20 @@ impl ToolExecutor {
                 }
             }
 
-            let hint = special_hint.unwrap_or_else(|| result_shape::infer_schema_hint(&result));
+            let hint =
+                special_hint.unwrap_or_else(|| result_shape::infer_schema_hint(&final_result));
 
-            if let Some(obj) = result.as_object_mut() {
+            if let Some(obj) = final_result.as_object_mut() {
                 obj.insert("structure_hint".to_string(), serde_json::json!(hint));
             }
         }
 
-        let final_result = if !pipeline.is_empty() {
-            let result_str = serde_json::to_string_pretty(&result)?;
-            let transformed = shell.apply_pipeline(&result_str, &pipeline).await?;
-            serde_json::json!({
-                "result": transformed,
-                "pipeline_applied": pipeline
-            })
-        } else {
-            result
-        };
-
-        let mut final_result = final_result;
         let result_str = serde_json::to_string_pretty(&final_result)?;
         let char_count = result_str.chars().count();
-        let threshold = 60_000;
+        let threshold = match tool.name.as_str() {
+            "web_search" | "url_content" => WEB_CONTEXT_INLINE_OUTPUT_THRESHOLD_CHARS,
+            _ => DEFAULT_INLINE_OUTPUT_THRESHOLD_CHARS,
+        };
 
         let timestamp = chrono::Utc::now().timestamp_millis();
         let random_suffix: String = (0..4)
@@ -163,7 +141,7 @@ impl ToolExecutor {
         let scratch_filename = format!("tool_output_{}_{}.txt", timestamp, random_suffix);
         let scratch_path = format!("scratch/{}", scratch_filename);
         let scratch_write_result = filesystem
-            .write_file(&scratch_path, &result_str, None, None)
+            .write_file(&scratch_path, &result_str, false)
             .await;
         let scratch_saved = scratch_write_result.is_ok();
         let scratch_write_error = scratch_write_result.err().map(|e| e.to_string());
@@ -193,7 +171,7 @@ impl ToolExecutor {
                     "{}",
                     if scratch_saved {
                         format!(
-                            "Output is larger than {} chars, so inline data is omitted. Read '{}' now (execution-scoped temp file) and filter with execute_command.",
+                    "Output is larger than {} chars, so inline data is omitted. Read '{}' now (execution-scoped temp file) and filter with execute_command.",
                             threshold, scratch_path
                         )
                     } else {
@@ -246,5 +224,28 @@ impl ToolExecutor {
         }
 
         Ok(final_result)
+    }
+
+    pub async fn execute_tool_request(
+        &self,
+        tool: &AiTool,
+        request: &ToolCallRequest,
+        filesystem: &AgentFilesystem,
+        shell: &ShellExecutor,
+        context_title: &str,
+    ) -> Result<Value, AppError> {
+        match request {
+            ToolCallRequest::External(_) => {
+                let params = request.input_value().map_err(|e| {
+                    AppError::Internal(format!("Failed to serialize tool input: {e}"))
+                })?;
+                self.execute_tool_from_input(tool, params, filesystem, shell, context_title)
+                    .await
+            }
+            _ => {
+                self.execute_internal_tool_request(tool, request, filesystem, shell)
+                    .await
+            }
+        }
     }
 }

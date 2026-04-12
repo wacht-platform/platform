@@ -51,6 +51,14 @@ const STATUS_TOO_MANY_REQUESTS: u16 = 429;
 const STATUS_INTERNAL_SERVER_ERROR: u16 = 500;
 const WEBHOOK_FAILURE_EMAIL_COOLDOWN_SECONDS: u64 = 3600;
 
+fn failure_status_label(will_retry: bool) -> &'static str {
+    if will_retry {
+        "failed"
+    } else {
+        "permanently_failed"
+    }
+}
+
 fn build_webhook_log(
     deployment_id: i64,
     delivery_id: i64,
@@ -440,11 +448,7 @@ pub async fn process_webhook_delivery(
                     &delivery.app_slug,
                     delivery.endpoint_id,
                     &delivery.event_name,
-                    if will_retry {
-                        "failed"
-                    } else {
-                        "permanently_failed"
-                    },
+                    failure_status_label(will_retry),
                     Some(status_code as i32),
                     Some(duration.as_millis() as i32),
                     delivery.attempts + 1,
@@ -481,11 +485,7 @@ pub async fn process_webhook_delivery(
                 &delivery.app_slug,
                 delivery.endpoint_id,
                 &delivery.event_name,
-                if will_retry {
-                    "failed"
-                } else {
-                    "permanently_failed"
-                },
+                failure_status_label(will_retry),
                 None,
                 None,
                 delivery.attempts + 1,

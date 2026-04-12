@@ -29,8 +29,7 @@ pub async fn create_api_auth_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateApiAuthAppRequest>,
 ) -> ApiResult<ApiAuthApp> {
-    let app =
-        api_key_app_app::create_api_auth_app(&app_state, deployment_id, request).await?;
+    let app = api_key_app_app::create_api_auth_app(&app_state, deployment_id, request).await?;
     Ok(app.into())
 }
 
@@ -41,8 +40,7 @@ pub async fn update_api_auth_app(
     Json(request): Json<UpdateApiAuthAppRequest>,
 ) -> ApiResult<ApiAuthApp> {
     let app =
-        api_key_app_app::update_api_auth_app(&app_state, deployment_id, app_slug, request)
-            .await?;
+        api_key_app_app::update_api_auth_app(&app_state, deployment_id, app_slug, request).await?;
     Ok(app.into())
 }
 

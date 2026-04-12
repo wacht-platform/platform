@@ -85,25 +85,31 @@ pub enum AgentExecutionType {
     #[serde(rename = "new_message")]
     NewMessage { conversation_id: String },
 
-    #[serde(rename = "platform_function_result")]
-    PlatformFunctionResult {
-        execution_id: String,
-        result: serde_json::Value,
+    #[serde(rename = "approval_response")]
+    ApprovalResponse {
+        request_message_id: String,
+        approvals: Vec<crate::json::deployment::ToolApprovalSelection>,
     },
 
-    #[serde(rename = "user_input_response")]
-    UserInputResponse { conversation_id: String },
+    #[serde(rename = "thread_event")]
+    ThreadEvent { event_id: String },
 }
 
 /// Request to execute an agent via NATS
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentExecutionRequest {
     pub deployment_id: String,
-    pub context_id: String,
+    pub thread_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_name: Option<String>,
+    pub thread_event_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
     #[serde(flatten)]
     pub execution_type: AgentExecutionType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreadScheduleRequest {
+    pub deployment_id: String,
+    pub thread_id: String,
 }

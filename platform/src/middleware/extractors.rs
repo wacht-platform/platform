@@ -1,10 +1,8 @@
-use axum::{
-    extract::FromRequestParts,
-    http::{StatusCode, request::Parts},
-};
+use axum::{extract::FromRequestParts, http::request::Parts};
 use std::sync::LazyLock;
 
 use super::{deployment_context::DeploymentContext, platform_source::PlatformSource};
+use crate::application::response::ApiErrorResponse;
 
 /// Extractor that requires deployment context to be present.
 ///
@@ -28,14 +26,14 @@ impl<S> FromRequestParts<S> for RequireDeployment
 where
     S: Send + Sync,
 {
-    type Rejection = (StatusCode, &'static str);
+    type Rejection = ApiErrorResponse;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         parts
             .extensions
             .get::<DeploymentContext>()
             .map(|ctx| RequireDeployment(ctx.deployment_id))
-            .ok_or((StatusCode::BAD_REQUEST, "Deployment context not found"))
+            .ok_or_else(|| ApiErrorResponse::bad_request("Deployment context not found"))
     }
 }
 
@@ -70,13 +68,13 @@ impl<S> FromRequestParts<S> for ConsoleDeployment
 where
     S: Send + Sync,
 {
-    type Rejection = (StatusCode, String);
+    type Rejection = ApiErrorResponse;
 
     async fn from_request_parts(_parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         CONSOLE_DEPLOYMENT_ID
             .as_ref()
             .map(|id| ConsoleDeployment(*id))
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.clone()))
+            .map_err(|e| ApiErrorResponse::internal(e.clone()))
     }
 }
 
@@ -88,7 +86,7 @@ impl<S> FromRequestParts<S> for ExtractPlatformSource
 where
     S: Send + Sync,
 {
-    type Rejection = (StatusCode, &'static str);
+    type Rejection = ApiErrorResponse;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         parts
@@ -96,9 +94,6 @@ where
             .get::<PlatformSource>()
             .copied()
             .map(ExtractPlatformSource)
-            .ok_or((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Platform source not found",
-            ))
+            .ok_or_else(|| ApiErrorResponse::internal("Platform source not found"))
     }
 }

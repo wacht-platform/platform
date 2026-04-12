@@ -15,7 +15,10 @@ impl DeploymentAiSettingsInsert {
         DeploymentAiSettingsInsertBuilder::default()
     }
 
-    pub(in crate::project) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(in crate::project) async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -60,4 +63,3 @@ impl DeploymentAiSettingsInsertBuilder {
         Ok(DeploymentAiSettingsInsert { id, deployment_id })
     }
 }
-

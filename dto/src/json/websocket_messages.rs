@@ -28,9 +28,3 @@ pub struct PlatformEventPayload {
     pub event_label: String,
     pub event_data: Value,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlatformFunctionPayload {
-    pub function_name: String,
-    pub function_data: Value,
-}

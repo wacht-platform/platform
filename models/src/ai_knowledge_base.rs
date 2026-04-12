@@ -1,19 +1,6 @@
 use chrono::{DateTime, Utc};
-use pgvector::HalfVector;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-
-#[derive(FromRow, Clone)]
-pub struct KnowledgeBaseDocumentChunk {
-    pub document_id: i64,
-    pub knowledge_base_id: i64,
-    pub deployment_id: i64,
-    pub chunk_index: i32,
-    pub content: String,
-    pub embedding: HalfVector,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
 
 #[derive(FromRow, Serialize, Deserialize, Clone, Debug)]
 pub struct DocumentChunkSearchResult {
@@ -68,7 +55,7 @@ pub struct AiKnowledgeBaseDocument {
     pub file_name: String,
     pub file_size: i64,
     pub file_type: String,
-    pub file_url: String,
+    pub storage_object_key: String,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub knowledge_base_id: i64,
     pub processing_metadata: Option<serde_json::Value>,

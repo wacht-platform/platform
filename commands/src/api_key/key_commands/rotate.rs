@@ -95,18 +95,12 @@ impl RotateApiKeyCommand {
             return Err(user_not_member_error());
         }
 
-        let org_membership_id = resolve_org_membership_id(
-            &mut tx,
-            app_context.user_id,
-            app_context.organization_id,
-        )
-        .await?;
-        let workspace_membership_id = resolve_workspace_membership_id(
-            &mut tx,
-            app_context.user_id,
-            app_context.workspace_id,
-        )
-        .await?;
+        let org_membership_id =
+            resolve_org_membership_id(&mut tx, app_context.user_id, app_context.organization_id)
+                .await?;
+        let workspace_membership_id =
+            resolve_workspace_membership_id(&mut tx, app_context.user_id, app_context.workspace_id)
+                .await?;
 
         let mut organization_id: Option<i64> = None;
         let mut workspace_id: Option<i64> = None;

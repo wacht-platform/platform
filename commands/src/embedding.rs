@@ -1,14 +1,35 @@
 use common::{
-    HasDbRouter, HasEmbeddingProvider, HasEncryptionProvider,
-    db_router::ReadConsistency,
-    error::AppError,
+    EmbeddingPart, HasDbRouter, HasEmbeddingProvider, HasEncryptionProvider,
+    db_router::ReadConsistency, error::AppError,
 };
-use models::ai_knowledge_base::DocumentChunkSearchResult;
 
-use pgvector::HalfVector;
-use sqlx::Row;
+const KNOWLEDGE_EMBEDDING_DIMENSION: i32 = 1536;
+const RETRIEVAL_DOCUMENT_TASK_TYPE: &str = "RETRIEVAL_DOCUMENT";
+const RETRIEVAL_QUERY_TASK_TYPE: &str = "RETRIEVAL_QUERY";
 
-async fn resolve_deployment_gemini_api_key<D>(
+fn format_embedding_input(
+    model: &str,
+    text: &str,
+    title: Option<&str>,
+    task_type: Option<&str>,
+) -> String {
+    if !model.contains("gemini-embedding-2-preview") {
+        return text.to_string();
+    }
+
+    match task_type {
+        Some(RETRIEVAL_QUERY_TASK_TYPE) => format!("task: search result | query: {}", text),
+        _ => format!(
+            "title: {} | text: {}",
+            title
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("none"),
+            text
+        ),
+    }
+}
+
+pub async fn resolve_deployment_gemini_api_key<D>(
     deps: &D,
     deployment_id: i64,
 ) -> Result<Option<String>, AppError>
@@ -28,10 +49,35 @@ where
     }
 }
 
+pub fn format_retrieval_query_input(model: &str, text: &str) -> String {
+    format_embedding_input(model, text, None, Some(RETRIEVAL_QUERY_TASK_TYPE))
+}
+
+pub fn format_retrieval_document_input(model: &str, text: &str, title: Option<&str>) -> String {
+    format_embedding_input(model, text, title, Some(RETRIEVAL_DOCUMENT_TASK_TYPE))
+}
+
+pub fn build_multimodal_retrieval_document_parts(
+    model: &str,
+    text: &str,
+    title: Option<&str>,
+    mime_type: &str,
+    data: Vec<u8>,
+) -> Vec<EmbeddingPart> {
+    vec![
+        EmbeddingPart::Text(format_retrieval_document_input(model, text, title)),
+        EmbeddingPart::InlineData {
+            mime_type: mime_type.to_string(),
+            data,
+        },
+    ]
+}
+
 #[derive(Clone)]
 pub struct GenerateEmbeddingCommand {
     pub text: String,
-    pub task_type: Option<String>,
+    pub title: Option<String>,
+    is_retrieval_query: bool,
     pub deployment_id: Option<i64>,
 }
 
@@ -39,13 +85,24 @@ impl GenerateEmbeddingCommand {
     pub fn new(text: String) -> Self {
         Self {
             text,
-            task_type: None,
+            title: None,
+            is_retrieval_query: false,
             deployment_id: None,
         }
     }
 
-    pub fn with_task_type(mut self, task_type: String) -> Self {
-        self.task_type = Some(task_type);
+    pub fn with_title(mut self, title: Option<String>) -> Self {
+        self.title = title;
+        self
+    }
+
+    pub fn for_retrieval_query(mut self) -> Self {
+        self.is_retrieval_query = true;
+        self
+    }
+
+    pub fn for_retrieval_document(mut self) -> Self {
+        self.is_retrieval_query = false;
         self
     }
 
@@ -64,11 +121,21 @@ impl GenerateEmbeddingCommand {
             None
         };
 
+        let formatted_text = format_embedding_input(
+            deps.embedding_provider().model(),
+            &self.text,
+            self.title.as_deref(),
+            Some(if self.is_retrieval_query {
+                RETRIEVAL_QUERY_TASK_TYPE
+            } else {
+                RETRIEVAL_DOCUMENT_TASK_TYPE
+            }),
+        );
+
         deps.embedding_provider()
             .embed_content(
-                self.text,
-                self.task_type.or(Some("RETRIEVAL_DOCUMENT".to_string())),
-                Some(3072),
+                formatted_text,
+                Some(KNOWLEDGE_EMBEDDING_DIMENSION),
                 api_key_override.as_deref(),
             )
             .await
@@ -78,7 +145,8 @@ impl GenerateEmbeddingCommand {
 #[derive(Clone)]
 pub struct GenerateEmbeddingsCommand {
     pub texts: Vec<String>,
-    pub task_type: Option<String>,
+    pub titles: Option<Vec<Option<String>>>,
+    is_retrieval_query: bool,
     pub deployment_id: Option<i64>,
 }
 
@@ -86,13 +154,24 @@ impl GenerateEmbeddingsCommand {
     pub fn new(texts: Vec<String>) -> Self {
         Self {
             texts,
-            task_type: None,
+            titles: None,
+            is_retrieval_query: false,
             deployment_id: None,
         }
     }
 
-    pub fn with_task_type(mut self, task_type: String) -> Self {
-        self.task_type = Some(task_type);
+    pub fn with_titles(mut self, titles: Vec<Option<String>>) -> Self {
+        self.titles = Some(titles);
+        self
+    }
+
+    pub fn for_retrieval_query(mut self) -> Self {
+        self.is_retrieval_query = true;
+        self
+    }
+
+    pub fn for_retrieval_document(mut self) -> Self {
+        self.is_retrieval_query = false;
         self
     }
 
@@ -111,84 +190,35 @@ impl GenerateEmbeddingsCommand {
             None
         };
 
+        let formatted_texts = self
+            .texts
+            .into_iter()
+            .enumerate()
+            .map(|(index, text)| {
+                let title = self
+                    .titles
+                    .as_ref()
+                    .and_then(|titles| titles.get(index))
+                    .and_then(|value| value.as_deref());
+                format_embedding_input(
+                    deps.embedding_provider().model(),
+                    &text,
+                    title,
+                    Some(if self.is_retrieval_query {
+                        RETRIEVAL_QUERY_TASK_TYPE
+                    } else {
+                        RETRIEVAL_DOCUMENT_TASK_TYPE
+                    }),
+                )
+            })
+            .collect();
+
         deps.embedding_provider()
             .batch_embed_contents(
-                self.texts,
-                self.task_type.or(Some("RETRIEVAL_DOCUMENT".to_string())),
-                Some(3072),
+                formatted_texts,
+                Some(KNOWLEDGE_EMBEDDING_DIMENSION),
                 api_key_override.as_deref(),
             )
             .await
-    }
-}
-
-#[derive(Clone)]
-pub struct SearchKnowledgeBaseEmbeddingsCommand {
-    pub knowledge_base_ids: Vec<i64>,
-    pub query_embedding: Vec<f32>,
-    pub limit: u64,
-}
-
-impl SearchKnowledgeBaseEmbeddingsCommand {
-    pub fn new(knowledge_base_ids: Vec<i64>, query_embedding: Vec<f32>, limit: u64) -> Self {
-        Self {
-            knowledge_base_ids,
-            query_embedding,
-            limit,
-        }
-    }
-
-    pub async fn execute_with_db<'e, E>(
-        self,
-        executor: E,
-    ) -> Result<Vec<DocumentChunkSearchResult>, AppError>
-    where
-        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-    {
-        let query_embedding = HalfVector::from_f32_slice(&self.query_embedding);
-        let max_distance = 1.2_f64;
-
-        let rows = sqlx::query(
-            r#"
-            SELECT
-                kbc.document_id,
-                kbc.knowledge_base_id,
-                kbc.content,
-                kbc.chunk_index,
-                (kbc.embedding::vector(3072) <-> $1)::float8 as score,
-                d.title as document_title,
-                d.description as document_description
-            FROM knowledge_base_document_chunks kbc
-            LEFT JOIN ai_knowledge_base_documents d ON kbc.document_id = d.id
-            WHERE kbc.knowledge_base_id = ANY($2)
-              AND (kbc.embedding::vector(3072) <-> $1) <= $4
-            ORDER BY score ASC
-            LIMIT $3
-            "#,
-        )
-        .bind(query_embedding)
-        .bind(&self.knowledge_base_ids)
-        .bind(self.limit as i64)
-        .bind(max_distance)
-        .fetch_all(executor)
-        .await
-        .map_err(AppError::from)?;
-
-        let mut results = Vec::new();
-        for row in rows {
-            results.push(DocumentChunkSearchResult {
-                document_id: row.try_get("document_id").map_err(AppError::from)?,
-                knowledge_base_id: row.try_get("knowledge_base_id").map_err(AppError::from)?,
-                content: row.try_get("content").map_err(AppError::from)?,
-                score: row.try_get("score").map_err(AppError::from)?,
-                chunk_index: row.try_get("chunk_index").map_err(AppError::from)?,
-                document_title: row.try_get("document_title").map_err(AppError::from)?,
-                document_description: row
-                    .try_get("document_description")
-                    .map_err(AppError::from)?,
-            });
-        }
-
-        Ok(results)
     }
 }

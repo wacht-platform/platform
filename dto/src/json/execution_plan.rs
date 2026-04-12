@@ -99,7 +99,6 @@ pub struct ExecutionAction {
     #[serde(rename = "type")]
     pub action_type: ActionType,
     pub details: serde_json::Value,
-    pub purpose: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

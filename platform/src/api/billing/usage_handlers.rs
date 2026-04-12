@@ -15,8 +15,7 @@ pub async fn get_current_usage(
     RequireAuth(auth): RequireAuth,
 ) -> ApiResult<UsageResponse> {
     let owner_id = owner_id_from_auth(&auth);
-    let (snapshots, billing_period) =
-        billing_app::get_current_usage(&state, &owner_id).await?;
+    let (snapshots, billing_period) = billing_app::get_current_usage(&state, &owner_id).await?;
 
     Ok(UsageResponse {
         snapshots,

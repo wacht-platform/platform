@@ -1,4 +1,5 @@
 use chrono::Utc;
+use common::error::AppError;
 use handlebars::Handlebars;
 use serde_json::Value;
 use std::sync::LazyLock;
@@ -20,20 +21,17 @@ pub struct AgentTemplates;
 
 impl AgentTemplates {
     // Core decision templates
-    pub const STEP_DECISION: &'static str = "step_decision_prompt";
-    pub const VALIDATION: &'static str = "validation_prompt";
-    pub const SUMMARY: &'static str = "summary_prompt";
-    pub const USER_INPUT_REQUEST: &'static str = "user_input_request_prompt";
+    pub const STEP_DECISION: &'static str = "next_step_decision_prompt";
+    pub const STEP_DECISION_LIVE_CONTEXT: &'static str = "next_step_decision_live_context";
     pub const EXECUTION_SUMMARY: &'static str = "execution_summary_prompt";
 
     // Tool & context templates
-    pub const PARAMETER_GENERATION: &'static str = "parameter_generation_prompt";
-    pub const CONTEXT_SEARCH_DERIVATION: &'static str = "context_search_derivation_prompt";
-    pub const CONTEXT_RESEARCH_REPL: &'static str = "context_research_repl_prompt";
-    pub const CONTEXT_WEB_RESEARCH_REPL: &'static str = "context_web_research_repl_prompt";
-
-    // Memory templates
-    pub const MEMORY_CONSOLIDATION: &'static str = "memory_consolidation_prompt";
+    pub const WORKER_TASK_ROUTING_CONTEXT: &'static str = "worker_task_routing_context";
+    pub const WORKER_ASSIGNMENT_EXECUTION_CONTEXT: &'static str =
+        "worker_assignment_execution_context";
+    pub const WORKER_ASSIGNMENT_OUTCOME_REVIEW_CONTEXT: &'static str =
+        "worker_assignment_outcome_review_context";
+    pub const TASK_WORKSPACE_BRIEF: &'static str = "task_workspace_brief";
 }
 
 pub fn render_template_with_prompt(
@@ -50,45 +48,17 @@ pub fn render_template_with_prompt(
     }
 
     let system_prompt = match template_name {
-        AgentTemplates::STEP_DECISION => prompt_loader::get_prompt("step_decision_system"),
-        AgentTemplates::VALIDATION => prompt_loader::get_prompt("validation_system"),
-        AgentTemplates::SUMMARY => prompt_loader::get_prompt("summary_system"),
-        AgentTemplates::USER_INPUT_REQUEST => {
-            prompt_loader::get_prompt("user_input_request_system")
-        }
+        AgentTemplates::STEP_DECISION => prompt_loader::get_prompt("next_step_decision_system"),
         AgentTemplates::EXECUTION_SUMMARY => prompt_loader::get_prompt("execution_summary_system"),
-        AgentTemplates::PARAMETER_GENERATION => {
-            prompt_loader::get_prompt("parameter_generation_system")
-        }
-        AgentTemplates::CONTEXT_SEARCH_DERIVATION => {
-            prompt_loader::get_prompt("context_search_derivation_system")
-        }
-        AgentTemplates::CONTEXT_RESEARCH_REPL => {
-            prompt_loader::get_prompt("context_research_repl_system")
-        }
-        AgentTemplates::CONTEXT_WEB_RESEARCH_REPL => {
-            prompt_loader::get_prompt("context_web_research_repl_system")
-        }
-        AgentTemplates::MEMORY_CONSOLIDATION => {
-            prompt_loader::get_prompt("memory_consolidation_system")
-        }
         _ => None,
     };
 
     // If we have a system prompt, render it first then inject it into the context
     if let Some(prompt_template) = system_prompt {
         // Render the system prompt with the current context using the global HANDLEBARS
-        let mut rendered_prompt = HANDLEBARS
+        let rendered_prompt = HANDLEBARS
             .render_template(prompt_template, &context)
             .unwrap();
-
-        // Append custom system instructions if provided in the context
-        if let Some(custom_instructions) = context.get("custom_system_instructions") {
-            if let Some(custom_str) = custom_instructions.as_str() {
-                rendered_prompt.push_str("\n\n");
-                rendered_prompt.push_str(custom_str);
-            }
-        }
 
         if let Some(obj) = context.as_object_mut() {
             obj.insert("system_prompt".to_string(), Value::String(rendered_prompt));
@@ -96,4 +66,49 @@ pub fn render_template_with_prompt(
     }
 
     HANDLEBARS.render(template_name, &context)
+}
+
+pub fn render_template_only(
+    template_name: &str,
+    context: &Value,
+) -> Result<String, handlebars::RenderError> {
+    HANDLEBARS.render(template_name, context)
+}
+
+pub fn render_prompt_text(prompt_name: &str, context: &Value) -> Result<String, AppError> {
+    let prompt_template = prompt_loader::get_prompt(prompt_name)
+        .ok_or_else(|| AppError::Internal(format!("Unknown prompt template: {prompt_name}")))?;
+    HANDLEBARS
+        .render_template(prompt_template, context)
+        .map_err(|e| AppError::Internal(format!("Failed to render prompt {prompt_name}: {e}")))
+}
+
+pub fn render_template_json_with_prompt<T>(
+    template_name: &str,
+    context: Value,
+) -> Result<T, AppError>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let rendered = render_template_with_prompt(template_name, context)
+        .map_err(|e| AppError::Internal(format!("Failed to render template {template_name}: {e}")))?;
+    serde_json::from_str(&rendered).map_err(|e| {
+        AppError::Internal(format!(
+            "Failed to parse rendered template {template_name} as JSON: {e}"
+        ))
+    })
+}
+
+pub fn render_template_json<T>(template_name: &str, context: &Value) -> Result<T, AppError>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let rendered = HANDLEBARS
+        .render(template_name, context)
+        .map_err(|e| AppError::Internal(format!("Failed to render template {template_name}: {e}")))?;
+    serde_json::from_str(&rendered).map_err(|e| {
+        AppError::Internal(format!(
+            "Failed to parse rendered template {template_name} as JSON: {e}"
+        ))
+    })
 }

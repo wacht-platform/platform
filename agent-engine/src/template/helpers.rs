@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use handlebars::{
-    Context, Handlebars, Helper, HelperResult, Output, RenderContext, RenderErrorReason,
+    Context, Handlebars, Helper, HelperDef, HelperResult, Output, RenderContext, RenderError,
+    RenderErrorReason, ScopedJson,
 };
 use serde_json::Value;
 
@@ -18,9 +19,9 @@ pub fn register_all_helpers(hb: &mut Handlebars) {
     hb.register_helper("json_string", Box::new(JsonStringHelper));
     hb.register_helper("truncate", Box::new(TruncateHelper));
     hb.register_helper("default", Box::new(DefaultHelper));
-    hb.register_helper("format_capabilities", Box::new(FormatCapabilitiesHelper));
     hb.register_helper("current_timestamp", Box::new(CurrentTimestampHelper));
     hb.register_helper("eq", Box::new(EqHelper));
+    hb.register_helper("has_any_tool", Box::new(HasAnyToolHelper));
     hb.register_helper("format_timestamp", Box::new(FormatTimestampHelper));
     hb.register_helper("relative_time", Box::new(RelativeTimeHelper));
 }
@@ -46,137 +47,75 @@ impl handlebars::HelperDef for FormatToolsHelper {
             .map(|tool| {
                 let name = tool
                     .get("name")
+                    .or_else(|| tool.get("slug"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("Unknown");
                 let description = tool
                     .get("description")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("No description");
+                    .unwrap_or("---");
+                let mount_path = tool.get("mount_path").and_then(|v| v.as_str());
+                let input_fields = tool
+                    .get("input_schema")
+                    .and_then(|v| v.as_array())
+                    .map(|fields| {
+                        fields
+                            .iter()
+                            .filter_map(|field| {
+                                let field_name = field.get("name").and_then(|v| v.as_str())?;
+                                let field_type = field
+                                    .get("field_type")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("ANY")
+                                    .to_lowercase();
+                                let required = field
+                                    .get("required")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
+                                let description = field
+                                    .get("description")
+                                    .and_then(|v| v.as_str())
+                                    .map(|desc| {
+                                        let mut shortened = desc.trim().to_string();
+                                        if let Some((first, _)) = shortened.split_once('.') {
+                                            shortened = first.trim().to_string();
+                                        }
+                                        if shortened.chars().count() > 72 {
+                                            shortened =
+                                                shortened.chars().take(72).collect::<String>();
+                                            shortened.push_str("...");
+                                        }
+                                        shortened
+                                    });
+                                let mut rendered = if required {
+                                    format!("{field_name}*<{field_type}>")
+                                } else {
+                                    format!("{field_name}<{field_type}>")
+                                };
+                                if let Some(desc) = description {
+                                    if !desc.is_empty() {
+                                        rendered.push_str(" - ");
+                                        rendered.push_str(&desc);
+                                    }
+                                }
+                                Some(rendered)
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
 
-                // Extract parameter information from tool configuration
-                let mut param_info = String::new();
-                if let Some(config) = tool.get("configuration") {
-                    let tool_type = config
-                        .get("type")
-                        .and_then(|t| t.as_str())
-                        .unwrap_or("Unknown");
-
-                    match tool_type {
-                        "Api" => {
-                            param_info.push_str(" [API Tool]");
-                            if let Some(schema) =
-                                config.get("url_params_schema").and_then(|s| s.as_array())
-                            {
-                                if !schema.is_empty() {
-                                    let params: Vec<String> = schema
-                                        .iter()
-                                        .filter_map(|field| {
-                                            let name = field.get("name")?.as_str()?;
-                                            let required = field
-                                                .get("required")
-                                                .and_then(|r| r.as_bool())
-                                                .unwrap_or(false);
-                                            Some(if required {
-                                                format!("{name} (required)")
-                                            } else {
-                                                name.to_string()
-                                            })
-                                        })
-                                        .collect();
-                                    param_info
-                                        .push_str(&format!(" | Parameters: {}", params.join(", ")));
-                                }
-                            }
-                        }
-                        "PlatformFunction" => {
-                            param_info.push_str(" [Platform Function]");
-                            if let Some(schema) =
-                                config.get("input_schema").and_then(|s| s.as_array())
-                            {
-                                if !schema.is_empty() {
-                                    let params: Vec<String> = schema
-                                        .iter()
-                                        .filter_map(|field| {
-                                            let name = field.get("name")?.as_str()?;
-                                            let required = field
-                                                .get("required")
-                                                .and_then(|r| r.as_bool())
-                                                .unwrap_or(false);
-                                            Some(if required {
-                                                format!("{name} (required)")
-                                            } else {
-                                                name.to_string()
-                                            })
-                                        })
-                                        .collect();
-                                    param_info
-                                        .push_str(&format!(" | Inputs: {}", params.join(", ")));
-                                }
-                            }
-                        }
-                        "KnowledgeBase" => {
-                            param_info.push_str(" [Knowledge Base Search]");
-                            param_info.push_str(" | Requires: query (predefined search)");
-                        }
-                        "UseExternalService" => {
-                            param_info.push_str(" [External Service]");
-                            if let Some(schema) =
-                                config.get("input_schema").and_then(|s| s.as_array())
-                            {
-                                if !schema.is_empty() {
-                                    let params: Vec<String> = schema
-                                        .iter()
-                                        .filter_map(|field| {
-                                            let name = field.get("name")?.as_str()?;
-                                            let required = field
-                                                .get("required")
-                                                .and_then(|r| r.as_bool())
-                                                .unwrap_or(false);
-                                            Some(if required {
-                                                format!("{name} (required)")
-                                            } else {
-                                                name.to_string()
-                                            })
-                                        })
-                                        .collect();
-                                    param_info
-                                        .push_str(&format!(" | Inputs: {}", params.join(", ")));
-                                }
-                            }
-                        }
-                        "Internal" => {
-                            param_info.push_str(" [Internal Tool]");
-                            if let Some(schema) =
-                                config.get("input_schema").and_then(|s| s.as_array())
-                            {
-                                if !schema.is_empty() {
-                                    let params: Vec<String> = schema
-                                        .iter()
-                                        .filter_map(|field| {
-                                            let name = field.get("name")?.as_str()?;
-                                            let required = field
-                                                .get("required")
-                                                .and_then(|r| r.as_bool())
-                                                .unwrap_or(false);
-                                            Some(if required {
-                                                format!("{name} (required)")
-                                            } else {
-                                                name.to_string()
-                                            })
-                                        })
-                                        .collect();
-                                    param_info
-                                        .push_str(&format!(" | Inputs: {}", params.join(", ")));
-                                }
-                            }
-                        }
-                        _ => {
-                            param_info.push_str(&format!(" [{tool_type}]"));
-                        }
+                if input_fields.is_empty() {
+                    if let Some(mount_path) = mount_path {
+                        format!("- {name} at `{mount_path}`: {description}")
+                    } else {
+                        format!("- {name}: {description}")
                     }
+                } else {
+                    format!(
+                        "- {name}: {description} Inputs: {}",
+                        input_fields.join(", ")
+                    )
                 }
-
-                format!("- {name}: {description}{param_info}")
             })
             .collect();
 
@@ -250,10 +189,10 @@ impl handlebars::HelperDef for FormatMemoriesHelper {
                     .get("created_at")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
-                let scope = match memory.get("creation_context_id").and_then(|v| v.as_i64()) {
-                    Some(_) => "session",
-                    None => "cross-session",
-                };
+                let scope = memory
+                    .get("memory_scope")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
                 format!("- [{category}][{scope}] {content} (created_at: {created_at})")
             })
             .collect();
@@ -430,62 +369,6 @@ impl handlebars::HelperDef for DefaultHelper {
     }
 }
 
-pub struct FormatCapabilitiesHelper;
-
-impl handlebars::HelperDef for FormatCapabilitiesHelper {
-    fn call<'reg: 'rc, 'rc>(
-        &self,
-        h: &Helper,
-        _: &Handlebars,
-        _: &Context,
-        _: &mut RenderContext,
-        out: &mut dyn Output,
-    ) -> HelperResult {
-        let empty_vec = vec![];
-        let tools = h
-            .param(0)
-            .and_then(|v| v.value().as_array())
-            .unwrap_or(&empty_vec);
-        let knowledge_bases = h
-            .param(1)
-            .and_then(|v| v.value().as_array())
-            .unwrap_or(&empty_vec);
-
-        let mut output = String::new();
-
-        if !tools.is_empty() {
-            output.push_str("Tools Available:\n");
-            for tool in tools {
-                let name = tool
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown");
-                let description = tool
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("No description");
-                output.push_str(&format!("- {name}: {description}\n"));
-            }
-            output.push('\n');
-        }
-
-        if !knowledge_bases.is_empty() {
-            output.push_str("Knowledge Bases Available:\n");
-            for kb in knowledge_bases {
-                let name = kb.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown");
-                let description = kb
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("No description");
-                output.push_str(&format!("- {name}: {description}\n"));
-            }
-        }
-
-        out.write(output.trim_end())?;
-        Ok(())
-    }
-}
-
 pub struct CurrentTimestampHelper;
 
 impl handlebars::HelperDef for CurrentTimestampHelper {
@@ -506,14 +389,13 @@ impl handlebars::HelperDef for CurrentTimestampHelper {
 pub struct EqHelper;
 
 impl handlebars::HelperDef for EqHelper {
-    fn call<'reg: 'rc, 'rc>(
+    fn call_inner<'reg: 'rc, 'rc>(
         &self,
-        h: &Helper,
-        _: &Handlebars,
-        _: &Context,
-        _: &mut RenderContext,
-        out: &mut dyn Output,
-    ) -> HelperResult {
+        h: &Helper<'rc>,
+        _: &'reg Handlebars<'reg>,
+        _: &'rc Context,
+        _: &mut RenderContext<'reg, 'rc>,
+    ) -> Result<ScopedJson<'rc>, RenderError> {
         let param1 = h
             .param(0)
             .ok_or_else(|| RenderErrorReason::InvalidParamType("Expected first parameter"))?
@@ -523,8 +405,6 @@ impl handlebars::HelperDef for EqHelper {
             .ok_or_else(|| RenderErrorReason::InvalidParamType("Expected second parameter"))?
             .value();
 
-        // For now, just return true/false as string for simplicity
-        // The template should handle the condition differently
         let result = match (param1, param2) {
             (Value::String(s1), Value::String(s2)) => s1 == s2,
             (Value::Number(n1), Value::Number(n2)) => n1 == n2,
@@ -533,7 +413,73 @@ impl handlebars::HelperDef for EqHelper {
             _ => false,
         };
 
-        out.write(if result { "true" } else { "false" })?;
+        Ok(ScopedJson::Derived(Value::Bool(result)))
+    }
+
+    fn call<'reg: 'rc, 'rc>(
+        &self,
+        h: &Helper<'rc>,
+        r: &'reg Handlebars<'reg>,
+        ctx: &'rc Context,
+        rc: &mut RenderContext<'reg, 'rc>,
+        out: &mut dyn Output,
+    ) -> HelperResult {
+        let value = self.call_inner(h, r, ctx, rc)?;
+        out.write(&value.render())?;
+        Ok(())
+    }
+}
+
+pub struct HasAnyToolHelper;
+
+impl HelperDef for HasAnyToolHelper {
+    fn call_inner<'reg: 'rc, 'rc>(
+        &self,
+        h: &Helper<'rc>,
+        _: &'reg Handlebars<'reg>,
+        _: &'rc Context,
+        _: &mut RenderContext<'reg, 'rc>,
+    ) -> Result<ScopedJson<'rc>, RenderError> {
+        let tools = h
+            .param(0)
+            .and_then(|v| v.value().as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        let names: Vec<&str> = h
+            .params()
+            .iter()
+            .skip(1)
+            .filter_map(|param| param.value().as_str())
+            .collect();
+
+        if names.is_empty() {
+            return Err(RenderErrorReason::InvalidParamType(
+                "Expected at least one tool name",
+            )
+            .into());
+        }
+
+        let has_match = tools.iter().any(|tool| {
+            tool.get("name")
+                .and_then(|value| value.as_str())
+                .map(|name| names.contains(&name))
+                .unwrap_or(false)
+        });
+
+        Ok(ScopedJson::Derived(Value::Bool(has_match)))
+    }
+
+    fn call<'reg: 'rc, 'rc>(
+        &self,
+        h: &Helper<'rc>,
+        r: &'reg Handlebars<'reg>,
+        ctx: &'rc Context,
+        rc: &mut RenderContext<'reg, 'rc>,
+        out: &mut dyn Output,
+    ) -> HelperResult {
+        let value = self.call_inner(h, r, ctx, rc)?;
+        out.write(&value.render())?;
         Ok(())
     }
 }
@@ -742,7 +688,6 @@ impl handlebars::HelperDef for RelativeTimeHelper {
             }
         };
 
-        // Calculate relative time
         let now = Utc::now();
         let diff = now.signed_duration_since(datetime);
 

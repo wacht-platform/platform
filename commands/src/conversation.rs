@@ -1,12 +1,13 @@
-use common::error::AppError;
+use common::{HasNatsProvider, error::AppError};
+use dto::json::NatsTaskMessage;
 use models::{ConversationContent, ConversationMessageType, ConversationRecord};
 
 use chrono::Utc;
-use tiktoken_rs::cl100k_base;
 
 pub struct CreateConversationCommand {
     pub id: i64,
-    pub context_id: i64,
+    pub thread_id: i64,
+    pub execution_run_id: Option<i64>,
     pub content: ConversationContent,
     pub message_type: ConversationMessageType,
     pub metadata: Option<serde_json::Value>,
@@ -15,59 +16,115 @@ pub struct CreateConversationCommand {
 impl CreateConversationCommand {
     pub fn new(
         id: i64,
-        context_id: i64,
+        thread_id: i64,
         content: ConversationContent,
         message_type: ConversationMessageType,
     ) -> Self {
         Self {
             id,
-            context_id,
+            thread_id,
+            execution_run_id: None,
             content,
             message_type,
             metadata: None,
         }
     }
 
+    pub fn with_execution_run_id(mut self, execution_run_id: i64) -> Self {
+        self.execution_run_id = Some(execution_run_id);
+        self
+    }
+
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = Some(metadata);
         self
     }
+}
 
-    fn calculate_token_count(&self) -> Result<i32, AppError> {
-        let text = match &self.content {
-            ConversationContent::UserMessage { message, .. } => message.clone(),
-            ConversationContent::AgentResponse { response, .. } => response.clone(),
-            ConversationContent::AssistantAcknowledgment {
-                acknowledgment_message,
-                reasoning,
-                ..
-            } => {
-                format!("{} {}", acknowledgment_message, reasoning)
-            }
-            ConversationContent::ExecutionSummary { token_count, .. } => {
-                // For execution summaries, use the pre-calculated token count
-                return Ok(*token_count as i32);
-            }
-            ConversationContent::PlatformFunctionResult {
-                execution_id,
-                result,
-            } => {
-                format!(
-                    "Platform function execution {} result: {}",
-                    execution_id, result
-                )
-            }
-            _ => {
-                // For other complex types, serialize to JSON and count
-                serde_json::to_string(&self.content).unwrap_or_else(|_| "{}".to_string())
-            }
+pub struct CleanupCompactedConversationsCommand {
+    pub thread_id: i64,
+    pub cleanup_through_id: i64,
+}
+
+impl CleanupCompactedConversationsCommand {
+    pub fn new(thread_id: i64, cleanup_through_id: i64) -> Self {
+        Self {
+            thread_id,
+            cleanup_through_id,
+        }
+    }
+}
+
+impl CleanupCompactedConversationsCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<u64, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM conversations
+            WHERE thread_id = $1
+              AND id <= $2
+              AND message_type <> 'execution_summary'
+            "#,
+        )
+        .bind(self.thread_id)
+        .bind(self.cleanup_through_id)
+        .execute(executor)
+        .await
+        .map_err(AppError::from)?;
+
+        Ok(result.rows_affected())
+    }
+}
+
+pub struct DispatchConversationCleanupTaskCommand {
+    pub thread_id: i64,
+    pub cleanup_through_id: i64,
+}
+
+impl DispatchConversationCleanupTaskCommand {
+    pub fn new(thread_id: i64, cleanup_through_id: i64) -> Self {
+        Self {
+            thread_id,
+            cleanup_through_id,
+        }
+    }
+}
+
+impl DispatchConversationCleanupTaskCommand {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasNatsProvider + ?Sized,
+    {
+        let task_message = NatsTaskMessage {
+            task_type: "conversation.cleanup_compacted".to_string(),
+            task_id: format!(
+                "conversation-cleanup-{}-{}",
+                self.thread_id, self.cleanup_through_id
+            ),
+            payload: serde_json::json!({
+                "thread_id": self.thread_id,
+                "cleanup_through_id": self.cleanup_through_id
+            }),
         };
 
-        let bpe = cl100k_base()
-            .map_err(|e| AppError::Internal(format!("Failed to init tokenizer: {}", e)))?;
-        let tokens = bpe.encode_with_special_tokens(&text);
+        deps.nats_provider()
+            .publish(
+                "worker.tasks.conversation.cleanup_compacted",
+                serde_json::to_vec(&task_message)
+                    .map_err(|e| AppError::Internal(format!("Failed to serialize task: {}", e)))?
+                    .into(),
+            )
+            .await
+            .map_err(|e| {
+                AppError::Internal(format!(
+                    "Failed to publish conversation cleanup task to NATS: {}",
+                    e
+                ))
+            })?;
 
-        Ok(tokens.len() as i32)
+        Ok(())
     }
 }
 
@@ -82,27 +139,22 @@ impl CreateConversationCommand {
         let content_json = serde_json::to_value(&self.content)
             .map_err(|e| AppError::Internal(format!("Failed to serialize content: {}", e)))?;
 
-        // Calculate token count
-        let token_count = self.calculate_token_count()?;
-
         // Convert enum to string for database storage
         let message_type_str = match self.message_type {
             ConversationMessageType::UserMessage => "user_message",
-            ConversationMessageType::AgentResponse => "agent_response",
-            ConversationMessageType::AssistantAcknowledgment => "assistant_acknowledgment",
-            ConversationMessageType::ActionExecutionResult => "action_execution_result",
+            ConversationMessageType::Steer => "steer",
+            ConversationMessageType::ToolResult => "tool_result",
             ConversationMessageType::SystemDecision => "system_decision",
-            ConversationMessageType::ContextResults => "context_results",
-            ConversationMessageType::UserInputRequest => "user_input_request",
+            ConversationMessageType::ApprovalRequest => "approval_request",
+            ConversationMessageType::ApprovalResponse => "approval_response",
             ConversationMessageType::ExecutionSummary => "execution_summary",
-            ConversationMessageType::PlatformFunctionResult => "platform_function_result",
         };
 
         let record = sqlx::query_as::<_, ConversationRecord>(
             r#"
             INSERT INTO conversations (
-                id, context_id, timestamp, content, message_type,
-                token_count, created_at, updated_at, metadata
+                id, thread_id, execution_run_id, timestamp, content, message_type,
+                created_at, updated_at, metadata
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $7, $8
             )
@@ -110,11 +162,11 @@ impl CreateConversationCommand {
             "#,
         )
         .bind(self.id)
-        .bind(self.context_id)
+        .bind(self.thread_id)
+        .bind(self.execution_run_id)
         .bind(now)
         .bind(content_json)
         .bind(message_type_str)
-        .bind(token_count)
         .bind(now)
         .bind(&self.metadata)
         .fetch_one(executor)

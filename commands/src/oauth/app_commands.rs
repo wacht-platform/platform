@@ -1,5 +1,5 @@
-use common::{HasCloudflareProvider, HasDbRouter, error::AppError};
 use common::json_utils::json_default;
+use common::{HasCloudflareProvider, HasDbRouter, error::AppError};
 use models::api_key::OAuthScopeDefinition;
 use queries::oauth::OAuthAppData;
 

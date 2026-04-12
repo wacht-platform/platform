@@ -25,12 +25,16 @@ pub struct AgentSession {
     pub session_id: i64,
     pub deployment_id: i64,
     pub identifier: String,
-    pub context_group: String,
+    pub actor_id: i64,
     pub agent_ids: Vec<i64>,
     pub expires_at: Option<DateTime<Utc>>,
 }
 
 impl AgentSession {
+    pub fn has_actor_access(&self, actor_id: i64) -> bool {
+        self.actor_id == actor_id
+    }
+
     pub fn has_agent_access(&self, agent_id: i64) -> bool {
         self.agent_ids.contains(&agent_id)
     }

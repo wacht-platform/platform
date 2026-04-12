@@ -1,10 +1,15 @@
 use agent_engine::{AgentHandler, ExecutionRequest};
-use commands::webhook_trigger::TriggerWebhookEventCommand;
+use commands::CreateExecutionRunCommand;
+use commands::{ApprovalGrantRequest, GrantApprovalGrantsForThreadCommand};
 use common::state::AppState;
-use dto::json::{AgentExecutionRequest, AgentExecutionType, AgentStreamMessageType};
-use models::AiAgentWithFeatures;
-use queries::{GetAiAgentByIdWithFeatures, GetAiAgentByNameWithFeatures};
+use dto::json::{AgentExecutionRequest, AgentExecutionType};
+use models::{AgentThreadStatus, AiAgentWithFeatures, ThreadEvent};
+use queries::{
+    GetAgentThreadStateQuery, GetAiAgentByIdWithFeatures, GetConversationByIdQuery,
+    GetProjectTaskBoardItemAssignmentByIdQuery, GetProjectTaskBoardItemByIdQuery,
+};
 use redis::Script;
+use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::oneshot;
 use tokio::time::{Duration, interval, sleep};
@@ -12,14 +17,10 @@ use tokio::time::{Duration, interval, sleep};
 const MAX_DEPLOYMENT_CONCURRENT_EXECUTIONS: i64 = 2000;
 const EXECUTION_SLOT_TTL_SECONDS: i64 = 600;
 const IDEMPOTENCY_TTL_SECONDS: i64 = 600;
-const CONTEXT_LOCK_TTL_SECONDS: i64 = 3600;
 const EXECUTION_SLOT_HEARTBEAT_SECONDS: u64 = 120;
-const CONTEXT_LOCK_HEARTBEAT_SECONDS: u64 = 300;
 const MAX_LOCK_WAIT_SECONDS: u64 = 300; // 5 minutes
 const DEPLOYMENT_SLOT_BACKOFF_MIN_MS: u64 = 250;
 const DEPLOYMENT_SLOT_BACKOFF_MAX_MS: u64 = 5_000;
-const CONTEXT_LOCK_BACKOFF_MIN_MS: u64 = 100;
-const CONTEXT_LOCK_BACKOFF_MAX_MS: u64 = 2_000;
 const BACKOFF_JITTER_MAX_MS: u64 = 250;
 const REDIS_SET_NX_EX_LUA: &str = r#"
 if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2]) then
@@ -72,14 +73,12 @@ impl From<redis::RedisError> for AgentExecutionError {
 #[derive(Debug, Clone)]
 enum AgentResolutionStrategy {
     AgentId(i64),
-    AgentName(String),
 }
 
 impl AgentResolutionStrategy {
     fn display_label(&self) -> String {
         match self {
             Self::AgentId(agent_id) => agent_id.to_string(),
-            Self::AgentName(agent_name) => agent_name.clone(),
         }
     }
 }
@@ -89,19 +88,21 @@ enum AgentExecutionKind {
     NewMessage {
         conversation_id: i64,
     },
-    UserInputResponse {
-        conversation_id: i64,
+    ApprovalResponse {
+        request_message_id: String,
+        approvals: Vec<dto::json::deployment::ToolApprovalSelection>,
     },
-    PlatformFunctionResult {
-        execution_id: String,
-        result: serde_json::Value,
+    ThreadEvent {
+        event_id: i64,
     },
 }
 
 #[derive(Debug, Clone)]
 struct AgentExecutionEnvelope {
     deployment_id: i64,
-    context_id: i64,
+    thread_id: i64,
+    thread_event_id: Option<i64>,
+    execution_token: String,
     agent_resolution: AgentResolutionStrategy,
     execution_kind: AgentExecutionKind,
 }
@@ -111,41 +112,39 @@ impl TryFrom<AgentExecutionRequest> for AgentExecutionEnvelope {
 
     fn try_from(request: AgentExecutionRequest) -> Result<Self, Self::Error> {
         let deployment_id = parse_string_id("deployment_id", &request.deployment_id)?;
-        let context_id = parse_string_id("context_id", &request.context_id)?;
+        let thread_id = parse_string_id("thread_id", &request.thread_id)?;
+        let thread_event_id = request
+            .thread_event_id
+            .as_ref()
+            .map(|value| parse_string_id("thread_event_id", value))
+            .transpose()?;
 
-        let agent_resolution = match (request.agent_id, request.agent_name) {
-            (Some(agent_id), _) => {
-                AgentResolutionStrategy::AgentId(parse_string_id("agent_id", &agent_id)?)
-            }
-            (None, Some(agent_name)) => AgentResolutionStrategy::AgentName(agent_name),
-            (None, None) => {
-                return Err(anyhow::anyhow!(
-                    "Either agent_id or agent_name must be provided"
-                ));
-            }
+        let agent_resolution = match request.agent_id {
+            Some(agent_id) => AgentResolutionStrategy::AgentId(parse_string_id("agent_id", &agent_id)?),
+            None => return Err(anyhow::anyhow!("agent_id must be provided")),
         };
 
         let execution_kind = match request.execution_type {
             AgentExecutionType::NewMessage { conversation_id } => AgentExecutionKind::NewMessage {
                 conversation_id: parse_string_id("conversation_id", &conversation_id)?,
             },
-            AgentExecutionType::UserInputResponse { conversation_id } => {
-                AgentExecutionKind::UserInputResponse {
-                    conversation_id: parse_string_id("conversation_id", &conversation_id)?,
-                }
-            }
-            AgentExecutionType::PlatformFunctionResult {
-                execution_id,
-                result,
-            } => AgentExecutionKind::PlatformFunctionResult {
-                execution_id,
-                result,
+            AgentExecutionType::ApprovalResponse {
+                request_message_id,
+                approvals,
+            } => AgentExecutionKind::ApprovalResponse {
+                request_message_id,
+                approvals,
+            },
+            AgentExecutionType::ThreadEvent { event_id } => AgentExecutionKind::ThreadEvent {
+                event_id: parse_string_id("event_id", &event_id)?,
             },
         };
 
         Ok(Self {
             deployment_id,
-            context_id,
+            thread_id,
+            thread_event_id,
+            execution_token: String::new(),
             agent_resolution,
             execution_kind,
         })
@@ -158,76 +157,14 @@ fn parse_string_id(field_name: &str, raw_value: &str) -> Result<i64, anyhow::Err
         .map_err(|error| anyhow::anyhow!("Invalid {} '{}': {}", field_name, raw_value, error))
 }
 
-fn console_deployment_id() -> i64 {
-    std::env::var("CONSOLE_DEPLOYMENT_ID")
-        .unwrap_or_else(|_| "0".to_string())
-        .parse()
-        .unwrap_or(0)
-}
-
-async fn trigger_execution_webhook(
-    app_state: &AppState,
-    deployment_id: i64,
-    event_name: &str,
-    payload: serde_json::Value,
-    error_context: &str,
-) {
-    let trigger_deps = common::deps::from_app(app_state).db().redis().nats().id();
-    let trigger_command = TriggerWebhookEventCommand::new(
-        console_deployment_id(),
-        deployment_id.to_string(),
-        event_name.to_string(),
-        payload,
-    );
-
-    if let Err(error) = trigger_command.execute_with_deps(&trigger_deps).await {
-        tracing::error!("Failed to trigger {} webhook: {}", error_context, error);
-    }
-}
-
-async fn publish_conversation_webhook(
-    app_state: &AppState,
-    deployment_id: i64,
-    context_id: i64,
-    conversation_id: i64,
-    message_type: &str,
-    error_context: &str,
-) {
-    let conversation_query = queries::GetConversationByIdQuery::new(conversation_id);
-    if let Ok(conversation) = conversation_query
-        .execute_with_db(
-            app_state
-                .db_router
-                .reader(common::db_router::ReadConsistency::Strong),
-        )
-        .await
-    {
-        let payload = serde_json::json!({
-            "context_id": context_id,
-            "message_type": message_type,
-            "data": conversation.content,
-            "timestamp": conversation.timestamp,
-        });
-
-        trigger_execution_webhook(
-            app_state,
-            deployment_id,
-            "execution_context.message",
-            payload,
-            error_context,
-        )
-        .await;
-    }
-}
-
 async fn build_conversation_execution_request(
-    app_state: &AppState,
-    deployment_id: i64,
-    context_id: i64,
+    thread_id: i64,
+    thread_event_id: Option<i64>,
+    execution_run_id: i64,
     conversation_id: i64,
-    message_type: &str,
     error_context: &str,
     agent: AiAgentWithFeatures,
+    execution_token: String,
 ) -> ExecutionRequest {
     tracing::info!(
         "{} with conversation_id: {}",
@@ -235,27 +172,278 @@ async fn build_conversation_execution_request(
         conversation_id
     );
 
-    publish_conversation_webhook(
-        app_state,
-        deployment_id,
-        context_id,
-        conversation_id,
-        message_type,
-        error_context,
-    )
-    .await;
-
     ExecutionRequest {
         agent,
         conversation_id: Some(conversation_id),
-        context_id,
-        platform_function_result: None,
+        thread_id,
+        thread_event_id,
+        execution_run_id,
+        execution_token,
+        approval_response: None,
+        thread_event: None,
     }
+}
+
+async fn load_thread_event_for_execution(
+    app_state: &AppState,
+    event_id: i64,
+    thread_id: i64,
+    deployment_id: i64,
+) -> Result<ThreadEvent, AgentExecutionError> {
+    let thread_event = queries::GetThreadEventByIdQuery::new(event_id)
+        .execute_with_db(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await
+        .map_err(|e| {
+            AgentExecutionError::Other(anyhow::anyhow!(
+                "Failed to load thread event {}: {}",
+                event_id,
+                e
+            ))
+        })?
+        .ok_or_else(|| {
+            AgentExecutionError::Other(anyhow::anyhow!("Thread event {} not found", event_id))
+        })?;
+
+    if thread_event.thread_id != thread_id {
+        return Err(AgentExecutionError::Other(anyhow::anyhow!(
+            "Thread event {} does not belong to thread {}",
+            event_id,
+            thread_id
+        )));
+    }
+
+    if thread_event.deployment_id != deployment_id {
+        return Err(AgentExecutionError::Other(anyhow::anyhow!(
+            "Thread event {} does not belong to deployment {}",
+            event_id,
+            deployment_id
+        )));
+    }
+
+    Ok(thread_event)
+}
+
+async fn stale_thread_event_reason(
+    app_state: &AppState,
+    thread_event: &ThreadEvent,
+) -> Result<Option<String>, AgentExecutionError> {
+    match thread_event.event_type.as_str() {
+        models::thread_event::event_type::TASK_ROUTING => {
+            let Some(board_item_id) = thread_event.board_item_id else {
+                return Ok(Some(format!(
+                    "{} event is missing board_item_id",
+                    thread_event.event_type
+                )));
+            };
+            let board_item = GetProjectTaskBoardItemByIdQuery::new(board_item_id)
+                .execute_with_db(
+                    app_state
+                        .db_router
+                        .reader(common::db_router::ReadConsistency::Strong),
+                )
+                .await
+                .map_err(|e| {
+                    AgentExecutionError::Other(anyhow::anyhow!(
+                        "Failed to load board item {} for thread event {}: {}",
+                        board_item_id,
+                        thread_event.id,
+                        e
+                    ))
+                })?;
+
+            if board_item.is_none() {
+                return Ok(Some(format!(
+                    "board item {} no longer exists",
+                    board_item_id
+                )));
+            }
+
+            Ok(None)
+        }
+        models::thread_event::event_type::ASSIGNMENT_EXECUTION
+        | models::thread_event::event_type::ASSIGNMENT_OUTCOME_REVIEW => {
+            let Some(board_item_id) = thread_event.board_item_id else {
+                return Ok(Some(format!(
+                    "{} event is missing board_item_id",
+                    thread_event.event_type
+                )));
+            };
+            let Some(board_item) = GetProjectTaskBoardItemByIdQuery::new(board_item_id)
+                .execute_with_db(
+                    app_state
+                        .db_router
+                        .reader(common::db_router::ReadConsistency::Strong),
+                )
+                .await
+                .map_err(|e| {
+                    AgentExecutionError::Other(anyhow::anyhow!(
+                        "Failed to load board item {} for thread event {}: {}",
+                        board_item_id,
+                        thread_event.id,
+                        e
+                    ))
+                })?
+            else {
+                return Ok(Some(format!(
+                    "board item {} no longer exists",
+                    board_item_id
+                )));
+            };
+
+            let payload = match thread_event.event_type.as_str() {
+                models::thread_event::event_type::ASSIGNMENT_EXECUTION => {
+                    thread_event.assignment_execution_payload()
+                }
+                models::thread_event::event_type::ASSIGNMENT_OUTCOME_REVIEW => {
+                    thread_event.assignment_outcome_review_payload()
+                }
+                _ => None,
+            };
+            let Some(payload) = payload else {
+                return Ok(Some(format!(
+                    "{} event payload is invalid",
+                    thread_event.event_type
+                )));
+            };
+
+            let Some(assignment) =
+                GetProjectTaskBoardItemAssignmentByIdQuery::new(payload.assignment_id)
+                    .execute_with_db(
+                        app_state
+                            .db_router
+                            .reader(common::db_router::ReadConsistency::Strong),
+                    )
+                    .await
+                    .map_err(|e| {
+                        AgentExecutionError::Other(anyhow::anyhow!(
+                            "Failed to load assignment {} for thread event {}: {}",
+                            payload.assignment_id,
+                            thread_event.id,
+                            e
+                        ))
+                    })?
+            else {
+                return Ok(Some(format!(
+                    "assignment {} no longer exists",
+                    payload.assignment_id
+                )));
+            };
+
+            if assignment.board_item_id != board_item.id {
+                return Ok(Some(format!(
+                    "assignment {} belongs to board item {}, not {}",
+                    assignment.id, assignment.board_item_id, board_item.id
+                )));
+            }
+            match thread_event.event_type.as_str() {
+                models::thread_event::event_type::ASSIGNMENT_EXECUTION => {
+                    if assignment.thread_id != thread_event.thread_id {
+                        return Ok(Some(format!(
+                            "assignment {} targets thread {}, not event thread {}",
+                            assignment.id, assignment.thread_id, thread_event.thread_id
+                        )));
+                    }
+
+                    if !matches!(
+                        assignment.status.as_str(),
+                        models::project_task_board::assignment_status::AVAILABLE
+                            | models::project_task_board::assignment_status::CLAIMED
+                            | models::project_task_board::assignment_status::IN_PROGRESS
+                    ) {
+                        return Ok(Some(format!(
+                            "assignment {} is no longer executable (status={})",
+                            assignment.id, assignment.status
+                        )));
+                    }
+                }
+                models::thread_event::event_type::ASSIGNMENT_OUTCOME_REVIEW => {
+                    if let Some(caused_by_thread_id) = thread_event.caused_by_thread_id {
+                        if assignment.thread_id != caused_by_thread_id {
+                            return Ok(Some(format!(
+                                "assignment {} targets thread {}, not caused_by_thread {}",
+                                assignment.id, assignment.thread_id, caused_by_thread_id
+                            )));
+                        }
+                    }
+
+                    if !matches!(
+                        assignment.status.as_str(),
+                        models::project_task_board::assignment_status::COMPLETED
+                            | models::project_task_board::assignment_status::REJECTED
+                            | models::project_task_board::assignment_status::BLOCKED
+                            | models::project_task_board::assignment_status::CANCELLED
+                    ) {
+                        return Ok(Some(format!(
+                            "assignment {} is not ready for outcome review (status={})",
+                            assignment.id, assignment.status
+                        )));
+                    }
+                }
+                _ => {}
+            }
+
+            Ok(None)
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn reject_stale_thread_event(
+    app_state: &AppState,
+    thread_event: &ThreadEvent,
+    reason: &str,
+) -> Result<(), AgentExecutionError> {
+    tracing::warn!(
+        event_id = thread_event.id,
+        thread_id = thread_event.thread_id,
+        board_item_id = thread_event.board_item_id,
+        event_type = %thread_event.event_type,
+        reason = %reason,
+        "Rejecting stale thread event before execution"
+    );
+
+    commands::UpdateThreadEventStateCommand::new(
+        thread_event.id,
+        models::thread_event::status::FAILED.to_string(),
+    )
+    .mark_failed()
+    .execute_with_db(app_state.db_router.writer())
+    .await
+    .map_err(|e| {
+        AgentExecutionError::Other(anyhow::anyhow!(
+            "Failed to mark stale thread event {} as failed: {}",
+            thread_event.id,
+            e
+        ))
+    })?;
+
+    Ok(())
+}
+
+async fn load_live_thread_event_for_execution(
+    app_state: &AppState,
+    event_id: i64,
+    thread_id: i64,
+    deployment_id: i64,
+) -> Result<Result<ThreadEvent, String>, AgentExecutionError> {
+    let thread_event =
+        load_thread_event_for_execution(app_state, event_id, thread_id, deployment_id).await?;
+
+    if let Some(reason) = stale_thread_event_reason(app_state, &thread_event).await? {
+        reject_stale_thread_event(app_state, &thread_event, &reason).await?;
+        return Ok(Err(reason));
+    }
+
+    Ok(Ok(thread_event))
 }
 
 async fn load_agent_for_execution(
     app_state: &AppState,
-    deployment_id: i64,
+    _deployment_id: i64,
     resolution: &AgentResolutionStrategy,
 ) -> Result<AiAgentWithFeatures, AgentExecutionError> {
     match resolution {
@@ -273,45 +461,278 @@ async fn load_agent_for_execution(
                     e
                 ))
             }),
-        AgentResolutionStrategy::AgentName(agent_name) => {
-            GetAiAgentByNameWithFeatures::new(deployment_id, agent_name.clone())
-                .execute_with_db(
-                    app_state
-                        .db_router
-                        .reader(common::db_router::ReadConsistency::Strong),
-                )
-                .await
-                .map_err(|_| {
-                    AgentExecutionError::Other(anyhow::anyhow!("Agent '{}' not found", agent_name))
-                })
-        }
     }
+}
+
+async fn persist_tool_approval_response_grants(
+    app_state: &AppState,
+    deployment_id: i64,
+    thread_id: i64,
+    request_message_id: &str,
+    approvals: &[dto::json::deployment::ToolApprovalSelection],
+) -> Result<(), AgentExecutionError> {
+    let thread_state = GetAgentThreadStateQuery::new(thread_id, deployment_id)
+        .execute_with_db(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await
+        .map_err(|e| {
+            AgentExecutionError::Other(anyhow::anyhow!(
+                "Failed to load thread {}: {}",
+                thread_id,
+                e
+            ))
+        })?;
+    let has_pending_approval_request = thread_state
+        .execution_state
+        .as_ref()
+        .and_then(|state| state.pending_approval_request.as_ref())
+        .is_some();
+
+    if thread_state.status != AgentThreadStatus::WaitingForInput && !has_pending_approval_request {
+        return Err(AgentExecutionError::Other(anyhow::anyhow!(
+            "Approval responses are only accepted while the thread is waiting for input"
+        )));
+    }
+
+    let parsed_request_message_id = request_message_id
+        .parse::<i64>()
+        .map_err(|_| AgentExecutionError::Other(anyhow::anyhow!("Invalid request_message_id")))?;
+
+    let request_conversation = GetConversationByIdQuery::new(parsed_request_message_id)
+        .execute_with_db(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await
+        .map_err(|e| {
+            AgentExecutionError::Other(anyhow::anyhow!(
+                "Failed to load approval request conversation {}: {}",
+                parsed_request_message_id,
+                e
+            ))
+        })?;
+
+    if request_conversation.thread_id != thread_id {
+        return Err(AgentExecutionError::Other(anyhow::anyhow!(
+            "Approval request does not belong to this thread"
+        )));
+    }
+
+    let requested_tools = match request_conversation.content {
+        models::ConversationContent::ApprovalRequest { tools, .. } => tools
+            .into_iter()
+            .map(|tool| (tool.tool_name, tool.tool_id))
+            .collect::<HashMap<_, _>>(),
+        _ => {
+            return Err(AgentExecutionError::Other(anyhow::anyhow!(
+                "request_message_id must reference an approval_request message"
+            )));
+        }
+    };
+
+    let mut seen = HashSet::new();
+    let mut grants = Vec::new();
+
+    for approval in approvals {
+        if approval.tool_name.trim().is_empty() {
+            return Err(AgentExecutionError::Other(anyhow::anyhow!(
+                "Approval response tool names must be non-empty"
+            )));
+        }
+        if !seen.insert(approval.tool_name.clone()) {
+            return Err(AgentExecutionError::Other(anyhow::anyhow!(
+                "Approval response contains duplicate tool '{}'",
+                approval.tool_name
+            )));
+        }
+
+        let tool_id = requested_tools
+            .get(&approval.tool_name)
+            .copied()
+            .ok_or_else(|| {
+                AgentExecutionError::Other(anyhow::anyhow!(
+                    "Tool '{}' was not part of the pending approval request",
+                    approval.tool_name
+                ))
+            })?;
+
+        grants.push(ApprovalGrantRequest {
+            tool_id,
+            mode: approval.mode,
+        });
+    }
+
+    if grants.is_empty() {
+        return Ok(());
+    }
+
+    GrantApprovalGrantsForThreadCommand::new(deployment_id, thread_id, grants)
+        .execute_with_deps(&common::deps::from_app(app_state).db().id())
+        .await
+        .map_err(|e| {
+            AgentExecutionError::Other(anyhow::anyhow!(
+                "Failed to persist tool approvals for thread {}: {}",
+                thread_id,
+                e
+            ))
+        })?;
+
+    Ok(())
 }
 
 pub async fn process_agent_execution(
     app_state: &AppState,
+    task_id: &str,
     request: AgentExecutionRequest,
 ) -> Result<String, AgentExecutionError> {
-    let execution_envelope = AgentExecutionEnvelope::try_from(request)?;
+    match prepare_agent_execution(app_state, task_id, request).await? {
+        PreparedAgentExecutionOutcome::Noop(message) => Ok(message),
+        PreparedAgentExecutionOutcome::Ready(execution) => execution.execute().await,
+    }
+}
+
+pub enum PreparedAgentExecutionOutcome {
+    Noop(String),
+    Ready(PreparedAgentExecution),
+}
+
+pub struct PreparedAgentExecution {
+    app_state: AppState,
+    agent_identifier: String,
+    thread_id: i64,
+    execution_request: ExecutionRequest,
+    concurrency_guard: DeploymentExecutionGuard,
+}
+
+impl PreparedAgentExecution {
+    pub async fn execute(self) -> Result<String, AgentExecutionError> {
+        let result = AgentHandler::new(self.app_state.clone())
+            .execute_agent_streaming(self.execution_request)
+            .await;
+
+        drop(self.concurrency_guard);
+
+        result.map_err(|e| {
+            AgentExecutionError::Other(anyhow::anyhow!("Agent execution failed: {}", e))
+        })?;
+
+        Ok(format!(
+            "Agent '{}' execution completed for thread {}",
+            self.agent_identifier, self.thread_id
+        ))
+    }
+}
+
+pub async fn prepare_agent_execution(
+    app_state: &AppState,
+    task_id: &str,
+    request: AgentExecutionRequest,
+) -> Result<PreparedAgentExecutionOutcome, AgentExecutionError> {
+    let mut execution_envelope = AgentExecutionEnvelope::try_from(request)?;
+    execution_envelope.execution_token = task_id.to_string();
+
+    tracing::info!(
+        task_id,
+        deployment_id = execution_envelope.deployment_id,
+        thread_id = execution_envelope.thread_id,
+        execution_token = %execution_envelope.execution_token,
+        execution_kind = ?execution_envelope.execution_kind,
+        "Preparing agent execution request"
+    );
+
+    if !advance_execution_token_if_newer(
+        app_state,
+        execution_envelope.thread_id,
+        &execution_envelope.execution_token,
+    )
+    .await?
+    {
+        tracing::info!(
+            "Ignoring superseded execution task {} for thread {}",
+            task_id,
+            execution_envelope.thread_id
+        );
+        return Ok(PreparedAgentExecutionOutcome::Noop(format!(
+            "Superseded execution ignored for thread {}",
+            execution_envelope.thread_id
+        )));
+    }
     if !register_execution_idempotency(app_state, &execution_envelope).await? {
-        return Ok(format!(
-            "Duplicate execution ignored for context {}",
-            execution_envelope.context_id
-        ));
+        tracing::info!(
+            "Ignoring duplicate execution task {} for thread {}",
+            task_id,
+            execution_envelope.thread_id
+        );
+        return Ok(PreparedAgentExecutionOutcome::Noop(format!(
+            "Duplicate execution ignored for thread {}",
+            execution_envelope.thread_id
+        )));
     }
 
+    tracing::info!(
+        task_id,
+        deployment_id = execution_envelope.deployment_id,
+        thread_id = execution_envelope.thread_id,
+        execution_token = %execution_envelope.execution_token,
+        "Execution request passed supersession and idempotency checks"
+    );
+    tracing::info!(
+        task_id,
+        deployment_id = execution_envelope.deployment_id,
+        thread_id = execution_envelope.thread_id,
+        execution_token = %execution_envelope.execution_token,
+        "Acquiring deployment execution slot"
+    );
     let concurrency_guard =
         acquire_deployment_execution_slot(app_state, execution_envelope.deployment_id).await?;
-    let context_guard =
-        acquire_context_execution_lock(app_state, execution_envelope.context_id).await?;
+    tracing::info!(
+        task_id,
+        deployment_id = execution_envelope.deployment_id,
+        thread_id = execution_envelope.thread_id,
+        execution_token = %execution_envelope.execution_token,
+        "Acquired deployment execution slot"
+    );
+    tracing::info!(
+        task_id,
+        deployment_id = execution_envelope.deployment_id,
+        thread_id = execution_envelope.thread_id,
+        execution_token = %execution_envelope.execution_token,
+        "Execution request will run with latest-wins token supersession"
+    );
 
+    let deployment_id = execution_envelope.deployment_id;
+    let thread_id = execution_envelope.thread_id;
+    let execution_kind = execution_envelope.execution_kind;
+    let thread_event = match &execution_kind {
+        AgentExecutionKind::ThreadEvent { event_id } => match load_live_thread_event_for_execution(
+            app_state,
+            *event_id,
+            thread_id,
+            deployment_id,
+        )
+        .await?
+        {
+            Ok(thread_event) => Some(thread_event),
+            Err(reason) => {
+                return Ok(PreparedAgentExecutionOutcome::Noop(format!(
+                    "Stale thread event {} rejected for thread {}: {}",
+                    event_id, thread_id, reason
+                )));
+            }
+        },
+        _ => None,
+    };
     let agent_identifier = execution_envelope.agent_resolution.display_label();
 
     tracing::info!(
-        "Processing agent '{}' execution for context {} (type: {:?})",
+        "Processing agent '{}' execution for thread {} (type: {:?})",
         agent_identifier,
-        execution_envelope.context_id,
-        execution_envelope.execution_kind
+        execution_envelope.thread_id,
+        execution_kind
     );
 
     let agent = load_agent_for_execution(
@@ -320,82 +741,117 @@ pub async fn process_agent_execution(
         &execution_envelope.agent_resolution,
     )
     .await?;
+    let execution_run_id = app_state.sf.next_id().map_err(|e| {
+        AgentExecutionError::Other(anyhow::anyhow!(
+            "Failed to generate execution run id: {}",
+            e
+        ))
+    })? as i64;
 
-    let deployment_id = execution_envelope.deployment_id;
-    let context_id = execution_envelope.context_id;
-    let execution_kind = execution_envelope.execution_kind;
+    let create_run_command = CreateExecutionRunCommand::new(
+        execution_run_id,
+        deployment_id,
+        thread_id,
+        "running".to_string(),
+    )
+    .with_agent_id(agent.id);
+    create_run_command
+        .execute_with_db(app_state.db_router.writer())
+        .await
+        .map_err(|e| {
+            AgentExecutionError::Other(anyhow::anyhow!(
+                "Failed to create execution run for thread {}: {}",
+                thread_id,
+                e
+            ))
+        })?;
+
+    if let Some(thread_event_id) = execution_envelope.thread_event_id {
+        commands::UpdateThreadEventStateCommand::new(
+            thread_event_id,
+            models::thread_event::status::CLAIMED.to_string(),
+        )
+        .with_caused_by_run_id(execution_run_id)
+        .mark_claimed()
+        .execute_with_db(app_state.db_router.writer())
+        .await
+        .map_err(|e| {
+            AgentExecutionError::Other(anyhow::anyhow!(
+                "Failed to claim thread event {} for thread {}: {}",
+                thread_event_id,
+                thread_id,
+                e
+            ))
+        })?;
+    }
 
     let execution_request = match execution_kind {
-        AgentExecutionKind::NewMessage { conversation_id } => build_conversation_execution_request(
-            app_state,
-            deployment_id,
-            context_id,
-            conversation_id,
-            AgentStreamMessageType::ConversationMessage.as_header_value(),
-            "New message execution",
-            agent,
-        )
-        .await,
-        AgentExecutionKind::UserInputResponse { conversation_id } => {
+        AgentExecutionKind::NewMessage { conversation_id } => {
             build_conversation_execution_request(
-                app_state,
-                deployment_id,
-                context_id,
+                thread_id,
+                execution_envelope.thread_event_id,
+                execution_run_id,
                 conversation_id,
-                "user_input_response",
-                "User input response",
+                "New message execution",
                 agent,
+                execution_envelope.execution_token.clone(),
             )
             .await
         }
-        AgentExecutionKind::PlatformFunctionResult {
-            execution_id,
-            result,
+        AgentExecutionKind::ApprovalResponse {
+            request_message_id,
+            approvals,
         } => {
-            tracing::info!(
-                "Platform function result for execution_id: {}",
-                execution_id
-            );
-
-            let webhook_payload = serde_json::json!({
-                "context_id": context_id,
-                "message_type": AgentStreamMessageType::PlatformFunction.as_header_value(),
-                "execution_id": execution_id,
-                "data": result,
-                "timestamp": chrono::Utc::now(),
-            });
-
-            trigger_execution_webhook(
+            persist_tool_approval_response_grants(
                 app_state,
                 deployment_id,
-                "execution_context.platform_function_result",
-                webhook_payload,
-                "platform function result",
+                thread_id,
+                &request_message_id,
+                &approvals,
             )
-            .await;
+            .await?;
 
             ExecutionRequest {
                 agent,
                 conversation_id: None,
-                context_id,
-                platform_function_result: Some((execution_id, result)),
+                thread_id,
+                thread_event_id: execution_envelope.thread_event_id,
+                execution_run_id,
+                execution_token: execution_envelope.execution_token.clone(),
+                approval_response: Some(approvals),
+                thread_event: None,
+            }
+        }
+        AgentExecutionKind::ThreadEvent { event_id } => {
+            let thread_event = thread_event.ok_or_else(|| {
+                AgentExecutionError::Other(anyhow::anyhow!(
+                    "Preloaded thread event {} missing for thread {}",
+                    event_id,
+                    thread_id
+                ))
+            })?;
+
+            ExecutionRequest {
+                agent,
+                conversation_id: None,
+                thread_id,
+                thread_event_id: execution_envelope.thread_event_id.or(Some(event_id)),
+                execution_run_id,
+                execution_token: execution_envelope.execution_token.clone(),
+                approval_response: None,
+                thread_event: Some(thread_event),
             }
         }
     };
 
-    let result = AgentHandler::new(app_state.clone())
-        .execute_agent_streaming(execution_request)
-        .await;
-
-    drop(context_guard);
-    drop(concurrency_guard);
-    result.map_err(|e| {
-        AgentExecutionError::Other(anyhow::anyhow!("Agent execution failed: {}", e))
-    })?;
-
-    Ok(format!(
-        "Agent '{}' execution completed for context {}",
-        agent_identifier, context_id
+    Ok(PreparedAgentExecutionOutcome::Ready(
+        PreparedAgentExecution {
+            app_state: app_state.clone(),
+            agent_identifier,
+            thread_id,
+            execution_request,
+            concurrency_guard,
+        },
     ))
 }
 
@@ -429,46 +885,6 @@ return redis.call('DECR', KEYS[1])
 "#,
                 );
                 let _: Result<i64, _> = decrement_script.key(&key).invoke_async(&mut conn).await;
-            }
-        });
-    }
-}
-
-struct ContextExecutionLockGuard {
-    app_state: AppState,
-    key: String,
-    token: String,
-    heartbeat_stop: Option<oneshot::Sender<()>>,
-}
-
-impl Drop for ContextExecutionLockGuard {
-    fn drop(&mut self) {
-        if let Some(stop_tx) = self.heartbeat_stop.take() {
-            let _ = stop_tx.send(());
-        }
-
-        let app_state = self.app_state.clone();
-        let key = self.key.clone();
-        let token = self.token.clone();
-        tokio::spawn(async move {
-            if let Ok(mut conn) = app_state
-                .redis_client
-                .get_multiplexed_async_connection()
-                .await
-            {
-                let unlock_script = Script::new(
-                    r#"
-if redis.call('GET', KEYS[1]) == ARGV[1] then
-  return redis.call('DEL', KEYS[1])
-end
-return 0
-"#,
-                );
-                let _: Result<i64, _> = unlock_script
-                    .key(&key)
-                    .arg(&token)
-                    .invoke_async(&mut conn)
-                    .await;
             }
         });
     }
@@ -516,64 +932,6 @@ fn spawn_deployment_slot_heartbeat(app_state: AppState, key: String) -> oneshot:
     stop_tx
 }
 
-fn spawn_context_lock_heartbeat(
-    app_state: AppState,
-    key: String,
-    token: String,
-) -> oneshot::Sender<()> {
-    let (stop_tx, mut stop_rx) = oneshot::channel();
-
-    tokio::spawn(async move {
-        let mut ticker = interval(Duration::from_secs(CONTEXT_LOCK_HEARTBEAT_SECONDS));
-        ticker.tick().await;
-        let refresh_script = Script::new(
-            r#"
-if redis.call('GET', KEYS[1]) == ARGV[1] then
-  return redis.call('EXPIRE', KEYS[1], ARGV[2])
-end
-return 0
-"#,
-        );
-
-        loop {
-            tokio::select! {
-                _ = ticker.tick() => {
-                    match app_state.redis_client.get_multiplexed_async_connection().await {
-                        Ok(mut conn) => {
-                            let refresh_result: Result<i64, _> = refresh_script
-                                .key(&key)
-                                .arg(&token)
-                                .arg(CONTEXT_LOCK_TTL_SECONDS)
-                                .invoke_async(&mut conn)
-                                .await;
-
-                            match refresh_result {
-                                Ok(1) => {}
-                                Ok(0) => {
-                                    tracing::warn!("Context lock heartbeat lost ownership for {}", key);
-                                    break;
-                                }
-                                Ok(other) => {
-                                    tracing::warn!("Unexpected context lock heartbeat result for {}: {}", key, other);
-                                }
-                                Err(error) => {
-                                    tracing::warn!("Failed to refresh context lock heartbeat for {}: {}", key, error);
-                                }
-                            }
-                        }
-                        Err(error) => {
-                            tracing::warn!("Failed to get Redis connection for context lock heartbeat {}: {}", key, error);
-                        }
-                    }
-                }
-                _ = &mut stop_rx => break,
-            }
-        }
-    });
-
-    stop_tx
-}
-
 async fn acquire_deployment_execution_slot(
     app_state: &AppState,
     deployment_id: i64,
@@ -598,6 +956,14 @@ return current
     let max_wait = Duration::from_secs(MAX_LOCK_WAIT_SECONDS);
     let mut attempt = 0u32;
 
+    tracing::info!(
+        deployment_id,
+        redis_key = %key,
+        max_active = MAX_DEPLOYMENT_CONCURRENT_EXECUTIONS,
+        ttl_seconds = EXECUTION_SLOT_TTL_SECONDS,
+        "Attempting to acquire deployment execution slot"
+    );
+
     loop {
         if started_at.elapsed() >= max_wait {
             return Err(AgentExecutionError::ExecutionBusy {
@@ -618,6 +984,13 @@ return current
             .invoke_async(&mut conn)
             .await?;
         if acquired_count > 0 {
+            tracing::info!(
+                deployment_id,
+                redis_key = %key,
+                active_execution_count = acquired_count,
+                elapsed_ms = started_at.elapsed().as_millis() as u64,
+                "Acquired deployment execution slot"
+            );
             let heartbeat_stop = spawn_deployment_slot_heartbeat(app_state.clone(), key.clone());
             return Ok(DeploymentExecutionGuard {
                 app_state: app_state.clone(),
@@ -632,63 +1005,23 @@ return current
             DEPLOYMENT_SLOT_BACKOFF_MIN_MS,
             DEPLOYMENT_SLOT_BACKOFF_MAX_MS,
         );
-        sleep(Duration::from_millis(backoff_ms)).await;
-    }
-}
-
-async fn acquire_context_execution_lock(
-    app_state: &AppState,
-    context_id: i64,
-) -> Result<ContextExecutionLockGuard, AgentExecutionError> {
-    let key = format!("agent:context_execution_lock:{}", context_id);
-    let token = format!(
-        "{}:{}",
-        context_id,
-        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
-    );
-
-    let script = Script::new(REDIS_SET_NX_EX_LUA);
-
-    let started_at = tokio::time::Instant::now();
-    let max_wait = Duration::from_secs(MAX_LOCK_WAIT_SECONDS);
-    let mut attempt = 0u32;
-
-    loop {
-        if started_at.elapsed() >= max_wait {
-            return Err(AgentExecutionError::ExecutionBusy {
-                resource: "context_execution",
-                identifier: context_id,
-                max_wait_seconds: MAX_LOCK_WAIT_SECONDS,
-            });
+        if should_log_wait_attempt(attempt) {
+            let current_active_executions: Option<String> = redis::cmd("GET")
+                .arg(&key)
+                .query_async(&mut conn)
+                .await
+                .ok();
+            tracing::warn!(
+                deployment_id,
+                redis_key = %key,
+                attempt,
+                elapsed_ms = started_at.elapsed().as_millis() as u64,
+                backoff_ms,
+                ?current_active_executions,
+                max_active = MAX_DEPLOYMENT_CONCURRENT_EXECUTIONS,
+                "Blocked waiting for deployment execution slot"
+            );
         }
-
-        let mut conn = app_state
-            .redis_client
-            .get_multiplexed_async_connection()
-            .await?;
-        let acquired: i64 = script
-            .key(&key)
-            .arg(&token)
-            .arg(CONTEXT_LOCK_TTL_SECONDS)
-            .invoke_async(&mut conn)
-            .await?;
-        if acquired == 1 {
-            let heartbeat_stop =
-                spawn_context_lock_heartbeat(app_state.clone(), key.clone(), token.clone());
-            return Ok(ContextExecutionLockGuard {
-                app_state: app_state.clone(),
-                key,
-                token,
-                heartbeat_stop: Some(heartbeat_stop),
-            });
-        }
-
-        attempt = attempt.saturating_add(1);
-        let backoff_ms = jittered_exponential_backoff_ms(
-            attempt,
-            CONTEXT_LOCK_BACKOFF_MIN_MS,
-            CONTEXT_LOCK_BACKOFF_MAX_MS,
-        );
         sleep(Duration::from_millis(backoff_ms)).await;
     }
 }
@@ -712,23 +1045,30 @@ fn time_jitter_ms(max_jitter_ms: u64) -> u64 {
     nanos % (max_jitter_ms + 1)
 }
 
+fn should_log_wait_attempt(attempt: u32) -> bool {
+    attempt <= 3 || attempt % 10 == 0
+}
+
 async fn register_execution_idempotency(
     app_state: &AppState,
     envelope: &AgentExecutionEnvelope,
 ) -> Result<bool, anyhow::Error> {
     let identity = match &envelope.execution_kind {
         AgentExecutionKind::NewMessage { conversation_id } => format!("new:{}", conversation_id),
-        AgentExecutionKind::UserInputResponse { conversation_id } => {
-            format!("input:{}", conversation_id)
+        AgentExecutionKind::ApprovalResponse { approvals, .. } => {
+            let tools = approvals
+                .iter()
+                .map(|approval| format!("{}:{:?}", approval.tool_name, approval.mode))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("approval:{}", tools)
         }
-        AgentExecutionKind::PlatformFunctionResult { execution_id, .. } => {
-            format!("platform:{}", execution_id)
-        }
+        AgentExecutionKind::ThreadEvent { event_id } => format!("thread_event:{}", event_id),
     };
 
     let key = format!(
-        "agent:exec_idempotency:{}:{}:{}",
-        envelope.deployment_id, envelope.context_id, identity
+        "agent:exec_idempotency:{}:{}:{}:{}",
+        envelope.deployment_id, envelope.thread_id, identity, envelope.execution_token
     );
 
     let script = Script::new(REDIS_SET_NX_EX_LUA);
@@ -744,4 +1084,79 @@ async fn register_execution_idempotency(
         .invoke_async(&mut conn)
         .await?;
     Ok(inserted == 1)
+}
+
+async fn advance_execution_token_if_newer(
+    app_state: &AppState,
+    thread_id: i64,
+    execution_token: &str,
+) -> Result<bool, AgentExecutionError> {
+    let kv = match app_state
+        .nats_jetstream
+        .get_key_value("agent_execution_kv")
+        .await
+    {
+        Ok(store) => store,
+        Err(_) => app_state
+            .nats_jetstream
+            .create_key_value(async_nats::jetstream::kv::Config {
+                bucket: "agent_execution_kv".to_string(),
+                ..Default::default()
+            })
+            .await
+            .map_err(|error| {
+                AgentExecutionError::Other(anyhow::anyhow!(
+                    "Failed to initialize execution token KV bucket: {}",
+                    error
+                ))
+            })?,
+    };
+
+    let key = thread_id.to_string();
+    let incoming_rank = execution_token_rank(execution_token);
+
+    match kv.get(&key).await {
+        Ok(Some(entry)) => {
+            let current = String::from_utf8(entry.to_vec()).map_err(|error| {
+                AgentExecutionError::Other(anyhow::anyhow!(
+                    "Failed to decode execution token for thread {}: {}",
+                    thread_id,
+                    error
+                ))
+            })?;
+            let current_rank = execution_token_rank(&current);
+
+            if incoming_rank < current_rank {
+                return Ok(false);
+            }
+        }
+        Ok(None) => {}
+        Err(error) => {
+            return Err(AgentExecutionError::Other(anyhow::anyhow!(
+                "Failed to read execution token for thread {}: {}",
+                thread_id,
+                error
+            )));
+        }
+    }
+
+    kv.put(key, execution_token.to_string().into())
+        .await
+        .map_err(|error| {
+            AgentExecutionError::Other(anyhow::anyhow!(
+                "Failed to set execution token for thread {}: {}",
+                thread_id,
+                error
+            ))
+        })?;
+
+    Ok(true)
+}
+
+fn execution_token_rank(token: &str) -> u128 {
+    let digits = token
+        .chars()
+        .filter(|ch| ch.is_ascii_digit())
+        .collect::<String>();
+    digits.parse::<u128>().unwrap_or_default()
 }

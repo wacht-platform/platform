@@ -191,8 +191,7 @@ pub async fn delete_organization(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OrganizationParams>,
 ) -> ApiResult<()> {
-    b2b_entity_app::delete_organization(&app_state, deployment_id, params.organization_id)
-        .await?;
+    b2b_entity_app::delete_organization(&app_state, deployment_id, params.organization_id).await?;
 
     Ok(().into())
 }

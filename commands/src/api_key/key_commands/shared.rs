@@ -92,9 +92,10 @@ pub(super) async fn resolve_workspace_membership_id(
     workspace_id: Option<i64>,
 ) -> Result<Option<i64>, AppError> {
     if let (Some(user_id), Some(workspace_id)) = (user_id, workspace_id) {
-        let membership_id = GetWorkspaceMembershipIdByUserAndWorkspaceQuery::new(user_id, workspace_id)
-            .execute_with_db(&mut **tx)
-            .await?;
+        let membership_id =
+            GetWorkspaceMembershipIdByUserAndWorkspaceQuery::new(user_id, workspace_id)
+                .execute_with_db(&mut **tx)
+                .await?;
         if membership_id.is_none() {
             return Err(user_not_member_error());
         }

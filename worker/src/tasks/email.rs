@@ -4,8 +4,11 @@ use commands::email::SendEmailCommand;
 use common::{db_router::ReadConsistency, state::AppState};
 use models::{DeploymentInvitation, DeploymentWithSettings, EmailProvider, SignIn, UserDetails};
 use queries::{
-    deployment::GetDeploymentWithSettingsQuery, invitation::GetDeploymentInvitationQuery,
-    signin::GetSignInQuery, user::GetUserDetailsQuery, workspace::GetWorkspaceNameQuery,
+    deployment::GetDeploymentWithSettingsQuery,
+    invitation::GetDeploymentInvitationQuery,
+    signin::GetSignInQuery,
+    user::{GetUserDetailsQuery, GetVerifiedEmailTemplateUserQuery},
+    workspace::GetWorkspaceNameQuery,
 };
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +17,11 @@ async fn run_email_command(
     app_state: &AppState,
     error_prefix: &str,
 ) -> Result<(), String> {
-    let email_deps = common::deps::from_app(app_state).db().enc().postmark().template();
+    let email_deps = common::deps::from_app(app_state)
+        .db()
+        .enc()
+        .postmark()
+        .template();
     command
         .execute_with_deps(&email_deps)
         .await
@@ -122,6 +129,8 @@ pub async fn send_verification_email_impl(
     app_state: &AppState,
 ) -> Result<String, String> {
     let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
+    let verification_user =
+        fetch_verification_email_user_context(app_state, deployment_id, recipient).await;
 
     let app_logo_url = deployment_settings
         .ui_settings
@@ -129,6 +138,7 @@ pub async fn send_verification_email_impl(
         .map(|ui| ui.logo_image_url.clone());
     let variables = create_verification_variables(
         &deployment_settings,
+        verification_user,
         verification_code,
         ip_address,
         user_agent,
@@ -262,7 +272,12 @@ pub async fn send_signin_notification_email_impl(
         variables,
     );
 
-    run_email_command(command, app_state, "Failed to send signin notification email").await?;
+    run_email_command(
+        command,
+        app_state,
+        "Failed to send signin notification email",
+    )
+    .await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -302,7 +317,12 @@ pub async fn send_email_change_notification_impl(
         variables,
     );
 
-    run_email_command(command, app_state, "Failed to send email change notification").await?;
+    run_email_command(
+        command,
+        app_state,
+        "Failed to send email change notification",
+    )
+    .await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -335,7 +355,12 @@ pub async fn send_password_change_notification_impl(
         variables,
     );
 
-    run_email_command(command, app_state, "Failed to send password change notification").await?;
+    run_email_command(
+        command,
+        app_state,
+        "Failed to send password change notification",
+    )
+    .await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -371,7 +396,12 @@ pub async fn send_password_remove_notification_impl(
         variables,
     );
 
-    run_email_command(command, app_state, "Failed to send password remove notification").await?;
+    run_email_command(
+        command,
+        app_state,
+        "Failed to send password remove notification",
+    )
+    .await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -465,7 +495,12 @@ pub async fn send_organization_membership_invite_impl(
         variables,
     );
 
-    run_email_command(command, app_state, "Failed to send organization invite email").await?;
+    run_email_command(
+        command,
+        app_state,
+        "Failed to send organization invite email",
+    )
+    .await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -646,6 +681,7 @@ async fn fetch_user_details(
 
 fn create_verification_variables(
     deployment: &DeploymentWithSettings,
+    user: Option<serde_json::Value>,
     verification_code: &str,
     ip_address: &str,
     user_agent: &str,
@@ -659,7 +695,7 @@ fn create_verification_variables(
         format!("IP: {}", ip_address)
     };
 
-    serde_json::json!({
+    let mut variables = serde_json::json!({
         "app": {
             "name": app_name,
             "logo": app_logo_url
@@ -673,7 +709,26 @@ fn create_verification_variables(
             "ip_address": ip_address,
             "user_agent": user_agent
         }
-    })
+    });
+
+    if let Some(user) = user {
+        variables["user"] = user;
+    }
+
+    variables
+}
+
+async fn fetch_verification_email_user_context(
+    app_state: &AppState,
+    deployment_id: u64,
+    recipient: &str,
+) -> Option<serde_json::Value> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    GetVerifiedEmailTemplateUserQuery::new(deployment_id as i64, recipient)
+        .execute_with_db(reader)
+        .await
+        .ok()
+        .flatten()
 }
 
 fn create_password_reset_variables(

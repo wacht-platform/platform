@@ -3,7 +3,6 @@ use crate::tinybird;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use clickhouse::{Client, Row};
 use dto::clickhouse::webhook::*;
-use pgvector::HalfVector;
 use serde::{Deserialize, Serialize, Serializer};
 use std::time::Instant;
 use tracing::{debug, error, info};
@@ -150,17 +149,6 @@ struct RecentSignupRow {
     auth_method: Option<String>,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     timestamp: DateTime<Utc>,
-}
-
-#[derive(Row)]
-pub struct AnalyticsEvent {
-    pub id: i64,
-    pub deployment_id: i64,
-    pub user_id: Option<i64>,
-    pub event_type: String,
-    pub event_data: String,
-    pub embedding: HalfVector,
-    pub created_at: DateTime<Utc>,
 }
 
 impl ClickHouseService {

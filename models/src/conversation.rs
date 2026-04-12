@@ -20,18 +20,30 @@ pub struct FileData {
     pub size_bytes: Option<u64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConversationAttachmentType {
+    File,
+    Folder,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationAttachment {
+    pub path: String,
+    #[serde(rename = "type")]
+    pub attachment_type: ConversationAttachmentType,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum ConversationMessageType {
     UserMessage,
-    AgentResponse,
-    AssistantAcknowledgment,
-    ActionExecutionResult,
+    Steer,
+    ToolResult,
     SystemDecision,
-    ContextResults,
-    UserInputRequest,
+    ApprovalRequest,
+    ApprovalResponse,
     ExecutionSummary,
-    PlatformFunctionResult,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -45,7 +57,6 @@ pub struct ExecutionAction {
     #[serde(rename = "type", default = "default_task_type")]
     pub action_type: TaskType,
     pub details: Value,
-    pub purpose: String,
     #[serde(default = "default_context_messages")]
     pub context_messages: u32,
 }
@@ -114,55 +125,66 @@ pub enum ConversationContent {
         #[serde(skip_serializing_if = "Option::is_none")]
         files: Option<Vec<FileData>>,
     },
-    AgentResponse {
-        response: String,
-        context_used: Vec<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        thought_signature: Option<String>,
-    },
-    AssistantAcknowledgment {
-        acknowledgment_message: String,
-        further_action_required: bool,
+    Steer {
+        message: String,
+        further_actions_required: bool,
         reasoning: String,
         #[serde(skip_serializing_if = "Option::is_none")]
-        thought_signature: Option<String>,
+        attachments: Option<Vec<ConversationAttachment>>,
     },
-    ActionExecutionResult {
-        task_execution: TaskExecution,
-        execution_status: ActionExecutionStatus,
+    ToolResult {
+        tool_name: String,
+        status: String,
+        input: Value,
         #[serde(skip_serializing_if = "Option::is_none")]
-        blocking_reason: Option<String>,
+        output: Option<Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
     SystemDecision {
         step: String,
         reasoning: String,
         confidence: f32,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        thought_signature: Option<String>,
     },
-    ContextResults {
-        query: String,
-        results: Value,
-        result_count: usize,
-        timestamp: DateTime<Utc>,
+    ApprovalRequest {
+        description: String,
+        tools: Vec<RequestedToolApproval>,
     },
-    UserInputRequest {
-        question: String,
-        context: String,
-        input_type: String,
-        options: Option<Vec<String>>,
-        default_value: Option<String>,
-        placeholder: Option<String>,
+    ApprovalResponse {
+        #[serde(
+            default,
+            with = "crate::utils::serde::i64_as_string_option",
+            skip_serializing_if = "Option::is_none"
+        )]
+        request_message_id: Option<i64>,
+        approvals: Vec<ToolApprovalDecision>,
     },
     ExecutionSummary {
         user_message: String,
         agent_execution: String,
-        token_count: usize,
     },
-    PlatformFunctionResult {
-        execution_id: String,
-        result: String,
-    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestedToolApproval {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub tool_id: i64,
+    pub tool_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolApprovalDecision {
+    pub tool_name: String,
+    pub mode: ToolApprovalMode,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolApprovalMode {
+    AllowOnce,
+    AllowAlways,
 }
 
 /// Conversation record
@@ -170,11 +192,16 @@ pub enum ConversationContent {
 pub struct ConversationRecord {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
-    pub context_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub thread_id: i64,
+    #[serde(
+        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub execution_run_id: Option<i64>,
     pub timestamp: DateTime<Utc>,
     pub content: ConversationContent,
     pub message_type: ConversationMessageType,
-    pub token_count: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -188,14 +215,12 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
         let message_type_str: String = row.try_get("message_type")?;
         let message_type = match message_type_str.as_str() {
             "user_message" => ConversationMessageType::UserMessage,
-            "agent_response" => ConversationMessageType::AgentResponse,
-            "assistant_acknowledgment" => ConversationMessageType::AssistantAcknowledgment,
-            "action_execution_result" => ConversationMessageType::ActionExecutionResult,
+            "steer" => ConversationMessageType::Steer,
+            "tool_result" => ConversationMessageType::ToolResult,
             "system_decision" => ConversationMessageType::SystemDecision,
-            "context_results" => ConversationMessageType::ContextResults,
-            "user_input_request" => ConversationMessageType::UserInputRequest,
+            "approval_request" => ConversationMessageType::ApprovalRequest,
+            "approval_response" => ConversationMessageType::ApprovalResponse,
             "execution_summary" => ConversationMessageType::ExecutionSummary,
-            "platform_function_result" => ConversationMessageType::PlatformFunctionResult,
             _ => {
                 return Err(sqlx::Error::ColumnDecode {
                     index: "message_type".to_string(),
@@ -213,11 +238,11 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
 
         Ok(ConversationRecord {
             id: row.try_get("id")?,
-            context_id: row.try_get("context_id")?,
+            thread_id: row.try_get("thread_id")?,
+            execution_run_id: row.try_get("execution_run_id")?,
             timestamp: row.try_get("timestamp")?,
             content,
             message_type,
-            token_count: row.try_get("token_count").unwrap_or(0),
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
             metadata: row.try_get("metadata").ok(),

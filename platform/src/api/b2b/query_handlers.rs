@@ -23,8 +23,7 @@ pub async fn get_deployment_workspace_roles(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<crate::application::response::PaginatedResponse<DeploymentWorkspaceRole>> {
-    let roles =
-        b2b_query_app::get_deployment_workspace_roles(&app_state, deployment_id).await?;
+    let roles = b2b_query_app::get_deployment_workspace_roles(&app_state, deployment_id).await?;
     Ok(roles.into())
 }
 
@@ -41,8 +40,7 @@ pub async fn update_deployment_b2b_settings(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(settings): Json<DeploymentB2bSettingsUpdates>,
 ) -> ApiResult<()> {
-    b2b_query_app::update_deployment_b2b_settings(&app_state, deployment_id, settings)
-        .await?;
+    b2b_query_app::update_deployment_b2b_settings(&app_state, deployment_id, settings).await?;
     Ok(().into())
 }
 
@@ -71,12 +69,9 @@ pub async fn get_organization_details(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OrganizationParams>,
 ) -> ApiResult<OrganizationDetails> {
-    let organization = b2b_query_app::get_organization_details(
-        &app_state,
-        deployment_id,
-        params.organization_id,
-    )
-    .await?;
+    let organization =
+        b2b_query_app::get_organization_details(&app_state, deployment_id, params.organization_id)
+            .await?;
     Ok(organization.into())
 }
 

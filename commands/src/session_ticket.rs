@@ -27,11 +27,11 @@ pub struct SessionTicketPayload {
     pub ticket_type: SessionTicketType,
     pub deployment_id: String,
     pub user_id: Option<String>,
+    pub actor_id: Option<String>,
     pub agent_ids: Option<Vec<String>>,
     pub agent_session_identifier: Option<AgentSessionIdentifier>,
     pub webhook_app_slug: Option<String>,
     pub api_auth_app_slug: Option<String>,
-    pub context_group: Option<String>,
     pub expires_at: i64,
 }
 
@@ -39,11 +39,11 @@ pub struct GenerateSessionTicketCommand {
     deployment_id: i64,
     ticket_type: SessionTicketType,
     user_id: Option<String>,
+    actor_id: Option<String>,
     agent_ids: Option<Vec<String>>,
     agent_session_identifier: Option<AgentSessionIdentifier>,
     webhook_app_slug: Option<String>,
     api_auth_app_slug: Option<String>,
-    context_group: Option<String>,
     expires_in: Option<u64>,
 }
 
@@ -52,11 +52,11 @@ pub struct GenerateSessionTicketCommandBuilder {
     deployment_id: Option<i64>,
     ticket_type: Option<SessionTicketType>,
     user_id: Option<String>,
+    actor_id: Option<String>,
     agent_ids: Option<Vec<String>>,
     agent_session_identifier: Option<AgentSessionIdentifier>,
     webhook_app_slug: Option<String>,
     api_auth_app_slug: Option<String>,
-    context_group: Option<String>,
     expires_in: Option<u64>,
 }
 
@@ -70,17 +70,22 @@ impl GenerateSessionTicketCommand {
             deployment_id,
             ticket_type,
             user_id: None,
+            actor_id: None,
             agent_ids: None,
             agent_session_identifier: None,
             webhook_app_slug: None,
             api_auth_app_slug: None,
-            context_group: None,
             expires_in: None,
         }
     }
 
     pub fn with_user_id(mut self, user_id: String) -> Self {
         self.user_id = Some(user_id);
+        self
+    }
+
+    pub fn with_actor_id(mut self, actor_id: String) -> Self {
+        self.actor_id = Some(actor_id);
         self
     }
 
@@ -91,11 +96,6 @@ impl GenerateSessionTicketCommand {
 
     pub fn with_agent_session_identifier(mut self, identifier: AgentSessionIdentifier) -> Self {
         self.agent_session_identifier = Some(identifier);
-        self
-    }
-
-    pub fn with_context_group(mut self, context_group: String) -> Self {
-        self.context_group = Some(context_group);
         self
     }
 
@@ -150,14 +150,14 @@ impl GenerateSessionTicketCommand {
                     ));
                 }
 
-                if self.context_group.is_none()
+                if self.actor_id.as_deref().is_none_or(str::is_empty)
                     && matches!(
                         self.agent_session_identifier,
                         None | Some(AgentSessionIdentifier::Static)
                     )
                 {
                     return Err(AppError::BadRequest(
-                        "context_group is required for static agent_access tickets".to_string(),
+                        "actor_id is required for static agent_access tickets".to_string(),
                     ));
                 }
             }
@@ -189,11 +189,11 @@ impl GenerateSessionTicketCommand {
             ticket_type: self.ticket_type.clone(),
             deployment_id: self.deployment_id.to_string(),
             user_id: self.user_id,
+            actor_id: self.actor_id,
             agent_ids: self.agent_ids,
             agent_session_identifier: self.agent_session_identifier,
             webhook_app_slug: self.webhook_app_slug,
             api_auth_app_slug: self.api_auth_app_slug,
-            context_group: self.context_group,
             expires_at,
         };
 
@@ -233,6 +233,11 @@ impl GenerateSessionTicketCommandBuilder {
         self
     }
 
+    pub fn actor_id(mut self, actor_id: String) -> Self {
+        self.actor_id = Some(actor_id);
+        self
+    }
+
     pub fn agent_ids(mut self, agent_ids: Vec<String>) -> Self {
         self.agent_ids = Some(agent_ids);
         self
@@ -253,11 +258,6 @@ impl GenerateSessionTicketCommandBuilder {
         self
     }
 
-    pub fn context_group(mut self, context_group: String) -> Self {
-        self.context_group = Some(context_group);
-        self
-    }
-
     pub fn expires_in(mut self, expires_in: u64) -> Self {
         self.expires_in = Some(expires_in);
         self
@@ -272,11 +272,11 @@ impl GenerateSessionTicketCommandBuilder {
                 .ticket_type
                 .ok_or_else(|| AppError::Validation("ticket_type is required".to_string()))?,
             user_id: self.user_id,
+            actor_id: self.actor_id,
             agent_ids: self.agent_ids,
             agent_session_identifier: self.agent_session_identifier,
             webhook_app_slug: self.webhook_app_slug,
             api_auth_app_slug: self.api_auth_app_slug,
-            context_group: self.context_group,
             expires_in: self.expires_in,
         })
     }

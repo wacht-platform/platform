@@ -1,11 +1,16 @@
 use crate::ai_knowledge_base_document_status::MarkKnowledgeBaseDocumentFailedCommand;
-use crate::{DispatchDocumentProcessingTaskCommand, WriteToAgentStorageCommand};
-use common::{HasAgentStorageProvider, HasDbRouter, HasNatsProvider, error::AppError};
+use crate::{DispatchDocumentProcessingTaskCommand, WriteToDeploymentStorageCommand};
+use common::{
+    HasDbRouter, HasEncryptionProvider, HasNatsProvider, delete_document_chunks,
+    delete_knowledge_base_chunks, error::AppError,
+};
 use models::{AiKnowledgeBase, AiKnowledgeBaseDocument};
 use queries::GetAiKnowledgeBaseByIdQuery;
 
 use chrono::Utc;
 use sqlx::Row;
+
+use crate::ResolveDeploymentStorageCommand;
 
 pub struct CreateAiKnowledgeBaseCommand {
     pub knowledge_base_id: Option<i64>,
@@ -223,7 +228,7 @@ impl DeleteAiKnowledgeBaseCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasAgentStorageProvider + ?Sized,
+        D: HasDbRouter + HasEncryptionProvider + ?Sized,
     {
         let dependent_tools = sqlx::query!(
             r#"
@@ -282,15 +287,41 @@ impl DeleteAiKnowledgeBaseCommand {
             "{}/knowledge-bases/{}/",
             self.deployment_id, self.knowledge_base_id
         );
-        if let Err(e) = crate::DeletePrefixFromAgentStorageCommand::new(storage_prefix)
-            .execute_with_deps(deps)
-            .await
+        if let Err(e) =
+            crate::DeletePrefixFromDeploymentStorageCommand::new(self.deployment_id, storage_prefix)
+                .execute_with_deps(deps)
+                .await
         {
             tracing::warn!(
                 "Failed to clean storage for KB {}: {}",
                 self.knowledge_base_id,
                 e
             );
+        }
+
+        match ResolveDeploymentStorageCommand::new(self.deployment_id)
+            .execute_with_deps(deps)
+            .await
+        {
+            Ok(storage) => {
+                let lance_config = storage.vector_store_config();
+                if let Err(e) =
+                    delete_knowledge_base_chunks(&lance_config, self.knowledge_base_id).await
+                {
+                    tracing::warn!(
+                        "Failed to delete LanceDB chunks for KB {}: {}",
+                        self.knowledge_base_id,
+                        e
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to resolve deployment storage for KB {} LanceDB cleanup: {}",
+                    self.knowledge_base_id,
+                    e
+                );
+            }
         }
 
         let mut tx = deps
@@ -358,7 +389,7 @@ impl UploadKnowledgeBaseDocumentCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<AiKnowledgeBaseDocument, AppError>
     where
-        D: HasDbRouter + HasAgentStorageProvider + HasNatsProvider + ?Sized,
+        D: HasDbRouter + HasEncryptionProvider + HasNatsProvider + ?Sized,
     {
         let document_id = self
             .document_id
@@ -378,47 +409,49 @@ impl UploadKnowledgeBaseDocumentCommand {
             "{}/knowledge-bases/{}/{}",
             deployment_id, self.knowledge_base_id, self.file_name
         );
-        let file_url = WriteToAgentStorageCommand::new(file_path, self.file_content.clone())
-            .with_content_type(self.file_type.clone())
-            .execute_with_deps(deps)
-            .await
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+        let storage_object_key = WriteToDeploymentStorageCommand::new(
+            deployment_id,
+            file_path,
+            self.file_content.clone(),
+        )
+        .with_content_type(self.file_type.clone())
+        .execute_with_deps(deps)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-        let document = sqlx::query!(
+        let document = sqlx::query(
             r#"
             INSERT INTO ai_knowledge_base_documents
-            (id, created_at, updated_at, title, description, file_name, file_size, file_type, file_url, knowledge_base_id, processing_metadata)
+            (id, created_at, updated_at, title, description, file_name, file_size, file_type, storage_object_key, knowledge_base_id, processing_metadata)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            RETURNING id, created_at, updated_at, title, description, file_name, file_size, file_type, file_url, knowledge_base_id, processing_metadata
+            RETURNING id, created_at, updated_at, title, description, file_name, file_size, file_type, storage_object_key, knowledge_base_id, processing_metadata
             "#,
-            document_id,
-            now,
-            now,
-            self.title,
-            self.description,
-            self.file_name,
-            file_size,
-            self.file_type,
-            file_url.clone(),
-            self.knowledge_base_id,
-            serde_json::json!({"status": "processing"})
         )
+        .bind(document_id)
+        .bind(now)
+        .bind(now)
+        .bind(self.title)
+        .bind(self.description)
+        .bind(self.file_name)
+        .bind(file_size)
+        .bind(self.file_type)
+        .bind(storage_object_key.clone())
+        .bind(self.knowledge_base_id)
+        .bind(serde_json::json!({"status": "processing"}))
         .fetch_one(deps.db_router().writer())
         .await
         .map_err(AppError::Database)?;
 
+        let inserted_document_id: i64 = document.try_get("id").map_err(AppError::Database)?;
         let dispatch_processing_task = DispatchDocumentProcessingTaskCommand::new(
             deployment_id,
             self.knowledge_base_id,
-            document.id,
+            inserted_document_id,
         );
 
-        if let Err(e) = dispatch_processing_task
-            .execute_with_deps(deps)
-            .await
-        {
+        if let Err(e) = dispatch_processing_task.execute_with_deps(deps).await {
             tracing::error!("Failed to dispatch document processing task: {}", e);
-            let _ = MarkKnowledgeBaseDocumentFailedCommand::new(document.id)
+            let _ = MarkKnowledgeBaseDocumentFailedCommand::new(inserted_document_id)
                 .with_error(format!(
                     "Failed to dispatch document processing task: {}",
                     e
@@ -428,17 +461,25 @@ impl UploadKnowledgeBaseDocumentCommand {
         }
 
         Ok(AiKnowledgeBaseDocument {
-            id: document.id,
-            created_at: document.created_at,
-            updated_at: document.updated_at,
-            title: document.title,
-            description: document.description,
-            file_name: document.file_name,
-            file_size: document.file_size,
-            file_type: document.file_type,
-            file_url: document.file_url,
-            knowledge_base_id: document.knowledge_base_id,
-            processing_metadata: document.processing_metadata,
+            id: inserted_document_id,
+            created_at: document.try_get("created_at").map_err(AppError::Database)?,
+            updated_at: document.try_get("updated_at").map_err(AppError::Database)?,
+            title: document.try_get("title").map_err(AppError::Database)?,
+            description: document
+                .try_get("description")
+                .map_err(AppError::Database)?,
+            file_name: document.try_get("file_name").map_err(AppError::Database)?,
+            file_size: document.try_get("file_size").map_err(AppError::Database)?,
+            file_type: document.try_get("file_type").map_err(AppError::Database)?,
+            storage_object_key: document
+                .try_get("storage_object_key")
+                .map_err(AppError::Database)?,
+            knowledge_base_id: document
+                .try_get("knowledge_base_id")
+                .map_err(AppError::Database)?,
+            processing_metadata: document
+                .try_get("processing_metadata")
+                .map_err(AppError::Database)?,
         })
     }
 }
@@ -460,32 +501,56 @@ impl DeleteKnowledgeBaseDocumentCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasAgentStorageProvider + ?Sized,
+        D: HasDbRouter + HasEncryptionProvider + ?Sized,
     {
         let _kb = GetAiKnowledgeBaseByIdQuery::new(self.deployment_id, self.knowledge_base_id)
             .execute_with_db(deps.db_router().writer())
             .await
             .map_err(|_| AppError::NotFound("Knowledge base not found".to_string()))?;
 
-        let doc = sqlx::query!(
-            "SELECT file_name FROM ai_knowledge_base_documents WHERE id = $1 AND knowledge_base_id = $2",
-            self.document_id,
-            self.knowledge_base_id
+        let doc = sqlx::query(
+            "SELECT storage_object_key FROM ai_knowledge_base_documents WHERE id = $1 AND knowledge_base_id = $2",
         )
+        .bind(self.document_id)
+        .bind(self.knowledge_base_id)
         .fetch_optional(deps.db_router().writer())
         .await
         .map_err(AppError::Database)?
         .ok_or(AppError::NotFound("Document not found".to_string()))?;
 
-        let storage_key = format!(
-            "{}/knowledge-bases/{}/{}",
-            self.deployment_id, self.knowledge_base_id, doc.file_name
-        );
-        if let Err(e) = crate::DeleteFromAgentStorageCommand::new(storage_key)
+        if let Err(e) = crate::DeleteFromDeploymentStorageCommand::new(
+            self.deployment_id,
+            doc.try_get("storage_object_key")
+                .map_err(AppError::Database)?,
+        )
+        .with_resolved_key()
+        .execute_with_deps(deps)
+        .await
+        {
+            tracing::warn!("Failed to delete file from storage: {}", e);
+        }
+
+        match ResolveDeploymentStorageCommand::new(self.deployment_id)
             .execute_with_deps(deps)
             .await
         {
-            tracing::warn!("Failed to delete file from storage: {}", e);
+            Ok(storage) => {
+                let lance_config = storage.vector_store_config();
+                if let Err(e) = delete_document_chunks(&lance_config, self.document_id).await {
+                    tracing::warn!(
+                        "Failed to delete LanceDB chunks for document {}: {}",
+                        self.document_id,
+                        e
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to resolve deployment storage for document {} LanceDB cleanup: {}",
+                    self.document_id,
+                    e
+                );
+            }
         }
 
         sqlx::query!(

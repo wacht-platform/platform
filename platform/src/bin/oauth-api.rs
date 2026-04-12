@@ -3,7 +3,7 @@ use platform::application;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    platform::bootstrap::init_runtime_override_env_with_rustls();
+    platform::bootstrap::init_runtime_override_env_with_rustls("oauth-api");
 
     let app_state = AppState::new_from_env().await?;
     let app = application::oauth_router(app_state).await;

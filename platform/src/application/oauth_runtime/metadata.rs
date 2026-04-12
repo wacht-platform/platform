@@ -44,4 +44,3 @@ pub async fn oauth_protected_resource_metadata(
         scopes_supported: oauth_app.active_scopes(),
     })
 }
-

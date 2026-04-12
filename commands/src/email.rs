@@ -94,9 +94,9 @@ impl SendEmailCommand {
                         .encryption_provider()
                         .decrypt(&config.password)
                         .map_err(|e| {
-                            tracing::error!("Failed to decrypt SMTP password: {}", e);
-                            e
-                        })?;
+                        tracing::error!("Failed to decrypt SMTP password: {}", e);
+                        e
+                    })?;
 
                     let smtp_service = SmtpService::new(SmtpConfig {
                         host: config.host.clone(),
@@ -239,9 +239,9 @@ impl SendRawEmailCommand {
                         .encryption_provider()
                         .decrypt(&config.password)
                         .map_err(|e| {
-                            tracing::error!("Failed to decrypt SMTP password: {}", e);
-                            e
-                        })?;
+                        tracing::error!("Failed to decrypt SMTP password: {}", e);
+                        e
+                    })?;
 
                     let smtp_service = SmtpService::new(SmtpConfig {
                         host: config.host.clone(),

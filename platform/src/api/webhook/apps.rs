@@ -30,8 +30,7 @@ pub async fn create_webhook_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateWebhookAppRequest>,
 ) -> ApiResult<WebhookApp> {
-    let app =
-        webhook_apps_app::create_webhook_app(&app_state, deployment_id, request).await?;
+    let app = webhook_apps_app::create_webhook_app(&app_state, deployment_id, request).await?;
     Ok(app.into())
 }
 
@@ -58,8 +57,7 @@ pub async fn get_event_catalog(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(slug): Path<String>,
 ) -> ApiResult<models::webhook::WebhookEventCatalog> {
-    let catalog =
-        webhook_apps_app::get_event_catalog(&app_state, deployment_id, slug).await?;
+    let catalog = webhook_apps_app::get_event_catalog(&app_state, deployment_id, slug).await?;
     Ok(catalog.into())
 }
 
@@ -70,8 +68,7 @@ pub async fn update_event_catalog(
     Json(request): Json<UpdateEventCatalogRequest>,
 ) -> ApiResult<models::webhook::WebhookEventCatalog> {
     let catalog =
-        webhook_apps_app::update_event_catalog(&app_state, deployment_id, slug, request)
-            .await?;
+        webhook_apps_app::update_event_catalog(&app_state, deployment_id, slug, request).await?;
     Ok(catalog.into())
 }
 
@@ -106,8 +103,7 @@ pub async fn update_webhook_app(
     Json(request): Json<UpdateWebhookAppRequest>,
 ) -> ApiResult<WebhookApp> {
     let app =
-        webhook_apps_app::update_webhook_app(&app_state, deployment_id, app_slug, request)
-            .await?;
+        webhook_apps_app::update_webhook_app(&app_state, deployment_id, app_slug, request).await?;
     Ok(app.into())
 }
 
@@ -134,8 +130,7 @@ pub async fn rotate_webhook_secret(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_slug): Path<String>,
 ) -> ApiResult<WebhookApp> {
-    let app =
-        webhook_apps_app::rotate_webhook_secret(&app_state, deployment_id, app_slug).await?;
+    let app = webhook_apps_app::rotate_webhook_secret(&app_state, deployment_id, app_slug).await?;
     Ok(app.into())
 }
 
@@ -144,8 +139,7 @@ pub async fn get_webhook_events(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_slug): Path<String>,
 ) -> ApiResult<GetAvailableEventsResponse> {
-    let events =
-        webhook_apps_app::get_webhook_events(&app_state, deployment_id, app_slug).await?;
+    let events = webhook_apps_app::get_webhook_events(&app_state, deployment_id, app_slug).await?;
     Ok(events.into())
 }
 

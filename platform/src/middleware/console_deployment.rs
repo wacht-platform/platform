@@ -1,6 +1,5 @@
 use axum::{
     extract::{Path, Request},
-    http::StatusCode,
     middleware::Next,
     response::Response,
 };
@@ -23,7 +22,7 @@ pub async fn console_deployment_middleware(
     Path(params): Path<DeploymentPathParams>,
     mut req: Request,
     next: Next,
-) -> Result<Response, (StatusCode, String)> {
+) -> Result<Response, crate::application::response::ApiErrorResponse> {
     debug!(
         deployment_id = params.deployment_id,
         "Extracted deployment ID from path"

@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
 
 // Tool Execution Results
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,23 +20,6 @@ pub struct PlatformEventResult {
     pub event_label: String,
     pub event_data: Value,
     pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlatformFunctionData {
-    pub execution_id: String,
-    pub function_name: String,
-    pub parameters: HashMap<String, Value>,
-    pub is_overridable: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlatformFunctionResult {
-    pub success: bool,
-    pub tool: String,
-    pub function: String,
-    pub execution_id: String,
-    pub status: String, // "pending" or "completed"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

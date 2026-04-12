@@ -1,53 +1,60 @@
-use super::agent_memory::MemoryCategory;
-use super::agent_responses::ExecutionAction;
+pub use super::tool_calls::*;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 // DTO types for agent executor
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct StepDecision {
+pub struct NextStepDecision {
     pub next_step: NextStep,
     pub reasoning: String,
     pub confidence: f64,
-    pub actions: Option<Vec<ExecutionAction>>,
-    pub acknowledgment: Option<AcknowledgmentData>,
-    pub context_gathering_directive: Option<ContextGatheringDirective>,
-    pub memory_loading_directive: Option<MemoryLoadingDirective>,
-    pub completion_message: Option<String>,
-    #[serde(skip_deserializing, default)]
-    pub thought_signature: Option<String>,
+    pub steer: Option<SteerData>,
+    pub search_tools_directive: Option<SearchToolsDirective>,
+    pub load_tools_directive: Option<LoadToolsDirective>,
+    pub startaction_directive: Option<StartActionDirective>,
+    pub continueaction_directive: Option<ContinueActionDirective>,
+    pub abort_directive: Option<AbortDirective>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct StartActionDirective {
+    pub objective: String,
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+    #[serde(default)]
+    pub tool_call_brief: Option<ToolCallBrief>,
+}
+
+pub type ExecuteActionDirective = StartActionDirective;
+
+#[derive(Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq)]
+pub struct ToolCallBrief {
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub focus_points: Vec<String>,
+    #[serde(default)]
+    pub tool_parameter_briefs: Vec<String>,
+    #[serde(default)]
+    pub constraints: Vec<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct ContinueActionDirective {
+    pub guidance: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ContextGatheringDirective {
-    pub mode: ContextGatheringMode,
-    pub query: String,
-    pub target_output: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub local_knowledge: Option<LocalKnowledgeDirective>,
+pub struct AbortDirective {
+    pub outcome: AbortOutcome,
+    pub reason: String,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
-pub enum ContextGatheringMode {
-    SearchWeb,
-    SearchLocalKnowledge,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct LocalKnowledgeDirective {
-    pub search_type: LocalKnowledgeSearchType,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub knowledge_base_ids: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_results: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub include_associated_chunks: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_associated_chunks_per_document: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_query_rewrites: Option<u32>,
+pub enum AbortOutcome {
+    Blocked,
+    ReturnToCoordinator,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
@@ -55,6 +62,20 @@ pub struct LocalKnowledgeDirective {
 pub enum LocalKnowledgeSearchType {
     Semantic,
     Keyword,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MemorySearchApproach {
+    Semantic,
+    FullText,
+    Hybrid,
+}
+
+impl Default for MemorySearchApproach {
+    fn default() -> Self {
+        Self::Semantic
+    }
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
@@ -76,70 +97,71 @@ pub enum SearchDepth {
     Deep,
 }
 
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum MemorySource {
+    Thread,
+    Project,
+    Actor,
+    Agent,
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct MemoryLoadingDirective {
-    pub scope: MemoryScope,
-    pub focus: String,
-    pub categories: Vec<MemoryCategory>,
-    pub depth: SearchDepth,
+pub struct SteerData {
+    pub message: String,
+    pub further_actions_required: bool,
+    pub attachments: Option<Vec<ResponseAttachment>>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ResponseAttachment {
+    pub path: String,
+    #[serde(rename = "type")]
+    pub attachment_type: ResponseAttachmentType,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
-pub enum MemoryScope {
-    CurrentSession, // Only this conversation's memories
-    CrossSession,   // Agent's learned patterns across all conversations
-    Universal,      // Both current + cross-session memories
+pub enum ResponseAttachmentType {
+    File,
+    Folder,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct AcknowledgmentData {
-    pub message: String,
-    pub further_action_required: bool,
-    pub objective: ObjectiveDefinition,
+pub struct ApprovalRequestData {
+    #[serde(default)]
+    pub description: String,
+    pub tool_names: Vec<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct SearchToolsDirective {
+    pub queries: Vec<String>,
+    #[serde(default)]
+    pub max_results_per_query: Option<usize>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct LoadToolsDirective {
+    pub tool_names: Vec<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum NextStep {
-    #[serde(rename = "acknowledge")]
-    Acknowledge,
-    #[serde(rename = "gathercontext")]
-    GatherContext,
-    #[serde(rename = "loadmemory")]
-    LoadMemory,
-    #[serde(rename = "executeaction")]
-    ExecuteAction,
-    #[serde(rename = "requestuserinput")]
-    RequestUserInput,
-    #[serde(rename = "longthinkandreason")]
-    LongThinkAndReason,
-    #[serde(rename = "complete")]
-    Complete,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ObjectiveDefinition {
-    pub primary_goal: String,
-    pub success_criteria: Vec<String>,
-    pub constraints: Vec<String>,
-    pub context_from_history: String,
-    pub inferred_intent: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ConversationInsights {
-    pub is_continuation: bool,
-    pub topic_evolution: String,
-    pub user_preferences: Vec<String>,
-    pub relevant_past_outcomes: Vec<String>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TaskExecutionResult {
-    pub task_id: String,
-    pub status: String,
-    pub output: Option<Value>,
-    pub error: Option<String>,
+    #[serde(rename = "steer")]
+    Steer,
+    #[serde(rename = "searchtools")]
+    SearchTools,
+    #[serde(rename = "loadtools")]
+    LoadTools,
+    #[serde(rename = "startaction")]
+    StartAction,
+    #[serde(rename = "continueaction")]
+    ContinueAction,
+    #[serde(rename = "enablelongthink")]
+    EnableLongThink,
+    #[serde(rename = "abort")]
+    Abort,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -161,22 +183,11 @@ pub struct ConverseRequest {
     pub conversation_id: i64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AcknowledgmentResponse {
-    pub message: String,
-    pub further_action_required: bool,
-    pub reasoning: String,
-    pub objective: ObjectiveDefinition,
-    pub conversation_insights: ConversationInsights,
-}
-
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct IdeationResponse {
     pub reasoning_summary: String,
     pub needs_more_iteration: bool,
     pub context_search_request: Option<String>,
-    pub requires_user_input: bool,
-    pub user_input_request: Option<String>,
     pub execution_plan: ExecutionPlan,
 }
 
@@ -193,7 +204,6 @@ pub struct PlanAnalysis {
     pub tradeoffs: String,
 }
 
-// Context Hints - returned by gather_context for main agent to explore
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContextHints {
     pub recommended_files: Vec<RecommendedFile>,
@@ -202,15 +212,9 @@ pub struct ContextHints {
     pub search_terms_used: Vec<String>,
     pub knowledge_bases_searched: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mode: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub search_method: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub requested_output: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extracted_output: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub chunk_matches: Option<Vec<ContextChunkMatch>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -243,50 +247,11 @@ pub enum SearchConclusion {
     NeedsMoreContext,
 }
 
-/// Status of a child agent spawned by the current agent
+/// Response from spawning a child thread
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ChildAgentStatus {
+pub struct SpawnThreadResponse {
     #[serde(with = "models::utils::serde::i64_as_string")]
-    pub context_id: i64,
-    pub title: String,
-    pub status: String,
-    pub latest_status_update: Option<String>,
-    pub latest_status_at: Option<String>,
-    pub completion_summary: Option<Value>,
-}
-
-/// Response from get_child_status tool
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ChildStatusResponse {
-    pub children: Vec<ChildAgentStatus>,
-    pub count: usize,
-}
-
-/// Status update entry from an agent's timeline
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AgentStatusUpdateDto {
-    #[serde(with = "models::utils::serde::i64_as_string")]
-    pub id: i64,
-    #[serde(with = "models::utils::serde::i64_as_string")]
-    pub context_id: i64,
-    pub status_update: String,
-    pub metadata: Option<Value>,
-    pub created_at: String,
-}
-
-/// Response from spawning a child context
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SpawnContextResponse {
-    #[serde(with = "models::utils::serde::i64_as_string")]
-    pub context_id: i64,
+    pub thread_id: i64,
     pub status: String,
     pub message: String,
-}
-
-/// Event published when a child agent completes
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ChildAgentCompletedEvent {
-    pub child_context_id: i64,
-    pub status: String,
-    pub summary: Option<Value>,
 }

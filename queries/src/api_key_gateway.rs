@@ -80,7 +80,11 @@ impl GetApiKeyGatewayDataQuery {
             owner_user_id: r.owner_user_id,
             is_active: r.is_active.unwrap_or(true),
             expires_at: r.expires_at,
-            permissions: json_default(r.permissions.clone().unwrap_or_else(|| serde_json::json!([]))),
+            permissions: json_default(
+                r.permissions
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!([])),
+            ),
             org_role_permissions: if r.org_role_permissions.is_null() {
                 vec![]
             } else {

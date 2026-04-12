@@ -29,7 +29,29 @@ impl GetDeploymentAiSettingsQuery {
     {
         let result = sqlx::query_as::<_, DeploymentAiSettings>(
             r#"
-            SELECT id, deployment_id, gemini_api_key, openai_api_key, anthropic_api_key, created_at, updated_at
+            SELECT
+                id,
+                deployment_id,
+                strong_llm_provider,
+                weak_llm_provider,
+                gemini_api_key,
+                openrouter_api_key,
+                openrouter_require_parameters,
+                openai_api_key,
+                anthropic_api_key,
+                strong_model,
+                weak_model,
+                storage_provider,
+                storage_bucket,
+                storage_region,
+                storage_endpoint,
+                storage_root_prefix,
+                storage_force_path_style,
+                storage_access_key_id,
+                storage_secret_access_key,
+                vector_store_initialized_at,
+                created_at,
+                updated_at
             FROM deployment_ai_settings
             WHERE deployment_id = $1
             "#,

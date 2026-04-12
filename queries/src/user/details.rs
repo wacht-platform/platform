@@ -5,6 +5,11 @@ pub struct GetUserDetailsQuery {
     user_id: i64,
 }
 
+pub struct GetVerifiedEmailTemplateUserQuery {
+    deployment_id: i64,
+    email: String,
+}
+
 impl GetUserDetailsQuery {
     pub fn new(deployment_id: i64, user_id: i64) -> Self {
         Self {
@@ -191,5 +196,81 @@ impl GetUserDetailsQuery {
                 && !user_row.backup_codes.unwrap_or_default().is_empty(),
         };
         Ok(user_details)
+    }
+}
+
+impl GetVerifiedEmailTemplateUserQuery {
+    pub fn new(deployment_id: i64, email: impl Into<String>) -> Self {
+        Self {
+            deployment_id,
+            email: email.into(),
+        }
+    }
+
+    pub async fn execute_with_db<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<serde_json::Value>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                u.id,
+                u.first_name,
+                u.last_name,
+                u.username,
+                u.profile_picture_url,
+                u.created_at,
+                u.disabled,
+                u.password,
+                u.public_metadata,
+                u.private_metadata,
+                primary_email.email_address AS primary_email_address,
+                primary_phone.phone_number AS "primary_phone_number?"
+            FROM user_email_addresses target_email
+            JOIN users u
+              ON u.id = target_email.user_id
+             AND u.deployment_id = target_email.deployment_id
+            LEFT JOIN user_email_addresses primary_email
+              ON primary_email.id = u.primary_email_address_id
+            LEFT JOIN user_phone_numbers primary_phone
+              ON primary_phone.id = u.primary_phone_number_id
+            WHERE target_email.deployment_id = $1
+              AND lower(target_email.email_address) = lower($2)
+              AND target_email.verified = true
+              AND target_email.user_id IS NOT NULL
+            ORDER BY target_email.is_primary DESC,
+                     target_email.verified_at DESC NULLS LAST,
+                     target_email.id DESC
+            LIMIT 1
+            "#,
+            self.deployment_id,
+            self.email
+        )
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        Ok(row.map(|row| {
+            serde_json::json!({
+                "id": row.id.to_string(),
+                "first_name": row.first_name,
+                "last_name": row.last_name,
+                "full_name": format!("{} {}", row.first_name, row.last_name),
+                "username": if row.username.is_empty() {
+                    None::<String>
+                } else {
+                    Some(row.username)
+                },
+                "primary_email": row.primary_email_address,
+                "primary_phone": row.primary_phone_number,
+                "profile_picture_url": row.profile_picture_url,
+                "created_at": row.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+                "disabled": row.disabled,
+                "has_password": row.password.is_some() && !row.password.unwrap_or_default().is_empty()
+            })
+        }))
     }
 }

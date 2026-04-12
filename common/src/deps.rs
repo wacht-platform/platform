@@ -5,19 +5,12 @@ use aws_sdk_s3::Client as S3Client;
 use redis::Client as RedisClient;
 
 use crate::{
-    HasAgentStorageProvider, HasClickHouseProvider, HasCloudflareProvider, HasDbRouter,
-    HasDnsVerificationProvider, HasEmbeddingProvider, HasEncryptionProvider, HasIdProvider,
-    HasNatsJetStreamProvider, HasNatsProvider, HasPostmarkProvider, HasRedisProvider,
-    HasS3Provider, HasTemplateRenderer, HasTextProcessingProvider,
-    clickhouse::ClickHouseService,
-    cloudflare::CloudflareService,
-    db_router::DbRouter,
-    dns_verification::DnsVerificationService,
-    embedding::EmbeddingProvider,
-    encryption::EncryptionService,
-    error::AppError,
-    postmark::PostmarkService,
-    state::AppState,
+    HasClickHouseProvider, HasCloudflareProvider, HasDbRouter, HasDnsVerificationProvider,
+    HasEmbeddingProvider, HasEncryptionProvider, HasIdProvider, HasNatsJetStreamProvider,
+    HasNatsProvider, HasPostmarkProvider, HasRedisProvider, HasS3Provider, HasTemplateRenderer,
+    HasTextProcessingProvider, clickhouse::ClickHouseService, cloudflare::CloudflareService,
+    db_router::DbRouter, dns_verification::DnsVerificationService, embedding::EmbeddingProvider,
+    encryption::EncryptionService, error::AppError, postmark::PostmarkService, state::AppState,
     text_processing::TextProcessingService,
 };
 
@@ -214,17 +207,6 @@ impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, Id, Tpl> HasS3Provider
 {
     fn s3_provider(&self) -> &S3Client {
         &self.app.s3_client
-    }
-}
-
-impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasAgentStorageProvider
-    for AppDeps<'_, Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl>
-{
-    fn agent_storage_provider(&self) -> Result<&S3Client, AppError> {
-        self.app
-            .agent_storage_client
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))
     }
 }
 

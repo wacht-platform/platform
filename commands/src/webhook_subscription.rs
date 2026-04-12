@@ -46,10 +46,14 @@ where
     D: HasRedisProvider + ?Sized,
 {
     if let Ok(json) = serde_json::to_string(endpoints)
-        && let Ok(mut redis_conn) = deps.redis_provider().get_multiplexed_async_connection().await
+        && let Ok(mut redis_conn) = deps
+            .redis_provider()
+            .get_multiplexed_async_connection()
+            .await
     {
-        let _: Result<(), _> =
-            redis_conn.set_ex(cache_key, json, SUBSCRIPTION_CACHE_TTL_SECONDS).await;
+        let _: Result<(), _> = redis_conn
+            .set_ex(cache_key, json, SUBSCRIPTION_CACHE_TTL_SECONDS)
+            .await;
     }
 }
 
@@ -66,7 +70,8 @@ impl GetSubscribedEndpointsCommand {
     where
         D: HasDbRouter + HasRedisProvider + ?Sized,
     {
-        let cache_key = subscription_cache_key(self.deployment_id, &self.app_slug, &self.event_name);
+        let cache_key =
+            subscription_cache_key(self.deployment_id, &self.app_slug, &self.event_name);
 
         if let Some(endpoints) = get_cached_endpoints(deps, &cache_key).await {
             return Ok(endpoints);
@@ -130,7 +135,11 @@ impl InvalidateEndpointCacheCommand {
     where
         D: HasRedisProvider,
     {
-        if let Ok(mut redis_conn) = deps.redis_provider().get_multiplexed_async_connection().await {
+        if let Ok(mut redis_conn) = deps
+            .redis_provider()
+            .get_multiplexed_async_connection()
+            .await
+        {
             for event_name in self.event_names {
                 let cache_key =
                     subscription_cache_key(self.deployment_id, &self.app_slug, &event_name);

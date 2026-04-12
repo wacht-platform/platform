@@ -150,9 +150,9 @@ impl CreateOAuthClientGrantCommand {
                 invalid_scopes.join(", ")
             )));
         }
-        let inserted_id = row
-            .grant_id
-            .ok_or_else(|| AppError::BadRequest("Failed to create OAuth client grant".to_string()))?;
+        let inserted_id = row.grant_id.ok_or_else(|| {
+            AppError::BadRequest("Failed to create OAuth client grant".to_string())
+        })?;
 
         Ok(OAuthClientGrantCreated { id: inserted_id })
     }

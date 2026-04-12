@@ -248,10 +248,7 @@ impl UpsertSubscriptionCommand {
         Ok(Subscription {
             id: row.id.unwrap_or(self.id),
             billing_account_id: require_opt(row.billing_account_id, "billing_account_id")?,
-            provider_customer_id: require_opt(
-                row.provider_customer_id,
-                "provider_customer_id",
-            )?,
+            provider_customer_id: require_opt(row.provider_customer_id, "provider_customer_id")?,
             provider_subscription_id: require_opt(
                 row.provider_subscription_id,
                 "provider_subscription_id",

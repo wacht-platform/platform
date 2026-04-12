@@ -15,19 +15,6 @@ pub struct HybridSearchKbResult {
     pub combined_score: f64,    // double precision in PostgreSQL
 }
 
-/// Result from hybrid search for memories
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
-pub struct HybridSearchMemoryResult {
-    pub id: i64,
-    pub content: String,
-    pub memory_type: String,
-    pub importance: f64,
-    pub vector_similarity: f64,
-    pub text_rank: f64,
-    pub combined_score: f64,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-}
-
 /// Result from full-text search
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct FullTextSearchResult {

@@ -2,28 +2,16 @@ use handlebars::Handlebars;
 
 pub fn register_all_templates(hb: &mut Handlebars) {
     hb.register_template_string(
-        "step_decision_prompt",
-        include_str!("templates/step_decision_prompt.hbs"),
+        "next_step_decision_prompt",
+        include_str!("templates/next_step_decision_prompt.hbs"),
     )
-    .expect("Failed to register step_decision_prompt template");
+    .expect("Failed to register next_step_decision_prompt template");
 
     hb.register_template_string(
-        "validation_prompt",
-        include_str!("templates/validation_prompt.hbs"),
+        "next_step_decision_live_context",
+        include_str!("templates/next_step_decision_live_context.hbs"),
     )
-    .expect("Failed to register validation_prompt template");
-
-    hb.register_template_string(
-        "summary_prompt",
-        include_str!("templates/summary_prompt.hbs"),
-    )
-    .expect("Failed to register summary_prompt template");
-
-    hb.register_template_string(
-        "user_input_request_prompt",
-        include_str!("templates/user_input_request_prompt.hbs"),
-    )
-    .expect("Failed to register user_input_request_prompt template");
+    .expect("Failed to register next_step_decision_live_context template");
 
     hb.register_template_string(
         "execution_summary_prompt",
@@ -32,32 +20,26 @@ pub fn register_all_templates(hb: &mut Handlebars) {
     .expect("Failed to register execution_summary_prompt template");
 
     hb.register_template_string(
-        "parameter_generation_prompt",
-        include_str!("templates/parameter_generation_prompt.hbs"),
+        "worker_task_routing_context",
+        include_str!("templates/worker_task_routing_context.hbs"),
     )
-    .expect("Failed to register parameter_generation_prompt template");
+    .expect("Failed to register worker_task_routing_context template");
 
     hb.register_template_string(
-        "context_search_derivation_prompt",
-        include_str!("templates/context_search_derivation_prompt.hbs"),
+        "worker_assignment_execution_context",
+        include_str!("templates/worker_assignment_execution_context.hbs"),
     )
-    .expect("Failed to register context_search_derivation_prompt template");
+    .expect("Failed to register worker_assignment_execution_context template");
 
     hb.register_template_string(
-        "context_research_repl_prompt",
-        include_str!("templates/context_research_repl_prompt.hbs"),
+        "worker_assignment_outcome_review_context",
+        include_str!("templates/worker_assignment_outcome_review_context.hbs"),
     )
-    .expect("Failed to register context_research_repl_prompt template");
+    .expect("Failed to register worker_assignment_outcome_review_context template");
 
     hb.register_template_string(
-        "context_web_research_repl_prompt",
-        include_str!("templates/context_web_research_repl_prompt.hbs"),
+        "task_workspace_brief",
+        include_str!("templates/task_workspace_brief.hbs"),
     )
-    .expect("Failed to register context_web_research_repl_prompt template");
-
-    hb.register_template_string(
-        "memory_consolidation_prompt",
-        include_str!("templates/memory_consolidation_prompt.hbs"),
-    )
-    .expect("Failed to register memory_consolidation_prompt template");
+    .expect("Failed to register task_workspace_brief template");
 }

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{AgentIntegration, AiKnowledgeBase, AiTool};
+use crate::{AiKnowledgeBase, AiTool};
 
 /// Spawn configuration for sub-agent execution
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -59,7 +59,6 @@ pub struct AiAgentWithFeatures {
     pub configuration: serde_json::Value,
     pub tools: Vec<AiTool>,
     pub knowledge_bases: Vec<AiKnowledgeBase>,
-    pub integrations: Vec<AgentIntegration>,
     /// Agents this agent can spawn as sub-agents
     pub sub_agents: Option<Vec<i64>>,
     pub spawn_config: Option<SpawnConfig>,

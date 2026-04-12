@@ -10,7 +10,7 @@ pub struct ApiError {
 #[derive(Clone, Serialize)]
 pub struct ApiErrorResponse {
     #[serde(skip_serializing)]
-    pub staus_code: StatusCode,
+    pub status_code: StatusCode,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub errors: Vec<ApiError>,
 }
@@ -25,7 +25,7 @@ pub struct ApiSuccess<T> {
 
 impl IntoResponse for ApiErrorResponse {
     fn into_response(self) -> axum::response::Response {
-        (self.staus_code, Json(self)).into_response()
+        (self.status_code, Json(self)).into_response()
     }
 }
 
@@ -56,7 +56,7 @@ impl<T> From<(StatusCode, T)> for ApiSuccess<T> {
 impl From<(StatusCode, Vec<ApiError>)> for ApiErrorResponse {
     fn from(value: (StatusCode, Vec<ApiError>)) -> Self {
         ApiErrorResponse {
-            staus_code: value.0,
+            status_code: value.0,
             errors: value.1,
         }
     }
@@ -65,7 +65,7 @@ impl From<(StatusCode, Vec<ApiError>)> for ApiErrorResponse {
 impl From<(StatusCode, ApiError)> for ApiErrorResponse {
     fn from(value: (StatusCode, ApiError)) -> Self {
         ApiErrorResponse {
-            staus_code: value.0,
+            status_code: value.0,
             errors: vec![value.1],
         }
     }
@@ -74,7 +74,7 @@ impl From<(StatusCode, ApiError)> for ApiErrorResponse {
 impl From<(StatusCode, String)> for ApiErrorResponse {
     fn from(value: (StatusCode, String)) -> Self {
         ApiErrorResponse {
-            staus_code: value.0,
+            status_code: value.0,
             errors: vec![ApiError {
                 message: value.1,
                 code: u16::from(value.0),
@@ -86,7 +86,7 @@ impl From<(StatusCode, String)> for ApiErrorResponse {
 impl From<(StatusCode, &str)> for ApiErrorResponse {
     fn from(value: (StatusCode, &str)) -> Self {
         ApiErrorResponse {
-            staus_code: value.0,
+            status_code: value.0,
             errors: vec![ApiError {
                 message: value.1.to_string(),
                 code: u16::from(value.0),
@@ -96,6 +96,32 @@ impl From<(StatusCode, &str)> for ApiErrorResponse {
 }
 
 pub type ApiResult<T> = Result<ApiSuccess<T>, ApiErrorResponse>;
+
+impl ApiErrorResponse {
+    pub fn new(status_code: StatusCode, message: impl Into<String>) -> Self {
+        (status_code, message.into()).into()
+    }
+
+    pub fn bad_request(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, message)
+    }
+
+    pub fn unauthorized(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::UNAUTHORIZED, message)
+    }
+
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::FORBIDDEN, message)
+    }
+
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::NOT_FOUND, message)
+    }
+
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, message)
+    }
+}
 
 #[derive(Clone, Serialize)]
 pub struct PaginatedResponse<T>

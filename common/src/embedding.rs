@@ -1,12 +1,11 @@
 use crate::error::AppError;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 struct EmbedContentRequest {
     model: String,
     content: Content,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    task_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     output_dimensionality: Option<i32>,
 }
@@ -21,8 +20,6 @@ struct EmbedContentRequestItem {
     model: String,
     content: Content,
     #[serde(skip_serializing_if = "Option::is_none")]
-    task_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     output_dimensionality: Option<i32>,
 }
 
@@ -31,9 +28,28 @@ struct Content {
     parts: Vec<Part>,
 }
 
+#[derive(Clone)]
+pub enum EmbeddingPart {
+    Text(String),
+    InlineData { mime_type: String, data: Vec<u8> },
+}
+
 #[derive(Serialize)]
-struct Part {
-    text: String,
+#[serde(untagged)]
+enum Part {
+    Text {
+        text: String,
+    },
+    InlineData {
+        #[serde(rename = "inline_data")]
+        inline_data: InlineData,
+    },
+}
+
+#[derive(Serialize)]
+struct InlineData {
+    mime_type: String,
+    data: String,
 }
 
 #[derive(Deserialize)]
@@ -63,7 +79,7 @@ impl EmbeddingProvider {
         Self {
             http_client: reqwest::Client::new(),
             api_key,
-            model,
+            model: normalize_rest_model_name(&model),
         }
     }
 
@@ -82,7 +98,20 @@ impl EmbeddingProvider {
     pub async fn embed_content(
         &self,
         text: String,
-        task_type: Option<String>,
+        output_dimensionality: Option<i32>,
+        api_key_override: Option<&str>,
+    ) -> Result<Vec<f32>, AppError> {
+        self.embed_parts(
+            vec![EmbeddingPart::Text(text)],
+            output_dimensionality,
+            api_key_override,
+        )
+        .await
+    }
+
+    pub async fn embed_parts(
+        &self,
+        parts: Vec<EmbeddingPart>,
         output_dimensionality: Option<i32>,
         api_key_override: Option<&str>,
     ) -> Result<Vec<f32>, AppError> {
@@ -94,9 +123,8 @@ impl EmbeddingProvider {
         let request = EmbedContentRequest {
             model: self.model().to_string(),
             content: Content {
-                parts: vec![Part { text }],
+                parts: build_request_parts(parts),
             },
-            task_type,
             output_dimensionality,
         };
 
@@ -133,7 +161,6 @@ impl EmbeddingProvider {
     pub async fn batch_embed_contents(
         &self,
         texts: Vec<String>,
-        task_type: Option<String>,
         output_dimensionality: Option<i32>,
         api_key_override: Option<&str>,
     ) -> Result<Vec<Vec<f32>>, AppError> {
@@ -155,16 +182,15 @@ impl EmbeddingProvider {
                 .map(|text| EmbedContentRequestItem {
                     model: self.model().to_string(),
                     content: Content {
-                        parts: vec![Part { text: text.clone() }],
+                        parts: vec![Part::Text { text: text.clone() }],
                     },
-                    task_type: task_type.clone(),
                     output_dimensionality,
                 })
                 .collect();
 
             let batch_request = BatchEmbedContentsRequest { requests };
             let url = format!(
-                "https://generativelanguage.googleapis.com/v1/{}:batchEmbedContents",
+                "https://generativelanguage.googleapis.com/v1beta/{}:batchEmbedContents",
                 self.model()
             );
 
@@ -204,5 +230,33 @@ impl EmbeddingProvider {
         }
 
         Ok(all_embeddings)
+    }
+}
+
+fn build_request_parts(parts: Vec<EmbeddingPart>) -> Vec<Part> {
+    parts
+        .into_iter()
+        .map(|part| match part {
+            EmbeddingPart::Text(text) => Part::Text { text },
+            EmbeddingPart::InlineData { mime_type, data } => Part::InlineData {
+                inline_data: InlineData {
+                    mime_type,
+                    data: base64::engine::general_purpose::STANDARD.encode(data),
+                },
+            },
+        })
+        .collect()
+}
+
+fn normalize_rest_model_name(model: &str) -> String {
+    let trimmed = model.trim();
+    if trimmed.is_empty() {
+        return "models/gemini-embedding-2-preview".to_string();
+    }
+
+    if trimmed.starts_with("models/") {
+        trimmed.to_string()
+    } else {
+        format!("models/{}", trimmed)
     }
 }

@@ -1,4 +1,7 @@
-use common::{EncryptionService, HasDbRouter, HasEncryptionProvider, error::AppError};
+use common::{
+    EncryptionService, HasDbRouter, HasEncryptionProvider, ensure_knowledge_base_indices,
+    error::AppError, initialize_memory_table,
+};
 use models::{DeploymentAiSettings, UpdateDeploymentAiSettingsRequest};
 
 pub trait AiSettingsEncryptor: Send + Sync {
@@ -40,7 +43,29 @@ impl CreateDeploymentAiSettingsCommand {
             r#"
             INSERT INTO deployment_ai_settings (deployment_id)
             VALUES ($1)
-            RETURNING id, deployment_id, gemini_api_key, openai_api_key, anthropic_api_key, created_at, updated_at
+            RETURNING
+                id,
+                deployment_id,
+                strong_llm_provider,
+                weak_llm_provider,
+                gemini_api_key,
+                openrouter_api_key,
+                openrouter_require_parameters,
+                openai_api_key,
+                anthropic_api_key,
+                strong_model,
+                weak_model,
+                storage_provider,
+                storage_bucket,
+                storage_region,
+                storage_endpoint,
+                storage_root_prefix,
+                storage_force_path_style,
+                storage_access_key_id,
+                storage_secret_access_key,
+                vector_store_initialized_at,
+                created_at,
+                updated_at
             "#,
         )
         .bind(self.deployment_id)
@@ -121,48 +146,238 @@ impl UpdateDeploymentAiSettingsCommand {
     {
         let writer = deps.db_router().writer();
         let encryptor = deps.encryption_provider();
-        // Encrypt API keys before storing
-        let encrypted_gemini = self
-            .updates
-            .gemini_api_key
-            .as_ref()
-            .map(|k| encryptor.encrypt(k))
-            .transpose()?;
+        let encrypted_updates = encrypt_ai_settings_updates(&self.updates, encryptor)?;
 
-        let encrypted_openai = self
-            .updates
-            .openai_api_key
-            .as_ref()
-            .map(|k| encryptor.encrypt(k))
-            .transpose()?;
+        let storage_updates = self.updates.storage.as_ref();
+        let storage_provider = storage_updates
+            .and_then(|storage| storage.provider.as_ref())
+            .map(|_| "s3".to_string());
+        let storage_bucket = storage_updates.and_then(|storage| storage.bucket.clone());
+        let storage_region = storage_updates.and_then(|storage| storage.region.clone());
+        let storage_endpoint = storage_updates.and_then(|storage| storage.endpoint.clone());
+        let storage_root_prefix = storage_updates.and_then(|storage| storage.root_prefix.clone());
+        let storage_force_path_style = storage_updates.and_then(|storage| storage.force_path_style);
 
-        let encrypted_anthropic = self
-            .updates
-            .anthropic_api_key
-            .as_ref()
-            .map(|k| encryptor.encrypt(k))
-            .transpose()?;
-
-        let result = sqlx::query_as::<_, DeploymentAiSettings>(
+        let mut result = sqlx::query_as::<_, DeploymentAiSettings>(
             r#"
             UPDATE deployment_ai_settings SET
-                gemini_api_key = COALESCE($2, gemini_api_key),
-                openai_api_key = COALESCE($3, openai_api_key),
-                anthropic_api_key = COALESCE($4, anthropic_api_key),
+                strong_llm_provider = COALESCE($2, strong_llm_provider),
+                weak_llm_provider = COALESCE($3, weak_llm_provider),
+                gemini_api_key = COALESCE($4, gemini_api_key),
+                openrouter_api_key = COALESCE($5, openrouter_api_key),
+                openrouter_require_parameters = COALESCE($6, openrouter_require_parameters),
+                openai_api_key = COALESCE($7, openai_api_key),
+                anthropic_api_key = COALESCE($8, anthropic_api_key),
+                strong_model = COALESCE($9, strong_model),
+                weak_model = COALESCE($10, weak_model),
+                storage_provider = COALESCE($11, storage_provider),
+                storage_bucket = COALESCE($12, storage_bucket),
+                storage_region = COALESCE($13, storage_region),
+                storage_endpoint = COALESCE($14, storage_endpoint),
+                storage_root_prefix = COALESCE($15, storage_root_prefix),
+                storage_force_path_style = COALESCE($16, storage_force_path_style),
+                storage_access_key_id = COALESCE($17, storage_access_key_id),
+                storage_secret_access_key = COALESCE($18, storage_secret_access_key),
+                vector_store_initialized_at = CASE
+                    WHEN $19::boolean THEN NULL
+                    ELSE vector_store_initialized_at
+                END,
                 updated_at = NOW()
             WHERE deployment_id = $1
-            RETURNING id, deployment_id, gemini_api_key, openai_api_key, anthropic_api_key, created_at, updated_at
+            RETURNING
+                id,
+                deployment_id,
+                strong_llm_provider,
+                weak_llm_provider,
+                gemini_api_key,
+                openrouter_api_key,
+                openrouter_require_parameters,
+                openai_api_key,
+                anthropic_api_key,
+                strong_model,
+                weak_model,
+                storage_provider,
+                storage_bucket,
+                storage_region,
+                storage_endpoint,
+                storage_root_prefix,
+                storage_force_path_style,
+                storage_access_key_id,
+                storage_secret_access_key,
+                vector_store_initialized_at,
+                created_at,
+                updated_at
             "#,
         )
         .bind(self.deployment_id)
-        .bind(&encrypted_gemini)
-        .bind(&encrypted_openai)
-        .bind(&encrypted_anthropic)
+        .bind(&encrypted_updates.strong_llm_provider)
+        .bind(&encrypted_updates.weak_llm_provider)
+        .bind(&encrypted_updates.gemini_api_key)
+        .bind(&encrypted_updates.openrouter_api_key)
+        .bind(encrypted_updates.openrouter_require_parameters)
+        .bind(&encrypted_updates.openai_api_key)
+        .bind(&encrypted_updates.anthropic_api_key)
+        .bind(&encrypted_updates.strong_model)
+        .bind(&encrypted_updates.weak_model)
+        .bind(&storage_provider)
+        .bind(&storage_bucket)
+        .bind(&storage_region)
+        .bind(&storage_endpoint)
+        .bind(&storage_root_prefix)
+        .bind(storage_force_path_style)
+        .bind(&encrypted_updates.storage_access_key_id)
+        .bind(&encrypted_updates.storage_secret_access_key)
+        .bind(storage_updates.is_some())
         .fetch_one(writer)
         .await?;
 
+        if storage_updates.is_some() {
+            initialize_vector_stores(&result, deps).await?;
+            result = sqlx::query_as::<_, DeploymentAiSettings>(
+                r#"
+                UPDATE deployment_ai_settings SET
+                    vector_store_initialized_at = NOW(),
+                    updated_at = NOW()
+                WHERE deployment_id = $1
+                RETURNING
+                    id,
+                    deployment_id,
+                    strong_llm_provider,
+                    weak_llm_provider,
+                    gemini_api_key,
+                    openrouter_api_key,
+                    openrouter_require_parameters,
+                    openai_api_key,
+                    anthropic_api_key,
+                    strong_model,
+                    weak_model,
+                    storage_provider,
+                    storage_bucket,
+                    storage_region,
+                    storage_endpoint,
+                    storage_root_prefix,
+                    storage_force_path_style,
+                    storage_access_key_id,
+                    storage_secret_access_key,
+                    vector_store_initialized_at,
+                    created_at,
+                    updated_at
+                "#,
+            )
+            .bind(self.deployment_id)
+            .fetch_one(writer)
+            .await?;
+        }
+
         Ok(result)
     }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct EncryptedAiSettingsUpdate {
+    strong_llm_provider: Option<String>,
+    weak_llm_provider: Option<String>,
+    gemini_api_key: Option<String>,
+    openrouter_api_key: Option<String>,
+    openrouter_require_parameters: Option<bool>,
+    openai_api_key: Option<String>,
+    anthropic_api_key: Option<String>,
+    strong_model: Option<String>,
+    weak_model: Option<String>,
+    storage_access_key_id: Option<String>,
+    storage_secret_access_key: Option<String>,
+}
+
+fn encrypt_ai_settings_updates(
+    updates: &UpdateDeploymentAiSettingsRequest,
+    encryptor: &dyn AiSettingsEncryptor,
+) -> Result<EncryptedAiSettingsUpdate, AppError> {
+    Ok(EncryptedAiSettingsUpdate {
+        strong_llm_provider: updates
+            .strong_llm_provider
+            .as_ref()
+            .map(|value| match value {
+                models::DeploymentLlmProvider::Gemini => "gemini".to_string(),
+                models::DeploymentLlmProvider::Openai => "openai".to_string(),
+                models::DeploymentLlmProvider::Openrouter => "openrouter".to_string(),
+            }),
+        weak_llm_provider: updates
+            .weak_llm_provider
+            .as_ref()
+            .map(|value| match value {
+                models::DeploymentLlmProvider::Gemini => "gemini".to_string(),
+                models::DeploymentLlmProvider::Openai => "openai".to_string(),
+                models::DeploymentLlmProvider::Openrouter => "openrouter".to_string(),
+            }),
+        gemini_api_key: updates
+            .gemini_api_key
+            .as_ref()
+            .map(|value| encryptor.encrypt(value))
+            .transpose()?,
+        openrouter_api_key: updates
+            .openrouter_api_key
+            .as_ref()
+            .map(|value| encryptor.encrypt(value))
+            .transpose()?,
+        openrouter_require_parameters: updates.openrouter_require_parameters,
+        openai_api_key: updates
+            .openai_api_key
+            .as_ref()
+            .map(|value| encryptor.encrypt(value))
+            .transpose()?,
+        anthropic_api_key: updates
+            .anthropic_api_key
+            .as_ref()
+            .map(|value| encryptor.encrypt(value))
+            .transpose()?,
+        strong_model: updates.strong_model.clone(),
+        weak_model: updates.weak_model.clone(),
+        storage_access_key_id: updates
+            .storage
+            .as_ref()
+            .and_then(|storage| storage.access_key_id.as_ref())
+            .map(|value| encryptor.encrypt(value))
+            .transpose()?,
+        storage_secret_access_key: updates
+            .storage
+            .as_ref()
+            .and_then(|storage| storage.secret_access_key.as_ref())
+            .map(|value| encryptor.encrypt(value))
+            .transpose()?,
+    })
+}
+
+async fn initialize_vector_stores<D>(
+    settings: &DeploymentAiSettings,
+    deps: &D,
+) -> Result<(), AppError>
+where
+    D: HasDbRouter + HasEncryptionProvider,
+{
+    let storage = crate::ResolveDeploymentStorageCommand::new(settings.deployment_id)
+        .execute_with_deps(deps)
+        .await?;
+    let lance_config = storage.vector_store_config();
+
+    ensure_knowledge_base_indices(&lance_config)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "Knowledge base LanceDB initialization failed for {}: {}",
+                lance_config.uri, error
+            ))
+        })?;
+
+    initialize_memory_table(&lance_config)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "Memory LanceDB initialization failed for {}: {}",
+                lance_config.uri, error
+            ))
+        })?;
+
+    Ok(())
 }
 
 /// Command to clear a specific API key from deployment AI settings
@@ -185,6 +400,7 @@ impl ClearDeploymentAiKeyCommand {
 
 pub enum AiKeyType {
     Gemini,
+    OpenRouter,
     OpenAI,
     Anthropic,
 }
@@ -228,6 +444,7 @@ impl ClearDeploymentAiKeyCommand {
     {
         let column = match self.key_type {
             AiKeyType::Gemini => "gemini_api_key",
+            AiKeyType::OpenRouter => "openrouter_api_key",
             AiKeyType::OpenAI => "openai_api_key",
             AiKeyType::Anthropic => "anthropic_api_key",
         };
