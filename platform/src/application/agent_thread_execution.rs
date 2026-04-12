@@ -8,14 +8,13 @@ use commands::{
 use common::ReadConsistency;
 use common::error::AppError;
 use dto::json::deployment::{ExecuteAgentRequest, ExecuteAgentResponse};
-use models::plan_features::PlanFeature;
 use models::{
     AgentThreadStatus, ConversationContent, RequestedToolApprovalState, ToolApprovalDecision,
     ToolApprovalRequestState,
 };
 use queries::{
     GetAgentThreadStateQuery, GetConversationByIdQuery, GetDeploymentAiSettingsQuery,
-    GetRecentConversationsQuery, plan_access::CheckDeploymentFeatureAccessQuery,
+    GetRecentConversationsQuery,
 };
 use std::collections::{HashMap, HashSet};
 use tracing::{error, info};
@@ -203,22 +202,6 @@ pub async fn execute_agent_async(
         return Err(AppError::BadRequest(
             EXECUTION_VARIANT_VALIDATION_ERROR.to_string(),
         ));
-    }
-
-    if cancel.is_none() {
-        let has_ai_access =
-            CheckDeploymentFeatureAccessQuery::new(deployment_id, PlanFeature::AiAgents)
-                .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
-                .await
-                .map_err(|e| {
-                    AppError::Internal(format!("Failed to check AI feature access: {}", e))
-                })?;
-
-        if !has_ai_access {
-            return Err(AppError::Forbidden(
-                "AI agent usage requires Growth plan".to_string(),
-            ));
-        }
     }
 
     let has_custom_gemini_key = if cancel.is_none() {
