@@ -1,11 +1,11 @@
 use super::core::AgentExecutor;
 use super::tool_params::MAX_LOADED_EXTERNAL_TOOLS;
+use crate::llm::{
+    NativeToolDefinition, SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest,
+};
 use common::error::AppError;
 use dto::json::agent_executor::{
     ExternalToolCall, LoadToolsParams, SearchToolsParams, ToolCallRequest,
-};
-use crate::llm::{
-    NativeToolDefinition, SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest,
 };
 use models::{AiTool, AiToolConfiguration, SchemaField};
 use serde::de::DeserializeOwned;
@@ -48,7 +48,9 @@ impl AgentExecutor {
 
     fn normalize_tool_input_value(input: Value, schema_fields: &[SchemaField]) -> Value {
         match input {
-            Value::Object(map) => Value::Object(Self::normalize_tool_input_object(map, schema_fields)),
+            Value::Object(map) => {
+                Value::Object(Self::normalize_tool_input_object(map, schema_fields))
+            }
             other => other,
         }
     }
@@ -96,11 +98,12 @@ impl AgentExecutor {
                             .as_deref()
                             .and_then(|item| item.properties.as_deref())
                             .unwrap_or(&[]);
-                        items.into_iter()
+                        items
+                            .into_iter()
                             .map(|item| match item {
-                                Value::Object(nested) => {
-                                    Value::Object(Self::normalize_tool_input_object(nested, nested_schema))
-                                }
+                                Value::Object(nested) => Value::Object(
+                                    Self::normalize_tool_input_object(nested, nested_schema),
+                                ),
                                 other => other,
                             })
                             .collect()
@@ -281,17 +284,26 @@ impl AgentExecutor {
                 }
                 models::InternalToolType::TaskGraphAddDependency => {
                     Ok(ToolCallRequest::TaskGraphAddDependency {
-                        params: Self::parse_tool_params("task_graph_add_dependency", normalized_input)?,
+                        params: Self::parse_tool_params(
+                            "task_graph_add_dependency",
+                            normalized_input,
+                        )?,
                     })
                 }
                 models::InternalToolType::TaskGraphMarkInProgress => {
                     Ok(ToolCallRequest::TaskGraphMarkInProgress {
-                        params: Self::parse_tool_params("task_graph_mark_in_progress", normalized_input)?,
+                        params: Self::parse_tool_params(
+                            "task_graph_mark_in_progress",
+                            normalized_input,
+                        )?,
                     })
                 }
                 models::InternalToolType::TaskGraphCompleteNode => {
                     Ok(ToolCallRequest::TaskGraphCompleteNode {
-                        params: Self::parse_tool_params("task_graph_complete_node", normalized_input)?,
+                        params: Self::parse_tool_params(
+                            "task_graph_complete_node",
+                            normalized_input,
+                        )?,
                     })
                 }
                 models::InternalToolType::TaskGraphFailNode => {
@@ -301,12 +313,18 @@ impl AgentExecutor {
                 }
                 models::InternalToolType::TaskGraphMarkCompleted => {
                     Ok(ToolCallRequest::TaskGraphMarkCompleted {
-                        params: Self::parse_tool_params("task_graph_mark_completed", normalized_input)?,
+                        params: Self::parse_tool_params(
+                            "task_graph_mark_completed",
+                            normalized_input,
+                        )?,
                     })
                 }
                 models::InternalToolType::TaskGraphMarkFailed => {
                     Ok(ToolCallRequest::TaskGraphMarkFailed {
-                        params: Self::parse_tool_params("task_graph_mark_failed", normalized_input)?,
+                        params: Self::parse_tool_params(
+                            "task_graph_mark_failed",
+                            normalized_input,
+                        )?,
                     })
                 }
                 models::InternalToolType::AppendTaskJournal => Err(AppError::BadRequest(

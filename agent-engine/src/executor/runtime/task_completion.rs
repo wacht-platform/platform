@@ -150,7 +150,6 @@ impl AgentExecutor {
         };
 
         if !self.task_brief_is_ready().await? {
-
             self.store_conversation(
                 ConversationContent::SystemDecision {
                     step: "terminal_stop_blocked_by_missing_task_brief".to_string(),

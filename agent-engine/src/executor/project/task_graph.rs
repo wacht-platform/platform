@@ -1,9 +1,7 @@
 use super::core::AgentExecutor;
 use commands::EnsureThreadTaskGraphCommand;
 use common::error::AppError;
-use queries::{
-    ListReadyThreadTaskNodesQuery, ListThreadTaskEdgesQuery, ListThreadTaskNodesQuery,
-};
+use queries::{ListReadyThreadTaskNodesQuery, ListThreadTaskEdgesQuery, ListThreadTaskNodesQuery};
 use std::collections::{HashMap, HashSet};
 
 impl AgentExecutor {

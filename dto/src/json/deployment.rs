@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use models::{AiToolConfiguration, SpawnConfig};
+use models::AiToolConfiguration;
 
 #[derive(Deserialize)]
 pub struct CreateAgentRequest {
@@ -11,8 +11,6 @@ pub struct CreateAgentRequest {
     pub knowledge_base_ids: Option<Vec<i64>>,
     /// Agent IDs this agent can spawn as sub-agents
     pub sub_agents: Option<Vec<i64>>,
-    /// Spawn configuration
-    pub spawn_config: Option<SpawnConfig>,
 }
 
 #[derive(Deserialize)]
@@ -24,8 +22,6 @@ pub struct UpdateAgentRequest {
     pub tool_ids: Option<Vec<i64>>,
     pub knowledge_base_ids: Option<Vec<i64>>,
     pub sub_agents: Option<Vec<i64>>,
-    /// Spawn configuration
-    pub spawn_config: Option<SpawnConfig>,
 }
 
 #[derive(Deserialize)]

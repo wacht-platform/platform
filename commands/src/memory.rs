@@ -136,9 +136,10 @@ impl SaveAgentMemoryCommand {
             .execute_with_deps(deps)
             .await?;
 
-        let embedding = embeddings.into_iter().next().ok_or_else(|| {
-            AppError::Internal("Failed to generate embedding".to_string())
-        })?;
+        let embedding = embeddings
+            .into_iter()
+            .next()
+            .ok_or_else(|| AppError::Internal("Failed to generate embedding".to_string()))?;
 
         let (actor_id, project_id, thread_id, owner_agent_id, memory_scope) = match scope_str {
             models::memory::scope::ACTOR => (
@@ -321,7 +322,9 @@ fn build_memory_query_filters(
 ) -> MemoryQueryFilters {
     MemoryQueryFilters {
         actor_id: sources.contains(&MemorySource::Actor).then_some(actor_id),
-        project_id: sources.contains(&MemorySource::Project).then_some(project_id),
+        project_id: sources
+            .contains(&MemorySource::Project)
+            .then_some(project_id),
         thread_id: sources.contains(&MemorySource::Thread).then_some(thread_id),
         agent_id: sources.contains(&MemorySource::Agent).then_some(agent_id),
         categories: Some(

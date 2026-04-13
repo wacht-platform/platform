@@ -326,7 +326,8 @@ impl AgentExecutor {
             directive.tool_call_brief.clone().unwrap_or_default(),
             directive.objective.trim(),
         );
-        self.execute_action_iteration_with_brief(directive, &brief).await
+        self.execute_action_iteration_with_brief(directive, &brief)
+            .await
     }
 
     async fn execute_action_iteration_with_brief(
@@ -361,10 +362,7 @@ impl AgentExecutor {
             .await
     }
 
-    fn normalized_tool_call_brief(
-        mut brief: ToolCallBrief,
-        objective: &str,
-    ) -> ToolCallBrief {
+    fn normalized_tool_call_brief(mut brief: ToolCallBrief, objective: &str) -> ToolCallBrief {
         brief.focus_points = brief
             .focus_points
             .into_iter()
@@ -603,14 +601,28 @@ Treat this as the current dynamic state for this execution pass.
 ## Execution Task Graph
 {}"#,
             execution_environment_summary,
-            active_assignment_summary.clone().unwrap_or_else(|| "none".to_string()),
-            recent_assignment_history_summary.clone().unwrap_or_else(|| "none".to_string()),
-            task_journal_tail.clone().unwrap_or_else(|| "none".to_string()),
+            active_assignment_summary
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
+            recent_assignment_history_summary
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
+            task_journal_tail
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
             active_board_item_summary,
-            active_board_item_assignments_summary.clone().unwrap_or_else(|| "none".to_string()),
-            active_board_item_events_summary.clone().unwrap_or_else(|| "none".to_string()),
-            thread_assignment_queue_summary.clone().unwrap_or_else(|| "none".to_string()),
-            task_graph_summary.clone().unwrap_or_else(|| "none".to_string())
+            active_board_item_assignments_summary
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
+            active_board_item_events_summary
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
+            thread_assignment_queue_summary
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
+            task_graph_summary
+                .clone()
+                .unwrap_or_else(|| "none".to_string())
         );
 
         let mut template_context = json!({
@@ -672,9 +684,7 @@ Treat this as the current dynamic state for this execution pass.
             .collect::<Vec<_>>();
 
         let llm = self.create_weak_llm().await?;
-        let output = llm
-            .generate_tool_calls(request, native_tools)
-            .await?;
+        let output = llm.generate_tool_calls(request, native_tools).await?;
         self.record_llm_usage_for_compaction(output.usage_metadata.as_ref());
         let tool_calls = output
             .calls

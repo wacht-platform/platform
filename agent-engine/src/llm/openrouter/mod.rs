@@ -239,14 +239,13 @@ impl OpenRouterClient {
         let calls = tool_calls
             .iter()
             .map(|call| {
-                let arguments = serde_json::from_str::<Value>(&call.function.arguments).map_err(
-                    |error| {
+                let arguments =
+                    serde_json::from_str::<Value>(&call.function.arguments).map_err(|error| {
                         AppError::Internal(format!(
                             "Failed to parse OpenRouter tool arguments for {}: {}",
                             call.function.name, error
                         ))
-                    },
-                )?;
+                    })?;
                 Ok(GeneratedToolCall {
                     tool_name: call.function.name.clone(),
                     arguments,
@@ -408,7 +407,9 @@ impl OpenRouterClient {
                         tokio::time::sleep(Self::calculate_backoff_delay(attempt)).await;
                         continue;
                     }
-                    return Err(AppError::Internal(format!("OpenRouter request failed: {e}")));
+                    return Err(AppError::Internal(format!(
+                        "OpenRouter request failed: {e}"
+                    )));
                 }
             };
 
@@ -558,9 +559,7 @@ impl OpenRouterClient {
             })
             .or_else(|| content.len().checked_sub(1));
 
-        if let Some(last_cacheable_block) =
-            target_index.and_then(|index| content.get_mut(index))
-        {
+        if let Some(last_cacheable_block) = target_index.and_then(|index| content.get_mut(index)) {
             last_cacheable_block["cache_control"] = json!({
                 "type": "ephemeral"
             });

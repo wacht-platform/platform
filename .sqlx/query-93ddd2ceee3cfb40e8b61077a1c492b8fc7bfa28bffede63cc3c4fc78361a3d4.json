@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO ai_agents (id, created_at, updated_at, name, description, deployment_id, configuration, sub_agents, spawn_config)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n            RETURNING id, created_at, updated_at, name, description, deployment_id, configuration, sub_agents, spawn_config\n            ",
+  "query": "\n            UPDATE ai_agents\n            SET\n                updated_at = $1,\n                name = COALESCE($2, name),\n                description = COALESCE($3, description),\n                configuration = COALESCE($4, configuration)\n            WHERE id = $5 AND deployment_id = $6\n            RETURNING id, created_at, updated_at, name, description, deployment_id, configuration\n            ",
   "describe": {
     "columns": [
       {
@@ -37,29 +37,16 @@
         "ordinal": 6,
         "name": "configuration",
         "type_info": "Jsonb"
-      },
-      {
-        "ordinal": 7,
-        "name": "sub_agents",
-        "type_info": "Jsonb"
-      },
-      {
-        "ordinal": 8,
-        "name": "spawn_config",
-        "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Timestamptz",
         "Timestamptz",
         "Text",
         "Text",
+        "Jsonb",
         "Int8",
-        "Jsonb",
-        "Jsonb",
-        "Jsonb"
+        "Int8"
       ]
     },
     "nullable": [
@@ -69,10 +56,8 @@
       false,
       true,
       false,
-      false,
-      true,
-      true
+      false
     ]
   },
-  "hash": "daee1a0e0968950e1c2cf2b3d36f017c45293ce358ecccb20536f028106f3789"
+  "hash": "93ddd2ceee3cfb40e8b61077a1c492b8fc7bfa28bffede63cc3c4fc78361a3d4"
 }

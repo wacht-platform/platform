@@ -2,8 +2,8 @@ mod rclone;
 mod state;
 
 use self::rclone::*;
-use self::state::*;
 pub(crate) use self::state::detect_local_execution_base_path;
+use self::state::*;
 
 use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
@@ -370,4 +370,3 @@ impl Drop for DeploymentMountLease {
         }
     }
 }
-

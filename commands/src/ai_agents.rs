@@ -1,30 +1,12 @@
 use chrono::Utc;
 use common::{HasDbRouter, error::AppError};
 use models::AiAgent;
-use serde::de::DeserializeOwned;
+use std::collections::BTreeSet;
 
 const AGENT_NOT_FOUND: &str = "Agent not found";
 const SUB_AGENT_NOT_FOUND: &str = "Sub-agent not found";
-const ERR_SERIALIZE_SUB_AGENTS: &str = "Failed to serialize sub_agents";
 const ERR_INVALID_TOOL_IDS: &str = "One or more tool IDs are invalid for this deployment";
 const ERR_INVALID_KB_IDS: &str = "One or more knowledge base IDs are invalid for this deployment";
-
-fn parse_optional_json<T: DeserializeOwned>(
-    value: Option<serde_json::Value>,
-    field: &str,
-) -> Result<Option<T>, AppError> {
-    value
-        .map(|v| {
-            serde_json::from_value(v)
-                .map_err(|e| AppError::Internal(format!("Failed to parse {}: {}", field, e)))
-        })
-        .transpose()
-}
-
-fn serialize_sub_agents(sub_agents: Vec<i64>) -> Result<serde_json::Value, AppError> {
-    serde_json::to_value(sub_agents)
-        .map_err(|e| AppError::Internal(format!("{ERR_SERIALIZE_SUB_AGENTS}: {}", e)))
-}
 
 pub struct CreateAiAgentCommand {
     pub id: i64,
@@ -35,7 +17,6 @@ pub struct CreateAiAgentCommand {
     pub tool_ids: Option<Vec<i64>>,
     pub knowledge_base_ids: Option<Vec<i64>>,
     pub sub_agents: Option<Vec<i64>>,
-    pub spawn_config: Option<models::SpawnConfig>,
 }
 
 impl CreateAiAgentCommand {
@@ -55,7 +36,6 @@ impl CreateAiAgentCommand {
             tool_ids: None,
             knowledge_base_ids: None,
             sub_agents: None,
-            spawn_config: None,
         }
     }
 
@@ -73,11 +53,6 @@ impl CreateAiAgentCommand {
         self.sub_agents = Some(sub_agents);
         self
     }
-
-    pub fn with_spawn_config(mut self, spawn_config: models::SpawnConfig) -> Self {
-        self.spawn_config = Some(spawn_config);
-        self
-    }
 }
 
 impl CreateAiAgentCommand {
@@ -89,18 +64,8 @@ impl CreateAiAgentCommand {
         let agent_id = self.id;
         let tool_ids = self.tool_ids.unwrap_or_default();
         let knowledge_base_ids = self.knowledge_base_ids.unwrap_or_default();
+        let sub_agent_ids = self.sub_agents.unwrap_or_default();
         let sanitized_configuration = sanitize_configuration(self.configuration);
-
-        let sub_agents_json = self
-            .sub_agents
-            .map(serde_json::to_value)
-            .transpose()
-            .map_err(|e| AppError::Serialization(e.to_string()))?;
-        let spawn_config_json = self
-            .spawn_config
-            .map(serde_json::to_value)
-            .transpose()
-            .map_err(|e| AppError::Serialization(e.to_string()))?;
 
         let mut tx = deps
             .db_router()
@@ -111,9 +76,9 @@ impl CreateAiAgentCommand {
 
         let agent = sqlx::query!(
             r#"
-            INSERT INTO ai_agents (id, created_at, updated_at, name, description, deployment_id, configuration, sub_agents, spawn_config)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            RETURNING id, created_at, updated_at, name, description, deployment_id, configuration, sub_agents, spawn_config
+            INSERT INTO ai_agents (id, created_at, updated_at, name, description, deployment_id, configuration)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id, created_at, updated_at, name, description, deployment_id, configuration
             "#,
             agent_id,
             now,
@@ -122,8 +87,6 @@ impl CreateAiAgentCommand {
             self.description,
             self.deployment_id,
             sanitized_configuration,
-            sub_agents_json,
-            spawn_config_json,
         )
         .fetch_one(&mut *tx)
         .await
@@ -135,13 +98,11 @@ impl CreateAiAgentCommand {
             self.deployment_id,
             &tool_ids,
             &knowledge_base_ids,
+            &sub_agent_ids,
         )
         .await?;
 
         tx.commit().await.map_err(AppError::Database)?;
-
-        let sub_agents = parse_optional_json(agent.sub_agents, "sub_agents")?;
-        let spawn_config = parse_optional_json(agent.spawn_config, "spawn_config")?;
 
         Ok(AiAgent {
             id: agent.id,
@@ -151,8 +112,7 @@ impl CreateAiAgentCommand {
             description: agent.description,
             deployment_id: agent.deployment_id,
             configuration: agent.configuration,
-            sub_agents,
-            spawn_config,
+            sub_agents: Some(sub_agent_ids),
         })
     }
 }
@@ -166,7 +126,6 @@ pub struct UpdateAiAgentCommand {
     pub tool_ids: Option<Vec<i64>>,
     pub knowledge_base_ids: Option<Vec<i64>>,
     pub sub_agents: Option<Vec<i64>>,
-    pub spawn_config: Option<models::SpawnConfig>,
 }
 
 impl UpdateAiAgentCommand {
@@ -180,7 +139,6 @@ impl UpdateAiAgentCommand {
             tool_ids: None,
             knowledge_base_ids: None,
             sub_agents: None,
-            spawn_config: None,
         }
     }
 
@@ -213,11 +171,6 @@ impl UpdateAiAgentCommand {
         self.sub_agents = Some(sub_agents);
         self
     }
-
-    pub fn with_spawn_config(mut self, spawn_config: models::SpawnConfig) -> Self {
-        self.spawn_config = Some(spawn_config);
-        self
-    }
 }
 
 impl UpdateAiAgentCommand {
@@ -229,16 +182,6 @@ impl UpdateAiAgentCommand {
         let agent_id = self.agent_id;
         let deployment_id = self.deployment_id;
         let configuration = self.configuration.map(sanitize_configuration);
-        let sub_agents_json = self
-            .sub_agents
-            .map(serde_json::to_value)
-            .transpose()
-            .map_err(|e| AppError::Serialization(e.to_string()))?;
-        let spawn_config_json = self
-            .spawn_config
-            .map(serde_json::to_value)
-            .transpose()
-            .map_err(|e| AppError::Serialization(e.to_string()))?;
 
         let mut tx = deps
             .db_router()
@@ -254,18 +197,14 @@ impl UpdateAiAgentCommand {
                 updated_at = $1,
                 name = COALESCE($2, name),
                 description = COALESCE($3, description),
-                configuration = COALESCE($4, configuration),
-                sub_agents = COALESCE($5, sub_agents),
-                spawn_config = COALESCE($6, spawn_config)
-            WHERE id = $7 AND deployment_id = $8
-            RETURNING id, created_at, updated_at, name, description, deployment_id, configuration, sub_agents, spawn_config
+                configuration = COALESCE($4, configuration)
+            WHERE id = $5 AND deployment_id = $6
+            RETURNING id, created_at, updated_at, name, description, deployment_id, configuration
             "#,
             now,
             self.name,
             self.description,
             configuration,
-            sub_agents_json,
-            spawn_config_json,
             agent_id,
             deployment_id
         )
@@ -278,19 +217,14 @@ impl UpdateAiAgentCommand {
         }
 
         if let Some(knowledge_base_ids) = self.knowledge_base_ids {
-            replace_agent_knowledge_bases(
-                &mut tx,
-                agent_id,
-                deployment_id,
-                &knowledge_base_ids,
-            )
-            .await?;
+            replace_agent_knowledge_bases(&mut tx, agent_id, deployment_id, &knowledge_base_ids)
+                .await?;
+        }
+        if let Some(sub_agent_ids) = self.sub_agents.as_ref() {
+            replace_agent_sub_agents(&mut tx, agent_id, deployment_id, sub_agent_ids).await?;
         }
 
         tx.commit().await.map_err(AppError::Database)?;
-
-        let sub_agents = parse_optional_json(agent.sub_agents, "sub_agents")?;
-        let spawn_config = parse_optional_json(agent.spawn_config, "spawn_config")?;
 
         Ok(AiAgent {
             id: agent.id,
@@ -300,8 +234,7 @@ impl UpdateAiAgentCommand {
             description: agent.description,
             deployment_id: agent.deployment_id,
             configuration: agent.configuration,
-            sub_agents,
-            spawn_config,
+            sub_agents: self.sub_agents,
         })
     }
 }
@@ -528,33 +461,11 @@ impl AttachSubAgentToAgentCommand {
             return Err(AppError::NotFound(SUB_AGENT_NOT_FOUND.to_string()));
         }
 
-        let sub_agents_json: Option<serde_json::Value> = sqlx::query_scalar!(
-            r#"
-            SELECT sub_agents as "sub_agents: serde_json::Value"
-            FROM ai_agents
-            WHERE id = $1 AND deployment_id = $2
-            "#,
-            self.agent_id,
-            self.deployment_id
-        )
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(AppError::Database)?;
-
-        let mut sub_agents: Vec<i64> =
-            parse_optional_json(sub_agents_json, "sub_agents")?.unwrap_or_default();
-
-        if !sub_agents.contains(&self.sub_agent_id) {
-            sub_agents.push(self.sub_agent_id);
-        }
-
-        let updated_sub_agents = serialize_sub_agents(sub_agents)?;
-
         sqlx::query!(
-            "UPDATE ai_agents SET sub_agents = $1, updated_at = NOW() WHERE id = $2 AND deployment_id = $3",
-            updated_sub_agents,
+            "INSERT INTO ai_agent_sub_agents (deployment_id, agent_id, sub_agent_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            self.deployment_id,
             self.agent_id,
-            self.deployment_id
+            self.sub_agent_id,
         )
         .execute(&mut *tx)
         .await
@@ -594,32 +505,11 @@ impl DetachSubAgentFromAgentCommand {
             .await
             .map_err(AppError::Database)?;
 
-        let sub_agents_json: Option<serde_json::Value> = sqlx::query_scalar!(
-            r#"
-            SELECT sub_agents as "sub_agents: serde_json::Value"
-            FROM ai_agents
-            WHERE id = $1 AND deployment_id = $2
-            "#,
-            self.agent_id,
-            self.deployment_id
-        )
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(AppError::Database)?
-        .ok_or_else(|| AppError::NotFound(AGENT_NOT_FOUND.to_string()))?;
-
-        let mut sub_agents: Vec<i64> =
-            parse_optional_json(sub_agents_json, "sub_agents")?.unwrap_or_default();
-
-        sub_agents.retain(|id| *id != self.sub_agent_id);
-
-        let updated_sub_agents = serialize_sub_agents(sub_agents)?;
-
         sqlx::query!(
-            "UPDATE ai_agents SET sub_agents = $1, updated_at = NOW() WHERE id = $2 AND deployment_id = $3",
-            updated_sub_agents,
+            "DELETE FROM ai_agent_sub_agents WHERE deployment_id = $1 AND agent_id = $2 AND sub_agent_id = $3",
+            self.deployment_id,
             self.agent_id,
-            self.deployment_id
+            self.sub_agent_id
         )
         .execute(&mut *tx)
         .await
@@ -676,6 +566,15 @@ impl DeleteAiAgentCommand {
         .await
         .map_err(AppError::Database)?;
 
+        sqlx::query!(
+            "DELETE FROM ai_agent_sub_agents WHERE deployment_id = $1 AND (agent_id = $2 OR sub_agent_id = $2)",
+            self.deployment_id,
+            self.agent_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+
         // Delete the agent
         sqlx::query!(
             "DELETE FROM ai_agents WHERE id = $1 AND deployment_id = $2",
@@ -698,9 +597,11 @@ async fn sync_agent_relations(
     deployment_id: i64,
     tool_ids: &[i64],
     knowledge_base_ids: &[i64],
+    sub_agent_ids: &[i64],
 ) -> Result<(), AppError> {
     replace_agent_tools(tx, agent_id, deployment_id, tool_ids).await?;
     replace_agent_knowledge_bases(tx, agent_id, deployment_id, knowledge_base_ids).await?;
+    replace_agent_sub_agents(tx, agent_id, deployment_id, sub_agent_ids).await?;
     Ok(())
 }
 
@@ -768,6 +669,38 @@ async fn replace_agent_knowledge_bases(
     Ok(())
 }
 
+async fn replace_agent_sub_agents(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    agent_id: i64,
+    deployment_id: i64,
+    sub_agent_ids: &[i64],
+) -> Result<(), AppError> {
+    validate_sub_agent_ids(tx, agent_id, deployment_id, sub_agent_ids).await?;
+
+    sqlx::query!(
+        "DELETE FROM ai_agent_sub_agents WHERE deployment_id = $1 AND agent_id = $2",
+        deployment_id,
+        agent_id
+    )
+    .execute(&mut **tx)
+    .await
+    .map_err(AppError::Database)?;
+
+    for sub_agent_id in sub_agent_ids {
+        sqlx::query!(
+            "INSERT INTO ai_agent_sub_agents (deployment_id, agent_id, sub_agent_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            deployment_id,
+            agent_id,
+            sub_agent_id
+        )
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+    }
+
+    Ok(())
+}
+
 fn sanitize_configuration(mut configuration: serde_json::Value) -> serde_json::Value {
     if let Some(object) = configuration.as_object_mut() {
         object.remove("tool_ids");
@@ -781,7 +714,8 @@ async fn validate_tool_ids(
     deployment_id: i64,
     ids: &[i64],
 ) -> Result<(), AppError> {
-    if ids.is_empty() {
+    let unique_ids = dedupe_ids(ids);
+    if unique_ids.is_empty() {
         return Ok(());
     }
 
@@ -793,14 +727,14 @@ async fn validate_tool_ids(
             AND id = ANY($2::bigint[])
         "#,
         deployment_id,
-        ids
+        &unique_ids
     )
     .fetch_one(&mut **tx)
     .await
     .map_err(AppError::Database)?
     .unwrap_or(0);
 
-    if valid_count != ids.len() as i64 {
+    if valid_count != unique_ids.len() as i64 {
         return Err(AppError::BadRequest(ERR_INVALID_TOOL_IDS.to_string()));
     }
 
@@ -812,7 +746,8 @@ async fn validate_knowledge_base_ids(
     deployment_id: i64,
     ids: &[i64],
 ) -> Result<(), AppError> {
-    if ids.is_empty() {
+    let unique_ids = dedupe_ids(ids);
+    if unique_ids.is_empty() {
         return Ok(());
     }
 
@@ -824,16 +759,62 @@ async fn validate_knowledge_base_ids(
             AND id = ANY($2::bigint[])
         "#,
         deployment_id,
-        ids
+        &unique_ids
     )
     .fetch_one(&mut **tx)
     .await
     .map_err(AppError::Database)?
     .unwrap_or(0);
 
-    if valid_count != ids.len() as i64 {
+    if valid_count != unique_ids.len() as i64 {
         return Err(AppError::BadRequest(ERR_INVALID_KB_IDS.to_string()));
     }
 
     Ok(())
+}
+
+async fn validate_sub_agent_ids(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    agent_id: i64,
+    deployment_id: i64,
+    ids: &[i64],
+) -> Result<(), AppError> {
+    if ids.iter().any(|id| *id == agent_id) {
+        return Err(AppError::BadRequest(
+            "An agent cannot be attached as its own sub-agent".to_string(),
+        ));
+    }
+    let unique_ids = dedupe_ids(ids);
+    if unique_ids.is_empty() {
+        return Ok(());
+    }
+
+    let valid_count = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)::bigint
+        FROM ai_agents
+        WHERE deployment_id = $1
+            AND id = ANY($2::bigint[])
+        "#,
+        deployment_id,
+        &unique_ids
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::Database)?
+    .unwrap_or(0);
+
+    if valid_count != unique_ids.len() as i64 {
+        return Err(AppError::BadRequest(SUB_AGENT_NOT_FOUND.to_string()));
+    }
+
+    Ok(())
+}
+
+fn dedupe_ids(ids: &[i64]) -> Vec<i64> {
+    ids.iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }

@@ -6,8 +6,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tracing::info;
 
-use super::{ExplicitCacheRequest, GeminiClient};
 use super::types::{CachedContentResponse, ExplicitCachePlan, PreparedGenerateRequest};
+use super::{ExplicitCacheRequest, GeminiClient};
 
 const GEMINI_API_ROOT_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 const REQUEST_TIMEOUT_SECS: u64 = 240;
@@ -38,8 +38,7 @@ impl GeminiClient {
         let request_body =
             serde_json::to_string(&plan.send_request_payload).unwrap_or(request_body);
         if let Some(cache_state) = cache_request.prior_state.as_ref() {
-            if self.can_use_cached_prefix(cache_request, cache_state, &plan) {
-            }
+            if self.can_use_cached_prefix(cache_request, cache_state, &plan) {}
         }
 
         PreparedGenerateRequest {

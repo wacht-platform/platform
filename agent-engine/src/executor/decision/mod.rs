@@ -10,7 +10,7 @@ use crate::template::{render_template_with_prompt, AgentTemplates};
 use commands::UpdateAgentThreadStateCommand;
 use common::error::AppError;
 use dto::json::agent_executor::{
-    LoadToolsParams, NextStep, SearchToolsParams, NextStepDecision, ToolCallRequest,
+    LoadToolsParams, NextStep, NextStepDecision, SearchToolsParams, ToolCallRequest,
 };
 use models::{AgentThreadStatus, ConversationContent, ConversationMessageType};
 use queries::{
@@ -487,53 +487,55 @@ impl AgentExecutor {
                     if self.active_task_graph_has_unfinished_nodes()
                         && !self.snapshot_execution_state_requested
                     {
-                        let (_graph_status, _pending_nodes, _in_progress_nodes, _failed_nodes) = self
-                            .task_graph_snapshot
-                            .as_ref()
-                            .map(|snapshot| {
-                                let graph_status = snapshot
-                                    .get("graph")
-                                    .and_then(|graph| graph.get("status"))
-                                    .and_then(|status| status.as_str())
-                                    .unwrap_or_default()
-                                    .to_string();
-                                let nodes = snapshot
-                                    .get("nodes")
-                                    .and_then(|nodes| nodes.as_array())
-                                    .cloned()
-                                    .unwrap_or_default();
-                                let pending_nodes = nodes
-                                    .iter()
-                                    .filter(|node| {
-                                        matches!(
+                        let (_graph_status, _pending_nodes, _in_progress_nodes, _failed_nodes) =
+                            self.task_graph_snapshot
+                                .as_ref()
+                                .map(|snapshot| {
+                                    let graph_status = snapshot
+                                        .get("graph")
+                                        .and_then(|graph| graph.get("status"))
+                                        .and_then(|status| status.as_str())
+                                        .unwrap_or_default()
+                                        .to_string();
+                                    let nodes = snapshot
+                                        .get("nodes")
+                                        .and_then(|nodes| nodes.as_array())
+                                        .cloned()
+                                        .unwrap_or_default();
+                                    let pending_nodes =
+                                        nodes
+                                            .iter()
+                                            .filter(|node| {
+                                                matches!(
                                             node.get("status").and_then(|status| status.as_str()),
                                             Some(models::thread_task_graph::status::NODE_PENDING)
                                         )
-                                    })
-                                    .count();
-                                let in_progress_nodes = nodes
-                                    .iter()
-                                    .filter(|node| {
-                                        matches!(
+                                            })
+                                            .count();
+                                    let in_progress_nodes = nodes
+                                        .iter()
+                                        .filter(|node| {
+                                            matches!(
                                             node.get("status").and_then(|status| status.as_str()),
                                             Some(
                                                 models::thread_task_graph::status::NODE_IN_PROGRESS
                                             )
                                         )
-                                    })
-                                    .count();
-                                let failed_nodes = nodes
-                                    .iter()
-                                    .filter(|node| {
-                                        matches!(
+                                        })
+                                        .count();
+                                    let failed_nodes =
+                                        nodes
+                                            .iter()
+                                            .filter(|node| {
+                                                matches!(
                                             node.get("status").and_then(|status| status.as_str()),
                                             Some(models::thread_task_graph::status::NODE_FAILED)
                                         )
-                                    })
-                                    .count();
-                                (graph_status, pending_nodes, in_progress_nodes, failed_nodes)
-                            })
-                            .unwrap_or_else(|| ("missing".to_string(), 0, 0, 0));
+                                            })
+                                            .count();
+                                    (graph_status, pending_nodes, in_progress_nodes, failed_nodes)
+                                })
+                                .unwrap_or_else(|| ("missing".to_string(), 0, 0, 0));
                         self.store_conversation(
                             ConversationContent::SystemDecision {
                                 step: "complete_blocked_by_task_graph".to_string(),
@@ -826,5 +828,4 @@ impl AgentExecutor {
 
         signals
     }
-
 }

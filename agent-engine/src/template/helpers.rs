@@ -454,10 +454,9 @@ impl HelperDef for HasAnyToolHelper {
             .collect();
 
         if names.is_empty() {
-            return Err(RenderErrorReason::InvalidParamType(
-                "Expected at least one tool name",
-            )
-            .into());
+            return Err(
+                RenderErrorReason::InvalidParamType("Expected at least one tool name").into(),
+            );
         }
 
         let has_match = tools.iter().any(|tool| {

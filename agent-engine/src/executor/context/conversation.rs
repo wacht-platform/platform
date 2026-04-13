@@ -18,7 +18,8 @@ use serde_json::{json, Value};
 impl AgentExecutor {
     pub(crate) fn llm_history_entry_text(entry: &LlmHistoryEntry) -> String {
         let body = if !entry.parts.is_empty() {
-            entry.parts
+            entry
+                .parts
                 .iter()
                 .filter_map(|part| {
                     part.text.as_ref().cloned().or_else(|| {
@@ -45,7 +46,9 @@ impl AgentExecutor {
         trimmed.to_string()
     }
 
-    pub(crate) fn semantic_message_from_history_entry(entry: &LlmHistoryEntry) -> SemanticLlmMessage {
+    pub(crate) fn semantic_message_from_history_entry(
+        entry: &LlmHistoryEntry,
+    ) -> SemanticLlmMessage {
         if !entry.parts.is_empty() {
             let mut content_blocks = Vec::new();
             for part in &entry.parts {

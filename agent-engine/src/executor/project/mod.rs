@@ -6,11 +6,10 @@ pub(crate) use super::core;
 
 use super::core::AgentExecutor;
 use commands::{
-    CreateProjectTaskBoardItemCommand,
-    CreateProjectTaskBoardItemEventCommand, CreateProjectTaskBoardItemRelationCommand,
-    CreateProjectTaskScheduleCommand, EnsureProjectTaskBoardCommand,
-    ReconcileProjectTaskBoardItemCommand, UpdateProjectTaskBoardItemCommand,
-    UpdateProjectTaskScheduleCommand,
+    CreateProjectTaskBoardItemCommand, CreateProjectTaskBoardItemEventCommand,
+    CreateProjectTaskBoardItemRelationCommand, CreateProjectTaskScheduleCommand,
+    EnsureProjectTaskBoardCommand, ReconcileProjectTaskBoardItemCommand,
+    UpdateProjectTaskBoardItemCommand, UpdateProjectTaskScheduleCommand,
 };
 use common::error::AppError;
 use models::{ProjectTaskBoardItem, ProjectTaskBoardItemMetadata};
@@ -22,7 +21,6 @@ use queries::{
 use std::collections::HashMap;
 
 impl AgentExecutor {
-
     pub(super) async fn ensure_project_task_board_id(&mut self) -> Result<i64, AppError> {
         if let Some(board_id) = self.project_task_board_id {
             return Ok(board_id);

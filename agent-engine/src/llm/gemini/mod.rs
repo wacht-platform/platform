@@ -191,7 +191,9 @@ impl GeminiClient {
             .await;
         let request_body = prepared_request.request_body;
         let cache_plan = prepared_request.cache_plan;
-        let parsed = self.execute_generate_content_request(&url, &request_body).await?;
+        let parsed = self
+            .execute_generate_content_request(&url, &request_body)
+            .await?;
 
         let generated_text = Self::response_text(&parsed);
         if generated_text.is_empty() {
@@ -227,7 +229,8 @@ impl GeminiClient {
             if cache_request.reuse_only {
                 None
             } else {
-                self.refresh_explicit_cache(cache_request, cache_plan).await?
+                self.refresh_explicit_cache(cache_request, cache_plan)
+                    .await?
             }
         } else {
             None
@@ -247,7 +250,9 @@ impl GeminiClient {
     ) -> Result<ToolCallGenerationOutput, AppError> {
         let url = format!("{}/{}:generateContent", GEMINI_API_BASE_URL, self.model);
         let request_body = self.build_tool_call_request_body(prompt, tools)?;
-        let parsed = self.execute_generate_content_request(&url, &request_body).await?;
+        let parsed = self
+            .execute_generate_content_request(&url, &request_body)
+            .await?;
 
         if let Some(usage) = parsed.usage_metadata.as_ref() {
             self.track_token_usage(usage, &parsed).await;
@@ -332,10 +337,13 @@ impl GeminiClient {
                 }
             }
         }))
-        .map_err(|e| AppError::Internal(format!("Failed to build Gemini tool-call request: {e}")))?;
+        .map_err(|e| {
+            AppError::Internal(format!("Failed to build Gemini tool-call request: {e}"))
+        })?;
 
-        serde_json::to_string(&contents)
-            .map_err(|e| AppError::Internal(format!("Failed to serialize Gemini tool-call request: {e}")))
+        serde_json::to_string(&contents).map_err(|e| {
+            AppError::Internal(format!("Failed to serialize Gemini tool-call request: {e}"))
+        })
     }
 
     async fn execute_generate_content_request(
@@ -409,7 +417,8 @@ impl GeminiClient {
                             && attempt < MAX_RETRIES
                         {
                             tokio::time::sleep(
-                                retry_delay.unwrap_or_else(|| Self::calculate_backoff_delay(attempt)),
+                                retry_delay
+                                    .unwrap_or_else(|| Self::calculate_backoff_delay(attempt)),
                             )
                             .await;
                             continue;

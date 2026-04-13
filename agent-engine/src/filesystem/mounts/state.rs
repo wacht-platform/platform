@@ -13,7 +13,11 @@ pub(super) struct MountState {
 }
 
 impl MountState {
-    pub(super) fn new(deployment_id: i64, mount_root: &Path, remote: &DeploymentRemoteMountInfo) -> Self {
+    pub(super) fn new(
+        deployment_id: i64,
+        mount_root: &Path,
+        remote: &DeploymentRemoteMountInfo,
+    ) -> Self {
         Self {
             deployment_id,
             mount_root: mount_root.to_string_lossy().to_string(),
@@ -214,7 +218,10 @@ pub(super) async fn prepare_mount_path(mount_root: &Path) -> Result<(), AppError
     Ok(())
 }
 
-pub(super) async fn cleanup_mount_artifacts(deployment_id: i64, mount_root: &Path) -> Result<(), AppError> {
+pub(super) async fn cleanup_mount_artifacts(
+    deployment_id: i64,
+    mount_root: &Path,
+) -> Result<(), AppError> {
     if is_mount_live(mount_root).await? {
         unmount_path(mount_root).await?;
     }
@@ -289,7 +296,10 @@ pub(super) async fn load_mount_state(deployment_id: i64) -> Result<Option<MountS
     Ok(Some(state))
 }
 
-pub(super) async fn save_mount_state(deployment_id: i64, state: &MountState) -> Result<(), AppError> {
+pub(super) async fn save_mount_state(
+    deployment_id: i64,
+    state: &MountState,
+) -> Result<(), AppError> {
     let path = mount_state_path(deployment_id);
     let parent = path.parent().ok_or_else(|| {
         AppError::Internal("Failed to determine deployment mount state directory".to_string())
@@ -375,4 +385,3 @@ pub(super) async fn process_is_alive(pid: u32) -> bool {
         .map(|output| output.status.success())
         .unwrap_or(false)
 }
-

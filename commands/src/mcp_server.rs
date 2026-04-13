@@ -105,7 +105,9 @@ impl UpdateMcpServerCommand {
 
         let config_json = self
             .config
-            .map(|config| serde_json::to_value(config).map_err(|e| AppError::Serialization(e.to_string())))
+            .map(|config| {
+                serde_json::to_value(config).map_err(|e| AppError::Serialization(e.to_string()))
+            })
             .transpose()?;
 
         let row = sqlx::query!(

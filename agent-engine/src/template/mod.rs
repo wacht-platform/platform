@@ -90,8 +90,9 @@ pub fn render_template_json_with_prompt<T>(
 where
     T: serde::de::DeserializeOwned,
 {
-    let rendered = render_template_with_prompt(template_name, context)
-        .map_err(|e| AppError::Internal(format!("Failed to render template {template_name}: {e}")))?;
+    let rendered = render_template_with_prompt(template_name, context).map_err(|e| {
+        AppError::Internal(format!("Failed to render template {template_name}: {e}"))
+    })?;
     serde_json::from_str(&rendered).map_err(|e| {
         AppError::Internal(format!(
             "Failed to parse rendered template {template_name} as JSON: {e}"
@@ -103,9 +104,9 @@ pub fn render_template_json<T>(template_name: &str, context: &Value) -> Result<T
 where
     T: serde::de::DeserializeOwned,
 {
-    let rendered = HANDLEBARS
-        .render(template_name, context)
-        .map_err(|e| AppError::Internal(format!("Failed to render template {template_name}: {e}")))?;
+    let rendered = HANDLEBARS.render(template_name, context).map_err(|e| {
+        AppError::Internal(format!("Failed to render template {template_name}: {e}"))
+    })?;
     serde_json::from_str(&rendered).map_err(|e| {
         AppError::Internal(format!(
             "Failed to parse rendered template {template_name} as JSON: {e}"

@@ -382,11 +382,10 @@ impl AdvanceThreadExecutionTokenCommand {
     where
         D: HasNatsJetStreamProvider + HasIdProvider + ?Sized,
     {
-        let execution_token = deps
-            .id_provider()
-            .next_id()
-            .map_err(|e| AppError::Internal(format!("Failed to generate execution token: {}", e)))?
-            as i64;
+        let execution_token =
+            deps.id_provider().next_id().map_err(|e| {
+                AppError::Internal(format!("Failed to generate execution token: {}", e))
+            })? as i64;
 
         let jetstream = deps.nats_jetstream_provider();
         let kv = match jetstream.get_key_value("agent_execution_kv").await {
@@ -446,7 +445,11 @@ impl PublishAgentExecutionCommand {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {}", e)))?;
 
-        let agent_identifier = self.request.agent_id.clone().unwrap_or_else(|| "unknown".to_string());
+        let agent_identifier = self
+            .request
+            .agent_id
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
 
         tracing::info!(
             "Published agent execution request for thread {} (agent: {})",

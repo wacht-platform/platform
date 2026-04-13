@@ -46,8 +46,7 @@ impl ToolExecutor {
                 self.execute_url_content_tool(tool, params.clone()).await
             }
             ToolCallRequest::SearchKnowledgebase { params, .. } => {
-                self.execute_search_knowledgebase_tool(params.clone())
-                    .await
+                self.execute_search_knowledgebase_tool(params.clone()).await
             }
             ToolCallRequest::LoadMemory { params, .. } => {
                 self.execute_load_memory(tool, params.clone()).await

@@ -2,7 +2,9 @@ use crate::filesystem::{shell::ShellExecutor, AgentFilesystem};
 use crate::tools::ToolExecutor;
 
 use common::error::AppError;
-use dto::json::agent_executor::{SnapshotExecutionStateParams, StartActionDirective, ToolCallBrief};
+use dto::json::agent_executor::{
+    SnapshotExecutionStateParams, StartActionDirective, ToolCallBrief,
+};
 use dto::json::{ProjectTaskBoardPromptItem, StreamEvent};
 use models::{AiTool, AiToolConfiguration, AiToolType, InternalToolConfiguration};
 use models::{ConversationRecord, MemoryRecord, ThreadEvent, ThreadExecutionState};
@@ -15,7 +17,8 @@ pub enum ResumeContext {
 }
 
 pub struct AgentExecutor {
-    pub(crate) ctx: std::sync::Arc<crate::runtime::thread_execution_context::ThreadExecutionContext>,
+    pub(crate) ctx:
+        std::sync::Arc<crate::runtime::thread_execution_context::ThreadExecutionContext>,
     pub(crate) conversations: Vec<ConversationRecord>,
     pub(crate) tool_executor: ToolExecutor,
     pub(crate) channel: tokio::sync::mpsc::Sender<StreamEvent>,

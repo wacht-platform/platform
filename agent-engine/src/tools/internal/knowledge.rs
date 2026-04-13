@@ -4,7 +4,6 @@ use common::error::AppError;
 use dto::json::agent_executor::{LocalKnowledgeSearchType, SearchKnowledgebaseParams};
 use serde_json::Value;
 
-
 impl ToolExecutor {
     pub(super) async fn execute_search_knowledgebase_tool(
         &self,

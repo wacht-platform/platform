@@ -7,10 +7,10 @@ use crate::executor::runtime::step_control::{
 use common::error::AppError;
 use dto::json::agent_executor::NextStepDecision;
 use dto::json::{
-    KnowledgeBasePromptItem, LlmHistoryEntry, LlmHistoryPart, SkillPromptItem,
-    NextStepDecisionContext, NextStepDecisionConversationContext, NextStepDecisionPromptEnvelope,
+    KnowledgeBasePromptItem, LlmHistoryEntry, LlmHistoryPart, NextStepDecisionContext,
+    NextStepDecisionConversationContext, NextStepDecisionPromptEnvelope,
     NextStepDecisionResourceContext, NextStepDecisionRuntimeContext, NextStepDecisionTaskContext,
-    NextStepDecisionThreadContext, ToolPromptItem,
+    NextStepDecisionThreadContext, SkillPromptItem, ToolPromptItem,
 };
 use std::collections::HashSet;
 
@@ -18,7 +18,9 @@ use crate::filesystem::mounts::heartbeat_deployment_root;
 use crate::llm::{
     PromptCacheRequest, SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest,
 };
-use crate::template::{render_prompt_text, render_template_json, render_template_only, AgentTemplates};
+use crate::template::{
+    render_prompt_text, render_template_json, render_template_only, AgentTemplates,
+};
 use queries::GetProjectTaskBoardItemAssignmentByIdQuery;
 use serde_json::json;
 const STEER_VISIBILITY_NUDGE_WINDOW: usize = 4;
@@ -128,7 +130,9 @@ impl AgentExecutor {
         let thread_mode = self.load_thread_mode_context().await?;
         let task_graph = self.ensure_task_graph_snapshot().await?;
         let task_graph_view = Self::render_task_graph_view(&task_graph);
-        let board_context = self.load_board_prompt_context(thread_mode.is_coordinator_thread).await?;
+        let board_context = self
+            .load_board_prompt_context(thread_mode.is_coordinator_thread)
+            .await?;
         let conversation_context = self.build_conversation_prompt_context().await;
         let tool_context = self
             .load_tool_prompt_context(thread_mode.is_coordinator_thread)
@@ -241,9 +245,13 @@ impl AgentExecutor {
             .collect::<Vec<_>>();
 
         messages.push(SemanticLlmMessage::text("system", live_context_message));
-        messages.push(Self::semantic_message_from_history_entry(current_request_entry));
+        messages.push(Self::semantic_message_from_history_entry(
+            current_request_entry,
+        ));
 
-        if let Some(message) = trailing_user_message.map(str::trim).filter(|value| !value.is_empty())
+        if let Some(message) = trailing_user_message
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
         {
             messages.push(SemanticLlmMessage::text("user", message));
         }
@@ -257,12 +265,15 @@ impl AgentExecutor {
         prompt_context_value: &serde_json::Value,
         trailing_user_message: Option<&str>,
     ) -> Result<SemanticLlmRequest, AppError> {
-        let live_context_message = prompt_context
-            .live_context_message
-            .as_deref()
-            .ok_or_else(|| {
-                AppError::Internal("Next-step decision live context message missing".to_string())
-            })?;
+        let live_context_message =
+            prompt_context
+                .live_context_message
+                .as_deref()
+                .ok_or_else(|| {
+                    AppError::Internal(
+                        "Next-step decision live context message missing".to_string(),
+                    )
+                })?;
         let config: SemanticLlmPromptConfig =
             render_template_json(AgentTemplates::STEP_DECISION, prompt_context_value)?;
         let system_prompt = render_prompt_text("next_step_decision_system", prompt_context_value)?;
@@ -273,7 +284,11 @@ impl AgentExecutor {
             trailing_user_message,
         );
 
-        Ok(SemanticLlmRequest::from_config(system_prompt, messages, config))
+        Ok(SemanticLlmRequest::from_config(
+            system_prompt,
+            messages,
+            config,
+        ))
     }
 
     async fn load_thread_mode_context(&self) -> Result<ThreadModeContext, AppError> {
@@ -329,12 +344,17 @@ impl AgentExecutor {
                     .as_ref()
                     .and_then(|event| event.board_item_id)
             });
-        let active_board_item = self.load_active_board_item_prompt_item(active_board_item_id).await?;
-        let active_board_item_assignments =
-            self.load_active_board_item_assignments(active_board_item_id).await;
+        let active_board_item = self
+            .load_active_board_item_prompt_item(active_board_item_id)
+            .await?;
+        let active_board_item_assignments = self
+            .load_active_board_item_assignments(active_board_item_id)
+            .await;
         let recent_assignment_history =
             Self::recent_assignment_history(&active_board_item_assignments);
-        let active_board_item_events = self.load_active_board_item_events(active_board_item_id).await;
+        let active_board_item_events = self
+            .load_active_board_item_events(active_board_item_id)
+            .await;
         let task_journal_tail = if active_board_item_id.is_some() {
             self.task_journal_tail_snippet().await?
         } else {
@@ -343,10 +363,8 @@ impl AgentExecutor {
 
         Ok(BoardPromptContext {
             thread_assignment_queue: self.load_thread_assignment_queue().await,
-            scoped_project_task_board_items: self.scoped_project_task_board_items(
-                is_coordinator_thread,
-                active_board_item.as_ref(),
-            ),
+            scoped_project_task_board_items: self
+                .scoped_project_task_board_items(is_coordinator_thread, active_board_item.as_ref()),
             active_assignment,
             active_board_item,
             active_board_item_assignments,
@@ -466,14 +484,12 @@ impl AgentExecutor {
             return Ok(None);
         };
 
-        Ok(
-            queries::GetProjectTaskBoardItemByIdQuery::new(item_id)
-                .execute_with_db(self.ctx.app_state.db_router.writer())
-                .await
-                .ok()
-                .flatten()
-                .map(|item| Self::project_task_board_item_to_prompt_item(&item)),
-        )
+        Ok(queries::GetProjectTaskBoardItemByIdQuery::new(item_id)
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await
+            .ok()
+            .flatten()
+            .map(|item| Self::project_task_board_item_to_prompt_item(&item)))
     }
 
     async fn load_thread_assignment_queue(
@@ -561,7 +577,9 @@ impl AgentExecutor {
             .unwrap_or_else(|| self.project_task_board_items.clone())
     }
 
-    pub(super) async fn generate_next_step_decision(&mut self) -> Result<NextStepDecision, AppError> {
+    pub(super) async fn generate_next_step_decision(
+        &mut self,
+    ) -> Result<NextStepDecision, AppError> {
         let context_json = self.build_next_step_decision_prompt_context_json().await?;
         let prompt_context: NextStepDecisionPromptEnvelope =
             serde_json::from_value(context_json.clone()).map_err(|e| {
@@ -569,8 +587,11 @@ impl AgentExecutor {
                     "Failed to deserialize step decision prompt context: {e}"
                 ))
             })?;
-        let request =
-            self.build_next_step_decision_request_from_context(&prompt_context, &context_json, None)?;
+        let request = self.build_next_step_decision_request_from_context(
+            &prompt_context,
+            &context_json,
+            None,
+        )?;
 
         self.refresh_long_think_credits();
         if self.long_think_mode_active && !self.long_think_credits_available() {
@@ -594,7 +615,8 @@ impl AgentExecutor {
         let (decision, usage_metadata, cache_state) =
             (output.value, output.usage_metadata, output.cache_state);
 
-        self.persist_next_step_decision_cache_state(cache_state).await?;
+        self.persist_next_step_decision_cache_state(cache_state)
+            .await?;
 
         let callable_tool_names = self
             .available_tools_for_mode()
@@ -631,7 +653,10 @@ impl AgentExecutor {
             self.long_think_mode_active = false;
         }
 
-        if !matches!(decision.next_step, dto::json::agent_executor::NextStep::Steer) {
+        if !matches!(
+            decision.next_step,
+            dto::json::agent_executor::NextStep::Steer
+        ) {
             let conversation = self
                 .create_conversation_with_metadata(
                     models::ConversationContent::SystemDecision {

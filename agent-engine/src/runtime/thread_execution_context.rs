@@ -4,17 +4,14 @@ use commands::ResolveDeploymentStorageCommand;
 use common::error::AppError;
 use common::state::AppState;
 use common::{
-    connect_vector_store, open_knowledge_base_table_in_connection,
-    open_memory_table_in_connection,
+    connect_vector_store, open_knowledge_base_table_in_connection, open_memory_table_in_connection,
 };
 use lancedb::{Connection, Table};
 use models::{AgentThreadState, AiAgentWithFeatures, DeploymentAiSettings};
 use queries::GetAgentThreadStateQuery;
 use tokio::sync::RwLock;
 
-use crate::llm::{
-    GeminiClient, LlmClient, LlmRole, OpenAiClient, OpenRouterClient, ResolvedLlm,
-};
+use crate::llm::{GeminiClient, LlmClient, LlmRole, OpenAiClient, OpenRouterClient, ResolvedLlm};
 
 #[derive(Debug, Clone, Default)]
 pub struct DeploymentProviderKeys {
@@ -92,24 +89,20 @@ impl ThreadExecutionContext {
                 .strong_model
                 .as_deref()
                 .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| {
-                    match self.llm_provider(role) {
-                        "openrouter" => "nvidia/nemotron-3-super-120b-a12b:free",
-                        "openai" => "gpt-5.1",
-                        _ => "gemini-3.1-pro-preview",
-                    }
+                .unwrap_or_else(|| match self.llm_provider(role) {
+                    "openrouter" => "nvidia/nemotron-3-super-120b-a12b:free",
+                    "openai" => "gpt-5.1",
+                    _ => "gemini-3.1-pro-preview",
                 }),
             LlmRole::Weak => self
                 .provider_keys
                 .weak_model
                 .as_deref()
                 .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| {
-                    match self.llm_provider(role) {
-                        "openrouter" => "nvidia/nemotron-3-super-120b-a12b:free",
-                        "openai" => "gpt-5-mini",
-                        _ => "gemini-3-flash-preview",
-                    }
+                .unwrap_or_else(|| match self.llm_provider(role) {
+                    "openrouter" => "nvidia/nemotron-3-super-120b-a12b:free",
+                    "openai" => "gpt-5-mini",
+                    _ => "gemini-3-flash-preview",
                 }),
         }
     }
@@ -197,10 +190,8 @@ impl ThreadExecutionContext {
         }
 
         if self.llm_provider(role) == "openai" {
-            let client = OpenAiClient::from_api_key(
-                self.provider_keys.openai_api_key.clone(),
-                model,
-            )?;
+            let client =
+                OpenAiClient::from_api_key(self.provider_keys.openai_api_key.clone(), model)?;
             return Ok(ResolvedLlm::new(LlmClient::OpenAi(client), model));
         }
 

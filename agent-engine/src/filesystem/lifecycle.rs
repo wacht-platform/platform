@@ -19,7 +19,8 @@ impl AgentFilesystem {
                 deployment_id, e
             ))
         })?;
-        let mount_lease = super::mounts::acquire_deployment_root(app_state, deployment_id_num).await?;
+        let mount_lease =
+            super::mounts::acquire_deployment_root(app_state, deployment_id_num).await?;
         let execution_base_path = super::mounts::detect_local_execution_base_path()
             .join(deployment_id)
             .join("executions");
@@ -32,7 +33,9 @@ impl AgentFilesystem {
             project_id: project_id.to_string(),
             thread_id: thread_id.to_string(),
             execution_id: execution_id.to_string(),
-            read_windows: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+            read_windows: std::sync::Arc::new(std::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
         })
     }
 

@@ -152,7 +152,8 @@ pub(crate) fn validate_next_step_decision(
         NextStep::LoadTools => {
             let directive = decision.load_tools_directive.as_ref().ok_or_else(|| {
                 AppError::BadRequest(
-                    "Invalid next-step decision: loadtools requires load_tools_directive".to_string(),
+                    "Invalid next-step decision: loadtools requires load_tools_directive"
+                        .to_string(),
                 )
             })?;
             if directive
@@ -169,12 +170,14 @@ pub(crate) fn validate_next_step_decision(
         NextStep::StartAction => {
             let directive = decision.startaction_directive.as_ref().ok_or_else(|| {
                 AppError::BadRequest(
-                    "Invalid next-step decision: startaction requires startaction_directive".to_string(),
+                    "Invalid next-step decision: startaction requires startaction_directive"
+                        .to_string(),
                 )
             })?;
             if directive.objective.trim().is_empty() {
                 return Err(AppError::BadRequest(
-                    "Invalid next-step decision: startaction requires a non-empty objective".to_string(),
+                    "Invalid next-step decision: startaction requires a non-empty objective"
+                        .to_string(),
                 ));
             }
             if directive
@@ -211,7 +214,8 @@ pub(crate) fn validate_next_step_decision(
             })?;
             if directive.guidance.trim().is_empty() {
                 return Err(AppError::BadRequest(
-                    "Invalid next-step decision: continueaction requires non-empty guidance".to_string(),
+                    "Invalid next-step decision: continueaction requires non-empty guidance"
+                        .to_string(),
                 ));
             }
             if !ctx.has_recent_startaction {

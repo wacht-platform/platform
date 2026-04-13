@@ -71,8 +71,10 @@ impl AgentExecutor {
         }
 
         let correction = if Self::is_llm_stage(stage)
-            && matches!(&error, AppError::Internal(_) | AppError::Timeout | AppError::External(_))
-        {
+            && matches!(
+                &error,
+                AppError::Internal(_) | AppError::Timeout | AppError::External(_)
+            ) {
             RuntimeCorrectionKind::LlmRequestFailed
         } else {
             RuntimeCorrectionKind::RetryableExecutionError

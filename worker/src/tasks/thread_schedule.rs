@@ -104,10 +104,9 @@ pub async fn process_thread_schedule(
     };
 
     let publish_deps = common::deps::from_app(app_state).nats().id();
-    if let Err(error) =
-        PublishAgentExecutionCommand::from_thread_event(&event, Some(agent_id))?
-            .execute_with_deps(&publish_deps)
-            .await
+    if let Err(error) = PublishAgentExecutionCommand::from_thread_event(&event, Some(agent_id))?
+        .execute_with_deps(&publish_deps)
+        .await
     {
         warn!(
             deployment_id,

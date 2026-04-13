@@ -3,10 +3,12 @@ use commands::{
     CreateAgentThreadCommand, UpdateAgentThreadCommand, UpsertThreadAgentAssignmentCommand,
 };
 use common::error::AppError;
-use dto::json::agent_executor::{CreateThreadParams, ListThreadsParams, SleepParams, UpdateThreadParams};
+use dto::json::agent_executor::{
+    CreateThreadParams, ListThreadsParams, SleepParams, UpdateThreadParams,
+};
 use models::AiTool;
-use tokio::time::{sleep, Duration};
 use serde_json::Value;
+use tokio::time::{sleep, Duration};
 
 const MAX_CUSTOM_THREAD_INSTRUCTION_WORDS: usize = 160;
 const MAX_CUSTOM_THREAD_INSTRUCTION_CHARS: usize = 1200;

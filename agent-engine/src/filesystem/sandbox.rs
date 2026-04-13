@@ -556,8 +556,7 @@ async fn run_with_timeout(mut cmd: Command, timeout_secs: u64) -> Result<Sandbox
     }
 
     #[cfg(not(unix))]
-    {
-    }
+    {}
 
     Ok(SandboxOutput {
         stdout: truncate_output(&output.stdout),
@@ -605,8 +604,7 @@ async fn run_with_timeout_and_input(
     }
 
     #[cfg(not(unix))]
-    {
-    }
+    {}
 
     Ok(SandboxOutput {
         stdout: truncate_output(&output.stdout),

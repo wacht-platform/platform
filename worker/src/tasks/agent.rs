@@ -120,7 +120,9 @@ impl TryFrom<AgentExecutionRequest> for AgentExecutionEnvelope {
             .transpose()?;
 
         let agent_resolution = match request.agent_id {
-            Some(agent_id) => AgentResolutionStrategy::AgentId(parse_string_id("agent_id", &agent_id)?),
+            Some(agent_id) => {
+                AgentResolutionStrategy::AgentId(parse_string_id("agent_id", &agent_id)?)
+            }
             None => return Err(anyhow::anyhow!("agent_id must be provided")),
         };
 

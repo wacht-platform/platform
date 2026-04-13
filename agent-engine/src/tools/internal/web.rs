@@ -1,9 +1,9 @@
 use super::ToolExecutor;
-use common::error::AppError;
 use commands::DeductPulseCreditsCommand;
+use common::error::AppError;
 use dto::json::agent_executor::{UrlContentParams, WebSearchParams};
-use models::AiTool;
 use models::pulse_transaction::PulseTransactionType;
+use models::AiTool;
 use queries::billing::GetOwnerIdByDeploymentIdQuery;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
@@ -426,15 +426,18 @@ impl ToolExecutor {
 
         let deployment_id = self.agent().deployment_id;
         let owner_id = match GetOwnerIdByDeploymentIdQuery::new(deployment_id)
-            .execute_with_db(self.app_state().db_router.reader(common::ReadConsistency::Strong))
+            .execute_with_db(
+                self.app_state()
+                    .db_router
+                    .reader(common::ReadConsistency::Strong),
+            )
             .await
         {
             Ok(Some(owner_id)) => owner_id,
             Ok(None) => {
                 warn!(
                     deployment_id,
-                    tool_name,
-                    "Skipping Parallel pulse charge because billing owner was not found"
+                    tool_name, "Skipping Parallel pulse charge because billing owner was not found"
                 );
                 return;
             }

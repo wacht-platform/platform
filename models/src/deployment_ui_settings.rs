@@ -100,6 +100,143 @@ pub struct TokenOverrides {
     pub letter_spacing_tight: Option<String>,
 }
 
+fn default_light_mode_token_overrides() -> TokenOverrides {
+    TokenOverrides {
+        card: Some("oklch(1 0 0)".to_string()),
+        card_foreground: Some("oklch(0.145 0 0)".to_string()),
+        popover: Some("oklch(1 0 0)".to_string()),
+        popover_foreground: Some("oklch(0.145 0 0)".to_string()),
+        primary_foreground: Some("oklch(0.985 0 0)".to_string()),
+        secondary: Some("oklch(0.97 0 0)".to_string()),
+        secondary_foreground: Some("oklch(0.205 0 0)".to_string()),
+        accent: Some("oklch(0.97 0 0)".to_string()),
+        accent_foreground: Some("oklch(0.205 0 0)".to_string()),
+        ring: Some("oklch(0.708 0 0)".to_string()),
+        foreground: Some("oklch(0.145 0 0)".to_string()),
+        secondary_text: Some("oklch(0.556 0 0)".to_string()),
+        muted: Some("oklch(0.556 0 0)".to_string()),
+        border: Some("oklch(0.922 0 0)".to_string()),
+        border_hover: Some("oklch(0.922 0 0)".to_string()),
+        divider: Some("oklch(0.922 0 0)".to_string()),
+        input_background: Some("oklch(1 0 0)".to_string()),
+        input_border: Some("oklch(0.922 0 0)".to_string()),
+        input_focus_border: Some("oklch(0.708 0 0)".to_string()),
+        background_subtle: Some("oklch(0.97 0 0)".to_string()),
+        background_hover: Some("oklch(0.97 0 0)".to_string()),
+        primary_hover: Some("oklch(0.205 0 0)".to_string()),
+        error: Some("#EF4444".to_string()),
+        error_background: Some("rgba(239, 68, 68, 0.1)".to_string()),
+        error_border: Some("rgba(239, 68, 68, 0.2)".to_string()),
+        warning: Some("#854D0E".to_string()),
+        warning_background: Some("#FEF9C3".to_string()),
+        warning_border: Some("#FEF08A".to_string()),
+        warning_text: Some("#92400E".to_string()),
+        success: Some("#166534".to_string()),
+        success_background: Some("#DCFCE7".to_string()),
+        success_border: Some("rgba(34, 197, 94, 0.3)".to_string()),
+        info: Some("#3B82F6".to_string()),
+        info_background: Some("#DBEAFE".to_string()),
+        ..default_shared_token_overrides()
+    }
+}
+
+fn default_shared_token_overrides() -> TokenOverrides {
+    TokenOverrides {
+        space_unit: Some("2px".to_string()),
+        radius_2xs: Some("4px".to_string()),
+        radius_xs: Some("6px".to_string()),
+        radius_md: Some("8px".to_string()),
+        radius_lg: Some("12px".to_string()),
+        radius_xl: Some("16px".to_string()),
+        radius_2xl: Some("20px".to_string()),
+        radius_full: Some("9999px".to_string()),
+        border_width_thin: Some("0.5px".to_string()),
+        border_width_regular: Some("2px".to_string()),
+        space_0u: Some("0px".to_string()),
+        space_1u: Some("2px".to_string()),
+        space_2u: Some("4px".to_string()),
+        space_3u: Some("6px".to_string()),
+        space_4u: Some("8px".to_string()),
+        space_5u: Some("10px".to_string()),
+        space_6u: Some("12px".to_string()),
+        space_7u: Some("14px".to_string()),
+        space_8u: Some("16px".to_string()),
+        space_10u: Some("20px".to_string()),
+        space_12u: Some("24px".to_string()),
+        space_14u: Some("28px".to_string()),
+        space_16u: Some("32px".to_string()),
+        space_24u: Some("48px".to_string()),
+        font_size_2xs: Some("10px".to_string()),
+        font_size_xs: Some("11px".to_string()),
+        font_size_sm: Some("12px".to_string()),
+        font_size_md: Some("13px".to_string()),
+        font_size_lg: Some("14px".to_string()),
+        font_size_xl: Some("16px".to_string()),
+        font_size_2xl: Some("18px".to_string()),
+        font_size_3xl: Some("20px".to_string()),
+        size_8u: Some("16px".to_string()),
+        size_10u: Some("20px".to_string()),
+        size_12u: Some("24px".to_string()),
+        size_18u: Some("36px".to_string()),
+        size_20u: Some("40px".to_string()),
+        size_24u: Some("48px".to_string()),
+        size_32u: Some("64px".to_string()),
+        size_36u: Some("72px".to_string()),
+        size_40u: Some("80px".to_string()),
+        size_45u: Some("90px".to_string()),
+        size_50u: Some("100px".to_string()),
+        shadow_sm: Some("0 1px 2px var(--color-shadow-light)".to_string()),
+        shadow_md: Some("0 2px 8px var(--color-shadow)".to_string()),
+        shadow_lg: Some("0 8px 24px var(--color-shadow)".to_string()),
+        shadow_xl: Some("0 16px 40px var(--color-shadow-medium)".to_string()),
+        ring_primary: Some(
+            "0 0 0 3px color-mix(in srgb, var(--color-ring) 35%, transparent)".to_string(),
+        ),
+        letter_spacing_tight: Some("0.5px".to_string()),
+        ..Default::default()
+    }
+}
+
+fn default_dark_mode_token_overrides() -> TokenOverrides {
+    TokenOverrides {
+        card: Some("oklch(0.24 0 0)".to_string()),
+        card_foreground: Some("oklch(0.985 0 0)".to_string()),
+        popover: Some("oklch(0.24 0 0)".to_string()),
+        popover_foreground: Some("oklch(0.985 0 0)".to_string()),
+        primary_foreground: Some("oklch(0.205 0 0)".to_string()),
+        secondary: Some("oklch(0.28 0 0)".to_string()),
+        secondary_foreground: Some("oklch(0.985 0 0)".to_string()),
+        accent: Some("oklch(0.371 0 0)".to_string()),
+        accent_foreground: Some("oklch(0.985 0 0)".to_string()),
+        ring: Some("oklch(0.556 0 0)".to_string()),
+        foreground: Some("oklch(0.985 0 0)".to_string()),
+        secondary_text: Some("oklch(0.708 0 0)".to_string()),
+        muted: Some("oklch(0.708 0 0)".to_string()),
+        border: Some("oklch(1 0 0 / 10%)".to_string()),
+        border_hover: Some("oklch(1 0 0 / 15%)".to_string()),
+        divider: Some("oklch(1 0 0 / 10%)".to_string()),
+        input_background: Some("oklch(0.24 0 0)".to_string()),
+        input_border: Some("oklch(1 0 0 / 15%)".to_string()),
+        input_focus_border: Some("oklch(0.556 0 0)".to_string()),
+        background_subtle: Some("oklch(0.24 0 0)".to_string()),
+        background_hover: Some("oklch(0.28 0 0)".to_string()),
+        primary_hover: Some("oklch(0.87 0 0)".to_string()),
+        error: Some("#F87171".to_string()),
+        error_background: Some("rgba(248, 113, 113, 0.1)".to_string()),
+        error_border: Some("rgba(248, 113, 113, 0.3)".to_string()),
+        warning: Some("#FBBF24".to_string()),
+        warning_background: Some("rgba(251, 191, 36, 0.1)".to_string()),
+        warning_border: Some("rgba(251, 191, 36, 0.3)".to_string()),
+        warning_text: Some("#FBBF24".to_string()),
+        success: Some("#22C55E".to_string()),
+        success_background: Some("rgba(34, 197, 94, 0.1)".to_string()),
+        success_border: Some("rgba(34, 197, 94, 0.3)".to_string()),
+        info: Some("#60A5FA".to_string()),
+        info_background: Some("rgba(96, 165, 250, 0.1)".to_string()),
+        ..default_shared_token_overrides()
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct LightModeSettings {
     pub primary_color: Option<String>,
@@ -115,7 +252,7 @@ impl Default for LightModeSettings {
             primary_color: Some("oklch(0.205 0 0)".to_string()),
             background_color: Some("oklch(1 0 0)".to_string()),
             text_color: Some("oklch(0.145 0 0)".to_string()),
-            token_overrides: None,
+            token_overrides: Some(default_light_mode_token_overrides()),
         }
     }
 }
@@ -135,7 +272,7 @@ impl Default for DarkModeSettings {
             primary_color: Some("oklch(0.87 0 0)".to_string()),
             background_color: Some("oklch(0.205 0 0)".to_string()),
             text_color: Some("oklch(0.985 0 0)".to_string()),
-            token_overrides: None,
+            token_overrides: Some(default_dark_mode_token_overrides()),
         }
     }
 }

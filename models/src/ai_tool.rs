@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AiTool {
@@ -185,8 +185,7 @@ impl SchemaField {
                 schema.insert("maxItems".to_string(), json!(max_items));
             }
         } else if field_type == "object" {
-            let object_schema =
-                Self::object_json_schema(self.properties.as_deref().unwrap_or(&[]));
+            let object_schema = Self::object_json_schema(self.properties.as_deref().unwrap_or(&[]));
             if let Some(properties) = object_schema.get("properties") {
                 schema.insert("properties".to_string(), properties.clone());
             }

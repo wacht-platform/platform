@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use opentelemetry::global;
 use opentelemetry::KeyValue;
+use opentelemetry::global;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_otlp::{Protocol, WithExportConfig, WithHttpConfig};
@@ -22,7 +22,11 @@ fn otlp_endpoint() -> Option<String> {
 }
 
 fn signal_endpoint(base: &str, signal_path: &str) -> String {
-    format!("{}/{}", base.trim_end_matches('/'), signal_path.trim_start_matches('/'))
+    format!(
+        "{}/{}",
+        base.trim_end_matches('/'),
+        signal_path.trim_start_matches('/')
+    )
 }
 
 fn otlp_headers() -> HashMap<String, String> {
@@ -44,8 +48,7 @@ fn otlp_headers() -> HashMap<String, String> {
 }
 
 pub fn init_telemetry(service_name: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     let fmt_layer = fmt::layer().with_target(true).with_thread_ids(true);
     let registry = tracing_subscriber::registry()

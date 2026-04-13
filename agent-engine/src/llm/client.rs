@@ -157,7 +157,9 @@ impl ResolvedLlm {
     where
         T: for<'de> Deserialize<'de> + Serialize,
     {
-        self.client.generate_structured_from_prompt(prompt, cache).await
+        self.client
+            .generate_structured_from_prompt(prompt, cache)
+            .await
     }
 
     pub async fn generate_tool_calls(
@@ -192,9 +194,7 @@ impl LlmClient {
                     cache_state: output.cache_state,
                 })
             }
-            Self::OpenAi(client) => {
-                client.generate_structured_from_prompt(prompt, cache).await
-            }
+            Self::OpenAi(client) => client.generate_structured_from_prompt(prompt, cache).await,
             Self::OpenRouter(client) => client.generate_structured_from_prompt(prompt, cache).await,
         }
     }

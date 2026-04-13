@@ -228,7 +228,6 @@ impl ShellExecutor {
 
         Ok(ParsedCommandStage { env, program, args })
     }
-
 }
 
 fn shell_execution_options() -> crate::filesystem::sandbox::SandboxExecutionOptions {

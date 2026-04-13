@@ -1,7 +1,9 @@
 use super::ToolExecutor;
 use crate::filesystem::{shell::ShellExecutor, AgentFilesystem};
 use common::error::AppError;
-use dto::json::agent_executor::{EditFileParams, ExecuteCommandParams, ReadFileParams, ReadImageParams, WriteFileParams};
+use dto::json::agent_executor::{
+    EditFileParams, ExecuteCommandParams, ReadFileParams, ReadImageParams, WriteFileParams,
+};
 use models::AiTool;
 use serde_json::Value;
 

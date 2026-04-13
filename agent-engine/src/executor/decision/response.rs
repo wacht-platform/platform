@@ -3,9 +3,7 @@ use super::core::AgentExecutor;
 use commands::UpdateAgentThreadStateCommand;
 use common::error::AppError;
 use dto::json::agent_executor::{NextStep, ResponseAttachmentType};
-use models::{
-    AgentThreadStatus, ConversationAttachment, ConversationAttachmentType,
-};
+use models::{AgentThreadStatus, ConversationAttachment, ConversationAttachmentType};
 use serde_json::{json, Value};
 
 impl AgentExecutor {

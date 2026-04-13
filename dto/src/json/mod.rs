@@ -1,7 +1,6 @@
 pub mod agent;
 pub mod agent_execution;
 pub mod agent_executor;
-pub mod memory;
 pub mod agent_responses;
 pub mod ai_knowledge_base;
 pub mod api_key;
@@ -12,6 +11,7 @@ pub mod deployment;
 pub mod deployment_settings;
 pub mod execution_plan;
 pub mod flexible_i64;
+pub mod memory;
 pub mod nats;
 pub mod oauth_runtime;
 pub mod project;

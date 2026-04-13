@@ -90,9 +90,7 @@ fn validate_schedule_params(
     }
 }
 
-fn normalize_schedule_params(
-    schedule: &ProjectTaskScheduleParams,
-) -> ProjectTaskScheduleParams {
+fn normalize_schedule_params(schedule: &ProjectTaskScheduleParams) -> ProjectTaskScheduleParams {
     let kind = schedule.kind.trim().to_string();
     let next_run_at = schedule.next_run_at.trim().to_string();
     let interval_seconds = match kind.as_str() {

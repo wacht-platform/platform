@@ -116,20 +116,14 @@ struct OpenAiErrorBody {
 }
 
 impl OpenAiClient {
-    pub fn from_api_key(
-        deployment_api_key: Option<String>,
-        model: &str,
-    ) -> Result<Self, AppError> {
+    pub fn from_api_key(deployment_api_key: Option<String>, model: &str) -> Result<Self, AppError> {
         let Some(api_key) = deployment_api_key else {
             return Err(AppError::BadRequest(
                 "OpenAI API key is not configured for this deployment".to_string(),
             ));
         };
 
-        Ok(Self::new(
-            api_key,
-            model.to_string(),
-        ))
+        Ok(Self::new(api_key, model.to_string()))
     }
 
     pub fn new(api_key: String, model: String) -> Self {
@@ -219,14 +213,13 @@ impl OpenAiClient {
         let calls = message
             .iter()
             .map(|call| {
-                let arguments = serde_json::from_str::<Value>(&call.function.arguments).map_err(
-                    |error| {
+                let arguments =
+                    serde_json::from_str::<Value>(&call.function.arguments).map_err(|error| {
                         AppError::Internal(format!(
                             "Failed to parse OpenAI tool arguments for {}: {}",
                             call.function.name, error
                         ))
-                    },
-                )?;
+                    })?;
                 Ok(GeneratedToolCall {
                     tool_name: call.function.name.clone(),
                     arguments,
@@ -352,7 +345,10 @@ impl OpenAiClient {
                         tokio::time::sleep(Self::calculate_backoff_delay(attempt)).await;
                         continue;
                     }
-                    return Err(AppError::Internal(format!("OpenAI request failed: {}", error)));
+                    return Err(AppError::Internal(format!(
+                        "OpenAI request failed: {}",
+                        error
+                    )));
                 }
             };
 
@@ -527,5 +523,4 @@ impl OpenAiClient {
             tool_use_prompt_tokens_details: None,
         }
     }
-
 }

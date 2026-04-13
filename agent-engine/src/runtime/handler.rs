@@ -73,18 +73,18 @@ fn infer_assignment_status_from_execution(
 
 fn default_assignment_result_status(assignment_status: &str) -> Option<String> {
     match assignment_status {
-        models::project_task_board::assignment_status::COMPLETED => Some(
-            models::project_task_board::assignment_result_status::COMPLETED.to_string(),
-        ),
-        models::project_task_board::assignment_status::BLOCKED => Some(
-            models::project_task_board::assignment_result_status::BLOCKED.to_string(),
-        ),
-        models::project_task_board::assignment_status::REJECTED => Some(
-            models::project_task_board::assignment_result_status::REJECTED.to_string(),
-        ),
-        models::project_task_board::assignment_status::CANCELLED => Some(
-            models::project_task_board::assignment_result_status::CANCELLED.to_string(),
-        ),
+        models::project_task_board::assignment_status::COMPLETED => {
+            Some(models::project_task_board::assignment_result_status::COMPLETED.to_string())
+        }
+        models::project_task_board::assignment_status::BLOCKED => {
+            Some(models::project_task_board::assignment_result_status::BLOCKED.to_string())
+        }
+        models::project_task_board::assignment_status::REJECTED => {
+            Some(models::project_task_board::assignment_result_status::REJECTED.to_string())
+        }
+        models::project_task_board::assignment_status::CANCELLED => {
+            Some(models::project_task_board::assignment_result_status::CANCELLED.to_string())
+        }
         _ => None,
     }
 }
@@ -329,7 +329,9 @@ impl AgentHandler {
         let assignment_status = assignment_override
             .as_ref()
             .map(|override_value| override_value.assignment_status.clone())
-            .or_else(|| infer_assignment_status_from_execution(execution_result, &context.status))?;
+            .or_else(|| {
+                infer_assignment_status_from_execution(execution_result, &context.status)
+            })?;
 
         let result_status = assignment_override
             .as_ref()

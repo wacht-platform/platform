@@ -482,5 +482,4 @@ impl AgentExecutor {
         self.ctx.invalidate_cache();
         Ok(())
     }
-
 }

@@ -301,14 +301,11 @@ fn encrypt_ai_settings_updates(
                 models::DeploymentLlmProvider::Openai => "openai".to_string(),
                 models::DeploymentLlmProvider::Openrouter => "openrouter".to_string(),
             }),
-        weak_llm_provider: updates
-            .weak_llm_provider
-            .as_ref()
-            .map(|value| match value {
-                models::DeploymentLlmProvider::Gemini => "gemini".to_string(),
-                models::DeploymentLlmProvider::Openai => "openai".to_string(),
-                models::DeploymentLlmProvider::Openrouter => "openrouter".to_string(),
-            }),
+        weak_llm_provider: updates.weak_llm_provider.as_ref().map(|value| match value {
+            models::DeploymentLlmProvider::Gemini => "gemini".to_string(),
+            models::DeploymentLlmProvider::Openai => "openai".to_string(),
+            models::DeploymentLlmProvider::Openrouter => "openrouter".to_string(),
+        }),
         gemini_api_key: updates
             .gemini_api_key
             .as_ref()

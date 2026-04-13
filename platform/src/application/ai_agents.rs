@@ -33,7 +33,6 @@ pub struct AgentDetailsResponse {
     pub tools: Vec<serde_json::Value>,
     pub knowledge_bases: Vec<serde_json::Value>,
     pub sub_agents: Option<Vec<i64>>,
-    pub spawn_config: Option<models::SpawnConfig>,
 }
 
 pub async fn get_ai_agents(
@@ -80,10 +79,6 @@ pub async fn create_ai_agent(
     if let Some(knowledge_base_ids) = request.knowledge_base_ids {
         command = command.with_knowledge_base_ids(knowledge_base_ids);
     }
-    if let Some(spawn_config) = request.spawn_config {
-        command = command.with_spawn_config(spawn_config);
-    }
-
     command.execute_with_deps(&db_deps).await
 }
 
@@ -119,7 +114,6 @@ pub async fn get_ai_agent_details(
         tools: vec![],
         knowledge_bases: vec![],
         sub_agents: agent.sub_agents,
-        spawn_config: agent.spawn_config,
     })
 }
 
@@ -150,10 +144,6 @@ pub async fn update_ai_agent(
     if let Some(sub_agents) = request.sub_agents {
         command = command.with_sub_agents(sub_agents);
     }
-    if let Some(spawn_config) = request.spawn_config {
-        command = command.with_spawn_config(spawn_config);
-    }
-
     command.execute_with_deps(&db_deps).await
 }
 

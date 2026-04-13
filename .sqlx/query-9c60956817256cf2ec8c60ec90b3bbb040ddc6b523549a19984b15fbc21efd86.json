@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                a.id, a.created_at, a.updated_at, a.name, a.description,\n                a.configuration, a.deployment_id, a.sub_agents, a.spawn_config,\n                COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as \"tools_count!\",\n                COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as \"knowledge_bases_count!\"\n            FROM ai_agents a\n            WHERE a.id = $1 AND a.deployment_id = $2\n            ",
+  "query": "\n            SELECT\n                a.id, a.created_at, a.updated_at, a.name, a.description,\n                a.configuration, a.deployment_id,\n                COALESCE((\n                    SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)\n                    FROM ai_agent_sub_agents rel\n                    WHERE rel.deployment_id = a.deployment_id\n                        AND rel.agent_id = a.id\n                ), '[]'::jsonb) as \"sub_agents!: serde_json::Value\",\n                COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as \"tools_count!\",\n                COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as \"knowledge_bases_count!\"\n            FROM ai_agents a\n            WHERE a.deployment_id = $1\n              AND a.id = ANY($2::bigint[])\n            ORDER BY a.name ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -40,21 +40,16 @@
       },
       {
         "ordinal": 7,
-        "name": "sub_agents",
+        "name": "sub_agents!: serde_json::Value",
         "type_info": "Jsonb"
       },
       {
         "ordinal": 8,
-        "name": "spawn_config",
-        "type_info": "Jsonb"
-      },
-      {
-        "ordinal": 9,
         "name": "tools_count!",
         "type_info": "Int8"
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "knowledge_bases_count!",
         "type_info": "Int8"
       }
@@ -62,7 +57,7 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Int8"
+        "Int8Array"
       ]
     },
     "nullable": [
@@ -73,11 +68,10 @@
       true,
       false,
       false,
-      true,
-      true,
+      null,
       null,
       null
     ]
   },
-  "hash": "9ac31027bc558c33ed96e4ebf1301641e9bfd30a616be4507e7bf493076e1f63"
+  "hash": "9c60956817256cf2ec8c60ec90b3bbb040ddc6b523549a19984b15fbc21efd86"
 }

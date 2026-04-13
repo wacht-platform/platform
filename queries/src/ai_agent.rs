@@ -1,17 +1,12 @@
 use common::error::AppError;
 use models::{AiAgentWithDetails, AiAgentWithFeatures};
-use serde::de::DeserializeOwned;
 
-fn parse_optional_json<T: DeserializeOwned>(
-    value: Option<serde_json::Value>,
-    field: &str,
-) -> Result<Option<T>, AppError> {
-    value
-        .map(|v| {
-            serde_json::from_value(v)
-                .map_err(|e| AppError::Internal(format!("Failed to parse {}: {}", field, e)))
-        })
-        .transpose()
+fn parse_sub_agents(
+    value: serde_json::Value,
+) -> Result<Option<Vec<i64>>, AppError> {
+    let parsed = serde_json::from_value::<Vec<i64>>(value)
+        .map_err(|e| AppError::Internal(format!("Failed to parse sub_agents: {}", e)))?;
+    Ok(Some(parsed))
 }
 
 pub struct GetAiAgentsQuery {
@@ -63,7 +58,13 @@ impl GetAiAgentsQuery {
                 r#"
                 SELECT
                     a.id, a.created_at, a.updated_at, a.name, a.description,
-                    a.configuration, a.deployment_id, a.sub_agents, a.spawn_config,
+                    a.configuration, a.deployment_id,
+                    COALESCE((
+                        SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
+                        FROM ai_agent_sub_agents rel
+                        WHERE rel.deployment_id = a.deployment_id
+                            AND rel.agent_id = a.id
+                    ), '[]'::jsonb) as "sub_agents!: serde_json::Value",
                     COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as "tools_count!",
                     COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as "knowledge_bases_count!"
                 FROM ai_agents a
@@ -84,8 +85,7 @@ impl GetAiAgentsQuery {
             Ok(agents
                 .into_iter()
                 .map(|agent| -> Result<AiAgentWithDetails, AppError> {
-                    let sub_agents = parse_optional_json(agent.sub_agents, "sub_agents")?;
-                    let spawn_config = parse_optional_json(agent.spawn_config, "spawn_config")?;
+                    let sub_agents = parse_sub_agents(agent.sub_agents)?;
 
                     Ok(AiAgentWithDetails {
                         id: agent.id,
@@ -98,7 +98,6 @@ impl GetAiAgentsQuery {
                         tools_count: agent.tools_count,
                         knowledge_bases_count: agent.knowledge_bases_count,
                         sub_agents,
-                        spawn_config,
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?)
@@ -107,7 +106,13 @@ impl GetAiAgentsQuery {
                 r#"
                 SELECT
                     a.id, a.created_at, a.updated_at, a.name, a.description,
-                    a.configuration, a.deployment_id, a.sub_agents, a.spawn_config,
+                    a.configuration, a.deployment_id,
+                    COALESCE((
+                        SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
+                        FROM ai_agent_sub_agents rel
+                        WHERE rel.deployment_id = a.deployment_id
+                            AND rel.agent_id = a.id
+                    ), '[]'::jsonb) as "sub_agents!: serde_json::Value",
                     COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as "tools_count!",
                     COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as "knowledge_bases_count!"
                 FROM ai_agents a
@@ -126,8 +131,7 @@ impl GetAiAgentsQuery {
             Ok(agents
                 .into_iter()
                 .map(|agent| -> Result<AiAgentWithDetails, AppError> {
-                    let sub_agents = parse_optional_json(agent.sub_agents, "sub_agents")?;
-                    let spawn_config = parse_optional_json(agent.spawn_config, "spawn_config")?;
+                    let sub_agents = parse_sub_agents(agent.sub_agents)?;
 
                     Ok(AiAgentWithDetails {
                         id: agent.id,
@@ -140,7 +144,6 @@ impl GetAiAgentsQuery {
                         tools_count: agent.tools_count,
                         knowledge_bases_count: agent.knowledge_bases_count,
                         sub_agents,
-                        spawn_config,
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?)
@@ -169,7 +172,13 @@ impl GetAiAgentByIdQuery {
             r#"
             SELECT
                 a.id, a.created_at, a.updated_at, a.name, a.description,
-                a.configuration, a.deployment_id, a.sub_agents, a.spawn_config,
+                a.configuration, a.deployment_id,
+                COALESCE((
+                    SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
+                    FROM ai_agent_sub_agents rel
+                    WHERE rel.deployment_id = a.deployment_id
+                        AND rel.agent_id = a.id
+                ), '[]'::jsonb) as "sub_agents!: serde_json::Value",
                 COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as "tools_count!",
                 COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as "knowledge_bases_count!"
             FROM ai_agents a
@@ -183,8 +192,7 @@ impl GetAiAgentByIdQuery {
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("Agent not found".to_string()))?;
 
-        let sub_agents = parse_optional_json(agent.sub_agents, "sub_agents")?;
-        let spawn_config = parse_optional_json(agent.spawn_config, "spawn_config")?;
+        let sub_agents = parse_sub_agents(agent.sub_agents)?;
 
         Ok(AiAgentWithDetails {
             id: agent.id,
@@ -197,7 +205,6 @@ impl GetAiAgentByIdQuery {
             tools_count: agent.tools_count,
             knowledge_bases_count: agent.knowledge_bases_count,
             sub_agents,
-            spawn_config,
         })
     }
 }
@@ -229,7 +236,13 @@ impl GetAiAgentsByIdsQuery {
             r#"
             SELECT
                 a.id, a.created_at, a.updated_at, a.name, a.description,
-                a.configuration, a.deployment_id, a.sub_agents, a.spawn_config,
+                a.configuration, a.deployment_id,
+                COALESCE((
+                    SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
+                    FROM ai_agent_sub_agents rel
+                    WHERE rel.deployment_id = a.deployment_id
+                        AND rel.agent_id = a.id
+                ), '[]'::jsonb) as "sub_agents!: serde_json::Value",
                 COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as "tools_count!",
                 COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as "knowledge_bases_count!"
             FROM ai_agents a
@@ -246,8 +259,7 @@ impl GetAiAgentsByIdsQuery {
 
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
-            let sub_agents = parse_optional_json(row.sub_agents, "sub_agents")?;
-            let spawn_config = parse_optional_json(row.spawn_config, "spawn_config")?;
+            let sub_agents = parse_sub_agents(row.sub_agents)?;
 
             result.push(AiAgentWithDetails {
                 id: row.id,
@@ -260,14 +272,12 @@ impl GetAiAgentsByIdsQuery {
                 tools_count: row.tools_count,
                 knowledge_bases_count: row.knowledge_bases_count,
                 sub_agents,
-                spawn_config,
             });
         }
 
         Ok(result)
     }
 }
-
 
 pub struct GetAiAgentByIdWithFeatures {
     pub agent_id: i64,
@@ -292,8 +302,12 @@ impl GetAiAgentByIdWithFeatures {
                 a.name,
                 a.deployment_id,
                 a.configuration,
-                a.sub_agents,
-                a.spawn_config,
+                COALESCE((
+                    SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
+                    FROM ai_agent_sub_agents rel
+                    WHERE rel.deployment_id = a.deployment_id
+                        AND rel.agent_id = a.id
+                ), '[]'::jsonb) as "sub_agents!: serde_json::Value",
                 tools.list as "tools!: serde_json::Value",
                 knowledge_bases.list as "knowledge_bases!: serde_json::Value"
             FROM ai_agents a
@@ -348,8 +362,7 @@ impl GetAiAgentByIdWithFeatures {
         let knowledge_bases = serde_json::from_value(row.knowledge_bases).map_err(|e| {
             AppError::Internal(format!("Failed to deserialize knowledge bases: {}", e))
         })?;
-        let sub_agents = parse_optional_json(row.sub_agents, "sub_agents")?;
-        let spawn_config = parse_optional_json(row.spawn_config, "spawn_config")?;
+        let sub_agents = parse_sub_agents(row.sub_agents)?;
 
         Ok(AiAgentWithFeatures {
             id: row.id,
@@ -362,7 +375,6 @@ impl GetAiAgentByIdWithFeatures {
             tools,
             knowledge_bases,
             sub_agents,
-            spawn_config,
         })
     }
 }

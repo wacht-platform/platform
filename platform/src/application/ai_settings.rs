@@ -6,9 +6,9 @@ use common::HasEncryptionProvider;
 use common::db_router::ReadConsistency;
 use common::error::AppError;
 use models::{
-    DeploymentAiSettings, DeploymentAiSettingsResponse, DeploymentLlmProvider, DeploymentStorageProvider,
-    DeploymentStorageSettingsResponse, UpdateDeploymentAiSettingsRequest,
-    UpdateDeploymentStorageSettingsRequest,
+    DeploymentAiSettings, DeploymentAiSettingsResponse, DeploymentLlmProvider,
+    DeploymentStorageProvider, DeploymentStorageSettingsResponse,
+    UpdateDeploymentAiSettingsRequest, UpdateDeploymentStorageSettingsRequest,
 };
 use queries::GetDeploymentAiSettingsQuery;
 

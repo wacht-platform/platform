@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT\n                    a.id, a.created_at, a.updated_at, a.name, a.description,\n                    a.configuration, a.deployment_id, a.sub_agents, a.spawn_config,\n                    COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as \"tools_count!\",\n                    COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as \"knowledge_bases_count!\"\n                FROM ai_agents a\n                WHERE a.deployment_id = $1\n                    AND (a.name ILIKE $2 OR a.description ILIKE $2)\n                ORDER BY a.created_at DESC\n                LIMIT $3 OFFSET $4\n                ",
+  "query": "\n            SELECT\n                a.id, a.created_at, a.updated_at, a.name, a.description,\n                a.configuration, a.deployment_id,\n                COALESCE((\n                    SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)\n                    FROM ai_agent_sub_agents rel\n                    WHERE rel.deployment_id = a.deployment_id\n                        AND rel.agent_id = a.id\n                ), '[]'::jsonb) as \"sub_agents!: serde_json::Value\",\n                COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as \"tools_count!\",\n                COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as \"knowledge_bases_count!\"\n            FROM ai_agents a\n            WHERE a.id = $1 AND a.deployment_id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -40,29 +40,22 @@
       },
       {
         "ordinal": 7,
-        "name": "sub_agents",
+        "name": "sub_agents!: serde_json::Value",
         "type_info": "Jsonb"
       },
       {
         "ordinal": 8,
-        "name": "spawn_config",
-        "type_info": "Jsonb"
-      },
-      {
-        "ordinal": 9,
         "name": "tools_count!",
         "type_info": "Int8"
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "knowledge_bases_count!",
         "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Text",
         "Int8",
         "Int8"
       ]
@@ -75,11 +68,10 @@
       true,
       false,
       false,
-      true,
-      true,
+      null,
       null,
       null
     ]
   },
-  "hash": "bf5ae709ef9e267f87f1d30b877984e5b6fb06604e07395ca25452ea1ba1dd1b"
+  "hash": "4283744e5e019da6d2d5578e478a4d800e75b6a2fe0d8c26b4390b40a33096f6"
 }

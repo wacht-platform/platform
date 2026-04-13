@@ -160,7 +160,10 @@ fn make_openai_optional_schema(value: Value) -> Value {
                 Some(Value::String(type_name)) => {
                     map.insert(
                         "type".to_string(),
-                        Value::Array(vec![Value::String(type_name), Value::String("null".to_string())]),
+                        Value::Array(vec![
+                            Value::String(type_name),
+                            Value::String("null".to_string()),
+                        ]),
                     );
                 }
                 Some(Value::Array(mut items)) => {
