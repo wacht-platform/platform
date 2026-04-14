@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT mcp_server_id, connection_metadata as \"connection_metadata!: serde_json::Value\"\n        FROM actor_mcp_server_connections\n        WHERE deployment_id = $1 AND actor_id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mcp_server_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "connection_metadata!: serde_json::Value",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "bbe955911e4875d5d363d1cb3b6d69370b55567eca525eceacdd3c1362b7f8c5"
+}

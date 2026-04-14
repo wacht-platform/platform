@@ -54,6 +54,7 @@ pub struct CreateActorRequest {
 #[derive(Deserialize)]
 pub struct CreateActorProjectRequest {
     pub name: String,
+    pub agent_id: Option<i64>,
     pub description: Option<String>,
     pub status: Option<String>,
     pub metadata: Option<serde_json::Value>,
@@ -62,6 +63,7 @@ pub struct CreateActorProjectRequest {
 #[derive(Deserialize)]
 pub struct CreateAgentThreadRequest {
     pub title: String,
+    pub agent_id: Option<i64>,
     pub system_instructions: Option<String>,
     pub thread_purpose: Option<String>,
     pub responsibility: Option<String>,
@@ -75,6 +77,52 @@ pub struct CreateAgentThreadRequest {
 pub struct NewMessageRequest {
     pub message: String,
     pub files: Option<Vec<crate::json::agent_executor::FileData>>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateActorProjectRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateAgentThreadRequest {
+    pub title: Option<String>,
+    pub agent_id: Option<i64>,
+    pub system_instructions: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateProjectTaskBoardItemRequest {
+    pub title: String,
+    pub description: Option<String>,
+    pub status: Option<String>,
+    pub priority: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateProjectTaskBoardItemRequest {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub status: Option<String>,
+    pub priority: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct SearchActorProjectsRequest {
+    pub actor_id: i64,
+    pub q: Option<String>,
+    pub limit: Option<i64>,
+    pub cursor: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct SearchActorProjectThreadsRequest {
+    pub actor_id: i64,
+    pub q: Option<String>,
+    pub limit: Option<i64>,
+    pub cursor: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]

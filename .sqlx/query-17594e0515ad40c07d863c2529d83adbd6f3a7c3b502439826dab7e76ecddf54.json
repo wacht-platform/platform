@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO mcp_oauth_states (\n            state, deployment_id, actor_id, mcp_server_id, code_verifier, client_id, token_url, redirect_uri, resource, expires_at, created_at, updated_at\n        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW())\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "17594e0515ad40c07d863c2529d83adbd6f3a7c3b502439826dab7e76ecddf54"
+}

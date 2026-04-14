@@ -6420,6 +6420,7 @@ name = "platform"
 version = "0.1.0"
 dependencies = [
  "async-nats",
+ "aws-sdk-s3",
  "axum",
  "base64 0.21.7",
  "bincode",
@@ -6448,6 +6449,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sonyflake",
+ "sqlx",
  "tiktoken-rs 0.5.9",
  "tokio",
  "tokio-stream",
@@ -8259,6 +8261,8 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "rust_decimal",
+ "rustls 0.23.27",
+ "rustls-pemfile 2.2.0",
  "serde",
  "serde_json",
  "sha2",
@@ -8268,6 +8272,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "url",
+ "webpki-roots 0.26.8",
 ]
 
 [[package]]

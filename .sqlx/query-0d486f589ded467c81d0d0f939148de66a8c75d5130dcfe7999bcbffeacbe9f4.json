@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM actor_mcp_server_connections\n        WHERE deployment_id = $1 AND actor_id = $2 AND mcp_server_id = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0d486f589ded467c81d0d0f939148de66a8c75d5130dcfe7999bcbffeacbe9f4"
+}

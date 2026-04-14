@@ -61,3 +61,5 @@ tokio-stream = "0.1"
 urlencoding = "2.1"
 regex = "1.10"
 sonyflake = "0.3"
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "json"] }
+aws-sdk-s3 = "1"
