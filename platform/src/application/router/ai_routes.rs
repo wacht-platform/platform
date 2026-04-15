@@ -25,9 +25,11 @@ pub(super) fn ai_routes() -> Router<AppState> {
         )
         .route(
             "/ai/agents/{agent_id}/skills",
-            post(api::ai_skills::import_agent_skill_bundle)
-                .delete(api::ai_skills::delete_agent_skill_path)
-                .layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
+            post(api::ai_skills::import_agent_skill_bundle).layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
+        )
+        .route(
+            "/ai/agents/{agent_id}/skills/{skill_slug}",
+            delete(api::ai_skills::delete_agent_skill),
         )
         .route(
             "/ai/agents/{agent_id}/skills/tree",

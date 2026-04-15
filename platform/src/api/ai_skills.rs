@@ -17,14 +17,15 @@ pub struct AgentParams {
 }
 
 #[derive(Deserialize)]
-pub struct SkillTreeQuery {
-    pub scope: String,
-    pub path: Option<String>,
+pub struct AgentSkillParams {
+    pub agent_id: i64,
+    pub skill_slug: String,
 }
 
 #[derive(Deserialize)]
-pub struct DeleteSkillPathQuery {
-    pub path: String,
+pub struct SkillTreeQuery {
+    pub scope: String,
+    pub path: Option<String>,
 }
 
 pub async fn list_skill_tree(
@@ -108,13 +109,17 @@ pub async fn import_agent_skill_bundle(
     Ok(response.into())
 }
 
-pub async fn delete_agent_skill_path(
+pub async fn delete_agent_skill(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(params): Path<AgentParams>,
-    Query(query): Query<DeleteSkillPathQuery>,
+    Path(params): Path<AgentSkillParams>,
 ) -> ApiResult<()> {
-    ai_skills_app::delete_agent_skill_path(&app_state, deployment_id, params.agent_id, query.path)
-        .await?;
+    ai_skills_app::delete_agent_skill(
+        &app_state,
+        deployment_id,
+        params.agent_id,
+        params.skill_slug,
+    )
+    .await?;
     Ok(().into())
 }

@@ -5,8 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use commands::{
-    DeleteFromDeploymentStorageCommand, DeletePrefixFromDeploymentStorageCommand,
-    ResolveDeploymentStorageCommand, WriteToDeploymentStorageCommand,
+    DeletePrefixFromDeploymentStorageCommand, ResolveDeploymentStorageCommand,
+    WriteToDeploymentStorageCommand,
 };
 use common::ReadConsistency;
 use common::deps;
@@ -620,52 +620,40 @@ pub async fn import_agent_skill_bundle(
     .await
 }
 
-pub async fn delete_agent_skill_path(
+fn parse_skill_slug(value: &str) -> Result<String, ApiErrorResponse> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(ApiErrorResponse::bad_request("skill_slug is required"));
+    }
+    if trimmed.contains('/') || trimmed.contains('\\') || trimmed == "." || trimmed == ".." {
+        return Err(ApiErrorResponse::bad_request("invalid skill slug"));
+    }
+
+    let sanitized = sanitize_skill_slug(trimmed)?;
+    if sanitized != trimmed {
+        return Err(ApiErrorResponse::bad_request("invalid skill slug"));
+    }
+
+    Ok(sanitized)
+}
+
+pub async fn delete_agent_skill(
     app_state: &AppState,
     deployment_id: i64,
     agent_id: i64,
-    path: String,
+    skill_slug: String,
 ) -> Result<(), ApiErrorResponse> {
     ensure_agent_exists(app_state, deployment_id, agent_id).await?;
-    let normalized = normalize_virtual_path(&path)?;
-    if normalized.is_empty() {
-        return Err(ApiErrorResponse::bad_request("path is required"));
-    }
+    let skill_slug = parse_skill_slug(&skill_slug)?;
 
     let deps = deps::from_app(app_state).db().enc();
-    let relative = format!(
-        "{}/{}",
-        deployment_skill_root(deployment_id, agent_id),
-        normalized
-    );
     let storage = ResolveDeploymentStorageCommand::new(deployment_id)
         .execute_with_deps(&deps)
         .await
         .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;
-    let exact_key = storage.object_key(&relative);
-    let file_exists = storage
-        .client()
-        .list_objects_v2()
-        .bucket(storage.bucket())
-        .prefix(&exact_key)
-        .max_keys(2)
-        .send()
-        .await
-        .map_err(|e| ApiErrorResponse::internal(e.to_string()))?
-        .contents
-        .unwrap_or_default()
-        .into_iter()
-        .any(|obj| obj.key.as_deref() == Some(exact_key.as_str()));
-
-    if file_exists {
-        DeleteFromDeploymentStorageCommand::new(deployment_id, relative.clone())
-            .execute_with_deps(&deps)
-            .await
-            .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;
-    }
-
+    let relative = format!("{}/{}", deployment_skill_root(deployment_id, agent_id), skill_slug);
     let prefix = format!("{}/", storage.object_key(&relative));
-    let dir_exists = storage
+    let exists = storage
         .client()
         .list_objects_v2()
         .bucket(storage.bucket())
@@ -677,16 +665,15 @@ pub async fn delete_agent_skill_path(
         .key_count
         .unwrap_or(0)
         > 0;
-    if dir_exists {
-        DeletePrefixFromDeploymentStorageCommand::new(deployment_id, relative)
-            .execute_with_deps(&deps)
-            .await
-            .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;
+
+    if !exists {
+        return Err(ApiErrorResponse::not_found("skill not found"));
     }
 
-    if !file_exists && !dir_exists {
-        return Err(ApiErrorResponse::not_found("path not found"));
-    }
+    DeletePrefixFromDeploymentStorageCommand::new(deployment_id, relative)
+        .execute_with_deps(&deps)
+        .await
+        .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;
 
     Ok(())
 }

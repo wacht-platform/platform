@@ -6,7 +6,8 @@ use axum::{
     response::Response,
 };
 use common::state::AppState;
-use wacht::gateway::{GatewayDenyReason, GatewayPrincipalType};
+use sha2::{Digest, Sha256};
+use wacht::gateway::{GatewayAuthzOptions, GatewayDenyReason, GatewayPrincipalType};
 
 /// Deployment context that gets injected into request extensions
 #[derive(Clone, Copy, Debug)]
@@ -41,35 +42,33 @@ pub async fn backend_deployment_middleware(
 
     let method = req.method().as_str().to_string();
     let resource = req.uri().path().to_string();
+    let api_key_fingerprint = {
+        let mut hasher = Sha256::new();
+        hasher.update(api_key.as_bytes());
+        format!("{:x}", hasher.finalize())
+    };
 
-    let mut authz_response = None;
-    let mut last_error = None;
-
-    for principal_type in [
-        GatewayPrincipalType::ApiKey,
-        GatewayPrincipalType::OauthAccessToken,
-    ] {
-        match wacht_client
-            .gateway()
-            .verify_request_with_principal_type(principal_type, api_key, &method, &resource)
-            .await
-        {
-            Ok(response) => {
-                authz_response = Some(response);
-                break;
-            }
-            Err(e) => {
-                last_error = Some(e.to_string());
-            }
-        }
-    }
-
-    let response = authz_response.ok_or_else(|| {
-        if let Some(err) = &last_error {
-            tracing::warn!("Authentication failed in deployment middleware: {}", err);
-        }
-        ApiErrorResponse::unauthorized("Authentication failed")
-    })?;
+    let response = wacht_client
+        .gateway()
+        .check_authz_with_principal_type(
+            GatewayPrincipalType::ApiKey,
+            api_key,
+            &method,
+            &resource,
+            GatewayAuthzOptions::default(),
+        )
+        .await
+        .map_err(|err| {
+            tracing::warn!(
+                method = %method,
+                resource = %resource,
+                api_key_fingerprint = %api_key_fingerprint,
+                principal_type = "api_key",
+                error = %err,
+                "Authentication failed in deployment middleware"
+            );
+            ApiErrorResponse::unauthorized("Authentication failed")
+        })?;
 
     if !response.allowed {
         return Err(
