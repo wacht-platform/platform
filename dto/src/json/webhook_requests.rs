@@ -18,6 +18,7 @@ pub struct ListWebhookAppsQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateWebhookAppRequest {
+    pub app_slug: Option<String>,
     pub name: String,
     pub description: Option<String>,
     pub failure_notification_emails: Option<Vec<String>>,

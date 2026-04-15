@@ -49,6 +49,9 @@ pub async fn create_webhook_app(
 ) -> Result<WebhookApp, AppError> {
     let mut command = CreateWebhookAppCommand::new(deployment_id, request.name);
 
+    if let Some(app_slug) = request.app_slug {
+        command = command.with_app_slug(app_slug);
+    }
     if let Some(description) = request.description {
         command = command.with_description(description);
     }

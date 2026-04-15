@@ -13,6 +13,27 @@ fn generate_signing_secret() -> String {
     format!("whsec_{}", STANDARD.encode(bytes))
 }
 
+fn normalize_app_slug(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut last_was_underscore = false;
+
+    for ch in raw.trim().chars() {
+        let normalized = if ch.is_ascii_alphanumeric() {
+            last_was_underscore = false;
+            ch.to_ascii_lowercase()
+        } else {
+            if last_was_underscore {
+                continue;
+            }
+            last_was_underscore = true;
+            '_'
+        };
+        out.push(normalized);
+    }
+
+    out.trim_matches('_').to_string()
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateWebhookAppCommand {
     pub deployment_id: i64,
@@ -70,9 +91,14 @@ impl CreateWebhookAppCommand {
     {
         let signing_secret = generate_signing_secret();
 
-        // Generate app_slug: always use "slug_" prefix
         let app_slug = if let Some(slug) = self.app_slug {
-            slug
+            let normalized = normalize_app_slug(&slug);
+            if normalized.is_empty() {
+                return Err(AppError::Validation(
+                    "app_slug must contain at least one alphanumeric character".to_string(),
+                ));
+            }
+            normalized
         } else {
             self.generated_slug.ok_or_else(|| {
                 AppError::Validation(

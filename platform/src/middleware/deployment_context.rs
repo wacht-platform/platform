@@ -86,9 +86,23 @@ pub async fn backend_deployment_middleware(
         );
     }
 
-    req.extensions_mut().insert(DeploymentContext {
-        deployment_id: response.deployment_id,
-    });
+    let deployment_id = response
+        .app_slug
+        .strip_prefix("aa_")
+        .and_then(|raw| raw.parse::<i64>().ok())
+        .ok_or_else(|| {
+            tracing::error!(
+                method = %method,
+                resource = %resource,
+                api_key_fingerprint = %api_key_fingerprint,
+                app_slug = %response.app_slug,
+                gateway_deployment_id = response.deployment_id,
+                "Backend API requires app_slug in format aa_<deployment_id>"
+            );
+            ApiErrorResponse::unauthorized("Authentication failed")
+        })?;
+
+    req.extensions_mut().insert(DeploymentContext { deployment_id });
     req.extensions_mut().insert(ApiKeyContext {
         key_id: response.key_id,
         app_slug: response.app_slug,
