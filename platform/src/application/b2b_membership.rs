@@ -23,6 +23,7 @@ use queries::api_key::{
     GetOrganizationMembershipIdsByRoleQuery, GetWorkspaceMembershipIdsByRoleQuery,
 };
 use serde::Serialize;
+use tracing::error;
 
 use crate::application::{AppState, response::ApiErrorResponse};
 
@@ -85,7 +86,8 @@ pub async fn update_organization_member(
         format!("api-key-org-membership-{}", membership_id),
         ApiKeyOrgMembershipSyncPayload { membership_id },
     )
-    .await?;
+    .await
+    ?;
 
     Ok(())
 }
@@ -333,7 +335,8 @@ pub async fn update_workspace_member(
         format!("api-key-workspace-membership-{}", membership_id),
         ApiKeyWorkspaceMembershipSyncPayload { membership_id },
     )
-    .await?;
+    .await
+    ?;
 
     Ok(())
 }
@@ -366,7 +369,7 @@ where
 {
     let task_message = NatsTaskMessage {
         task_type: task_type.to_string(),
-        task_id,
+        task_id: task_id.clone(),
         payload: serde_json::to_value(payload)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
     };
@@ -380,7 +383,16 @@ where
                 .into(),
         )
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            error!(
+                subject,
+                task_type,
+                task_id,
+                error = %e,
+                "Failed to publish background task"
+            );
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?;
 
     Ok(())
 }

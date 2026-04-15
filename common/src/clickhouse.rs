@@ -1,9 +1,9 @@
 use crate::error::AppError;
-use crate::tinybird;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use clickhouse::{Client, Row};
+use dto::clickhouse::ApiKeyVerificationEvent;
 use dto::clickhouse::webhook::*;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, error, info};
 
@@ -33,14 +33,6 @@ fn bind_clickhouse_query(
     query
 }
 
-fn serialize_timestamp<S>(timestamp: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let formatted = timestamp.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
-    serializer.serialize_str(&formatted)
-}
-
 #[derive(Serialize, Deserialize, Row)]
 pub struct UserEvent {
     pub deployment_id: i64,
@@ -49,7 +41,7 @@ pub struct UserEvent {
     pub user_name: Option<String>,
     pub user_identifier: Option<String>,
     pub auth_method: Option<String>,
-    #[serde(serialize_with = "serialize_timestamp")]
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub timestamp: DateTime<Utc>,
     pub ip_address: Option<String>,
 }
@@ -503,12 +495,60 @@ impl ClickHouseService {
         Ok(result)
     }
 
+    pub async fn insert_user_event(&self, event: &UserEvent) -> Result<(), AppError> {
+        let mut insert = self.client.insert::<UserEvent>("user_events").await?;
+        insert.write(event).await?;
+        insert.end().await?;
+        Ok(())
+    }
+
+    pub async fn insert_api_audit_log(
+        &self,
+        event: &ApiKeyVerificationEvent,
+    ) -> Result<(), AppError> {
+        let mut insert = self
+            .client
+            .insert::<ApiKeyVerificationEvent>("api_audit_logs")
+            .await?;
+        insert.write(event).await?;
+        insert.end().await?;
+        Ok(())
+    }
+
     pub async fn insert_webhook_log(&self, log: &WebhookLog) -> Result<(), AppError> {
-        tinybird::insert_webhook_log(log).await
+        let mut full_insert = self.client.insert::<WebhookLog>("webhook_logs_full").await?;
+        full_insert.write(log).await?;
+        full_insert.end().await?;
+
+        let log_light = WebhookLogLight {
+            deployment_id: log.deployment_id,
+            delivery_id: log.delivery_id,
+            app_slug: log.app_slug.clone(),
+            endpoint_id: log.endpoint_id,
+            event_name: log.event_name.clone(),
+            status: log.status.clone(),
+            http_status_code: log.http_status_code,
+            response_time_ms: log.response_time_ms,
+            attempt_number: log.attempt_number,
+            max_attempts: log.max_attempts,
+            payload_size_bytes: log.payload_size_bytes,
+            timestamp: log.timestamp,
+        };
+
+        let mut light_insert = self
+            .client
+            .insert::<WebhookLogLight>("webhook_logs_light")
+            .await?;
+        light_insert.write(&log_light).await?;
+        light_insert.end().await?;
+        Ok(())
     }
 
     pub async fn batch_insert_webhook_logs(&self, logs: &[WebhookLog]) -> Result<(), AppError> {
-        tinybird::insert_webhook_logs_batch(logs).await
+        for log in logs {
+            self.insert_webhook_log(log).await?;
+        }
+        Ok(())
     }
 
     pub async fn get_webhook_delivery_stats(
@@ -548,7 +588,7 @@ impl ClickHouseService {
                     CAST(quantileOrNull(0.5)(response_time_ms) AS Nullable(Float64)) as p50_response_time_ms,
                     CAST(quantileOrNull(0.95)(response_time_ms) AS Nullable(Float64)) as p95_response_time_ms,
                     CAST(quantileOrNull(0.99)(response_time_ms) AS Nullable(Float64)) as p99_response_time_ms,
-                    CAST(count(DISTINCT event_id) AS Int64) as total_events
+                    CAST(count(DISTINCT event_name) AS Int64) as total_events
                 FROM webhook_logs_full
                 WHERE {}
             "#,
@@ -578,7 +618,7 @@ impl ClickHouseService {
                 r#"
                 SELECT
                     event_name,
-                    count() as count
+                    CAST(count() AS Int64) as count
                 FROM webhook_logs_full
                 WHERE deployment_id = ? AND app_slug = ? AND timestamp >= ? AND timestamp <= ?
                 GROUP BY event_name
@@ -592,7 +632,7 @@ impl ClickHouseService {
                 r#"
                 SELECT
                     event_name,
-                    count() as count
+                    CAST(count() AS Int64) as count
                 FROM webhook_logs_full
                 WHERE deployment_id = ? AND timestamp >= ? AND timestamp <= ?
                 GROUP BY event_name
@@ -640,9 +680,9 @@ impl ClickHouseService {
     ) -> Result<WebhookEndpointPerformanceResponse, AppError> {
         let query = r#"
             SELECT
-                endpoint_url,
-                count() as total_attempts,
-                countIf(status = 'success') as successful_attempts,
+                toString(endpoint_id) as endpoint_url,
+                CAST(count() AS Int64) as total_attempts,
+                CAST(countIf(status = 'success') AS Int64) as successful_attempts,
                 avg(response_time_ms) as avg_response_time,
                 quantile(0.5)(response_time_ms) as p50_response_time,
                 quantile(0.95)(response_time_ms) as p95_response_time,
@@ -651,7 +691,7 @@ impl ClickHouseService {
                 min(response_time_ms) as min_response_time
             FROM webhook_logs_full
             WHERE deployment_id = ? AND endpoint_id = ? AND timestamp >= ? AND timestamp <= ?
-            GROUP BY endpoint_url
+            GROUP BY endpoint_id
         "#;
 
         let result = self
@@ -701,10 +741,9 @@ impl ClickHouseService {
                         WHEN http_status_code >= 500 THEN 'Server Error (5xx)'
                         WHEN http_status_code >= 400 THEN 'Client Error (4xx)'
                         WHEN http_status_code = 0 THEN 'Connection Failed'
-                        WHEN error_message LIKE '%timeout%' THEN 'Timeout'
-                        ELSE coalesce(error_message, 'Unknown')
+                        ELSE 'Unknown'
                     END as reason,
-                    count() as count
+                    CAST(count() AS Int64) as count
                 FROM webhook_logs_full
                 WHERE {}
                 GROUP BY reason
@@ -740,14 +779,14 @@ impl ClickHouseService {
         let query = r#"
             SELECT
                 endpoint_id,
-                endpoint_url,
-                count() as total_attempts,
-                countIf(status = 'success') as successful_attempts,
-                countIf(status IN ('failed', 'permanently_failed')) as failed_attempts,
+                toString(endpoint_id) as endpoint_url,
+                CAST(count() AS Int64) as total_attempts,
+                CAST(countIf(status = 'success') AS Int64) as successful_attempts,
+                CAST(countIf(status IN ('failed', 'permanently_failed')) AS Int64) as failed_attempts,
                 avg(response_time_ms) as avg_response_time_ms
             FROM webhook_logs_full
             WHERE deployment_id = ? AND app_slug = ? AND timestamp >= ? AND timestamp <= ?
-            GROUP BY endpoint_id, endpoint_url
+            GROUP BY endpoint_id
             ORDER BY total_attempts DESC
             LIMIT 20
         "#;
@@ -877,13 +916,11 @@ impl ClickHouseService {
                 app_slug,
                 endpoint_id,
                 event_name,
-                event_id,
                 status,
                 http_status_code,
                 response_time_ms,
                 attempt_number,
                 max_attempts,
-                error_message,
                 payload_size_bytes,
                 timestamp
             FROM webhook_logs_light

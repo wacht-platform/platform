@@ -305,6 +305,7 @@ impl UpdateWorkspaceMemberCommand {
                 FROM UNNEST($5::BIGINT[]) AS role_id
                 WHERE $4 = true
                   AND EXISTS(SELECT 1 FROM membership)
+                ON CONFLICT (workspace_membership_id, workspace_role_id) DO NOTHING
             ),
             updated_metadata AS (
                 UPDATE workspace_memberships

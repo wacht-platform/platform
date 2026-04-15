@@ -416,8 +416,7 @@ impl UploadKnowledgeBaseDocumentCommand {
         )
         .with_content_type(self.file_type.clone())
         .execute_with_deps(deps)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .await?;
 
         let document = sqlx::query(
             r#"

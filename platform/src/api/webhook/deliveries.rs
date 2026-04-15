@@ -4,9 +4,8 @@ use axum::extract::{Path, Query, State};
 use common::state::AppState;
 use dto::{
     clickhouse::webhook::WebhookDeliveryListResponse,
-    json::webhook_requests::{GetAppWebhookDeliveriesQuery, WebhookDeliveryDetails},
+    json::{WebhookStats, webhook_requests::{GetAppWebhookDeliveriesQuery, WebhookDeliveryDetails}},
 };
-use models::webhook_analytics::WebhookAnalyticsResult;
 
 use crate::application::{
     response::{ApiResult, PaginatedResponse},
@@ -55,7 +54,7 @@ pub async fn get_webhook_stats(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_slug): Path<String>,
-) -> ApiResult<WebhookAnalyticsResult> {
+) -> ApiResult<WebhookStats> {
     let stats =
         webhook_deliveries_app::get_webhook_stats(&app_state, deployment_id, app_slug).await?;
 

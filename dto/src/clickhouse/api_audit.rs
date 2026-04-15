@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use clickhouse::Row;
 use serde::{Deserialize, Serialize};
 
 /// A single rate limit state for logging
@@ -9,8 +10,8 @@ pub struct RateLimitState {
     pub limit: i32,
 }
 
-/// API key verification event for Tinybird audit logs
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// API key verification event stored in ClickHouse audit logs
+#[derive(Debug, Clone, Serialize, Deserialize, Row)]
 pub struct ApiKeyVerificationEvent {
     pub request_id: String,
     pub deployment_id: i64,
@@ -25,6 +26,7 @@ pub struct ApiKeyVerificationEvent {
     pub user_agent: String,
     pub rate_limits: String,
     pub latency_us: i64,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub timestamp: DateTime<Utc>,
 }
 

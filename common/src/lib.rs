@@ -15,7 +15,6 @@ pub mod smtp;
 pub mod state;
 pub mod telemetry;
 pub mod text_processing;
-pub mod tinybird;
 pub mod utils;
 pub mod validators;
 pub mod vector_store;

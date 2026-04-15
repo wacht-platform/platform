@@ -237,7 +237,8 @@ pub async fn upload_knowledge_base_document(
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
     .execute_with_deps(&deps)
-    .await?;
+    .await
+    .map_err(ApiErrorResponse::from)?;
 
     Ok(document)
 }

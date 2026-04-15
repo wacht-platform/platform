@@ -150,7 +150,7 @@ impl TriggerWebhookEventCommand {
             };
 
             if let Err(e) = deps.clickhouse_provider().insert_webhook_log(&ch_log).await {
-                tracing::warn!("Failed to log pending delivery to Tinybird: {}", e);
+                tracing::warn!(error = ?e, "Failed to log pending delivery to ClickHouse");
             }
 
             EnqueueWebhookDeliveryCommand::new(

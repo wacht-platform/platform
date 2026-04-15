@@ -74,7 +74,7 @@ impl TestWebhookEndpointCommand {
         };
 
         if let Err(e) = deps.clickhouse_provider().insert_webhook_log(&log).await {
-            tracing::warn!("Failed to log test event to Tinybird: {}", e);
+            tracing::warn!(error = ?e, "Failed to log test event to ClickHouse");
         }
 
         let webhook_id = format!("msg_{}", delivery_id);

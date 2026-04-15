@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use common::error::AppError;
 use models::api_key::RateLimit;
 use serde::{Deserialize, Serialize};
@@ -24,8 +24,8 @@ struct RateLimitSchemeRow {
     name: String,
     description: Option<String>,
     rules: serde_json::Value,
-    created_at: Option<chrono::DateTime<Utc>>,
-    updated_at: Option<chrono::DateTime<Utc>>,
+    created_at: Option<NaiveDateTime>,
+    updated_at: Option<NaiveDateTime>,
 }
 
 impl From<RateLimitSchemeRow> for RateLimitSchemeData {
@@ -37,8 +37,14 @@ impl From<RateLimitSchemeRow> for RateLimitSchemeData {
             name: row.name,
             description: row.description,
             rules: serde_json::from_value(row.rules).unwrap_or_else(|_| vec![]),
-            created_at: row.created_at.unwrap_or_else(Utc::now),
-            updated_at: row.updated_at.unwrap_or_else(Utc::now),
+            created_at: row
+                .created_at
+                .map(|value| DateTime::from_naive_utc_and_offset(value, Utc))
+                .unwrap_or_else(Utc::now),
+            updated_at: row
+                .updated_at
+                .map(|value| DateTime::from_naive_utc_and_offset(value, Utc))
+                .unwrap_or_else(Utc::now),
         }
     }
 }

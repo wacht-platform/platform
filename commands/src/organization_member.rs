@@ -216,6 +216,7 @@ impl UpdateOrganizationMemberCommand {
                 FROM UNNEST($4::BIGINT[]) AS role_id
                 WHERE $3 = true
                   AND EXISTS(SELECT 1 FROM membership)
+                ON CONFLICT (organization_membership_id, organization_role_id) DO NOTHING
             ),
             updated_metadata AS (
                 UPDATE organization_memberships

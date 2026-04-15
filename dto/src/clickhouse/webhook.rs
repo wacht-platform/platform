@@ -1,16 +1,6 @@
 use chrono::{DateTime, Utc};
 use clickhouse::Row;
-use serde::{Deserialize, Serialize, Serializer};
-
-/// Custom serializer for DateTime<Utc> that formats as ISO 8601 for Tinybird
-fn serialize_timestamp<S>(timestamp: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    // Format as: 2024-01-01T12:00:00.000000Z
-    let formatted = timestamp.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
-    serializer.serialize_str(&formatted)
-}
+use serde::{Deserialize, Serialize};
 
 // Consolidated webhook log for both events and deliveries
 #[derive(Debug, Clone, Serialize, Deserialize, Row)]
@@ -30,7 +20,7 @@ pub struct WebhookLog {
     pub response_body: Option<String>,
     pub response_headers: Option<String>,
     pub request_headers: Option<String>,
-    #[serde(serialize_with = "serialize_timestamp")]
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub timestamp: DateTime<Utc>,
 }
 
@@ -48,7 +38,7 @@ pub struct WebhookLogLight {
     pub attempt_number: i32,
     pub max_attempts: i32,
     pub payload_size_bytes: i32,
-    #[serde(serialize_with = "serialize_timestamp")]
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub timestamp: DateTime<Utc>,
 }
 

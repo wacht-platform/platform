@@ -82,9 +82,7 @@ pub async fn create_api_auth_app(
     command = command.with_permissions(request.permissions.unwrap_or_default());
     command = command.with_resources(request.resources.unwrap_or_default());
 
-    let created = command
-        .execute_with_db(app_state.db_router.writer())
-        .await?;
+    let created = command.execute_with_db(app_state.db_router.writer()).await?;
     get_api_auth_app_by_slug(app_state, deployment_id, created.app_slug).await
 }
 

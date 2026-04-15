@@ -7,10 +7,12 @@ use common::error::AppError;
 use common::state::AppState;
 use dto::{
     clickhouse::webhook::WebhookDeliveryListResponse,
-    json::webhook_requests::{GetAppWebhookDeliveriesQuery, WebhookDeliveryDetails},
+    json::{
+        WebhookStats,
+        webhook_requests::{GetAppWebhookDeliveriesQuery, WebhookDeliveryDetails},
+    },
 };
-use models::webhook_analytics::WebhookAnalyticsResult;
-use queries::webhook_analytics::GetWebhookAnalyticsQuery;
+use queries::webhook::GetWebhookStatsQuery;
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
 
@@ -94,9 +96,9 @@ pub async fn get_webhook_stats(
     app_state: &AppState,
     deployment_id: i64,
     app_slug: String,
-) -> Result<WebhookAnalyticsResult, AppError> {
+) -> Result<WebhookStats, AppError> {
     let db_deps = deps::from_app(app_state).db();
-    let query = GetWebhookAnalyticsQuery::new(deployment_id).with_app_slug(app_slug);
+    let query = GetWebhookStatsQuery::new(deployment_id, app_slug);
     query.execute_with_deps(&db_deps).await
 }
 
