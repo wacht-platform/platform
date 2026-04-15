@@ -9570,11 +9570,12 @@ checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
 
 [[package]]
 name = "wacht"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ac1f8a00d7002cdc7393b81c05277e52f62b3a71c8fbd651dbcd5e00e7f3a1d"
+checksum = "65714bfb31ab0285223553722af0c29bdb6a2ce3db60e32009661ce7a690f2d6"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "chrono",
  "jsonwebtoken",
  "once_cell",
