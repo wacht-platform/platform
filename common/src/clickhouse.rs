@@ -82,13 +82,17 @@ impl AnalyticsStatsResult {
             .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
     }
 
-    /// Convert to recent signups
-    pub fn get_recent_signups(&self) -> Vec<RecentSignup> {
-        self.recent_signup_names
+    fn build_recent_activity(
+        names: &[String],
+        identifiers: &[String],
+        methods: &[String],
+        timestamps: &[String],
+    ) -> Vec<RecentSignup> {
+        names
             .iter()
-            .zip(&self.recent_signup_identifiers)
-            .zip(&self.recent_signup_methods)
-            .zip(&self.recent_signup_timestamps)
+            .zip(identifiers)
+            .zip(methods)
+            .zip(timestamps)
             .filter_map(|(((name, email), method), date)| {
                 Self::parse_clickhouse_timestamp(date).map(|parsed_date| RecentSignup {
                     name: Some(name.clone()),
@@ -100,22 +104,22 @@ impl AnalyticsStatsResult {
             .collect()
     }
 
-    /// Convert to recent signins
+    pub fn get_recent_signups(&self) -> Vec<RecentSignup> {
+        Self::build_recent_activity(
+            &self.recent_signup_names,
+            &self.recent_signup_identifiers,
+            &self.recent_signup_methods,
+            &self.recent_signup_timestamps,
+        )
+    }
+
     pub fn get_recent_signins(&self) -> Vec<RecentSignup> {
-        self.recent_signin_names
-            .iter()
-            .zip(&self.recent_signin_identifiers)
-            .zip(&self.recent_signin_methods)
-            .zip(&self.recent_signin_timestamps)
-            .filter_map(|(((name, email), method), date)| {
-                Self::parse_clickhouse_timestamp(date).map(|parsed_date| RecentSignup {
-                    name: Some(name.clone()),
-                    email: Some(email.clone()),
-                    method: Some(method.clone()),
-                    date: parsed_date,
-                })
-            })
-            .collect()
+        Self::build_recent_activity(
+            &self.recent_signin_names,
+            &self.recent_signin_identifiers,
+            &self.recent_signin_methods,
+            &self.recent_signin_timestamps,
+        )
     }
 
     pub fn get_daily_metrics(&self) -> Vec<(String, u64, u64)> {
@@ -146,6 +150,10 @@ struct RecentSignupRow {
 }
 
 impl ClickHouseService {
+    fn format_query_timestamp(timestamp: DateTime<Utc>) -> String {
+        timestamp.format("%Y-%m-%d %H:%M:%S").to_string()
+    }
+
     pub fn new(url: String, password: String) -> Result<Self, AppError> {
         let url = if url.starts_with("https://") {
             url
@@ -193,8 +201,8 @@ impl ClickHouseService {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
     ) -> Result<i64, AppError> {
-        let from_str = from.format("%Y-%m-%d %H:%M:%S").to_string();
-        let to_str = to.format("%Y-%m-%d %H:%M:%S").to_string();
+        let from_str = Self::format_query_timestamp(from);
+        let to_str = Self::format_query_timestamp(to);
 
         debug!(deployment_id, %from_str, %to_str, "Executing get_unique_signins query");
         let start = Instant::now();
@@ -228,8 +236,8 @@ impl ClickHouseService {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
     ) -> Result<i64, AppError> {
-        let from_str = from.format("%Y-%m-%d %H:%M:%S").to_string();
-        let to_str = to.format("%Y-%m-%d %H:%M:%S").to_string();
+        let from_str = Self::format_query_timestamp(from);
+        let to_str = Self::format_query_timestamp(to);
 
         debug!(deployment_id, %from_str, %to_str, "Executing get_signups query");
         let start = Instant::now();
@@ -263,8 +271,8 @@ impl ClickHouseService {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
     ) -> Result<i64, AppError> {
-        let from_str = from.format("%Y-%m-%d %H:%M:%S").to_string();
-        let to_str = to.format("%Y-%m-%d %H:%M:%S").to_string();
+        let from_str = Self::format_query_timestamp(from);
+        let to_str = Self::format_query_timestamp(to);
 
         debug!(deployment_id, %from_str, %to_str, "Executing get_organizations_created query");
 
@@ -292,8 +300,8 @@ impl ClickHouseService {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
     ) -> Result<i64, AppError> {
-        let from_str = from.format("%Y-%m-%d %H:%M:%S").to_string();
-        let to_str = to.format("%Y-%m-%d %H:%M:%S").to_string();
+        let from_str = Self::format_query_timestamp(from);
+        let to_str = Self::format_query_timestamp(to);
 
         debug!(deployment_id, %from_str, %to_str, "Executing get_workspaces_created query");
 
@@ -379,7 +387,6 @@ impl ClickHouseService {
             .collect())
     }
 
-    /// Get all analytics stats in a single query
     pub async fn get_analytics_stats(
         &self,
         deployment_id: i64,
@@ -392,10 +399,10 @@ impl ClickHouseService {
         let to_ts = to.timestamp();
         let prev_from_ts = previous_from.timestamp();
         let prev_to_ts = previous_to.timestamp();
-        let from_str = from.format("%Y-%m-%d %H:%M:%S").to_string();
-        let to_str = to.format("%Y-%m-%d %H:%M:%S").to_string();
-        let previous_from_str = previous_from.format("%Y-%m-%d %H:%M:%S").to_string();
-        let previous_to_str = previous_to.format("%Y-%m-%d %H:%M:%S").to_string();
+        let from_str = Self::format_query_timestamp(from);
+        let to_str = Self::format_query_timestamp(to);
+        let previous_from_str = Self::format_query_timestamp(previous_from);
+        let previous_to_str = Self::format_query_timestamp(previous_to);
 
         info!(
             deployment_id,
