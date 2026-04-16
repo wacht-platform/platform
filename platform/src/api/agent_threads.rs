@@ -1,4 +1,7 @@
-use crate::application::{agent_threads as agent_threads_app, response::ApiResult};
+use crate::application::{
+    agent_threads as agent_threads_app,
+    response::{ApiResult, PaginatedResponse},
+};
 use crate::middleware::RequireDeployment;
 use axum::extract::{Json, Path, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
@@ -123,14 +126,14 @@ pub async fn list_actors(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<IncludeArchivedParams>,
-) -> ApiResult<Vec<Actor>> {
+) -> ApiResult<PaginatedResponse<Actor>> {
     let actors = agent_threads_app::list_actors(
         &app_state,
         deployment_id,
         params.include_archived.unwrap_or(false),
     )
     .await?;
-    Ok(actors.into())
+    Ok(PaginatedResponse::from(actors).into())
 }
 
 pub async fn create_actor(
@@ -157,7 +160,7 @@ pub async fn list_actor_projects(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ActorParams>,
     Query(query): Query<IncludeArchivedParams>,
-) -> ApiResult<Vec<ActorProject>> {
+) -> ApiResult<PaginatedResponse<ActorProject>> {
     let projects = agent_threads_app::list_actor_projects(
         &app_state,
         deployment_id,
@@ -165,7 +168,7 @@ pub async fn list_actor_projects(
         query.include_archived.unwrap_or(false),
     )
     .await?;
-    Ok(projects.into())
+    Ok(PaginatedResponse::from(projects).into())
 }
 
 pub async fn create_actor_project(
@@ -188,7 +191,7 @@ pub async fn list_actor_projects_flat(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<ActorProjectsListQuery>,
-) -> ApiResult<Vec<ActorProject>> {
+) -> ApiResult<PaginatedResponse<ActorProject>> {
     let projects = agent_threads_app::list_actor_projects(
         &app_state,
         deployment_id,
@@ -196,7 +199,7 @@ pub async fn list_actor_projects_flat(
         query.include_archived.unwrap_or(false),
     )
     .await?;
-    Ok(projects.into())
+    Ok(PaginatedResponse::from(projects).into())
 }
 
 pub async fn search_actor_projects(
@@ -238,14 +241,14 @@ pub async fn list_actor_mcp_servers(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<McpActorQuery>,
-) -> ApiResult<Vec<agent_threads_app::ActorMcpServerSummary>> {
+) -> ApiResult<PaginatedResponse<agent_threads_app::ActorMcpServerSummary>> {
     let servers = agent_threads_app::list_actor_mcp_servers(
         &app_state,
         deployment_id,
         query.actor_id,
     )
     .await?;
-    Ok(servers.into())
+    Ok(PaginatedResponse::from(servers).into())
 }
 
 pub async fn connect_actor_mcp_server(
@@ -342,7 +345,7 @@ pub async fn list_agent_threads(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ProjectParams>,
     Query(query): Query<IncludeArchivedParams>,
-) -> ApiResult<Vec<AgentThread>> {
+) -> ApiResult<PaginatedResponse<AgentThread>> {
     let threads = agent_threads_app::list_agent_threads(
         &app_state,
         deployment_id,
@@ -350,7 +353,7 @@ pub async fn list_agent_threads(
         query.include_archived.unwrap_or(false),
     )
     .await?;
-    Ok(threads.into())
+    Ok(PaginatedResponse::from(threads).into())
 }
 
 pub async fn create_agent_thread(
@@ -483,14 +486,14 @@ pub async fn list_project_task_board_items(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ProjectParams>,
-) -> ApiResult<Vec<ProjectTaskBoardItem>> {
+) -> ApiResult<PaginatedResponse<ProjectTaskBoardItem>> {
     let items = agent_threads_app::list_project_task_board_items(
         &app_state,
         deployment_id,
         params.project_id,
     )
     .await?;
-    Ok(items.into())
+    Ok(PaginatedResponse::from(items).into())
 }
 
 pub async fn create_project_task_board_item(
@@ -564,42 +567,42 @@ pub async fn list_project_task_board_item_events(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<BoardItemParams>,
-) -> ApiResult<Vec<ProjectTaskBoardItemEvent>> {
+) -> ApiResult<PaginatedResponse<ProjectTaskBoardItemEvent>> {
     let events = agent_threads_app::list_project_task_board_item_events(
         &app_state,
         deployment_id,
         params.item_id,
     )
     .await?;
-    Ok(events.into())
+    Ok(PaginatedResponse::from(events).into())
 }
 
 pub async fn list_project_task_board_item_assignments(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<BoardItemParams>,
-) -> ApiResult<Vec<ProjectTaskBoardItemAssignment>> {
+) -> ApiResult<PaginatedResponse<ProjectTaskBoardItemAssignment>> {
     let assignments = agent_threads_app::list_project_task_board_item_assignments(
         &app_state,
         deployment_id,
         params.item_id,
     )
     .await?;
-    Ok(assignments.into())
+    Ok(PaginatedResponse::from(assignments).into())
 }
 
 pub async fn list_project_task_board_item_relations(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<BoardItemParams>,
-) -> ApiResult<Vec<ProjectTaskBoardItemRelation>> {
+) -> ApiResult<PaginatedResponse<ProjectTaskBoardItemRelation>> {
     let relations = agent_threads_app::list_project_task_board_item_relations(
         &app_state,
         deployment_id,
         params.item_id,
     )
     .await?;
-    Ok(relations.into())
+    Ok(PaginatedResponse::from(relations).into())
 }
 
 pub async fn append_project_task_board_item_journal(
@@ -685,11 +688,11 @@ pub async fn list_pending_thread_events(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ThreadParams>,
-) -> ApiResult<Vec<ThreadEvent>> {
+) -> ApiResult<PaginatedResponse<ThreadEvent>> {
     let events =
         agent_threads_app::list_pending_thread_events(&app_state, deployment_id, params.thread_id)
             .await?;
-    Ok(events.into())
+    Ok(PaginatedResponse::from(events).into())
 }
 
 pub async fn get_thread_event_by_id(
@@ -707,11 +710,11 @@ pub async fn list_assignments_for_thread(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ThreadParams>,
-) -> ApiResult<Vec<ProjectTaskBoardItemAssignment>> {
+) -> ApiResult<PaginatedResponse<ProjectTaskBoardItemAssignment>> {
     let assignments =
         agent_threads_app::list_assignments_for_thread(&app_state, deployment_id, params.thread_id)
             .await?;
-    Ok(assignments.into())
+    Ok(PaginatedResponse::from(assignments).into())
 }
 
 pub async fn get_latest_thread_task_graph(
@@ -744,7 +747,7 @@ pub async fn list_thread_task_nodes(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ThreadTaskGraphParams>,
     Query(query): Query<IncludeTerminalParams>,
-) -> ApiResult<Vec<ThreadTaskNode>> {
+) -> ApiResult<PaginatedResponse<ThreadTaskNode>> {
     let nodes = agent_threads_app::list_thread_task_nodes(
         &app_state,
         deployment_id,
@@ -752,18 +755,18 @@ pub async fn list_thread_task_nodes(
         query.include_terminal.unwrap_or(true),
     )
     .await?;
-    Ok(nodes.into())
+    Ok(PaginatedResponse::from(nodes).into())
 }
 
 pub async fn list_thread_task_edges(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ThreadTaskGraphParams>,
-) -> ApiResult<Vec<ThreadTaskEdge>> {
+) -> ApiResult<PaginatedResponse<ThreadTaskEdge>> {
     let edges =
         agent_threads_app::list_thread_task_edges(&app_state, deployment_id, params.graph_id)
             .await?;
-    Ok(edges.into())
+    Ok(PaginatedResponse::from(edges).into())
 }
 
 pub async fn get_thread_task_graph_summary(
