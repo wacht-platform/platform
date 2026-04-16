@@ -62,12 +62,17 @@ pub struct AnalyticsStatsResult {
     pub previous_orgs: u64,
     pub previous_workspaces: u64,
     pub total_signups: u64,
-    // Recent signups - Tuple from single subquery: (names, emails, methods, timestamps)
-    pub recent_signups: (Vec<String>, Vec<String>, Vec<String>, Vec<String>),
-    // Recent signins - Tuple from single subquery: (names, emails, methods, timestamps)
-    pub recent_signins: (Vec<String>, Vec<String>, Vec<String>, Vec<String>),
-    // Daily metrics - Tuple from single subquery: (days, signins, signups)
-    pub daily_metrics: (Vec<String>, Vec<u64>, Vec<u64>),
+    pub recent_signup_names: Vec<String>,
+    pub recent_signup_identifiers: Vec<String>,
+    pub recent_signup_methods: Vec<String>,
+    pub recent_signup_timestamps: Vec<String>,
+    pub recent_signin_names: Vec<String>,
+    pub recent_signin_identifiers: Vec<String>,
+    pub recent_signin_methods: Vec<String>,
+    pub recent_signin_timestamps: Vec<String>,
+    pub daily_metric_days: Vec<String>,
+    pub daily_metric_signins: Vec<u64>,
+    pub daily_metric_signups: Vec<u64>,
 }
 
 impl AnalyticsStatsResult {
@@ -79,12 +84,11 @@ impl AnalyticsStatsResult {
 
     /// Convert to recent signups
     pub fn get_recent_signups(&self) -> Vec<RecentSignup> {
-        self.recent_signups
-            .0
+        self.recent_signup_names
             .iter()
-            .zip(&self.recent_signups.1)
-            .zip(&self.recent_signups.2)
-            .zip(&self.recent_signups.3)
+            .zip(&self.recent_signup_identifiers)
+            .zip(&self.recent_signup_methods)
+            .zip(&self.recent_signup_timestamps)
             .filter_map(|(((name, email), method), date)| {
                 Self::parse_clickhouse_timestamp(date).map(|parsed_date| RecentSignup {
                     name: Some(name.clone()),
@@ -98,12 +102,11 @@ impl AnalyticsStatsResult {
 
     /// Convert to recent signins
     pub fn get_recent_signins(&self) -> Vec<RecentSignup> {
-        self.recent_signins
-            .0
+        self.recent_signin_names
             .iter()
-            .zip(&self.recent_signins.1)
-            .zip(&self.recent_signins.2)
-            .zip(&self.recent_signins.3)
+            .zip(&self.recent_signin_identifiers)
+            .zip(&self.recent_signin_methods)
+            .zip(&self.recent_signin_timestamps)
             .filter_map(|(((name, email), method), date)| {
                 Self::parse_clickhouse_timestamp(date).map(|parsed_date| RecentSignup {
                     name: Some(name.clone()),
@@ -116,11 +119,10 @@ impl AnalyticsStatsResult {
     }
 
     pub fn get_daily_metrics(&self) -> Vec<(String, u64, u64)> {
-        self.daily_metrics
-            .0
+        self.daily_metric_days
             .iter()
-            .zip(&self.daily_metrics.1)
-            .zip(&self.daily_metrics.2)
+            .zip(&self.daily_metric_signins)
+            .zip(&self.daily_metric_signups)
             .map(|((day, signins), signups)| (day.clone(), *signins, *signups))
             .collect()
     }
@@ -403,52 +405,137 @@ impl ClickHouseService {
 
         let query = r#"
             SELECT
-                countDistinctIf(user_id, event_type = 'signin' AND user_id IS NOT NULL AND timestamp >= ? AND timestamp <= ?) as unique_signins,
-                countIf(event_type = 'signup' AND timestamp >= ? AND timestamp <= ?) as signups,
-                countIf(event_type = 'organization_created' AND timestamp >= ? AND timestamp <= ?) as organizations_created,
-                countIf(event_type = 'workspace_created' AND timestamp >= ? AND timestamp <= ?) as workspaces_created,
-                countDistinctIf(user_id, event_type = 'signin' AND user_id IS NOT NULL AND timestamp >= ? AND timestamp <= ?) as previous_signins,
-                countIf(event_type = 'signup' AND timestamp >= ? AND timestamp <= ?) as previous_signups,
-                countIf(event_type = 'organization_created' AND timestamp >= ? AND timestamp <= ?) as previous_orgs,
-                countIf(event_type = 'workspace_created' AND timestamp >= ? AND timestamp <= ?) as previous_workspaces,
-                countDistinctIf(user_id, event_type = 'signup' AND user_id IS NOT NULL) as total_signups,
-                (SELECT
-                    groupArray(coalesce(user_name, '')),
-                    groupArray(coalesce(user_identifier, '')),
-                    groupArray(coalesce(auth_method, '')),
-                    groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S.%f'))
-                 FROM (SELECT user_name, user_identifier, auth_method, timestamp
-                       FROM user_events
-                       WHERE deployment_id = ? AND event_type = 'signup'
-                       ORDER BY timestamp DESC
-                       LIMIT 10)) as recent_signups,
-                (SELECT
-                    groupArray(coalesce(user_name, '')),
-                    groupArray(coalesce(user_identifier, '')),
-                    groupArray(coalesce(auth_method, '')),
-                    groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S.%f'))
-                 FROM (SELECT user_name, user_identifier, auth_method, timestamp
-                       FROM user_events
-                       WHERE deployment_id = ? AND event_type = 'signin'
-                       ORDER BY timestamp DESC
-                       LIMIT 10)) as recent_signins,
-                (SELECT groupArray(day), groupArray(signins), groupArray(signups)
-                 FROM (
-                       SELECT
-                           formatDateTime(toDate(timestamp), '%Y-%m-%d') as day,
-                           countDistinctIf(user_id, event_type = 'signin' AND user_id IS NOT NULL) as signins,
-                           countIf(event_type = 'signup') as signups
-                       FROM user_events
-                       WHERE deployment_id = ?
-                         AND timestamp >= ?
-                         AND timestamp <= ?
-                         AND event_type IN ('signin', 'signup')
-                       GROUP BY toDate(timestamp)
-                       ORDER BY toDate(timestamp) ASC
-                 )) as daily_metrics
+                CAST(countDistinctIf(user_id, event_type = 'signin' AND user_id IS NOT NULL AND timestamp >= ? AND timestamp <= ?) AS UInt64) as unique_signins,
+                CAST(countIf(event_type = 'signup' AND timestamp >= ? AND timestamp <= ?) AS UInt64) as signups,
+                CAST(countIf(event_type = 'organization_created' AND timestamp >= ? AND timestamp <= ?) AS UInt64) as organizations_created,
+                CAST(countIf(event_type = 'workspace_created' AND timestamp >= ? AND timestamp <= ?) AS UInt64) as workspaces_created,
+                CAST(countDistinctIf(user_id, event_type = 'signin' AND user_id IS NOT NULL AND timestamp >= ? AND timestamp <= ?) AS UInt64) as previous_signins,
+                CAST(countIf(event_type = 'signup' AND timestamp >= ? AND timestamp <= ?) AS UInt64) as previous_signups,
+                CAST(countIf(event_type = 'organization_created' AND timestamp >= ? AND timestamp <= ?) AS UInt64) as previous_orgs,
+                CAST(countIf(event_type = 'workspace_created' AND timestamp >= ? AND timestamp <= ?) AS UInt64) as previous_workspaces,
+                CAST(countDistinctIf(user_id, event_type = 'signup' AND user_id IS NOT NULL) AS UInt64) as total_signups,
+                (
+                    SELECT groupArray(coalesce(user_name, ''))
+                    FROM (
+                        SELECT user_name
+                        FROM user_events
+                        WHERE deployment_id = ? AND event_type = 'signup'
+                        ORDER BY timestamp DESC
+                        LIMIT 10
+                    )
+                ) as recent_signup_names,
+                (
+                    SELECT groupArray(coalesce(user_identifier, ''))
+                    FROM (
+                        SELECT user_identifier
+                        FROM user_events
+                        WHERE deployment_id = ? AND event_type = 'signup'
+                        ORDER BY timestamp DESC
+                        LIMIT 10
+                    )
+                ) as recent_signup_identifiers,
+                (
+                    SELECT groupArray(coalesce(auth_method, ''))
+                    FROM (
+                        SELECT auth_method
+                        FROM user_events
+                        WHERE deployment_id = ? AND event_type = 'signup'
+                        ORDER BY timestamp DESC
+                        LIMIT 10
+                    )
+                ) as recent_signup_methods,
+                (
+                    SELECT groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S.%f'))
+                    FROM (
+                        SELECT timestamp
+                        FROM user_events
+                        WHERE deployment_id = ? AND event_type = 'signup'
+                        ORDER BY timestamp DESC
+                        LIMIT 10
+                    )
+                ) as recent_signup_timestamps,
+                (
+                    SELECT groupArray(coalesce(user_name, ''))
+                    FROM (
+                        SELECT user_name
+                        FROM user_events
+                        WHERE deployment_id = ? AND event_type = 'signin'
+                        ORDER BY timestamp DESC
+                        LIMIT 10
+                    )
+                ) as recent_signin_names,
+                (
+                    SELECT groupArray(coalesce(user_identifier, ''))
+                    FROM (
+                        SELECT user_identifier
+                        FROM user_events
+                        WHERE deployment_id = ? AND event_type = 'signin'
+                        ORDER BY timestamp DESC
+                        LIMIT 10
+                    )
+                ) as recent_signin_identifiers,
+                (
+                    SELECT groupArray(coalesce(auth_method, ''))
+                    FROM (
+                        SELECT auth_method
+                        FROM user_events
+                        WHERE deployment_id = ? AND event_type = 'signin'
+                        ORDER BY timestamp DESC
+                        LIMIT 10
+                    )
+                ) as recent_signin_methods,
+                (
+                    SELECT groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S.%f'))
+                    FROM (
+                        SELECT timestamp
+                        FROM user_events
+                        WHERE deployment_id = ? AND event_type = 'signin'
+                        ORDER BY timestamp DESC
+                        LIMIT 10
+                    )
+                ) as recent_signin_timestamps,
+                (
+                    SELECT groupArray(day)
+                    FROM (
+                        SELECT formatDateTime(toDate(timestamp), '%Y-%m-%d') as day
+                        FROM user_events
+                        WHERE deployment_id = ?
+                          AND timestamp >= ?
+                          AND timestamp <= ?
+                          AND event_type IN ('signin', 'signup')
+                        GROUP BY toDate(timestamp)
+                        ORDER BY toDate(timestamp) ASC
+                    )
+                ) as daily_metric_days,
+                (
+                    SELECT groupArray(signins)
+                    FROM (
+                        SELECT CAST(countDistinctIf(user_id, event_type = 'signin' AND user_id IS NOT NULL) AS UInt64) as signins
+                        FROM user_events
+                        WHERE deployment_id = ?
+                          AND timestamp >= ?
+                          AND timestamp <= ?
+                          AND event_type IN ('signin', 'signup')
+                        GROUP BY toDate(timestamp)
+                        ORDER BY toDate(timestamp) ASC
+                    )
+                ) as daily_metric_signins,
+                (
+                    SELECT groupArray(signups)
+                    FROM (
+                        SELECT CAST(countIf(event_type = 'signup') AS UInt64) as signups
+                        FROM user_events
+                        WHERE deployment_id = ?
+                          AND timestamp >= ?
+                          AND timestamp <= ?
+                          AND event_type IN ('signin', 'signup')
+                        GROUP BY toDate(timestamp)
+                        ORDER BY toDate(timestamp) ASC
+                    )
+                ) as daily_metric_signups
             FROM user_events
             WHERE deployment_id = ?
-                AND ((timestamp >= ? AND timestamp <= ?) OR (timestamp >= ? AND timestamp <= ?))
+              AND ((timestamp >= ? AND timestamp <= ?) OR (timestamp >= ? AND timestamp <= ?))
         "#;
 
         let result = self
@@ -472,6 +559,18 @@ impl ClickHouseService {
             .bind(previous_to)
             .bind(deployment_id)
             .bind(deployment_id)
+            .bind(deployment_id)
+            .bind(deployment_id)
+            .bind(deployment_id)
+            .bind(deployment_id)
+            .bind(deployment_id)
+            .bind(deployment_id)
+            .bind(deployment_id)
+            .bind(from)
+            .bind(to)
+            .bind(deployment_id)
+            .bind(from)
+            .bind(to)
             .bind(deployment_id)
             .bind(from)
             .bind(to)
