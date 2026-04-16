@@ -392,6 +392,10 @@ impl ClickHouseService {
         let to_ts = to.timestamp();
         let prev_from_ts = previous_from.timestamp();
         let prev_to_ts = previous_to.timestamp();
+        let from_str = from.format("%Y-%m-%d %H:%M:%S").to_string();
+        let to_str = to.format("%Y-%m-%d %H:%M:%S").to_string();
+        let previous_from_str = previous_from.format("%Y-%m-%d %H:%M:%S").to_string();
+        let previous_to_str = previous_to.format("%Y-%m-%d %H:%M:%S").to_string();
 
         info!(
             deployment_id,
@@ -541,22 +545,22 @@ impl ClickHouseService {
         let result = self
             .client
             .query(query)
-            .bind(from)
-            .bind(to)
-            .bind(from)
-            .bind(to)
-            .bind(from)
-            .bind(to)
-            .bind(from)
-            .bind(to)
-            .bind(previous_from)
-            .bind(previous_to)
-            .bind(previous_from)
-            .bind(previous_to)
-            .bind(previous_from)
-            .bind(previous_to)
-            .bind(previous_from)
-            .bind(previous_to)
+            .bind(&from_str)
+            .bind(&to_str)
+            .bind(&from_str)
+            .bind(&to_str)
+            .bind(&from_str)
+            .bind(&to_str)
+            .bind(&from_str)
+            .bind(&to_str)
+            .bind(&previous_from_str)
+            .bind(&previous_to_str)
+            .bind(&previous_from_str)
+            .bind(&previous_to_str)
+            .bind(&previous_from_str)
+            .bind(&previous_to_str)
+            .bind(&previous_from_str)
+            .bind(&previous_to_str)
             .bind(deployment_id)
             .bind(deployment_id)
             .bind(deployment_id)
@@ -566,19 +570,19 @@ impl ClickHouseService {
             .bind(deployment_id)
             .bind(deployment_id)
             .bind(deployment_id)
-            .bind(from)
-            .bind(to)
+            .bind(&from_str)
+            .bind(&to_str)
             .bind(deployment_id)
-            .bind(from)
-            .bind(to)
+            .bind(&from_str)
+            .bind(&to_str)
             .bind(deployment_id)
-            .bind(from)
-            .bind(to)
+            .bind(&from_str)
+            .bind(&to_str)
             .bind(deployment_id)
-            .bind(from)
-            .bind(to)
-            .bind(previous_from)
-            .bind(previous_to)
+            .bind(&from_str)
+            .bind(&to_str)
+            .bind(&previous_from_str)
+            .bind(&previous_to_str)
             .fetch_one::<AnalyticsStatsResult>()
             .await
             .map_err(|e| {
