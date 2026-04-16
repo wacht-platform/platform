@@ -403,22 +403,30 @@ impl ClickHouseService {
 
         let query = r#"
             SELECT
-                count(DISTINCT CASE WHEN event_type = 'signin' AND user_id IS NOT NULL AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN user_id END) as unique_signins,
-                count(CASE WHEN event_type = 'signup' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as signups,
-                count(CASE WHEN event_type = 'organization_created' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as organizations_created,
-                count(CASE WHEN event_type = 'workspace_created' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as workspaces_created,
-                count(DISTINCT CASE WHEN event_type = 'signin' AND user_id IS NOT NULL AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN user_id END) as previous_signins,
-                count(CASE WHEN event_type = 'signup' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as previous_signups,
-                count(CASE WHEN event_type = 'organization_created' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as previous_orgs,
-                count(CASE WHEN event_type = 'workspace_created' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as previous_workspaces,
-                count(DISTINCT CASE WHEN event_type = 'signup' AND user_id IS NOT NULL THEN user_id END) as total_signups,
-                (SELECT groupArray(user_name), groupArray(user_identifier), groupArray(auth_method), groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S.%f'))
+                countDistinctIf(user_id, event_type = 'signin' AND user_id IS NOT NULL AND timestamp >= ? AND timestamp <= ?) as unique_signins,
+                countIf(event_type = 'signup' AND timestamp >= ? AND timestamp <= ?) as signups,
+                countIf(event_type = 'organization_created' AND timestamp >= ? AND timestamp <= ?) as organizations_created,
+                countIf(event_type = 'workspace_created' AND timestamp >= ? AND timestamp <= ?) as workspaces_created,
+                countDistinctIf(user_id, event_type = 'signin' AND user_id IS NOT NULL AND timestamp >= ? AND timestamp <= ?) as previous_signins,
+                countIf(event_type = 'signup' AND timestamp >= ? AND timestamp <= ?) as previous_signups,
+                countIf(event_type = 'organization_created' AND timestamp >= ? AND timestamp <= ?) as previous_orgs,
+                countIf(event_type = 'workspace_created' AND timestamp >= ? AND timestamp <= ?) as previous_workspaces,
+                countDistinctIf(user_id, event_type = 'signup' AND user_id IS NOT NULL) as total_signups,
+                (SELECT
+                    groupArray(coalesce(user_name, '')),
+                    groupArray(coalesce(user_identifier, '')),
+                    groupArray(coalesce(auth_method, '')),
+                    groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S.%f'))
                  FROM (SELECT user_name, user_identifier, auth_method, timestamp
                        FROM user_events
                        WHERE deployment_id = ? AND event_type = 'signup'
                        ORDER BY timestamp DESC
                        LIMIT 10)) as recent_signups,
-                (SELECT groupArray(user_name), groupArray(user_identifier), groupArray(auth_method), groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S.%f'))
+                (SELECT
+                    groupArray(coalesce(user_name, '')),
+                    groupArray(coalesce(user_identifier, '')),
+                    groupArray(coalesce(auth_method, '')),
+                    groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S.%f'))
                  FROM (SELECT user_name, user_identifier, auth_method, timestamp
                        FROM user_events
                        WHERE deployment_id = ? AND event_type = 'signin'
@@ -432,46 +440,46 @@ impl ClickHouseService {
                            countIf(event_type = 'signup') as signups
                        FROM user_events
                        WHERE deployment_id = ?
-                         AND timestamp >= fromUnixTimestamp64Milli(?*1000)
-                         AND timestamp <= fromUnixTimestamp64Milli(?*1000)
+                         AND timestamp >= ?
+                         AND timestamp <= ?
                          AND event_type IN ('signin', 'signup')
                        GROUP BY toDate(timestamp)
                        ORDER BY toDate(timestamp) ASC
                  )) as daily_metrics
             FROM user_events
             WHERE deployment_id = ?
-                AND ((timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000)) OR (timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000)))
+                AND ((timestamp >= ? AND timestamp <= ?) OR (timestamp >= ? AND timestamp <= ?))
         "#;
 
         let result = self
             .client
             .query(query)
-            .bind(from_ts)
-            .bind(to_ts)
-            .bind(from_ts)
-            .bind(to_ts)
-            .bind(from_ts)
-            .bind(to_ts)
-            .bind(from_ts)
-            .bind(to_ts)
-            .bind(prev_from_ts)
-            .bind(prev_to_ts)
-            .bind(prev_from_ts)
-            .bind(prev_to_ts)
-            .bind(prev_from_ts)
-            .bind(prev_to_ts)
-            .bind(prev_from_ts)
-            .bind(prev_to_ts)
+            .bind(from)
+            .bind(to)
+            .bind(from)
+            .bind(to)
+            .bind(from)
+            .bind(to)
+            .bind(from)
+            .bind(to)
+            .bind(previous_from)
+            .bind(previous_to)
+            .bind(previous_from)
+            .bind(previous_to)
+            .bind(previous_from)
+            .bind(previous_to)
+            .bind(previous_from)
+            .bind(previous_to)
             .bind(deployment_id)
             .bind(deployment_id)
             .bind(deployment_id)
-            .bind(from_ts)
-            .bind(to_ts)
+            .bind(from)
+            .bind(to)
             .bind(deployment_id)
-            .bind(from_ts)
-            .bind(to_ts)
-            .bind(prev_from_ts)
-            .bind(prev_to_ts)
+            .bind(from)
+            .bind(to)
+            .bind(previous_from)
+            .bind(previous_to)
             .fetch_one::<AnalyticsStatsResult>()
             .await
             .map_err(|e| {
