@@ -63,7 +63,12 @@ pub async fn update_ai_settings(
         .await?;
 
     let normalized_updates = normalize_ai_settings_updates(updates);
-    validate_storage_settings(existing_settings.as_ref(), &normalized_updates)?;
+    validate_provider_key_consistency(existing_settings.as_ref(), &normalized_updates)?;
+    validate_openrouter_strong_model(existing_settings.as_ref(), &normalized_updates)?;
+
+    if normalized_updates.storage.is_some() {
+        validate_storage_settings(existing_settings.as_ref(), &normalized_updates)?;
+    }
 
     let deps = deps::from_app(app_state).db().enc();
     if let Some(storage_updates) = normalized_updates.storage.as_ref() {
@@ -94,6 +99,110 @@ pub async fn update_ai_settings(
         .await?;
 
     Ok(DeploymentAiSettingsResponse::from(settings))
+}
+
+fn provider_name(provider: &DeploymentLlmProvider) -> &'static str {
+    match provider {
+        DeploymentLlmProvider::Gemini => "Gemini",
+        DeploymentLlmProvider::Openai => "OpenAI",
+        DeploymentLlmProvider::Openrouter => "OpenRouter",
+    }
+}
+
+fn parse_llm_provider(s: &str) -> DeploymentLlmProvider {
+    match s {
+        "openai" => DeploymentLlmProvider::Openai,
+        "openrouter" => DeploymentLlmProvider::Openrouter,
+        _ => DeploymentLlmProvider::Gemini,
+    }
+}
+
+fn key_available_for_provider(
+    provider: &DeploymentLlmProvider,
+    existing: Option<&DeploymentAiSettings>,
+    updates: &UpdateDeploymentAiSettingsRequest,
+) -> bool {
+    match provider {
+        DeploymentLlmProvider::Gemini => {
+            updates.gemini_api_key.is_some()
+                || existing.and_then(|e| e.gemini_api_key.as_ref()).is_some()
+        }
+        DeploymentLlmProvider::Openai => {
+            updates.openai_api_key.is_some()
+                || existing.and_then(|e| e.openai_api_key.as_ref()).is_some()
+        }
+        DeploymentLlmProvider::Openrouter => {
+            updates.openrouter_api_key.is_some()
+                || existing.and_then(|e| e.openrouter_api_key.as_ref()).is_some()
+        }
+    }
+}
+
+/// Errors if a provider is being explicitly set (or already set) but no API key exists for it.
+/// Only checks providers that are explicitly being changed in this request to avoid blocking
+/// unrelated updates when historical settings are inconsistent.
+fn validate_provider_key_consistency(
+    existing: Option<&DeploymentAiSettings>,
+    updates: &UpdateDeploymentAiSettingsRequest,
+) -> Result<(), AppError> {
+    if let Some(strong_provider) = updates.strong_llm_provider.as_ref() {
+        if !key_available_for_provider(strong_provider, existing, updates) {
+            return Err(AppError::Validation(format!(
+                "strong_llm_provider is set to {} but no {} API key is configured",
+                provider_name(strong_provider),
+                provider_name(strong_provider),
+            )));
+        }
+    }
+
+    if let Some(weak_provider) = updates.weak_llm_provider.as_ref() {
+        if !key_available_for_provider(weak_provider, existing, updates) {
+            return Err(AppError::Validation(format!(
+                "weak_llm_provider is set to {} but no {} API key is configured",
+                provider_name(weak_provider),
+                provider_name(weak_provider),
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Errors if the effective strong provider is OpenRouter and require_parameters is false.
+/// The strong model is used for structured JSON schema output; without require_parameters,
+/// OpenRouter may route to an endpoint that silently ignores the schema.
+fn validate_openrouter_strong_model(
+    existing: Option<&DeploymentAiSettings>,
+    updates: &UpdateDeploymentAiSettingsRequest,
+) -> Result<(), AppError> {
+    let effective_strong_provider = updates
+        .strong_llm_provider
+        .as_ref()
+        .cloned()
+        .or_else(|| existing.map(|e| parse_llm_provider(&e.strong_llm_provider)));
+
+    if !matches!(
+        effective_strong_provider.as_ref(),
+        Some(DeploymentLlmProvider::Openrouter)
+    ) {
+        return Ok(());
+    }
+
+    let effective_require_parameters = updates
+        .openrouter_require_parameters
+        .or_else(|| existing.map(|e| e.openrouter_require_parameters))
+        .unwrap_or(true);
+
+    if !effective_require_parameters {
+        return Err(AppError::Validation(
+            "OpenRouter is selected as the strong model provider but 'require parameters' is \
+             disabled. The strong model must support JSON schema output — enable 'require \
+             parameters' to ensure OpenRouter only routes to capable endpoints."
+                .to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 fn normalize_ai_settings_updates(

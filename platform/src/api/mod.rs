@@ -1,3 +1,4 @@
+pub mod actors;
 pub mod agent_threads;
 pub mod ai_agents;
 pub mod ai_knowledge_base;

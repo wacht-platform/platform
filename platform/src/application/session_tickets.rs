@@ -55,7 +55,8 @@ fn parse_actor_id(actor_id: &str) -> Result<i64, AppError> {
         .map_err(|_| bad_request("actor_id must be a valid integer"))
 }
 
-async fn ensure_debug_actor_exists(
+/// Console path: auto-create the actor with deployment_id if it doesn't already exist.
+async fn ensure_actor_auto_created(
     app_state: &AppState,
     deployment_id: i64,
     actor_id: i64,
@@ -105,6 +106,19 @@ async fn ensure_debug_actor_exists(
         }
         Err(error) => Err(error),
     }
+}
+
+/// Backend path: actor must already exist, returns 404 if not.
+async fn ensure_actor_exists(
+    app_state: &AppState,
+    deployment_id: i64,
+    actor_id: i64,
+) -> Result<(), AppError> {
+    GetActorByIdQuery::new(actor_id, deployment_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Actor {} not found", actor_id)))?;
+    Ok(())
 }
 
 fn command_deployment_id(
@@ -199,6 +213,7 @@ pub async fn create_session_ticket(
     deployment_id: i64,
     mut request: CreateSessionTicketRequest,
     always_use_deployment_id: bool,
+    auto_create_actor: bool,
 ) -> Result<commands::session_ticket::GenerateSessionTicketResponse, AppError> {
     let session_deps = deps::from_app(app_state).redis().id();
     let ticket_type = parse_ticket_type(&request.ticket_type)?;
@@ -210,9 +225,17 @@ pub async fn create_session_ticket(
     };
 
     if is_static_agent_access_request(&ticket_type, &request) {
-        let actor_id = require_non_empty_actor_id(request.actor_id.clone())?;
-        ensure_debug_actor_exists(app_state, deployment_id, parse_actor_id(&actor_id)?).await?;
-        request.actor_id = Some(actor_id);
+        if auto_create_actor {
+            // Console: actor_id is always the deployment_id, set unconditionally by the handler.
+            // No user-supplied value is accepted — just ensure the actor exists.
+            let parsed_id = parse_actor_id(request.actor_id.as_deref().unwrap_or(""))?;
+            ensure_actor_auto_created(app_state, deployment_id, parsed_id).await?;
+        } else {
+            // Backend: actor_id must be provided by the caller and must already exist.
+            let actor_id = require_non_empty_actor_id(request.actor_id.clone())?;
+            ensure_actor_exists(app_state, deployment_id, parse_actor_id(&actor_id)?).await?;
+            request.actor_id = Some(actor_id);
+        }
     }
 
     let command = GenerateSessionTicketCommand::builder()

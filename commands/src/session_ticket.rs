@@ -149,17 +149,6 @@ impl GenerateSessionTicketCommand {
                         "agent_ids is required for agent_access tickets".to_string(),
                     ));
                 }
-
-                if self.actor_id.as_deref().is_none_or(str::is_empty)
-                    && matches!(
-                        self.agent_session_identifier,
-                        None | Some(AgentSessionIdentifier::Static)
-                    )
-                {
-                    return Err(AppError::BadRequest(
-                        "actor_id is required for static agent_access tickets".to_string(),
-                    ));
-                }
             }
             SessionTicketType::WebhookAppAccess => {
                 if self.webhook_app_slug.as_deref().is_none_or(str::is_empty) {
