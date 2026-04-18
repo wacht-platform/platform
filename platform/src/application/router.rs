@@ -72,7 +72,7 @@ async fn normalize_error_responses(req: Request<Body>, next: Next) -> Response {
     let response = next.run(req).await;
     let status = response.status();
 
-    if status.is_success() {
+    if status.is_success() || status.is_redirection() {
         return response;
     }
 
