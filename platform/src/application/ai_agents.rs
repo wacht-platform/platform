@@ -71,13 +71,14 @@ pub async fn create_ai_agent(
     );
 
     if let Some(sub_agents) = request.sub_agents {
-        command = command.with_sub_agents(sub_agents);
+        command = command.with_sub_agents(sub_agents.into_iter().map(i64::from).collect());
     }
     if let Some(tool_ids) = request.tool_ids {
-        command = command.with_tool_ids(tool_ids);
+        command = command.with_tool_ids(tool_ids.into_iter().map(i64::from).collect());
     }
     if let Some(knowledge_base_ids) = request.knowledge_base_ids {
-        command = command.with_knowledge_base_ids(knowledge_base_ids);
+        command = command
+            .with_knowledge_base_ids(knowledge_base_ids.into_iter().map(i64::from).collect());
     }
     command.execute_with_deps(&db_deps).await
 }
@@ -136,13 +137,14 @@ pub async fn update_ai_agent(
         command = command.with_configuration(configuration);
     }
     if let Some(tool_ids) = request.tool_ids {
-        command = command.with_tool_ids(tool_ids);
+        command = command.with_tool_ids(tool_ids.into_iter().map(i64::from).collect());
     }
     if let Some(knowledge_base_ids) = request.knowledge_base_ids {
-        command = command.with_knowledge_base_ids(knowledge_base_ids);
+        command = command
+            .with_knowledge_base_ids(knowledge_base_ids.into_iter().map(i64::from).collect());
     }
     if let Some(sub_agents) = request.sub_agents {
-        command = command.with_sub_agents(sub_agents);
+        command = command.with_sub_agents(sub_agents.into_iter().map(i64::from).collect());
     }
     command.execute_with_deps(&db_deps).await
 }

@@ -17,9 +17,9 @@ pub use membership_handlers::{
     update_workspace_member, update_workspace_role,
 };
 pub use query_handlers::{
-    get_deployment_org_roles, get_deployment_workspace_roles, get_organization_details,
-    get_organization_list, get_organization_members, get_workspace_details, get_workspace_list,
-    get_workspace_members, update_deployment_b2b_settings,
+    get_organization_details, get_organization_list, get_organization_members,
+    get_organization_roles, get_workspace_details, get_workspace_list, get_workspace_members,
+    get_workspace_roles, update_deployment_b2b_settings,
 };
 
 #[derive(Deserialize)]

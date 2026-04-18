@@ -61,11 +61,8 @@ fn user_management_routes() -> Router<AppState> {
             "/waitlist/{waitlist_user_id}/approve",
             post(api::user::approve_waitlist_user),
         )
-        .route(
-            "/session/tickets",
-            post(api::session_tickets::create_session_ticket),
-        )
 }
+
 
 fn b2b_routes() -> Router<AppState> {
     Router::new()
@@ -77,12 +74,8 @@ fn b2b_routes() -> Router<AppState> {
                 .delete(api::b2b::delete_workspace),
         )
         .route(
-            "/workspaces/roles",
-            get(api::b2b::get_deployment_workspace_roles),
-        )
-        .route(
             "/workspaces/{workspace_id}/roles",
-            post(api::b2b::create_workspace_role),
+            get(api::b2b::get_workspace_roles).post(api::b2b::create_workspace_role),
         )
         .route(
             "/workspaces/{workspace_id}/roles/{role_id}",
@@ -121,15 +114,11 @@ fn b2b_routes() -> Router<AppState> {
         )
         .route(
             "/organizations/{organization_id}/roles",
-            post(api::b2b::create_organization_role),
+            get(api::b2b::get_organization_roles).post(api::b2b::create_organization_role),
         )
         .route(
             "/organizations/{organization_id}/roles/{role_id}",
             patch(api::b2b::update_organization_role).delete(api::b2b::delete_organization_role),
-        )
-        .route(
-            "/organizations/roles",
-            get(api::b2b::get_deployment_org_roles),
         )
 }
 

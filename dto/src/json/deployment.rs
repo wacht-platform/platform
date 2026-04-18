@@ -1,16 +1,16 @@
 use serde::{Deserialize, Serialize};
 
-use models::AiToolConfiguration;
+use models::{AiToolConfiguration, FlexibleI64};
 
 #[derive(Deserialize)]
 pub struct CreateAgentRequest {
     pub name: String,
     pub description: Option<String>,
     pub configuration: Option<serde_json::Value>,
-    pub tool_ids: Option<Vec<i64>>,
-    pub knowledge_base_ids: Option<Vec<i64>>,
+    pub tool_ids: Option<Vec<FlexibleI64>>,
+    pub knowledge_base_ids: Option<Vec<FlexibleI64>>,
     /// Agent IDs this agent can spawn as sub-agents
-    pub sub_agents: Option<Vec<i64>>,
+    pub sub_agents: Option<Vec<FlexibleI64>>,
 }
 
 #[derive(Deserialize)]
@@ -19,9 +19,9 @@ pub struct UpdateAgentRequest {
     pub description: Option<String>,
     pub status: Option<String>,
     pub configuration: Option<serde_json::Value>,
-    pub tool_ids: Option<Vec<i64>>,
-    pub knowledge_base_ids: Option<Vec<i64>>,
-    pub sub_agents: Option<Vec<i64>>,
+    pub tool_ids: Option<Vec<FlexibleI64>>,
+    pub knowledge_base_ids: Option<Vec<FlexibleI64>>,
+    pub sub_agents: Option<Vec<FlexibleI64>>,
 }
 
 #[derive(Deserialize)]
@@ -54,7 +54,7 @@ pub struct CreateActorRequest {
 #[derive(Deserialize)]
 pub struct CreateActorProjectRequest {
     pub name: String,
-    pub agent_id: Option<i64>,
+    pub agent_id: Option<FlexibleI64>,
     pub description: Option<String>,
     pub status: Option<String>,
     pub metadata: Option<serde_json::Value>,
@@ -63,7 +63,7 @@ pub struct CreateActorProjectRequest {
 #[derive(Deserialize)]
 pub struct CreateAgentThreadRequest {
     pub title: String,
-    pub agent_id: Option<i64>,
+    pub agent_id: Option<FlexibleI64>,
     pub system_instructions: Option<String>,
     pub thread_purpose: Option<String>,
     pub responsibility: Option<String>,
@@ -89,7 +89,7 @@ pub struct UpdateActorProjectRequest {
 #[derive(Deserialize)]
 pub struct UpdateAgentThreadRequest {
     pub title: Option<String>,
-    pub agent_id: Option<i64>,
+    pub agent_id: Option<FlexibleI64>,
     pub system_instructions: Option<String>,
 }
 

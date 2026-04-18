@@ -27,6 +27,10 @@ pub(super) fn billing_routes() -> Router<AppState> {
 pub(super) fn console_specific_routes() -> Router<AppState> {
     Router::new()
         .route(
+            "/session/tickets",
+            post(api::session_tickets::create_session_ticket),
+        )
+        .route(
             "/webhooks/event-catalogs",
             get(api::webhook::list_event_catalogs).post(api::webhook::create_event_catalog),
         )
@@ -79,6 +83,10 @@ pub(super) fn console_specific_routes() -> Router<AppState> {
 
 pub(super) fn backend_specific_routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/session/tickets",
+            post(api::session_tickets::create_backend_session_ticket),
+        )
         .route("/webhooks/apps", get(api::webhook::list_webhook_apps))
         .route("/webhooks/apps", post(api::webhook::create_webhook_app))
         .route(

@@ -18,7 +18,24 @@ pub async fn create_session_ticket(
     Json(request): Json<CreateSessionTicketRequest>,
 ) -> ApiResult<CreateSessionTicketResponse> {
     let resp =
-        session_tickets_app::create_session_ticket(&app_state, deployment_id, request).await?;
+        session_tickets_app::create_session_ticket(&app_state, deployment_id, request, false)
+            .await?;
+
+    Ok(CreateSessionTicketResponse {
+        ticket: resp.ticket,
+        expires_at: resp.expires_at,
+    }
+    .into())
+}
+
+pub async fn create_backend_session_ticket(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Json(request): Json<CreateSessionTicketRequest>,
+) -> ApiResult<CreateSessionTicketResponse> {
+    let resp =
+        session_tickets_app::create_session_ticket(&app_state, deployment_id, request, true)
+            .await?;
 
     Ok(CreateSessionTicketResponse {
         ticket: resp.ticket,

@@ -6,16 +6,13 @@ use dto::{
     json::deployment_settings::DeploymentB2bSettingsUpdates, query::OrganizationListQueryParams,
 };
 use models::{
-    DeploymentOrganizationRole, DeploymentWorkspaceRole, Organization, OrganizationDetails,
-    OrganizationMemberDetails, WorkspaceDetails, WorkspaceMemberDetails,
-    WorkspaceWithOrganizationName,
+    Organization, OrganizationDetails, OrganizationMemberDetails, OrganizationRole,
+    WorkspaceDetails, WorkspaceMemberDetails, WorkspaceRole, WorkspaceWithOrganizationName,
 };
 use queries::{
     DeploymentOrganizationListQuery, DeploymentWorkspaceListQuery, GetOrganizationDetailsQuery,
     GetOrganizationMembersQuery, GetWorkspaceDetailsQuery, GetWorkspaceMembersQuery,
 };
-use queries::{GetDeploymentOrganizationRolesQuery, GetDeploymentWorkspaceRolesQuery};
-
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
 use common::deps;
 
@@ -36,26 +33,28 @@ where
     }
 }
 
-pub async fn get_deployment_workspace_roles(
+pub async fn get_workspace_roles(
     app_state: &AppState,
     deployment_id: i64,
-) -> Result<PaginatedResponse<DeploymentWorkspaceRole>, AppError> {
+    workspace_id: i64,
+) -> Result<PaginatedResponse<WorkspaceRole>, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
-    let roles = GetDeploymentWorkspaceRolesQuery::new(deployment_id)
+    let workspace = GetWorkspaceDetailsQuery::new(deployment_id, workspace_id)
         .execute_with_db(reader)
         .await?;
-    Ok(PaginatedResponse::from(roles))
+    Ok(PaginatedResponse::from(workspace.roles))
 }
 
-pub async fn get_deployment_org_roles(
+pub async fn get_organization_roles(
     app_state: &AppState,
     deployment_id: i64,
-) -> Result<PaginatedResponse<DeploymentOrganizationRole>, AppError> {
+    organization_id: i64,
+) -> Result<PaginatedResponse<OrganizationRole>, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
-    let roles = GetDeploymentOrganizationRolesQuery::new(deployment_id)
+    let organization = GetOrganizationDetailsQuery::new(deployment_id, organization_id)
         .execute_with_db(reader)
         .await?;
-    Ok(PaginatedResponse::from(roles))
+    Ok(PaginatedResponse::from(organization.roles))
 }
 
 pub async fn update_deployment_b2b_settings(

@@ -198,12 +198,16 @@ pub async fn create_session_ticket(
     app_state: &AppState,
     deployment_id: i64,
     mut request: CreateSessionTicketRequest,
+    always_use_deployment_id: bool,
 ) -> Result<commands::session_ticket::GenerateSessionTicketResponse, AppError> {
     let session_deps = deps::from_app(app_state).redis().id();
     let ticket_type = parse_ticket_type(&request.ticket_type)?;
-    let console_deployment_id = parse_console_deployment_id()?;
-    let command_deployment_id =
-        command_deployment_id(&ticket_type, deployment_id, console_deployment_id);
+    let command_deployment_id = if always_use_deployment_id {
+        deployment_id
+    } else {
+        let console_deployment_id = parse_console_deployment_id()?;
+        command_deployment_id(&ticket_type, deployment_id, console_deployment_id)
+    };
 
     if is_static_agent_access_request(&ticket_type, &request) {
         let actor_id = require_non_empty_actor_id(request.actor_id.clone())?;

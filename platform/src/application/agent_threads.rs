@@ -512,7 +512,7 @@ pub async fn create_actor_project(
     request: CreateActorProjectRequest,
 ) -> Result<ActorProject, AppError> {
     get_actor_by_id(app_state, deployment_id, actor_id).await?;
-    let selected_agent_id = request.agent_id;
+    let selected_agent_id = request.agent_id.map(i64::from);
 
     let mut command = CreateActorProjectCommand::new(
         app_state.sf.next_id()? as i64,
@@ -593,6 +593,7 @@ pub async fn create_agent_thread(
         capability_tags,
         metadata,
     } = request;
+    let agent_id = agent_id.map(i64::from);
 
     let resolved_thread_purpose =
         thread_purpose.unwrap_or_else(|| models::agent_thread::purpose::CONVERSATION.to_string());
@@ -895,6 +896,7 @@ pub async fn update_agent_thread(
         agent_id,
         system_instructions,
     } = request;
+    let agent_id = agent_id.map(i64::from);
 
     let has_title = title.is_some();
     let has_agent_id = agent_id.is_some();
