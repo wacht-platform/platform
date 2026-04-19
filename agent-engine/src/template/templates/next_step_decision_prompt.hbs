@@ -169,6 +169,6 @@
       },
       "required": ["next_step", "reasoning", "confidence"]
     }{{/if}},
-  "max_output_tokens": {{#if action_execution_mode}}16384{{else}}2048{{/if}},
+  "max_output_tokens": {{#if action_execution_mode}}16384{{else}}4096{{/if}},
   "reasoning_effort": {{#if runtime.long_think_mode_active}}"high"{{else}}"low"{{/if}}
 }
