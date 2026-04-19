@@ -410,6 +410,7 @@ pub struct ProjectTaskBoardPromptItem {
     pub status: String,
     pub priority: String,
     #[serde(
+        default,
         with = "models::utils::serde::i64_as_string_option",
         skip_serializing_if = "Option::is_none"
     )]
@@ -458,11 +459,13 @@ pub struct ProjectTaskBoardItemEventPromptItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body_markdown: Option<String>,
     #[serde(
+        default,
         with = "models::utils::serde::i64_as_string_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub thread_id: Option<i64>,
     #[serde(
+        default,
         with = "models::utils::serde::i64_as_string_option",
         skip_serializing_if = "Option::is_none"
     )]
