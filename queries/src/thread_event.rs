@@ -20,7 +20,7 @@ impl GetThreadEventByIdQuery {
             SELECT
                 id, deployment_id, thread_id, board_item_id, event_type, status,
                 priority, payload, available_at, claimed_at, completed_at, failed_at,
-                caused_by_conversation_id, caused_by_run_id, caused_by_thread_id, created_at, updated_at
+                caused_by_run_id, caused_by_thread_id, created_at, updated_at
             FROM thread_events
             WHERE id = $1
             "#,
@@ -52,7 +52,7 @@ impl ListPendingThreadEventsQuery {
             SELECT
                 id, deployment_id, thread_id, board_item_id, event_type, status,
                 priority, payload, available_at, claimed_at, completed_at, failed_at,
-                caused_by_conversation_id, caused_by_run_id, caused_by_thread_id, created_at, updated_at
+                caused_by_run_id, caused_by_thread_id, created_at, updated_at
             FROM thread_events
             WHERE thread_id = $1 AND status = $2 AND available_at <= NOW()
             ORDER BY priority ASC, available_at ASC, created_at ASC

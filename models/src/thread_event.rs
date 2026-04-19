@@ -29,11 +29,6 @@ pub struct ThreadEvent {
         serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
         skip_serializing_if = "Option::is_none"
     )]
-    pub caused_by_conversation_id: Option<i64>,
-    #[serde(
-        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
-        skip_serializing_if = "Option::is_none"
-    )]
     pub caused_by_run_id: Option<i64>,
     #[serde(
         serialize_with = "crate::utils::serde::serialize_option_i64_as_string",

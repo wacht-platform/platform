@@ -357,20 +357,17 @@ pub struct ThreadEventPromptItem {
     pub event_id: i64,
     pub event_type: String,
     #[serde(
+        default,
         with = "models::utils::serde::i64_as_string_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub board_item_id: Option<i64>,
     #[serde(
+        default,
         with = "models::utils::serde::i64_as_string_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub caused_by_thread_id: Option<i64>,
-    #[serde(
-        with = "models::utils::serde::i64_as_string_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub caused_by_conversation_id: Option<i64>,
     pub payload: ThreadEventPromptPayload,
 }
 

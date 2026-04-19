@@ -17,7 +17,6 @@ pub struct EnqueueThreadEventCommand {
     pub priority: i32,
     pub payload: serde_json::Value,
     pub available_at: Option<chrono::DateTime<Utc>>,
-    pub caused_by_conversation_id: Option<i64>,
     pub caused_by_run_id: Option<i64>,
     pub caused_by_thread_id: Option<i64>,
 }
@@ -99,7 +98,6 @@ impl EnqueueThreadEventCommand {
             priority: 100,
             payload: serde_json::json!({}),
             available_at: None,
-            caused_by_conversation_id: None,
             caused_by_run_id: None,
             caused_by_thread_id: None,
         }
@@ -122,11 +120,6 @@ impl EnqueueThreadEventCommand {
 
     pub fn with_available_at(mut self, available_at: chrono::DateTime<Utc>) -> Self {
         self.available_at = Some(available_at);
-        self
-    }
-
-    pub fn with_caused_by_conversation_id(mut self, conversation_id: i64) -> Self {
-        self.caused_by_conversation_id = Some(conversation_id);
         self
     }
 
@@ -153,11 +146,11 @@ impl EnqueueThreadEventCommand {
             INSERT INTO thread_events (
                 id, deployment_id, thread_id, board_item_id, event_type, status,
                 priority, payload, available_at, claimed_at, completed_at, failed_at,
-                caused_by_conversation_id, caused_by_run_id, caused_by_thread_id, created_at, updated_at
+                caused_by_run_id, caused_by_thread_id, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6,
                 $7, $8, $9, NULL, NULL, NULL,
-                $10, $11, $12, $13, $13
+                $10, $11, $12, $12
             )
             ON CONFLICT (thread_id, event_type, board_item_id)
             WHERE board_item_id IS NOT NULL
@@ -171,7 +164,7 @@ impl EnqueueThreadEventCommand {
             RETURNING
                 id, deployment_id, thread_id, board_item_id, event_type, status,
                 priority, payload, available_at, claimed_at, completed_at, failed_at,
-                caused_by_conversation_id, caused_by_run_id, caused_by_thread_id, created_at, updated_at
+                caused_by_run_id, caused_by_thread_id, created_at, updated_at
             "#,
             self.id,
             self.deployment_id,
@@ -182,7 +175,6 @@ impl EnqueueThreadEventCommand {
             self.priority,
             self.payload,
             available_at,
-            self.caused_by_conversation_id,
             self.caused_by_run_id,
             self.caused_by_thread_id,
             now,
@@ -350,7 +342,7 @@ impl UpdateThreadEventStateCommand {
             RETURNING
                 id, deployment_id, thread_id, board_item_id, event_type, status,
                 priority, payload, available_at, claimed_at, completed_at, failed_at,
-                caused_by_conversation_id, caused_by_run_id, caused_by_thread_id, created_at, updated_at
+                caused_by_run_id, caused_by_thread_id, created_at, updated_at
             "#,
             self.event_id,
             self.status,

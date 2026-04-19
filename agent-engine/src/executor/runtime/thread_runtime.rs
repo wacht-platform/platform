@@ -164,24 +164,9 @@ impl AgentExecutor {
         self.active_thread_event = Some(thread_event.clone());
 
         let thread_event_message = self.build_thread_event_message(&thread_event).await?;
-        let conversation = if !Self::should_create_worker_event_message(&thread_event) {
-            if let Some(conversation_id) = thread_event.caused_by_conversation_id {
-                let conversation = queries::GetConversationByIdQuery::new(conversation_id)
-                    .execute_with_db(self.ctx.app_state.db_router.writer())
-                    .await?;
-                let _ = self
-                    .channel
-                    .send(StreamEvent::ConversationMessage(conversation.clone()))
-                    .await;
-                conversation
-            } else {
-                self.store_user_message(thread_event_message.clone(), None)
-                    .await?
-            }
-        } else {
-            self.store_user_message(thread_event_message.clone(), None)
-                .await?
-        };
+        let conversation = self
+            .store_user_message(thread_event_message.clone(), None)
+            .await?;
 
         self.user_request = match &conversation.content {
             models::ConversationContent::UserMessage { message, .. } => message.clone(),

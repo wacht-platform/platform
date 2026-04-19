@@ -97,7 +97,6 @@ impl AgentExecutor {
             event_type: event.event_type.clone(),
             board_item_id: event.board_item_id,
             caused_by_thread_id: event.caused_by_thread_id,
-            caused_by_conversation_id: event.caused_by_conversation_id,
             payload,
         }
     }

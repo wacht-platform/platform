@@ -91,15 +91,6 @@ impl AgentExecutor {
         Duration::from_millis(backoff_ms)
     }
 
-    pub(super) fn should_create_worker_event_message(thread_event: &models::ThreadEvent) -> bool {
-        matches!(
-            thread_event.event_type.as_str(),
-            models::thread_event::event_type::TASK_ROUTING
-                | models::thread_event::event_type::ASSIGNMENT_EXECUTION
-                | models::thread_event::event_type::ASSIGNMENT_OUTCOME_REVIEW
-        )
-    }
-
     pub(super) async fn build_thread_event_message(
         &mut self,
         thread_event: &models::ThreadEvent,

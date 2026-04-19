@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id, deployment_id, thread_id, board_item_id, event_type, status,\n                priority, payload, available_at, claimed_at, completed_at, failed_at,\n                caused_by_conversation_id, caused_by_run_id, caused_by_thread_id, created_at, updated_at\n            FROM thread_events\n            WHERE thread_id = $1 AND status = $2 AND available_at <= NOW()\n            ORDER BY priority ASC, available_at ASC, created_at ASC\n            ",
+  "query": "\n                UPDATE thread_events\n                SET claimed_at = NOW(), updated_at = NOW()\n                WHERE id = $1\n                RETURNING\n                    id, deployment_id, thread_id, board_item_id, event_type, status,\n                    priority, payload, available_at, claimed_at, completed_at, failed_at,\n                    caused_by_run_id, caused_by_thread_id, created_at, updated_at\n                ",
   "describe": {
     "columns": [
       {
@@ -65,34 +65,28 @@
       },
       {
         "ordinal": 12,
-        "name": "caused_by_conversation_id",
-        "type_info": "Int8"
-      },
-      {
-        "ordinal": 13,
         "name": "caused_by_run_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 14,
+        "ordinal": 13,
         "name": "caused_by_thread_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 15,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 16,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
@@ -110,10 +104,9 @@
       true,
       true,
       true,
-      true,
       false,
       false
     ]
   },
-  "hash": "43c6cafc93b26512d7703d64ab2d692c9073498fa8a9c3865bacea43c96690f7"
+  "hash": "b0f66661b39e164c45f89726093bbe0dd9d17436e1dd9dd3a7ba7c011e72f453"
 }

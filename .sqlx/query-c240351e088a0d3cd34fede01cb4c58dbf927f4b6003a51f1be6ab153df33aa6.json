@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO thread_events (\n                id, deployment_id, thread_id, board_item_id, event_type, status,\n                priority, payload, available_at, claimed_at, completed_at, failed_at,\n                caused_by_conversation_id, caused_by_run_id, caused_by_thread_id, created_at, updated_at\n            ) VALUES (\n                $1, $2, $3, $4, $5, $6,\n                $7, $8, $9, NULL, NULL, NULL,\n                $10, $11, $12, $13, $13\n            )\n            ON CONFLICT (thread_id, event_type, board_item_id)\n            WHERE board_item_id IS NOT NULL\n              AND status = 'pending'\n              AND event_type IN ('task_routing', 'assignment_execution', 'assignment_outcome_review')\n            DO UPDATE SET\n                priority = LEAST(thread_events.priority, EXCLUDED.priority),\n                payload = EXCLUDED.payload,\n                available_at = LEAST(thread_events.available_at, EXCLUDED.available_at),\n                updated_at = EXCLUDED.updated_at\n            RETURNING\n                id, deployment_id, thread_id, board_item_id, event_type, status,\n                priority, payload, available_at, claimed_at, completed_at, failed_at,\n                caused_by_conversation_id, caused_by_run_id, caused_by_thread_id, created_at, updated_at\n            ",
+  "query": "\n            SELECT\n                id, deployment_id, thread_id, board_item_id, event_type, status,\n                priority, payload, available_at, claimed_at, completed_at, failed_at,\n                caused_by_run_id, caused_by_thread_id, created_at, updated_at\n            FROM thread_events\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -65,45 +65,28 @@
       },
       {
         "ordinal": 12,
-        "name": "caused_by_conversation_id",
-        "type_info": "Int8"
-      },
-      {
-        "ordinal": 13,
         "name": "caused_by_run_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 14,
+        "ordinal": 13,
         "name": "caused_by_thread_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 15,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 16,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Int8",
-        "Int8",
-        "Int8",
-        "Text",
-        "Text",
-        "Int4",
-        "Jsonb",
-        "Timestamptz",
-        "Int8",
-        "Int8",
-        "Int8",
-        "Timestamptz"
+        "Int8"
       ]
     },
     "nullable": [
@@ -121,10 +104,9 @@
       true,
       true,
       true,
-      true,
       false,
       false
     ]
   },
-  "hash": "c1a72a3af00dd23f433d1fb14d3da114db4ac91f6edac3acf4eb31f84f172f8c"
+  "hash": "c240351e088a0d3cd34fede01cb4c58dbf927f4b6003a51f1be6ab153df33aa6"
 }
