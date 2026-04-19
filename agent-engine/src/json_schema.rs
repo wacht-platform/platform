@@ -60,6 +60,10 @@ pub(crate) fn normalize_openai_tool_schema(value: Value) -> Value {
     normalize_openai_tool_schema_node(value)
 }
 
+pub(crate) fn normalize_openai_response_schema(value: Value) -> Value {
+    normalize_openai_tool_schema_node(value)
+}
+
 fn normalize_openai_tool_schema_node(value: Value) -> Value {
     match value {
         Value::Object(map) => {

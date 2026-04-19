@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use tracing::info;
 
 use crate::{
-    json_schema::{normalize_json_schema, normalize_openai_tool_schema},
+    json_schema::{normalize_openai_response_schema, normalize_openai_tool_schema},
     llm::{
         GeneratedToolCall, NativeToolDefinition, PromptCacheRequest, SemanticLlmContentBlock,
         SemanticLlmMessage, SemanticLlmRequest, StructuredGenerationOutput,
@@ -240,7 +240,7 @@ impl OpenAiClient {
     }
 
     fn build_request_body(&self, prompt: SemanticLlmRequest) -> Value {
-        let response_json_schema = normalize_json_schema(prompt.response_json_schema.clone());
+        let response_json_schema = normalize_openai_response_schema(prompt.response_json_schema);
         let mut messages = Vec::with_capacity(prompt.messages.len() + 1);
         messages.push(self.system_message(&prompt.system_prompt));
         messages.extend(
