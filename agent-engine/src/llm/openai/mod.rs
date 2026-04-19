@@ -269,7 +269,10 @@ impl OpenAiClient {
             body.insert("temperature".to_string(), json!(temperature));
         }
         if let Some(max_output_tokens) = prompt.max_output_tokens {
-            body.insert("max_tokens".to_string(), json!(max_output_tokens));
+            body.insert(
+                "max_completion_tokens".to_string(),
+                json!(max_output_tokens),
+            );
         }
         if let Some(reasoning_effort) = prompt.reasoning_effort {
             body.insert("reasoning_effort".to_string(), json!(reasoning_effort));
@@ -316,7 +319,10 @@ impl OpenAiClient {
             body.insert("temperature".to_string(), json!(temperature));
         }
         if let Some(max_output_tokens) = prompt.max_output_tokens {
-            body.insert("max_tokens".to_string(), json!(max_output_tokens));
+            body.insert(
+                "max_completion_tokens".to_string(),
+                json!(max_output_tokens),
+            );
         }
         if let Some(reasoning_effort) = prompt.reasoning_effort {
             body.insert("reasoning_effort".to_string(), json!(reasoning_effort));
