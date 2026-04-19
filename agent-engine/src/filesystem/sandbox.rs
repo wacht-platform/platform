@@ -1,6 +1,7 @@
 use common::error::AppError;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
@@ -198,10 +199,6 @@ impl SandboxRunner {
             "--cwd",
             "/workspace",
             "--disable_proc",
-            "--clone_newipc",
-            "--clone_newuts",
-            "--clone_newpid",
-            "--clone_newns",
             "--rlimit_as",
             &(NSJAIL_RLIMIT_AS_MB * 1024 * 1024).to_string(),
             "--rlimit_cpu",
@@ -215,9 +212,14 @@ impl SandboxRunner {
             "--rlimit_stack",
             &NSJAIL_RLIMIT_STACK_BYTES.to_string(),
         ]);
+        add_nsjail_flag_if_supported(&mut cmd, "--clone_newipc");
+        add_nsjail_flag_if_supported(&mut cmd, "--clone_newuts");
+        add_nsjail_flag_if_supported(&mut cmd, "--clone_newpid");
+        add_nsjail_flag_if_supported(&mut cmd, "--clone_newns");
 
         if !options.allow_network {
-            cmd.args(["--iface_no_lo", "--clone_newnet"]);
+            add_nsjail_flag_if_supported(&mut cmd, "--iface_no_lo");
+            add_nsjail_flag_if_supported(&mut cmd, "--clone_newnet");
         }
 
         for path in ["/usr", "/bin"] {
@@ -297,10 +299,6 @@ impl SandboxRunner {
             "--cwd",
             "/workspace",
             "--disable_proc",
-            "--clone_newipc",
-            "--clone_newuts",
-            "--clone_newpid",
-            "--clone_newns",
             "--rlimit_as",
             &(NSJAIL_RLIMIT_AS_MB * 1024 * 1024).to_string(),
             "--rlimit_cpu",
@@ -314,9 +312,14 @@ impl SandboxRunner {
             "--rlimit_stack",
             &NSJAIL_RLIMIT_STACK_BYTES.to_string(),
         ]);
+        add_nsjail_flag_if_supported(&mut cmd, "--clone_newipc");
+        add_nsjail_flag_if_supported(&mut cmd, "--clone_newuts");
+        add_nsjail_flag_if_supported(&mut cmd, "--clone_newpid");
+        add_nsjail_flag_if_supported(&mut cmd, "--clone_newns");
 
         if !options.allow_network {
-            cmd.args(["--iface_no_lo", "--clone_newnet"]);
+            add_nsjail_flag_if_supported(&mut cmd, "--iface_no_lo");
+            add_nsjail_flag_if_supported(&mut cmd, "--clone_newnet");
         }
 
         for path in ["/usr", "/bin"] {
@@ -630,6 +633,52 @@ fn command_exists(name: &str) -> bool {
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
+}
+
+fn add_nsjail_flag_if_supported(cmd: &mut Command, flag: &'static str) {
+    if nsjail_supports_flag(flag) {
+        cmd.arg(flag);
+    }
+}
+
+fn nsjail_supports_flag(flag: &'static str) -> bool {
+    static NSJAIL_FLAGS: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
+    let flags = NSJAIL_FLAGS.get_or_init(detect_nsjail_flags);
+    flags.contains(flag)
+}
+
+fn detect_nsjail_flags() -> std::collections::HashSet<String> {
+    let output = std::process::Command::new("nsjail").arg("--help").output();
+    let text = match output {
+        Ok(output) => format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ),
+        Err(_) => String::new(),
+    };
+
+    text.split_whitespace()
+        .filter_map(|token| {
+            if !token.starts_with("--") {
+                return None;
+            }
+            let normalized = token
+                .trim_end_matches(|ch: char| {
+                    ch == ','
+                        || ch == ';'
+                        || ch == ':'
+                        || ch == ')'
+                        || ch == ']'
+                        || ch == '}'
+                })
+                .split('=')
+                .next()
+                .unwrap_or(token)
+                .to_string();
+            Some(normalized)
+        })
+        .collect()
 }
 
 fn truncate_output(bytes: &[u8]) -> String {

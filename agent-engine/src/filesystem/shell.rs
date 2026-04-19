@@ -26,6 +26,16 @@ struct ParsedCommandStage {
     env: Vec<(String, String)>,
     program: String,
     args: Vec<String>,
+    next_separator: CommandSeparator,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CommandSeparator {
+    And,
+    Or,
+    Sequence,
+    Pipe,
+    End,
 }
 
 impl ShellExecutor {
@@ -73,8 +83,29 @@ impl ShellExecutor {
         let mut combined_stderr = String::new();
         let mut last_stdout = String::new();
         let mut last_exit_code = 0;
+        let mut previous_separator = CommandSeparator::Sequence;
+        let mut has_executed_stage = false;
 
         for stage in stages {
+            let should_execute = if !has_executed_stage {
+                true
+            } else {
+                match previous_separator {
+                    CommandSeparator::And => last_exit_code == 0,
+                    CommandSeparator::Or => last_exit_code != 0,
+                    CommandSeparator::Sequence | CommandSeparator::Pipe | CommandSeparator::End => {
+                        true
+                    }
+                }
+            };
+
+            let stage_separator = stage.next_separator;
+            if !should_execute {
+                stdin_bytes = None;
+                previous_separator = stage_separator;
+                continue;
+            }
+
             let mut options = shell_execution_options();
             options.extra_env.extend(stage.env.clone());
 
@@ -83,11 +114,16 @@ impl ShellExecutor {
                 .execute_program_with_input_and_options(
                     &stage.program,
                     &stage.args,
-                    stdin_bytes.as_deref(),
+                    if previous_separator == CommandSeparator::Pipe {
+                        stdin_bytes.as_deref()
+                    } else {
+                        None
+                    },
                     self.timeout_secs,
                     options,
                 )
                 .await?;
+            has_executed_stage = true;
 
             if !output.stderr.is_empty() {
                 if !combined_stderr.is_empty() {
@@ -99,15 +135,13 @@ impl ShellExecutor {
             last_exit_code = output.exit_code;
             last_stdout = output.stdout.clone();
 
-            if output.exit_code != 0 {
-                return Ok(ShellOutput {
-                    stdout: output.stdout,
-                    stderr: combined_stderr,
-                    exit_code: output.exit_code,
-                });
+            if stage_separator == CommandSeparator::Pipe {
+                stdin_bytes = Some(output.stdout.into_bytes());
+            } else {
+                stdin_bytes = None;
             }
 
-            stdin_bytes = Some(output.stdout.into_bytes());
+            previous_separator = stage_separator;
         }
 
         Ok(ShellOutput {
@@ -166,28 +200,38 @@ impl ShellExecutor {
 
         parsed
             .into_iter()
-            .map(|(tokens, terminator)| self.parse_command_stage(tokens, terminator))
+            .map(|(tokens, terminator)| {
+                let next_separator = match terminator {
+                    Some(0) => CommandSeparator::And,
+                    Some(1) => CommandSeparator::Or,
+                    Some(2) => CommandSeparator::Sequence,
+                    Some(3) => {
+                        return Err(AppError::Forbidden(
+                            "Background execution '&' is not allowed.".to_string(),
+                        ))
+                    }
+                    Some(4) => CommandSeparator::Pipe,
+                    None => CommandSeparator::End,
+                    Some(_) => {
+                        return Err(AppError::Forbidden(
+                            "Unsupported shell separator in command.".to_string(),
+                        ))
+                    }
+                };
+                self.parse_command_stage(tokens, next_separator)
+            })
             .collect()
     }
 
     fn parse_command_stage(
         &self,
         tokens: Vec<String>,
-        terminator: Option<usize>,
+        next_separator: CommandSeparator,
     ) -> Result<ParsedCommandStage, AppError> {
         if tokens.is_empty() {
             return Err(AppError::BadRequest(
                 "Empty command stage in pipeline".to_string(),
             ));
-        }
-
-        match terminator {
-            Some(4) | None => {}
-            Some(_) => {
-                return Err(AppError::Forbidden(
-                    "Unsupported shell syntax. Only simple commands, env assignments, and '|' pipelines are allowed.".to_string(),
-                ))
-            }
         }
 
         let mut env = Vec::new();
@@ -226,7 +270,12 @@ impl ShellExecutor {
             args.push(normalized);
         }
 
-        Ok(ParsedCommandStage { env, program, args })
+        Ok(ParsedCommandStage {
+            env,
+            program,
+            args,
+            next_separator,
+        })
     }
 }
 
