@@ -70,6 +70,9 @@ impl ShellExecutor {
                 "file",
                 "python",
                 "python3",
+                "whoami",
+                "id",
+                "pwd",
             ]
             .iter()
             .map(|s| s.to_string())
@@ -109,10 +112,12 @@ impl ShellExecutor {
             let mut options = shell_execution_options();
             options.extra_env.extend(stage.env.clone());
 
+            let resolved_program = resolve_program_path(&stage.program, &options)?;
+
             let output = self
                 .sandbox
                 .execute_program_with_input_and_options(
-                    &stage.program,
+                    &resolved_program,
                     &stage.args,
                     if previous_separator == CommandSeparator::Pipe {
                         stdin_bytes.as_deref()
@@ -398,4 +403,47 @@ fn validate_token_syntax(token: &str) -> Result<(), AppError> {
         ));
     }
     Ok(())
+}
+
+fn resolve_program_path(
+    program: &str,
+    options: &crate::filesystem::sandbox::SandboxExecutionOptions,
+) -> Result<String, AppError> {
+    if program.contains('/') {
+        return Ok(program.to_string());
+    }
+
+    let mut search_paths = Vec::<String>::new();
+    if let Some(path_value) = options
+        .extra_env
+        .iter()
+        .find_map(|(key, value)| (key == "PATH").then_some(value.clone()))
+    {
+        search_paths.extend(path_value.split(':').map(|s| s.to_string()));
+    } else {
+        search_paths.push("/usr/bin".to_string());
+        search_paths.push("/bin".to_string());
+    }
+
+    if !search_paths.iter().any(|path| path == "/usr/bin") {
+        search_paths.push("/usr/bin".to_string());
+    }
+    if !search_paths.iter().any(|path| path == "/bin") {
+        search_paths.push("/bin".to_string());
+    }
+
+    for path in search_paths {
+        if path.trim().is_empty() {
+            continue;
+        }
+        let candidate = Path::new(&path).join(program);
+        if candidate.is_file() {
+            return Ok(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    Err(AppError::Forbidden(format!(
+        "Command '{}' was allowed but no executable was found in sandbox PATH",
+        program
+    )))
 }
