@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, thread_id, execution_run_id, timestamp, content, message_type, created_at, updated_at, metadata\n        FROM conversations\n        WHERE thread_id = $1\n          AND ($2::bigint IS NULL OR id < $2)\n          AND ($3::bigint IS NULL OR id > $3)\n        ORDER BY\n          CASE WHEN $3::bigint IS NOT NULL THEN id END ASC,\n          CASE WHEN $3::bigint IS NULL THEN id END DESC\n        LIMIT $4\n        ",
+  "query": "\n        SELECT id, thread_id, board_item_id, execution_run_id, timestamp, content, message_type, created_at, updated_at, metadata\n        FROM conversations\n        WHERE thread_id = $1\n          AND ($2::bigint IS NULL OR id < $2)\n          AND ($3::bigint IS NULL OR id > $3)\n        ORDER BY\n          CASE WHEN $3::bigint IS NOT NULL THEN id END ASC,\n          CASE WHEN $3::bigint IS NULL THEN id END DESC\n        LIMIT $4\n        ",
   "describe": {
     "columns": [
       {
@@ -15,36 +15,41 @@
       },
       {
         "ordinal": 2,
-        "name": "execution_run_id",
+        "name": "board_item_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 3,
+        "name": "execution_run_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
         "name": "timestamp",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "content",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "message_type",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "metadata",
         "type_info": "Jsonb"
       }
@@ -59,7 +64,8 @@
     },
     "nullable": [
       false,
-      false,
+      true,
+      true,
       true,
       false,
       false,
@@ -69,5 +75,5 @@
       true
     ]
   },
-  "hash": "2c48f5231978a98237cd317bfdaaf8f42e4e074ffb7864667f431ee25299b473"
+  "hash": "da999c06aa2b19ccb8a298eafe96821938a8c8c87fe277c53c397430633bd1c0"
 }

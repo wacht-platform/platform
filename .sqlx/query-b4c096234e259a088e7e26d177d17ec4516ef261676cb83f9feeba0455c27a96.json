@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, deployment_id, thread_id, board_item_id, version, status, metadata, created_at, updated_at\n            FROM thread_task_graphs\n            WHERE deployment_id = $1 AND thread_id = $2\n            ORDER BY version DESC\n            LIMIT 1\n            ",
+  "query": "\n            SELECT id, deployment_id, thread_id, board_item_id, version, status, metadata, created_at, updated_at\n            FROM thread_task_graphs\n            WHERE deployment_id = $1\n              AND thread_id = $2\n              AND (($3::bigint IS NULL AND board_item_id IS NULL) OR board_item_id = $3)\n            ORDER BY version DESC\n            LIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -52,6 +52,7 @@
     "parameters": {
       "Left": [
         "Int8",
+        "Int8",
         "Int8"
       ]
     },
@@ -67,5 +68,5 @@
       false
     ]
   },
-  "hash": "947aa7167e5aa6882028ccbc591ca5fa40a51709f8594c5b1211ea907b66346b"
+  "hash": "b4c096234e259a088e7e26d177d17ec4516ef261676cb83f9feeba0455c27a96"
 }

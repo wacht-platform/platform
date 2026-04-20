@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT status, reusable, accepts_assignments\n            FROM agent_threads\n            WHERE id = $1\n              AND deployment_id = $2\n              AND archived_at IS NULL\n            FOR UPDATE SKIP LOCKED\n            ",
+  "query": "\n            SELECT status, reusable, accepts_assignments\n            FROM agent_threads\n            WHERE id = $1\n              AND deployment_id = $2\n              AND archived_at IS NULL\n            ",
   "describe": {
     "columns": [
       {
@@ -31,5 +31,5 @@
       false
     ]
   },
-  "hash": "dad111c01ddfa9454a4917aefb3462118bb23df7a759f793fcfa4b3ea39d21ec"
+  "hash": "12a3f93a250ed7b872bfc0e900332707ad9946a71c63855236685b5564cf8eda"
 }

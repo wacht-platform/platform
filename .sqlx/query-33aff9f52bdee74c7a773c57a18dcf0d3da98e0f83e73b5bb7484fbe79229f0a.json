@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO project_task_board_item_assignments (\n                id, board_item_id, thread_id, assignment_role, assignment_order, status,\n                instructions, handoff_file_path, metadata, result_status, result_summary,\n                result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,\n                updated_at\n            ) VALUES (\n                $1, $2, $3, $4, $5, $6,\n                $7, $8, $9, NULL, NULL,\n                NULL, NULL, NULL, NULL, NULL, $10, $10\n            )\n            RETURNING\n                id, board_item_id, thread_id, assignment_role, assignment_order, status,\n                instructions, handoff_file_path, metadata, result_status, result_summary,\n                result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,\n                updated_at\n            ",
+  "query": "\n            UPDATE project_task_board_item_assignments\n            SET\n                status = $2,\n                result_status = CASE\n                    WHEN $3::text IS NOT NULL THEN $3\n                    WHEN $2 = 'completed' THEN 'completed'\n                    WHEN $2 = 'blocked' THEN 'blocked'\n                    WHEN $2 = 'rejected' THEN 'rejected'\n                    WHEN $2 = 'cancelled' THEN 'cancelled'\n                    ELSE result_status\n                END,\n                result_summary = COALESCE($4, result_summary),\n                result_payload = COALESCE($5, result_payload),\n                claimed_at = CASE\n                    WHEN $2 = 'claimed' AND claimed_at IS NULL THEN $6\n                    ELSE claimed_at\n                END,\n                started_at = CASE\n                    WHEN $2 = 'in_progress' AND started_at IS NULL THEN $6\n                    ELSE started_at\n                END,\n                completed_at = CASE\n                    WHEN $2 = 'completed' THEN $6\n                    ELSE completed_at\n                END,\n                rejected_at = CASE\n                    WHEN $2 = 'rejected' THEN $6\n                    ELSE rejected_at\n                END,\n                updated_at = $6\n            WHERE id = $1\n            RETURNING\n                id, board_item_id, thread_id, assignment_role, assignment_order, status,\n                instructions, metadata, result_status, result_summary,\n                result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,\n                updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -40,56 +40,51 @@
       },
       {
         "ordinal": 7,
-        "name": "handoff_file_path",
-        "type_info": "Text"
-      },
-      {
-        "ordinal": 8,
         "name": "metadata",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "result_status",
         "type_info": "Text"
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "result_summary",
         "type_info": "Text"
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "result_payload",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "claimed_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "name": "started_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 13,
         "name": "completed_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 15,
+        "ordinal": 14,
         "name": "rejected_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 16,
+        "ordinal": 15,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 17,
+        "ordinal": 16,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -97,10 +92,6 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Int8",
-        "Int8",
-        "Text",
-        "Int4",
         "Text",
         "Text",
         "Text",
@@ -116,7 +107,6 @@
       false,
       false,
       true,
-      true,
       false,
       true,
       true,
@@ -129,5 +119,5 @@
       false
     ]
   },
-  "hash": "3c6b8be74dc54611c6c3101685e0a08eea1396d1aa2f9ef68530d9184e793c0c"
+  "hash": "33aff9f52bdee74c7a773c57a18dcf0d3da98e0f83e73b5bb7484fbe79229f0a"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id, board_item_id, thread_id, assignment_role, assignment_order, status,\n                instructions, handoff_file_path, metadata, result_status, result_summary,\n                result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,\n                updated_at\n            FROM project_task_board_item_assignments\n            WHERE id = $1\n            FOR UPDATE\n            ",
+  "query": "\n            UPDATE project_task_board_item_assignments\n            SET\n                thread_id = $2,\n                assignment_role = $3,\n                status = $4,\n                instructions = $5,\n                metadata = $6,\n                result_status = CASE\n                    WHEN $4 IN ('pending', 'available', 'claimed', 'in_progress') THEN NULL\n                    ELSE result_status\n                END,\n                result_summary = CASE\n                    WHEN $4 IN ('pending', 'available', 'claimed', 'in_progress') THEN NULL\n                    ELSE result_summary\n                END,\n                result_payload = CASE\n                    WHEN $4 IN ('pending', 'available', 'claimed', 'in_progress') THEN NULL\n                    ELSE result_payload\n                END,\n                updated_at = $7\n            WHERE id = $1\n            RETURNING\n                id, board_item_id, thread_id, assignment_role, assignment_order, status,\n                instructions, metadata, result_status, result_summary,\n                result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,\n                updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -40,63 +40,64 @@
       },
       {
         "ordinal": 7,
-        "name": "handoff_file_path",
-        "type_info": "Text"
-      },
-      {
-        "ordinal": 8,
         "name": "metadata",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "result_status",
         "type_info": "Text"
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "result_summary",
         "type_info": "Text"
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "result_payload",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "claimed_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "name": "started_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 13,
         "name": "completed_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 15,
+        "ordinal": 14,
         "name": "rejected_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 16,
+        "ordinal": 15,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 17,
+        "ordinal": 16,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Timestamptz"
       ]
     },
     "nullable": [
@@ -106,7 +107,6 @@
       false,
       false,
       false,
-      true,
       true,
       false,
       true,
@@ -120,5 +120,5 @@
       false
     ]
   },
-  "hash": "e1865ab1aa87f2b0402f2b85a289a6cc97c298a019ae807a9dcff476378d3d7d"
+  "hash": "df8098eb08984bc8ebe4898e1a46d4144b0ea2f4f5d7d70c10a139fcd2b90129"
 }

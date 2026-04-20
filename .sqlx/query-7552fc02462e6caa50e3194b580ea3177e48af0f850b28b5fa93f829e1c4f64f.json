@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE thread_task_graphs\n            SET status = $2, updated_at = NOW()\n            WHERE id = $1\n            RETURNING id, deployment_id, thread_id, board_item_id, version, status, metadata, created_at, updated_at\n            ",
+  "query": "\n            SELECT\n                id, thread_id, board_item_id, execution_run_id, timestamp, content, message_type,\n                created_at, updated_at, metadata\n            FROM conversations\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -10,33 +10,33 @@
       },
       {
         "ordinal": 1,
-        "name": "deployment_id",
-        "type_info": "Int8"
-      },
-      {
-        "ordinal": 2,
         "name": "thread_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 3,
+        "ordinal": 2,
         "name": "board_item_id",
         "type_info": "Int8"
       },
       {
+        "ordinal": 3,
+        "name": "execution_run_id",
+        "type_info": "Int8"
+      },
+      {
         "ordinal": 4,
-        "name": "version",
-        "type_info": "Int4"
+        "name": "timestamp",
+        "type_info": "Timestamptz"
       },
       {
         "ordinal": 5,
-        "name": "status",
-        "type_info": "Text"
+        "name": "content",
+        "type_info": "Jsonb"
       },
       {
         "ordinal": 6,
-        "name": "metadata",
-        "type_info": "Jsonb"
+        "name": "message_type",
+        "type_info": "Text"
       },
       {
         "ordinal": 7,
@@ -47,25 +47,30 @@
         "ordinal": 8,
         "name": "updated_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "metadata",
+        "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
       false,
-      false,
-      false,
+      true,
+      true,
       true,
       false,
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "ef7166dfacd8f5ed4ab70fe2f487c27319352ef8b1991258cd61761defe442a4"
+  "hash": "7552fc02462e6caa50e3194b580ea3177e48af0f850b28b5fa93f829e1c4f64f"
 }

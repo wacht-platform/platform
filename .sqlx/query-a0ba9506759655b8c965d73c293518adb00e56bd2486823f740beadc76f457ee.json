@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH last_summary AS (\n                SELECT id as last_summary_id\n                FROM conversations\n                WHERE thread_id = $1\n                  AND ($3::bigint IS NULL OR board_item_id = $3)\n                  AND message_type = 'execution_summary'\n                ORDER BY id DESC\n                LIMIT 1\n            ),\n            last_summary_with_default AS (\n                SELECT COALESCE(last_summary_id, 0) as last_summary_id\n                FROM (SELECT 1) dummy\n                LEFT JOIN last_summary ON TRUE\n            )\n            SELECT\n                c.id, c.thread_id, c.board_item_id, c.execution_run_id, c.timestamp, c.content, c.message_type,\n                c.created_at, c.updated_at, c.metadata\n            FROM conversations c, last_summary_with_default ls\n            WHERE c.thread_id = $1\n              AND ($3::bigint IS NULL OR c.board_item_id = $3)\n              AND c.id > ls.last_summary_id\n              AND c.id < $2\n              AND c.message_type <> 'execution_summary'\n            ORDER BY c.id ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "thread_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "board_item_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "execution_run_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "timestamp",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "content",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "message_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "a0ba9506759655b8c965d73c293518adb00e56bd2486823f740beadc76f457ee"
+}

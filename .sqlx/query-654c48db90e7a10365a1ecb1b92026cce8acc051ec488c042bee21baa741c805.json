@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH last_summary AS (\n                SELECT id as last_summary_id\n                FROM conversations\n                WHERE thread_id = $1\n                  AND ($2::bigint IS NULL OR board_item_id = $2)\n                  AND message_type = 'execution_summary'\n                ORDER BY id DESC\n                LIMIT 1\n            ),\n            last_summary_with_default AS (\n                SELECT COALESCE(last_summary_id, 0) as last_summary_id\n                FROM (SELECT 1) dummy\n                LEFT JOIN last_summary ON TRUE\n            ),\n            recent_unsummarized AS (\n                SELECT c.id, c.thread_id, c.board_item_id, c.execution_run_id, c.timestamp, c.content, c.message_type,\n                       c.created_at, c.updated_at, c.metadata\n                FROM conversations c, last_summary_with_default ls\n                WHERE c.thread_id = $1\n                  AND ($2::bigint IS NULL OR c.board_item_id = $2)\n                  AND c.id > ls.last_summary_id\n            ),\n            execution_summaries AS (\n                SELECT c.*,\n                       ROW_NUMBER() OVER (ORDER BY c.id DESC) as execution_count\n                FROM conversations c\n                WHERE c.thread_id = $1\n                  AND ($2::bigint IS NULL OR c.board_item_id = $2)\n                  AND c.message_type = 'execution_summary'\n                ORDER BY c.id DESC\n            ),\n            limited_summaries AS (\n                SELECT id, thread_id, board_item_id, execution_run_id, timestamp, content, message_type,\n                       created_at, updated_at, metadata\n                FROM execution_summaries\n                WHERE execution_count <= 3\n            )\n            SELECT * FROM recent_unsummarized\n            UNION ALL\n            SELECT * FROM limited_summaries\n            ORDER BY id ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "thread_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "board_item_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "execution_run_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "timestamp",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "content",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "message_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "654c48db90e7a10365a1ecb1b92026cce8acc051ec488c042bee21baa741c805"
+}

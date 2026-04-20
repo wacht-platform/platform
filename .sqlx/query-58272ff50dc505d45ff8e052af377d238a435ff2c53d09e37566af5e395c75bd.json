@@ -1,0 +1,187 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE deployment_ai_settings SET\n                strong_llm_provider = COALESCE($2, strong_llm_provider),\n                weak_llm_provider = COALESCE($3, weak_llm_provider),\n                gemini_api_key = COALESCE($4, gemini_api_key),\n                openrouter_api_key = COALESCE($5, openrouter_api_key),\n                openrouter_require_parameters = COALESCE($6, openrouter_require_parameters),\n                openai_api_key = COALESCE($7, openai_api_key),\n                anthropic_api_key = COALESCE($8, anthropic_api_key),\n                strong_model = COALESCE($9, strong_model),\n                weak_model = COALESCE($10, weak_model),\n                embedding_provider = COALESCE($11, embedding_provider),\n                embedding_model = COALESCE($12, embedding_model),\n                embedding_dimension = COALESCE($13, embedding_dimension),\n                storage_provider = COALESCE($14, storage_provider),\n                storage_bucket = COALESCE($15, storage_bucket),\n                storage_region = COALESCE($16, storage_region),\n                storage_endpoint = COALESCE($17, storage_endpoint),\n                storage_root_prefix = COALESCE($18, storage_root_prefix),\n                storage_force_path_style = COALESCE($19, storage_force_path_style),\n                storage_access_key_id = COALESCE($20, storage_access_key_id),\n                storage_secret_access_key = COALESCE($21, storage_secret_access_key),\n                vector_store_initialized_at = CASE\n                    WHEN $22::boolean THEN NULL\n                    ELSE vector_store_initialized_at\n                END,\n                updated_at = NOW()\n            WHERE deployment_id = $1\n            RETURNING\n                id,\n                deployment_id,\n                strong_llm_provider,\n                weak_llm_provider,\n                gemini_api_key,\n                openrouter_api_key,\n                openrouter_require_parameters,\n                openai_api_key,\n                anthropic_api_key,\n                strong_model,\n                weak_model,\n                embedding_provider,\n                embedding_model,\n                embedding_dimension,\n                storage_provider,\n                storage_bucket,\n                storage_region,\n                storage_endpoint,\n                storage_root_prefix,\n                storage_force_path_style,\n                storage_access_key_id,\n                storage_secret_access_key,\n                vector_store_initialized_at,\n                created_at,\n                updated_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "strong_llm_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "weak_llm_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "gemini_api_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "openrouter_api_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "openrouter_require_parameters",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "openai_api_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "anthropic_api_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "strong_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "weak_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "embedding_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "embedding_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "embedding_dimension",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 14,
+        "name": "storage_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "storage_bucket",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "storage_region",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "storage_endpoint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "storage_root_prefix",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "storage_force_path_style",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 20,
+        "name": "storage_access_key_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 21,
+        "name": "storage_secret_access_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 22,
+        "name": "vector_store_initialized_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 23,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 24,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "58272ff50dc505d45ff8e052af377d238a435ff2c53d09e37566af5e395c75bd"
+}

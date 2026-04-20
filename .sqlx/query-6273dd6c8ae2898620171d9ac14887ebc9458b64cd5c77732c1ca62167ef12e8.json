@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                UPDATE thread_events\n                SET status = 'claimed', claimed_at = NOW(), updated_at = NOW()\n                WHERE id = $1\n                RETURNING\n                    id, deployment_id, thread_id, board_item_id, event_type, status,\n                    priority, payload, available_at, claimed_at, completed_at, failed_at,\n                    caused_by_run_id, caused_by_thread_id, created_at, updated_at\n                ",
+  "query": "\n            SELECT\n                id, deployment_id, thread_id, board_item_id, event_type, status,\n                priority, payload, available_at, claimed_at, completed_at, failed_at,\n                caused_by_run_id, caused_by_thread_id, conversation_id, created_at, updated_at\n            FROM thread_events\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -75,11 +75,16 @@
       },
       {
         "ordinal": 14,
+        "name": "conversation_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 15,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -104,9 +109,10 @@
       true,
       true,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "6058ef576ee972a1ec9cf0d7db8ceb4888130576451bd8d131feda8980493c9a"
+  "hash": "6273dd6c8ae2898620171d9ac14887ebc9458b64cd5c77732c1ca62167ef12e8"
 }

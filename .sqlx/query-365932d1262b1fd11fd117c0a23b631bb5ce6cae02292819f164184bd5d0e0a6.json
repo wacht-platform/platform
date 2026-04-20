@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id, deployment_id, thread_id, board_item_id, event_type, status,\n                priority, payload, available_at, claimed_at, completed_at, failed_at,\n                caused_by_run_id, caused_by_thread_id, created_at, updated_at\n            FROM thread_events\n            WHERE id = $1\n            ",
+  "query": "\n            SELECT\n                id, deployment_id, thread_id, board_item_id, event_type, status,\n                priority, payload, available_at, claimed_at, completed_at, failed_at,\n                caused_by_run_id, caused_by_thread_id, conversation_id, created_at, updated_at\n            FROM thread_events\n            WHERE thread_id = $1 AND status = $2 AND available_at <= NOW()\n            ORDER BY priority ASC, available_at ASC, created_at ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -75,18 +75,24 @@
       },
       {
         "ordinal": 14,
+        "name": "conversation_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 15,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Int8",
+        "Text"
       ]
     },
     "nullable": [
@@ -104,9 +110,10 @@
       true,
       true,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "c240351e088a0d3cd34fede01cb4c58dbf927f4b6003a51f1be6ab153df33aa6"
+  "hash": "365932d1262b1fd11fd117c0a23b631bb5ce6cae02292819f164184bd5d0e0a6"
 }

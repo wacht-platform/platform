@@ -1,0 +1,166 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                deployment_id,\n                strong_llm_provider,\n                weak_llm_provider,\n                gemini_api_key,\n                openrouter_api_key,\n                openrouter_require_parameters,\n                openai_api_key,\n                anthropic_api_key,\n                strong_model,\n                weak_model,\n                embedding_provider,\n                embedding_model,\n                embedding_dimension,\n                storage_provider,\n                storage_bucket,\n                storage_region,\n                storage_endpoint,\n                storage_root_prefix,\n                storage_force_path_style,\n                storage_access_key_id,\n                storage_secret_access_key,\n                vector_store_initialized_at,\n                created_at,\n                updated_at\n            FROM deployment_ai_settings\n            WHERE deployment_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "strong_llm_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "weak_llm_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "gemini_api_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "openrouter_api_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "openrouter_require_parameters",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "openai_api_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "anthropic_api_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "strong_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "weak_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "embedding_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "embedding_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "embedding_dimension",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 14,
+        "name": "storage_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "storage_bucket",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "storage_region",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "storage_endpoint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "storage_root_prefix",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "storage_force_path_style",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 20,
+        "name": "storage_access_key_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 21,
+        "name": "storage_secret_access_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 22,
+        "name": "vector_store_initialized_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 23,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 24,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "1911e6060fc0fa7a39130e1ec1ae7d22b5daaba01fdaa5387dfad12da3e7e300"
+}
