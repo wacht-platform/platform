@@ -5,14 +5,14 @@ mod tool_schema;
 pub(crate) use super::core;
 
 use super::core::AgentExecutor;
-use crate::template::{render_template_with_prompt, AgentTemplates};
+use templatekit::{render_template_with_prompt, AgentTemplates};
 
 use commands::UpdateAgentThreadStateCommand;
 use common::error::AppError;
 use dto::json::agent_executor::ToolCallRequest;
 use models::{AgentThreadStatus, ConversationContent, ConversationMessageType};
 use queries::{
-    GetProjectTaskBoardItemAssignmentByIdQuery, ListProjectTaskBoardItemAssignmentsQuery,
+    GetProjectTaskBoardItemAssignmentByIdQuery,
 };
 use serde_json::json;
 use std::collections::HashSet;
@@ -89,20 +89,6 @@ impl AgentExecutor {
                         board_item_id,
                     )
                     .await?;
-                let recent_assignments =
-                    ListProjectTaskBoardItemAssignmentsQuery::new(board_item_id)
-                        .execute_with_db(self.ctx.app_state.db_router.writer())
-                        .await?
-                        .into_iter()
-                        .map(|assignment| Self::assignment_prompt_item_from_row(&assignment))
-                        .collect::<Vec<_>>();
-                let recent_assignments = if recent_assignments.len() > 5 {
-                    recent_assignments[recent_assignments.len() - 5..].to_vec()
-                } else {
-                    recent_assignments
-                };
-                let recent_assignment_history_summary =
-                    Self::summarize_assignment_list(&recent_assignments, 5);
                 let task_journal_tail = self.task_journal_tail_snippet().await?;
 
                 render_template_with_prompt(
@@ -118,8 +104,6 @@ impl AgentExecutor {
                         "task_file": workspace.task_file_path,
                         "journal_file": workspace.journal_file_path,
                         "runbook_file": workspace.runbook_file_path,
-                        "recent_assignments": recent_assignments,
-                        "recent_assignment_history_summary": recent_assignment_history_summary,
                         "task_journal_tail": task_journal_tail,
                     }),
                 )
@@ -184,25 +168,13 @@ impl AgentExecutor {
                     .unwrap_or("No additional instructions were provided.");
                 let handoff_file_path = assignment
                     .as_ref()
-                    .and_then(|a| a.handoff_file_path.as_deref())
+                    .and_then(|a| a.result_payload.as_ref())
+                    .and_then(|p| p.get("handoff_file_path"))
+                    .and_then(|v| v.as_str())
                     .unwrap_or("No handoff file was linked.");
                 let workspace = self
                     .ensure_task_workspace_for_key(&task_key, &title, board_item_id)
                     .await?;
-                let recent_assignments =
-                    ListProjectTaskBoardItemAssignmentsQuery::new(board_item_id)
-                        .execute_with_db(self.ctx.app_state.db_router.writer())
-                        .await?
-                        .into_iter()
-                        .map(|assignment| Self::assignment_prompt_item_from_row(&assignment))
-                        .collect::<Vec<_>>();
-                let recent_assignments = if recent_assignments.len() > 5 {
-                    recent_assignments[recent_assignments.len() - 5..].to_vec()
-                } else {
-                    recent_assignments
-                };
-                let recent_assignment_history_summary =
-                    Self::summarize_assignment_list(&recent_assignments, 5);
                 let task_journal_tail = self.task_journal_tail_snippet().await?;
 
                 render_template_with_prompt(
@@ -223,127 +195,12 @@ impl AgentExecutor {
                         "task_file": workspace.task_file_path,
                         "journal_file": workspace.journal_file_path,
                         "runbook_file": workspace.runbook_file_path,
-                        "recent_assignments": recent_assignments,
-                        "recent_assignment_history_summary": recent_assignment_history_summary,
                         "task_journal_tail": task_journal_tail,
                     }),
                 )
                 .map_err(|err| {
                     AppError::Internal(format!(
                         "Failed to render assignment execution context: {}",
-                        err
-                    ))
-                })
-            }
-            models::thread_event::event_type::ASSIGNMENT_OUTCOME_REVIEW => {
-                let payload = thread_event.assignment_outcome_review_payload();
-                let assignment =
-                    if let Some(assignment_id) = payload.as_ref().map(|p| p.assignment_id) {
-                        GetProjectTaskBoardItemAssignmentByIdQuery::new(assignment_id)
-                            .execute_with_db(self.ctx.app_state.db_router.writer())
-                            .await?
-                    } else {
-                        None
-                    };
-                let board_item = self
-                    .load_board_item_for_thread_event(thread_event, thread_event.board_item_id)
-                    .await?;
-                let board_item_id = board_item
-                    .as_ref()
-                    .map(|item| item.id)
-                    .or(thread_event.board_item_id)
-                    .unwrap_or_default();
-                let task_key = board_item
-                    .as_ref()
-                    .map(|item| item.task_key.clone())
-                    .unwrap_or_else(|| Self::fallback_task_key(thread_event, Some(board_item_id)));
-                let title = board_item
-                    .as_ref()
-                    .map(|item| item.title.clone())
-                    .unwrap_or_else(|| "Untitled task".to_string());
-                let description = board_item
-                    .as_ref()
-                    .and_then(|item| item.description.clone())
-                    .unwrap_or_else(|| "No description provided.".to_string());
-                let status = board_item
-                    .as_ref()
-                    .map(|item| item.status.clone())
-                    .unwrap_or_else(|| "pending".to_string());
-                let priority = board_item
-                    .as_ref()
-                    .map(|item| item.priority.clone())
-                    .unwrap_or_else(|| "neutral".to_string());
-                let assignment_id = payload
-                    .as_ref()
-                    .map(|p| p.assignment_id)
-                    .unwrap_or_default();
-                Self::require_worker_task_identity(thread_event, board_item_id, &task_key, &title)?;
-                let assignment_role = assignment
-                    .as_ref()
-                    .map(|a| a.assignment_role.as_str())
-                    .unwrap_or("executor");
-                let result_status = assignment
-                    .as_ref()
-                    .and_then(|a| a.result_status.as_deref())
-                    .unwrap_or_else(|| {
-                        assignment
-                            .as_ref()
-                            .map(|a| a.status.as_str())
-                            .unwrap_or("unknown")
-                    });
-                let result_summary = assignment
-                    .as_ref()
-                    .and_then(|a| a.result_summary.as_deref())
-                    .unwrap_or("No summary was returned.");
-                let handoff_file_path = assignment
-                    .as_ref()
-                    .and_then(|a| a.handoff_file_path.as_deref())
-                    .unwrap_or("No handoff file was linked.");
-                let workspace = self
-                    .ensure_task_workspace_for_key(&task_key, &title, board_item_id)
-                    .await?;
-                let recent_assignments =
-                    ListProjectTaskBoardItemAssignmentsQuery::new(board_item_id)
-                        .execute_with_db(self.ctx.app_state.db_router.writer())
-                        .await?
-                        .into_iter()
-                        .map(|assignment| Self::assignment_prompt_item_from_row(&assignment))
-                        .collect::<Vec<_>>();
-                let recent_assignments = if recent_assignments.len() > 5 {
-                    recent_assignments[recent_assignments.len() - 5..].to_vec()
-                } else {
-                    recent_assignments
-                };
-                let recent_assignment_history_summary =
-                    Self::summarize_assignment_list(&recent_assignments, 5);
-                let task_journal_tail = self.task_journal_tail_snippet().await?;
-
-                render_template_with_prompt(
-                    AgentTemplates::WORKER_ASSIGNMENT_OUTCOME_REVIEW_CONTEXT,
-                    json!({
-                        "task_key": task_key,
-                        "board_item_id": board_item_id,
-                        "title": title,
-                        "description": description,
-                        "status": status,
-                        "priority": priority,
-                        "assignment_id": assignment_id,
-                        "assignment_role": assignment_role,
-                        "result_status": result_status,
-                        "result_summary": result_summary,
-                        "handoff_file_path": handoff_file_path,
-                        "workspace_dir": workspace.directory_path,
-                        "task_file": workspace.task_file_path,
-                        "journal_file": workspace.journal_file_path,
-                        "runbook_file": workspace.runbook_file_path,
-                        "recent_assignments": recent_assignments,
-                        "recent_assignment_history_summary": recent_assignment_history_summary,
-                        "task_journal_tail": task_journal_tail,
-                    }),
-                )
-                .map_err(|err| {
-                    AppError::Internal(format!(
-                        "Failed to render assignment outcome review context: {}",
                         err
                     ))
                 })
