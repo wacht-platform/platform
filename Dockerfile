@@ -19,6 +19,7 @@ COPY platform/Cargo.toml platform/Cargo.toml
 COPY worker/Cargo.toml worker/Cargo.toml
 COPY agent-engine/Cargo.toml agent-engine/Cargo.toml
 COPY oauth-relay/Cargo.toml oauth-relay/Cargo.toml
+COPY templatekit/Cargo.toml templatekit/Cargo.toml
 
 # Ensure cargo metadata sees at least one target per workspace member.
 COPY models/src/lib.rs models/src/lib.rs
@@ -34,6 +35,7 @@ COPY platform/src/bin/gateway-api.rs platform/src/bin/gateway-api.rs
 COPY worker/src/main.rs worker/src/main.rs
 COPY agent-engine/src/lib.rs agent-engine/src/lib.rs
 COPY oauth-relay/src/lib.rs oauth-relay/src/lib.rs
+COPY templatekit/src/lib.rs templatekit/src/lib.rs
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
@@ -52,6 +54,7 @@ COPY platform/ ./platform/
 COPY worker/ ./worker/
 COPY agent-engine/ ./agent-engine/
 COPY oauth-relay/ ./oauth-relay/
+COPY templatekit/ ./templatekit/
 
 # Build only the binaries this image serves.
 RUN cargo build --release --locked \

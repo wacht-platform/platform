@@ -1,5 +1,6 @@
 mod code_runner;
 mod external;
+pub mod mcp;
 mod internal;
 mod platform;
 mod result_shape;
@@ -73,7 +74,6 @@ impl ToolExecutor {
         execution_params: Value,
         filesystem: &AgentFilesystem,
         _shell: &ShellExecutor,
-        context_title: &str,
     ) -> Result<Value, AppError> {
         let mut final_result = match &tool.configuration {
             AiToolConfiguration::Api(config) => {
@@ -99,15 +99,9 @@ impl ToolExecutor {
                     "Internal tools must execute from structured tool requests".to_string(),
                 ));
             }
-            AiToolConfiguration::UseExternalService(config) => {
-                self.execute_external_service_tool(
-                    tool,
-                    config,
-                    &execution_params,
-                    context_title,
-                    filesystem,
-                )
-                .await?
+            AiToolConfiguration::Mcp(config) => {
+                self.execute_mcp_tool(tool, config, &execution_params, filesystem)
+                    .await?
             }
         };
 
@@ -246,14 +240,13 @@ impl ToolExecutor {
         request: &ToolCallRequest,
         filesystem: &AgentFilesystem,
         shell: &ShellExecutor,
-        context_title: &str,
     ) -> Result<Value, AppError> {
         match request {
             ToolCallRequest::External(_) => {
                 let params = request.input_value().map_err(|e| {
                     AppError::Internal(format!("Failed to serialize tool input: {e}"))
                 })?;
-                self.execute_tool_from_input(tool, params, filesystem, shell, context_title)
+                self.execute_tool_from_input(tool, params, filesystem, shell)
                     .await
             }
             _ => {

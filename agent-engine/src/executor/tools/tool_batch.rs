@@ -75,9 +75,8 @@ impl AgentExecutor {
             )));
         }
 
-        let title = self.ctx.thread_title().await?;
         self.tool_executor
-            .execute_tool_request(tool, request, &self.filesystem, &self.shell, &title)
+            .execute_tool_request(tool, request, &self.filesystem, &self.shell)
             .await
     }
 

@@ -70,9 +70,7 @@ impl CreateAiToolCommand {
             AiToolConfiguration::Internal(_) => {
                 // Internal tools don't need validation - they're system-defined
             }
-            AiToolConfiguration::UseExternalService(_) => {
-                // External service tools don't need validation - they're system-defined
-            }
+            AiToolConfiguration::Mcp(_) => {}
         }
 
         Ok(())
@@ -214,9 +212,7 @@ impl UpdateAiToolCommand {
                 AiToolConfiguration::Internal(_) => {
                     // Internal tools don't need validation - they're system-defined
                 }
-                AiToolConfiguration::UseExternalService(_) => {
-                    // External service tools don't need validation - they're system-defined
-                }
+                AiToolConfiguration::Mcp(_) => {}
             }
         }
 

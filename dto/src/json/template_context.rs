@@ -187,6 +187,48 @@ pub struct AgentLoopPromptEnvelope {
     pub live_context_message: Option<String>,
 }
 
+fn mcp_json_schema_to_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
+    let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) else {
+        return Vec::new();
+    };
+    let required_set: std::collections::HashSet<&str> = schema
+        .get("required")
+        .and_then(|r| r.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+
+    properties
+        .iter()
+        .map(|(name, prop)| {
+            let field_type = match prop.get("type").and_then(|t| t.as_str()).unwrap_or("string") {
+                "integer" | "number" => "NUMBER",
+                "boolean" => "BOOLEAN",
+                "array" => "ARRAY",
+                "object" => "OBJECT",
+                _ => "STRING",
+            };
+            SchemaField {
+                name: name.clone(),
+                field_type: field_type.to_string(),
+                required: required_set.contains(name.as_str()),
+                description: prop
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .map(|s| s.to_string()),
+                title: prop
+                    .get("title")
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.to_string()),
+                enum_values: prop
+                    .get("enum")
+                    .and_then(|e| e.as_array())
+                    .map(|arr| arr.clone()),
+                ..SchemaField::default()
+            }
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolPromptItem {
     pub name: String,
@@ -208,9 +250,11 @@ impl ToolPromptItem {
             AiToolConfiguration::CodeRunner(config) => {
                 config.input_schema.clone().unwrap_or_default()
             }
-            AiToolConfiguration::UseExternalService(config) => {
-                config.input_schema.clone().unwrap_or_default()
-            }
+            AiToolConfiguration::Mcp(config) => config
+                .input_schema
+                .as_ref()
+                .map(mcp_json_schema_to_fields)
+                .unwrap_or_default(),
             AiToolConfiguration::Api(config) => {
                 config.request_body_schema.clone().unwrap_or_default()
             }

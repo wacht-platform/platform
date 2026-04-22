@@ -35,6 +35,38 @@ struct ToolSearchMatch {
     recommended: bool,
 }
 
+fn mcp_schema_to_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
+    let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) else {
+        return Vec::new();
+    };
+    let required_set: std::collections::HashSet<&str> = schema
+        .get("required")
+        .and_then(|r| r.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+    properties
+        .iter()
+        .map(|(name, prop)| {
+            let field_type = match prop.get("type").and_then(|t| t.as_str()).unwrap_or("string") {
+                "integer" | "number" => "NUMBER",
+                "boolean" => "BOOLEAN",
+                "array" => "ARRAY",
+                "object" => "OBJECT",
+                _ => "STRING",
+            };
+            SchemaField {
+                name: name.clone(),
+                field_type: field_type.to_string(),
+                required: required_set.contains(name.as_str()),
+                description: prop.get("description").and_then(|d| d.as_str()).map(|s| s.to_string()),
+                title: prop.get("title").and_then(|t| t.as_str()).map(|s| s.to_string()),
+                enum_values: prop.get("enum").and_then(|e| e.as_array()).map(|arr| arr.clone()),
+                ..SchemaField::default()
+            }
+        })
+        .collect()
+}
+
 impl AgentExecutor {
     fn tool_schema_for_execution(
         &self,
@@ -109,9 +141,11 @@ impl AgentExecutor {
             AiToolConfiguration::Internal(config) => {
                 config.input_schema.clone().unwrap_or_default()
             }
-            AiToolConfiguration::UseExternalService(config) => {
-                config.input_schema.clone().unwrap_or_default()
-            }
+            AiToolConfiguration::Mcp(config) => config
+                .input_schema
+                .as_ref()
+                .map(mcp_schema_to_fields)
+                .unwrap_or_default(),
             AiToolConfiguration::CodeRunner(config) => {
                 config.input_schema.clone().unwrap_or_default()
             }
@@ -149,12 +183,24 @@ impl AgentExecutor {
         tool: &AiTool,
         active_board_item: Option<&dto::json::ProjectTaskBoardPromptItem>,
     ) -> NativeToolDefinition {
+        let description = tool
+            .description
+            .clone()
+            .unwrap_or_else(|| format!("Call the {} tool.", tool.name));
+
+        if let AiToolConfiguration::Mcp(config) = &tool.configuration {
+            return NativeToolDefinition {
+                name: tool.name.clone(),
+                description,
+                input_schema: config.input_schema.clone().unwrap_or_else(|| {
+                    serde_json::json!({"type": "object", "properties": {}})
+                }),
+            };
+        }
+
         NativeToolDefinition {
             name: tool.name.clone(),
-            description: tool
-                .description
-                .clone()
-                .unwrap_or_else(|| format!("Call the {} tool.", tool.name)),
+            description,
             input_schema: SchemaField::object_json_schema(
                 &self.tool_schema_for_execution(tool, active_board_item),
             ),
@@ -349,10 +395,17 @@ impl AgentExecutor {
         let tool_catalog = external_tools
             .iter()
             .map(|tool| {
+                let input_schema = match &tool.configuration {
+                    AiToolConfiguration::Mcp(config) => config
+                        .input_schema
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
+                    _ => SchemaField::object_json_schema(&Self::tool_input_schema_for_search(tool)),
+                };
                 json!({
                     "name": tool.name,
                     "description": tool.description,
-                    "input_schema": Self::tool_input_schema_for_search(tool),
+                    "input_schema": input_schema,
                 })
             })
             .collect::<Vec<_>>();
@@ -450,12 +503,19 @@ External tool catalog with descriptions and input schemas:
                     .into_iter()
                     .filter_map(|matched| {
                         let tool = catalog_by_name.get(&matched.tool_name)?;
+                        let input_schema = match &tool.configuration {
+                            AiToolConfiguration::Mcp(config) => config
+                                .input_schema
+                                .clone()
+                                .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
+                            _ => SchemaField::object_json_schema(&Self::tool_input_schema_for_search(tool)),
+                        };
                         Some(json!({
                             "tool_name": matched.tool_name,
                             "reason": matched.reason,
                             "recommended": matched.recommended,
                             "description": tool.description,
-                            "input_schema": Self::tool_input_schema_for_search(tool),
+                            "input_schema": input_schema,
                         }))
                     })
                     .collect::<Vec<_>>();
@@ -535,10 +595,17 @@ External tool catalog with descriptions and input schemas:
             "not_found_tool_names": not_found_tool_names,
             "currently_loaded_tool_names": currently_loaded_tools.iter().map(|tool| tool.name.clone()).collect::<Vec<_>>(),
             "currently_loaded_tools": currently_loaded_tools.iter().map(|tool| {
+                let input_schema = match &tool.configuration {
+                    AiToolConfiguration::Mcp(config) => config
+                        .input_schema
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
+                    _ => SchemaField::object_json_schema(&Self::tool_input_schema_for_search(tool)),
+                };
                 json!({
                     "name": tool.name,
                     "description": tool.description,
-                    "input_schema": Self::tool_input_schema_for_search(tool),
+                    "input_schema": input_schema,
                 })
             }).collect::<Vec<_>>(),
         }))

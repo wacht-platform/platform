@@ -861,7 +861,24 @@ async fn validate_mcp_server_runtime(
     } else {
         StreamableHttpClientTransportConfig::with_uri(config.endpoint.clone())
     };
-    let transport = StreamableHttpClientTransport::from_config(transport_config);
+    let transport = if let Some(headers) = &config.headers {
+        let mut header_map = reqwest::header::HeaderMap::new();
+        for (key, value) in headers {
+            if let (Ok(name), Ok(val)) = (
+                reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                reqwest::header::HeaderValue::from_str(value),
+            ) {
+                header_map.insert(name, val);
+            }
+        }
+        let client = reqwest::Client::builder()
+            .default_headers(header_map)
+            .build()
+            .unwrap_or_default();
+        StreamableHttpClientTransport::with_client(client, transport_config)
+    } else {
+        StreamableHttpClientTransport::with_client(reqwest::Client::default(), transport_config)
+    };
     let client_info = ClientInfo {
         protocol_version: Default::default(),
         capabilities: ClientCapabilities::default(),

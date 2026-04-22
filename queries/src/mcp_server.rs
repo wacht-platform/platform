@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use models::{McpServer, McpServerConfig};
+use models::{McpConnectionMetadata, McpServer, McpServerConfig};
 
 fn decode_mcp_config(config: serde_json::Value) -> StdResult<McpServerConfig, AppError> {
     serde_json::from_value(config)
@@ -84,6 +84,112 @@ impl GetMcpServersQuery {
                 )
             })
             .collect()
+    }
+}
+
+pub struct ActorMcpConnection {
+    pub server: McpServer,
+    pub connection_metadata: Option<McpConnectionMetadata>,
+}
+
+pub struct GetActorMcpConnectionsQuery {
+    deployment_id: i64,
+    actor_id: i64,
+}
+
+impl GetActorMcpConnectionsQuery {
+    pub fn new(deployment_id: i64, actor_id: i64) -> Self {
+        Self {
+            deployment_id,
+            actor_id,
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> StdResult<Vec<ActorMcpConnection>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let rows = sqlx::query!(
+            r#"
+            SELECT
+                ms.id,
+                ms.created_at,
+                ms.updated_at,
+                ms.deployment_id,
+                ms.name,
+                ms.config as "config!: serde_json::Value",
+                amsc.connection_metadata as "connection_metadata?: serde_json::Value"
+            FROM mcp_servers ms
+            LEFT JOIN actor_mcp_server_connections amsc
+                ON amsc.mcp_server_id = ms.id
+                AND amsc.deployment_id = $1
+                AND amsc.actor_id = $2
+            WHERE ms.deployment_id = $1
+            ORDER BY ms.created_at DESC
+            "#,
+            self.deployment_id,
+            self.actor_id,
+        )
+        .fetch_all(executor)
+        .await
+        .map_err(AppError::Database)?;
+
+        rows.into_iter()
+            .map(|row| {
+                let server = build_mcp_server(
+                    row.id,
+                    row.created_at,
+                    row.updated_at,
+                    row.deployment_id,
+                    row.name,
+                    row.config,
+                )?;
+                let connection_metadata = row
+                    .connection_metadata
+                    .and_then(|m| serde_json::from_value::<McpConnectionMetadata>(m).ok());
+                Ok(ActorMcpConnection {
+                    server,
+                    connection_metadata,
+                })
+            })
+            .collect()
+    }
+}
+
+pub struct UpdateActorMcpConnectionMetadataQuery {
+    deployment_id: i64,
+    actor_id: i64,
+    mcp_server_id: i64,
+    metadata: serde_json::Value,
+}
+
+impl UpdateActorMcpConnectionMetadataQuery {
+    pub fn new(deployment_id: i64, actor_id: i64, mcp_server_id: i64, metadata: serde_json::Value) -> Self {
+        Self { deployment_id, actor_id, mcp_server_id, metadata }
+    }
+
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> StdResult<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query!(
+            r#"
+            UPDATE actor_mcp_server_connections
+            SET connection_metadata = $4, updated_at = NOW()
+            WHERE deployment_id = $1 AND actor_id = $2 AND mcp_server_id = $3
+            "#,
+            self.deployment_id,
+            self.actor_id,
+            self.mcp_server_id,
+            self.metadata,
+        )
+        .execute(executor)
+        .await
+        .map_err(AppError::Database)?;
+        Ok(())
     }
 }
 

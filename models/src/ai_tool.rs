@@ -43,7 +43,7 @@ pub enum AiToolType {
     PlatformEvent,
     CodeRunner,
     Internal,
-    UseExternalService,
+    Mcp,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -53,7 +53,14 @@ pub enum AiToolConfiguration {
     PlatformEvent(PlatformEventToolConfiguration),
     CodeRunner(CodeRunnerToolConfiguration),
     Internal(InternalToolConfiguration),
-    UseExternalService(UseExternalServiceToolConfiguration),
+    Mcp(McpToolConfiguration),
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct McpToolConfiguration {
+    pub mcp_server_id: i64,
+    pub remote_tool_name: String,
+    pub input_schema: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -263,124 +270,6 @@ pub struct InternalToolConfiguration {
     pub input_schema: Option<Vec<SchemaField>>,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum UseExternalServiceToolType {
-    TeamsListUsers,
-    TeamsSearchUsers,
-    TeamsSendContextMessage,
-    TeamsListMessages,
-    TeamsGetMeetingRecording,
-    TeamsTranscribeMeeting,
-    TeamsSaveAttachment,
-    TeamsListContexts,
-    #[serde(rename = "clickup_create_task")]
-    ClickUpCreateTask,
-    #[serde(rename = "clickup_create_list")]
-    ClickUpCreateList,
-    #[serde(rename = "clickup_update_task")]
-    ClickUpUpdateTask,
-    #[serde(rename = "clickup_add_comment")]
-    ClickUpAddComment,
-    #[serde(rename = "clickup_get_task")]
-    ClickUpGetTask,
-    #[serde(rename = "clickup_get_space_lists")]
-    ClickUpGetSpaceLists,
-    #[serde(rename = "clickup_get_spaces")]
-    ClickUpGetSpaces,
-    #[serde(rename = "clickup_get_teams")]
-    ClickUpGetTeams,
-    #[serde(rename = "clickup_get_current_user")]
-    ClickUpGetCurrentUser,
-    #[serde(rename = "clickup_get_tasks")]
-    ClickUpGetTasks,
-    #[serde(rename = "clickup_search_tasks")]
-    ClickUpSearchTasks,
-    #[serde(rename = "clickup_task_add_attachment")]
-    ClickUpTaskAddAttachment,
-    McpCallTool,
-    WhatsAppSendMessage,
-    WhatsAppGetMessage,
-    WhatsAppMarkRead,
-}
-
-impl UseExternalServiceToolType {
-    /// Get the integration type this tool belongs to
-    pub fn integration_type(&self) -> Option<&'static str> {
-        match self {
-            UseExternalServiceToolType::TeamsListUsers
-            | UseExternalServiceToolType::TeamsSearchUsers
-            | UseExternalServiceToolType::TeamsListMessages
-            | UseExternalServiceToolType::TeamsGetMeetingRecording
-            | UseExternalServiceToolType::TeamsTranscribeMeeting
-            | UseExternalServiceToolType::TeamsSaveAttachment
-            | UseExternalServiceToolType::TeamsListContexts => Some("teams"),
-
-            UseExternalServiceToolType::ClickUpCreateTask
-            | UseExternalServiceToolType::ClickUpCreateList
-            | UseExternalServiceToolType::ClickUpUpdateTask
-            | UseExternalServiceToolType::ClickUpAddComment
-            | UseExternalServiceToolType::ClickUpGetTask
-            | UseExternalServiceToolType::ClickUpGetSpaceLists
-            | UseExternalServiceToolType::ClickUpGetSpaces
-            | UseExternalServiceToolType::ClickUpGetTeams
-            | UseExternalServiceToolType::ClickUpGetCurrentUser
-            | UseExternalServiceToolType::ClickUpGetTasks
-            | UseExternalServiceToolType::ClickUpSearchTasks
-            | UseExternalServiceToolType::ClickUpTaskAddAttachment => Some("clickup"),
-
-            UseExternalServiceToolType::WhatsAppSendMessage
-            | UseExternalServiceToolType::WhatsAppGetMessage
-            | UseExternalServiceToolType::WhatsAppMarkRead => Some("whatsapp"),
-
-            UseExternalServiceToolType::McpCallTool => Some("mcp"),
-
-            UseExternalServiceToolType::TeamsSendContextMessage => None,
-        }
-    }
-
-    /// Get all tool types for a given integration
-    pub fn for_integration_type(integration_type: &str) -> Vec<Self> {
-        match integration_type.to_lowercase().as_str() {
-            "teams" => vec![
-                UseExternalServiceToolType::TeamsListUsers,
-                UseExternalServiceToolType::TeamsSearchUsers,
-                UseExternalServiceToolType::TeamsListMessages,
-                UseExternalServiceToolType::TeamsGetMeetingRecording,
-                UseExternalServiceToolType::TeamsTranscribeMeeting,
-                UseExternalServiceToolType::TeamsSaveAttachment,
-                UseExternalServiceToolType::TeamsListContexts,
-            ],
-            "clickup" => vec![
-                UseExternalServiceToolType::ClickUpCreateTask,
-                UseExternalServiceToolType::ClickUpCreateList,
-                UseExternalServiceToolType::ClickUpUpdateTask,
-                UseExternalServiceToolType::ClickUpAddComment,
-                UseExternalServiceToolType::ClickUpGetTask,
-                UseExternalServiceToolType::ClickUpGetSpaceLists,
-                UseExternalServiceToolType::ClickUpGetSpaces,
-                UseExternalServiceToolType::ClickUpGetTeams,
-                UseExternalServiceToolType::ClickUpGetCurrentUser,
-                UseExternalServiceToolType::ClickUpGetTasks,
-                UseExternalServiceToolType::ClickUpSearchTasks,
-                UseExternalServiceToolType::ClickUpTaskAddAttachment,
-            ],
-            "whatsapp" => vec![
-                UseExternalServiceToolType::WhatsAppSendMessage,
-                UseExternalServiceToolType::WhatsAppGetMessage,
-                UseExternalServiceToolType::WhatsAppMarkRead,
-            ],
-            "mcp" => vec![UseExternalServiceToolType::McpCallTool],
-            _ => vec![],
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct UseExternalServiceToolConfiguration {
-    pub service_type: UseExternalServiceToolType,
-    pub input_schema: Option<Vec<SchemaField>>,
-}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AuthorizationConfiguration {
@@ -405,7 +294,7 @@ impl From<String> for AiToolType {
             "platform_event" => AiToolType::PlatformEvent,
             "code_runner" => AiToolType::CodeRunner,
             "internal" => AiToolType::Internal,
-            "use_external_service" => AiToolType::UseExternalService,
+            "mcp" => AiToolType::Mcp,
             _ => AiToolType::Api,
         }
     }
@@ -418,7 +307,7 @@ impl From<AiToolType> for String {
             AiToolType::PlatformEvent => "platform_event".to_string(),
             AiToolType::CodeRunner => "code_runner".to_string(),
             AiToolType::Internal => "internal".to_string(),
-            AiToolType::UseExternalService => "use_external_service".to_string(),
+            AiToolType::Mcp => "mcp".to_string(),
         }
     }
 }

@@ -39,8 +39,6 @@ pub struct AgentExecutor {
     pub(crate) consecutive_note_count: usize,
     pub(crate) last_tool_call_signature: Option<String>,
     pub(crate) repeated_tool_call_count: usize,
-    pub(crate) last_terminal_text_normalized: Option<String>,
-    pub(crate) repeated_terminal_attempt_count: usize,
 }
 
 pub struct AgentExecutorBuilder {
@@ -161,6 +159,63 @@ impl AgentExecutorBuilder {
             }
         }
 
+        let mut mcp_connections = queries::GetActorMcpConnectionsQuery::new(
+            self.ctx.agent.deployment_id,
+            thread.actor_id,
+        )
+        .execute_with_db(self.ctx.app_state.db_router.writer())
+        .await
+        .unwrap_or_default();
+
+        let refresh_results = futures::future::join_all(
+            mcp_connections
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| crate::tools::mcp::connection_needs_refresh(c))
+                .map(|(idx, conn)| async move {
+                    (idx, crate::tools::mcp::refresh_connection_metadata(conn).await)
+                }),
+        )
+        .await;
+
+        let persist_futures = refresh_results
+            .into_iter()
+            .filter_map(|(idx, maybe_meta)| maybe_meta.map(|m| (idx, m)))
+            .map(|(idx, new_meta)| {
+                let meta_for_persist = serde_json::to_value(&new_meta).ok();
+                let server_id = mcp_connections[idx].server.id;
+                mcp_connections[idx].connection_metadata = Some(new_meta);
+                let deployment_id = self.ctx.agent.deployment_id;
+                let actor_id = thread.actor_id;
+                let db = self.ctx.app_state.db_router.writer();
+                async move {
+                    if let Some(meta_json) = meta_for_persist {
+                        let _ = queries::UpdateActorMcpConnectionMetadataQuery::new(
+                            deployment_id,
+                            actor_id,
+                            server_id,
+                            meta_json,
+                        )
+                        .execute_with_db(db)
+                        .await;
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+        futures::future::join_all(persist_futures).await;
+
+        let mcp_tools = crate::tools::mcp::discover_mcp_tools_for_actor(
+            mcp_connections,
+            self.ctx.agent.deployment_id,
+        )
+        .await;
+
+        for tool in mcp_tools {
+            if !current_tools.iter().any(|t| t.id == tool.id) {
+                current_tools.push(tool);
+            }
+        }
+
         let mut agent_with_tools = self.ctx.agent.clone();
         agent_with_tools.tools = current_tools.clone();
 
@@ -191,8 +246,6 @@ impl AgentExecutorBuilder {
             consecutive_note_count: 0,
             last_tool_call_signature: None,
             repeated_tool_call_count: 0,
-            last_terminal_text_normalized: None,
-            repeated_terminal_attempt_count: 0,
         };
 
         executor.system_instructions = context.system_instructions.clone();
@@ -301,49 +354,6 @@ impl AgentExecutor {
                 })
             })
             .unwrap_or(false)
-    }
-
-    /// Summarize the unfinished nodes of the active task graph as a human-readable,
-    /// agent-voiced list. Each line names the node (id, title, status) and the concrete
-    /// action to take. Returns None if there is no active graph or no unfinished nodes.
-    pub(crate) fn describe_unfinished_task_graph_nodes(&self) -> Option<String> {
-        let snapshot = self.task_graph_snapshot.as_ref()?;
-        let graph_status = snapshot
-            .get("graph")
-            .and_then(|graph| graph.get("status"))
-            .and_then(|status| status.as_str())
-            .unwrap_or_default();
-        if graph_status != models::thread_task_graph::status::GRAPH_ACTIVE {
-            return None;
-        }
-
-        let nodes = snapshot.get("nodes").and_then(|nodes| nodes.as_array())?;
-        let mut lines: Vec<String> = Vec::new();
-        for node in nodes {
-            let status = node
-                .get("status")
-                .and_then(|s| s.as_str())
-                .unwrap_or_default();
-            let action = match status {
-                models::thread_task_graph::status::NODE_PENDING => "either start it (`task_graph_mark_in_progress`) or abandon it (`task_graph_fail_node` with a one-line reason)",
-                models::thread_task_graph::status::NODE_IN_PROGRESS => "finish the work then `task_graph_complete_node` with its output, or abandon it with `task_graph_fail_node`",
-                _ => continue,
-            };
-            let id = node
-                .get("id")
-                .and_then(|id| id.as_str().map(String::from).or_else(|| id.as_i64().map(|n| n.to_string())))
-                .unwrap_or_else(|| "?".to_string());
-            let title = node
-                .get("title")
-                .and_then(|t| t.as_str())
-                .unwrap_or("(untitled)");
-            lines.push(format!("- node {id} \"{title}\" [{status}] — {action}"));
-        }
-
-        if lines.is_empty() {
-            return None;
-        }
-        Some(lines.join("\n"))
     }
 
     pub(crate) fn effective_is_coordinator_thread(&self) -> bool {
