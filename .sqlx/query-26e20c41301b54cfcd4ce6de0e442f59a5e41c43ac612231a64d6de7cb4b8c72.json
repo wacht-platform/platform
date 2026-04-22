@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id, deployment_id, thread_id, board_item_id, event_type, status,\n                priority, payload, available_at, claimed_at, completed_at, failed_at,\n                caused_by_run_id, caused_by_thread_id, conversation_id, created_at, updated_at\n            FROM thread_events\n            WHERE thread_id = $1 AND status = $2 AND available_at <= NOW()\n            ORDER BY priority ASC, available_at ASC, created_at ASC\n            ",
+  "query": "\n        SELECT\n            id, board_item_id, thread_id, assignment_role, assignment_order, status,\n            instructions, metadata, result_status, result_summary,\n            result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,\n            updated_at\n        FROM project_task_board_item_assignments\n        WHERE board_item_id = $1\n          AND status IN ('pending', 'available', 'claimed', 'in_progress')\n        ORDER BY assignment_order ASC, id ASC\n        LIMIT 1\n        ",
   "describe": {
     "columns": [
       {
@@ -10,7 +10,7 @@
       },
       {
         "ordinal": 1,
-        "name": "deployment_id",
+        "name": "board_item_id",
         "type_info": "Int8"
       },
       {
@@ -20,13 +20,13 @@
       },
       {
         "ordinal": 3,
-        "name": "board_item_id",
-        "type_info": "Int8"
+        "name": "assignment_role",
+        "type_info": "Text"
       },
       {
         "ordinal": 4,
-        "name": "event_type",
-        "type_info": "Text"
+        "name": "assignment_order",
+        "type_info": "Int4"
       },
       {
         "ordinal": 5,
@@ -35,48 +35,48 @@
       },
       {
         "ordinal": 6,
-        "name": "priority",
-        "type_info": "Int4"
+        "name": "instructions",
+        "type_info": "Text"
       },
       {
         "ordinal": 7,
-        "name": "payload",
+        "name": "metadata",
         "type_info": "Jsonb"
       },
       {
         "ordinal": 8,
-        "name": "available_at",
-        "type_info": "Timestamptz"
+        "name": "result_status",
+        "type_info": "Text"
       },
       {
         "ordinal": 9,
+        "name": "result_summary",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "result_payload",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 11,
         "name": "claimed_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
+        "name": "started_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
         "name": "completed_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
-        "name": "failed_at",
-        "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 12,
-        "name": "caused_by_run_id",
-        "type_info": "Int8"
-      },
-      {
-        "ordinal": 13,
-        "name": "caused_by_thread_id",
-        "type_info": "Int8"
-      },
-      {
         "ordinal": 14,
-        "name": "conversation_id",
-        "type_info": "Int8"
+        "name": "rejected_at",
+        "type_info": "Timestamptz"
       },
       {
         "ordinal": 15,
@@ -91,20 +91,19 @@
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
       false,
       false,
       false,
+      false,
+      false,
+      false,
       true,
       false,
-      false,
-      false,
-      false,
-      false,
+      true,
       true,
       true,
       true,
@@ -115,5 +114,5 @@
       false
     ]
   },
-  "hash": "365932d1262b1fd11fd117c0a23b631bb5ce6cae02292819f164184bd5d0e0a6"
+  "hash": "26e20c41301b54cfcd4ce6de0e442f59a5e41c43ac612231a64d6de7cb4b8c72"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, deployment_id, thread_id, board_item_id, version, status, metadata, created_at, updated_at\n            FROM thread_task_graphs\n            WHERE deployment_id = $1\n              AND thread_id = $2\n              AND (($3::bigint IS NULL AND board_item_id IS NULL) OR board_item_id = $3)\n            ORDER BY version DESC\n            LIMIT 1\n            FOR UPDATE\n            ",
+  "query": "\n            SELECT id, deployment_id, thread_id, board_item_id, status, metadata, created_at, updated_at\n            FROM thread_task_graphs\n            WHERE deployment_id = $1\n              AND thread_id = $2\n              AND (($3::bigint IS NULL AND board_item_id IS NULL) OR board_item_id = $3)\n            ORDER BY id DESC\n            LIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -25,26 +25,21 @@
       },
       {
         "ordinal": 4,
-        "name": "version",
-        "type_info": "Int4"
-      },
-      {
-        "ordinal": 5,
         "name": "status",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 5,
         "name": "metadata",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -64,9 +59,8 @@
       false,
       false,
       false,
-      false,
       false
     ]
   },
-  "hash": "190cd099cad4cba298213c180c19ed491a6f929f87ff173d5b302e4599e08fbc"
+  "hash": "6344be9d0fa3dbb20f2bba385e9ae99918e49eeff1424013b1b5f8db29814e77"
 }

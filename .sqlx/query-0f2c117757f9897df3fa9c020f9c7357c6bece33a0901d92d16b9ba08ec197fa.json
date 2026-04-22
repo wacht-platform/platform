@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE thread_events\n            SET status = 'pending',\n                retry_count = retry_count + 1,\n                claimed_at = NULL,\n                updated_at = NOW()\n            WHERE status = 'claimed'\n              AND claimed_at < $1\n              AND retry_count < max_retries\n              AND event_type IN ('user_message_received', 'user_input_received', 'approval_response_received')\n            RETURNING id, deployment_id, thread_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "thread_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0f2c117757f9897df3fa9c020f9c7357c6bece33a0901d92d16b9ba08ec197fa"
+}

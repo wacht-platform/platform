@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO thread_events (\n                id, deployment_id, thread_id, board_item_id, event_type, status,\n                priority, payload, available_at, claimed_at, completed_at, failed_at,\n                caused_by_run_id, caused_by_thread_id, conversation_id, created_at, updated_at\n            ) VALUES (\n                $1, $2, $3, $4, $5, $6,\n                $7, $8, $9, NULL, NULL, NULL,\n                $10, $11, $12, $13, $13\n            )\n            ON CONFLICT (thread_id, event_type, board_item_id)\n            WHERE board_item_id IS NOT NULL\n              AND status = 'pending'\n              AND event_type IN ('task_routing', 'assignment_execution')\n            DO UPDATE SET\n                priority = LEAST(thread_events.priority, EXCLUDED.priority),\n                payload = EXCLUDED.payload,\n                available_at = LEAST(thread_events.available_at, EXCLUDED.available_at),\n                conversation_id = COALESCE(thread_events.conversation_id, EXCLUDED.conversation_id),\n                updated_at = EXCLUDED.updated_at\n            RETURNING\n                id, deployment_id, thread_id, board_item_id, event_type, status,\n                priority, payload, available_at, claimed_at, completed_at, failed_at,\n                caused_by_run_id, caused_by_thread_id, conversation_id, created_at, updated_at\n            ",
+  "query": "\n            INSERT INTO thread_events (\n                id, deployment_id, thread_id, board_item_id, event_type, status,\n                priority, payload, available_at, claimed_at, completed_at, failed_at,\n                caused_by_run_id, caused_by_thread_id, conversation_id, retry_count, max_retries, created_at, updated_at\n            ) VALUES (\n                $1, $2, $3, $4, $5, $6,\n                $7, $8, $9, NULL, NULL, NULL,\n                $10, $11, $12, 0, $13, $14, $14\n            )\n            ON CONFLICT (thread_id, event_type, board_item_id)\n            WHERE board_item_id IS NOT NULL\n              AND status = 'pending'\n              AND event_type IN ('task_routing', 'assignment_execution')\n            DO UPDATE SET\n                priority = LEAST(thread_events.priority, EXCLUDED.priority),\n                payload = EXCLUDED.payload,\n                available_at = LEAST(thread_events.available_at, EXCLUDED.available_at),\n                conversation_id = COALESCE(thread_events.conversation_id, EXCLUDED.conversation_id),\n                max_retries = GREATEST(thread_events.max_retries, EXCLUDED.max_retries),\n                updated_at = EXCLUDED.updated_at\n            RETURNING\n                id, deployment_id, thread_id, board_item_id, event_type, status,\n                priority, payload, available_at, claimed_at, completed_at, failed_at,\n                caused_by_run_id, caused_by_thread_id, conversation_id, retry_count, max_retries, created_at, updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -80,11 +80,21 @@
       },
       {
         "ordinal": 15,
+        "name": "retry_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "max_retries",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 17,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 16,
+        "ordinal": 18,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -103,6 +113,7 @@
         "Int8",
         "Int8",
         "Int8",
+        "Int4",
         "Timestamptz"
       ]
     },
@@ -123,8 +134,10 @@
       true,
       true,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "2158f1b0df29ee48d2181c9f027ec39bd47b4d1103975752fe4d314ac5f9355c"
+  "hash": "b8bb1a3ebe53b0c2113f55b3bf49732517daf380bdcc4acf1e494ef06f280b82"
 }

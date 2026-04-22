@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT\n                    id, deployment_id, thread_id, board_item_id, event_type, status,\n                    priority, payload, available_at, claimed_at, completed_at, failed_at,\n                    caused_by_run_id, caused_by_thread_id, conversation_id, created_at, updated_at\n                FROM thread_events\n                WHERE thread_id = $1\n                  AND status = 'pending'\n                  AND available_at <= NOW()\n                ORDER BY priority ASC, available_at ASC, created_at ASC\n                LIMIT 1\n                FOR UPDATE SKIP LOCKED\n                ",
+  "query": "\n            UPDATE thread_events\n            SET status = 'claimed', claimed_at = NOW(), updated_at = NOW()\n            WHERE id = $1\n            RETURNING\n                id, deployment_id, thread_id, board_item_id, event_type, status,\n                priority, payload, available_at, claimed_at, completed_at, failed_at,\n                caused_by_run_id, caused_by_thread_id, conversation_id, retry_count, max_retries, created_at, updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -80,11 +80,21 @@
       },
       {
         "ordinal": 15,
+        "name": "retry_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "max_retries",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 17,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 16,
+        "ordinal": 18,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -111,8 +121,10 @@
       true,
       true,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "ddf1e8c491af7c28bc0652333b18aaf5478fa707a735fa3861b12d429f6d9e1d"
+  "hash": "19a533c15fa8f6be8aedba0fca52eb4af66dde6eb06f72d727044642321ab235"
 }

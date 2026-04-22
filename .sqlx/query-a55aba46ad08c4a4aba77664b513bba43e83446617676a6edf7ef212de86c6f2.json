@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE thread_events\n            SET status = 'failed',\n                failed_at = NOW(),\n                updated_at = NOW()\n            WHERE status = 'claimed'\n              AND claimed_at < $1\n              AND retry_count >= max_retries\n              AND event_type IN ('user_message_received', 'user_input_received', 'approval_response_received')\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a55aba46ad08c4a4aba77664b513bba43e83446617676a6edf7ef212de86c6f2"
+}
