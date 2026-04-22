@@ -15,7 +15,6 @@ pub struct ThreadTaskGraph {
         skip_serializing_if = "Option::is_none"
     )]
     pub board_item_id: Option<i64>,
-    pub version: i32,
     pub status: String,
     pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,

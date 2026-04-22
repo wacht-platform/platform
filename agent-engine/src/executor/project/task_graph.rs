@@ -118,13 +118,17 @@ impl AgentExecutor {
             self.task_graph_snapshot = None;
         }
 
-        let graph = EnsureThreadTaskGraphCommand::new(
+        let mut ensure = EnsureThreadTaskGraphCommand::new(
             self.ctx.app_state.sf.next_id()? as i64,
             self.ctx.agent.deployment_id,
             self.ctx.thread_id,
-        )
-        .execute_with_db(self.ctx.app_state.db_router.writer())
-        .await?;
+        );
+        if let Some(board_item_id) = self.current_board_item_id() {
+            ensure = ensure.with_board_item_id(board_item_id);
+        }
+        let graph = ensure
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await?;
 
         let nodes = ListThreadTaskNodesQuery::new(graph.id)
             .execute_with_db(self.ctx.app_state.db_router.writer())

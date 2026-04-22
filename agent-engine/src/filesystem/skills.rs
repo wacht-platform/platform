@@ -8,6 +8,7 @@ impl AgentFilesystem {
     pub async fn list_skill_prompt_items(
         &self,
     ) -> Result<(Vec<SkillPromptItem>, Vec<SkillPromptItem>), AppError> {
+        self.ensure_initialized().await?;
         let system_skills = Self::discover_skill_prompt_items(
             &Self::system_skills_source_path(),
             "/skills/system",

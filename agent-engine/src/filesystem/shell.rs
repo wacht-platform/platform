@@ -67,6 +67,8 @@ impl ShellExecutor {
                 "diff",
                 "which",
                 "pdftotext",
+                "pdftoppm",
+                "pdfinfo",
                 "file",
                 "python",
                 "python3",
@@ -372,7 +374,7 @@ fn validate_token_path(token: &str) -> Result<(), AppError> {
     if token == "//" {
         return Ok(());
     }
-    if token.contains("..") {
+    if contains_path_traversal(token) {
         return Err(AppError::Forbidden(
             "Path traversal (..) is not allowed in commands".to_string(),
         ));
@@ -384,6 +386,15 @@ fn validate_token_path(token: &str) -> Result<(), AppError> {
         )));
     }
     Ok(())
+}
+
+/// Traversal means `..` occupies a whole path segment (delimited by `/` or `\`).
+/// Double-dots inside a filename — `Resume..pdf`, `file..tar.gz` — are NOT traversal
+/// and must be allowed through.
+fn contains_path_traversal(token: &str) -> bool {
+    token
+        .split(|c: char| c == '/' || c == '\\')
+        .any(|segment| segment == "..")
 }
 
 fn validate_token_syntax(token: &str) -> Result<(), AppError> {

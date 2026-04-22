@@ -65,24 +65,7 @@ impl AgentExecutor {
             };
 
             if current_value.is_null() && !field.required {
-                match field.field_type.as_str() {
-                    "ARRAY" => {
-                        input.insert(field.name.clone(), Value::Array(Vec::new()));
-                    }
-                    "OBJECT" => {
-                        let nested = field.properties.as_deref().unwrap_or(&[]);
-                        input.insert(
-                            field.name.clone(),
-                            Value::Object(Self::normalize_tool_input_object(
-                                serde_json::Map::new(),
-                                nested,
-                            )),
-                        );
-                    }
-                    _ => {
-                        input.remove(&field.name);
-                    }
-                }
+                input.remove(&field.name);
                 continue;
             }
 
@@ -228,14 +211,6 @@ impl AgentExecutor {
                 models::InternalToolType::Sleep => Ok(ToolCallRequest::Sleep {
                     params: Self::parse_tool_params("sleep", normalized_input)?,
                 }),
-                models::InternalToolType::SnapshotExecutionState => {
-                    Ok(ToolCallRequest::SnapshotExecutionState {
-                        params: Self::parse_tool_params(
-                            "snapshot_execution_state",
-                            normalized_input,
-                        )?,
-                    })
-                }
                 models::InternalToolType::WebSearch => Ok(ToolCallRequest::WebSearch {
                     params: Self::parse_tool_params("web_search", normalized_input)?,
                 }),
@@ -252,6 +227,9 @@ impl AgentExecutor {
                 }),
                 models::InternalToolType::SaveMemory => Ok(ToolCallRequest::SaveMemory {
                     params: Self::parse_tool_params("save_memory", normalized_input)?,
+                }),
+                models::InternalToolType::UpdateMemory => Ok(ToolCallRequest::UpdateMemory {
+                    params: Self::parse_tool_params("update_memory", normalized_input)?,
                 }),
                 models::InternalToolType::CreateProjectTask => {
                     Ok(ToolCallRequest::CreateProjectTask {
@@ -311,22 +289,9 @@ impl AgentExecutor {
                         params: Self::parse_tool_params("task_graph_fail_node", normalized_input)?,
                     })
                 }
-                models::InternalToolType::TaskGraphMarkCompleted => {
-                    Ok(ToolCallRequest::TaskGraphMarkCompleted {
-                        params: Self::parse_tool_params(
-                            "task_graph_mark_completed",
-                            normalized_input,
-                        )?,
-                    })
-                }
-                models::InternalToolType::TaskGraphMarkFailed => {
-                    Ok(ToolCallRequest::TaskGraphMarkFailed {
-                        params: Self::parse_tool_params(
-                            "task_graph_mark_failed",
-                            normalized_input,
-                        )?,
-                    })
-                }
+                models::InternalToolType::TaskGraphReset => Ok(ToolCallRequest::TaskGraphReset {
+                    params: Self::parse_tool_params("task_graph_reset", normalized_input)?,
+                }),
                 models::InternalToolType::AppendTaskJournal => Err(AppError::BadRequest(
                     "append_task_journal is not exposed in the runtime".to_string(),
                 )),

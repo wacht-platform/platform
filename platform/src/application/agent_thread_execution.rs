@@ -1,9 +1,9 @@
 use commands::agent_execution::UploadFilesToS3Command;
 use commands::{
-    CreateConversationCommand, CreateProjectTaskBoardItemEventCommand, DispatchThreadEventCommand,
-    DispatchThreadEventResult, EnqueueThreadEventCommand,
-    EnsurePulseUsageAllowedForDeploymentCommand, ThreadEventWakeDisposition,
-    UpdateAgentThreadStateCommand,
+    AdvanceThreadExecutionTokenCommand, CreateConversationCommand,
+    CreateProjectTaskBoardItemEventCommand, DispatchThreadEventCommand, DispatchThreadEventResult,
+    EnqueueThreadEventCommand, EnsurePulseUsageAllowedForDeploymentCommand,
+    ThreadEventWakeDisposition, UpdateAgentThreadStateCommand,
 };
 use common::ReadConsistency;
 use common::error::AppError;
@@ -44,7 +44,7 @@ fn parse_pending_approval_request(
     conversation: models::ConversationRecord,
     thread_id: i64,
 ) -> Result<ToolApprovalRequestState, AppError> {
-    if conversation.thread_id != thread_id {
+    if conversation.thread_id != Some(thread_id) {
         return Err(AppError::BadRequest(
             "Approval request does not belong to this thread".to_string(),
         ));
@@ -80,16 +80,18 @@ async fn enqueue_thread_event(
     conversation_id: Option<i64>,
     agent_id: Option<i64>,
 ) -> Result<DispatchThreadEventResult, AppError> {
-    let command = DispatchThreadEventCommand::new(
-        EnqueueThreadEventCommand::new(
-            app_state.sf.next_id()? as i64,
-            thread_state.deployment_id,
-            thread_id,
-            event_type.to_string(),
-        )
-        .with_priority(priority)
-        .with_payload(payload),
-    );
+    let mut enqueue = EnqueueThreadEventCommand::new(
+        app_state.sf.next_id()? as i64,
+        thread_state.deployment_id,
+        thread_id,
+        event_type.to_string(),
+    )
+    .with_priority(priority)
+    .with_payload(payload);
+    if let Some(conversation_id) = conversation_id {
+        enqueue = enqueue.with_conversation_id(conversation_id);
+    }
+    let command = DispatchThreadEventCommand::new(enqueue);
     let command = if let Some(agent_id) = agent_id {
         command.with_agent_id(agent_id)
     } else {
@@ -105,7 +107,6 @@ async fn enqueue_thread_event(
             "user_message_received" => "User message received",
             "user_input_received" => "User input received",
             "approval_response_received" => "Approval response received",
-            models::thread_event::event_type::CONTROL_STOP => "Thread control stop requested",
             _ => "Thread event received",
         };
 
@@ -142,31 +143,6 @@ async fn ensure_pulse_usage_if_needed(
     if !has_custom_gemini_key {
         EnsurePulseUsageAllowedForDeploymentCommand::new(deployment_id)
             .execute_with_db(app_state.db_router.writer())
-            .await?;
-    }
-    Ok(())
-}
-
-async fn enqueue_thread_control_event_if_needed(
-    app_state: &AppState,
-    thread_state: &models::AgentThreadState,
-    should_signal: bool,
-    event_type: &str,
-) -> Result<(), AppError> {
-    if should_signal {
-        let command = DispatchThreadEventCommand::new(
-            EnqueueThreadEventCommand::new(
-                app_state.sf.next_id()? as i64,
-                thread_state.deployment_id,
-                thread_state.id,
-                event_type.to_string(),
-            )
-            .with_priority(0)
-            .with_payload(serde_json::json!({})),
-        );
-
-        command
-            .execute_with_deps(&deps::from_app(app_state).db().nats().id())
             .await?;
     }
     Ok(())
@@ -227,28 +203,23 @@ pub async fn execute_agent_async(
     match (new_message, approval_response, cancel) {
         (Some(new_message), None, None) => {
             ensure_pulse_usage_if_needed(app_state, deployment_id, has_custom_gemini_key).await?;
-            match thread_state.status {
-                AgentThreadStatus::Running => {
-                    enqueue_thread_control_event_if_needed(
-                        app_state,
-                        &thread_state,
-                        true,
-                        models::thread_event::event_type::CONTROL_INTERRUPT,
-                    )
+            if thread_state.thread_purpose == models::agent_thread::purpose::CONVERSATION
+                && matches!(thread_state.status, AgentThreadStatus::Running)
+            {
+                AdvanceThreadExecutionTokenCommand::new(thread_id)
+                    .execute_with_deps(&deps::from_app(app_state).nats().id())
                     .await?;
+            }
+            if matches!(thread_state.status, AgentThreadStatus::WaitingForInput) {
+                let mut update = UpdateAgentThreadStateCommand::new(thread_id, deployment_id)
+                    .with_status(AgentThreadStatus::Interrupted);
+                if let Some(mut execution_state) = thread_state.execution_state.clone() {
+                    execution_state.pending_approval_request = None;
+                    update = update.with_execution_state(execution_state);
                 }
-                AgentThreadStatus::WaitingForInput => {
-                    let mut update = UpdateAgentThreadStateCommand::new(thread_id, deployment_id)
-                        .with_status(AgentThreadStatus::Interrupted);
-                    if let Some(mut execution_state) = thread_state.execution_state.clone() {
-                        execution_state.pending_approval_request = None;
-                        update = update.with_execution_state(execution_state);
-                    }
-                    update
-                        .execute_with_deps(&deps::from_app(app_state).db().nats().id())
-                        .await?;
-                }
-                _ => {}
+                update
+                    .execute_with_deps(&deps::from_app(app_state).db().nats().id())
+                    .await?;
             }
 
             if new_message.message.trim().is_empty()
@@ -470,14 +441,12 @@ pub async fn execute_agent_async(
             Ok(queued_execution_response(Some(conversation_id)))
         }
         (None, None, Some(_)) => {
-            enqueue_thread_control_event_if_needed(
-                app_state,
-                &thread_state,
-                has_active_execution,
-                models::thread_event::event_type::CONTROL_STOP,
-            )
-            .await?;
-
+            let _ = has_active_execution;
+            if matches!(thread_state.status, AgentThreadStatus::Running) {
+                AdvanceThreadExecutionTokenCommand::new(thread_id)
+                    .execute_with_deps(&deps::from_app(app_state).nats().id())
+                    .await?;
+            }
             let update_context_command =
                 UpdateAgentThreadStateCommand::new(thread_id, deployment_id)
                     .with_status(AgentThreadStatus::Interrupted)

@@ -10,6 +10,7 @@ queries = { path = "../queries" }
 models = { path = "../models" }
 common = { path = "../common" }
 dto = { path = "../dto" }
+templatekit = { path = "../templatekit" }
 
 # External dependencies
 tokio = { version = "1", features = ["full"] }
@@ -24,6 +25,7 @@ reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 tokio-stream = "0.1"
 rand = "0.8"
 regex = "1.10"
+strsim = "0.11"
 scraper = "0.22"
 handlebars = "6.2.0"
 tiktoken-rs = "0.5"

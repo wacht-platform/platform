@@ -1,3 +1,5 @@
+use common::error::AppError;
+use common::state::AppState;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -20,16 +22,22 @@ pub(crate) mod runtime {
 
 pub use paths::knowledge_base_mount_name;
 
+pub(crate) type InitCell =
+    tokio::sync::OnceCell<std::result::Result<mounts::DeploymentMountLease, Arc<AppError>>>;
+
 #[derive(Clone)]
 pub struct AgentFilesystem {
     execution_base_path: PathBuf,
     durable_root_path: PathBuf,
-    mount_lease: mounts::DeploymentMountLease,
+    deployment_id: i64,
+    app_state: AppState,
     agent_id: String,
     project_id: String,
     thread_id: String,
     execution_id: String,
+    knowledge_bases: Vec<(String, String)>,
     read_windows: Arc<RwLock<HashMap<String, Vec<ReadWindow>>>>,
+    pub(crate) init_cell: Arc<InitCell>,
 }
 
 #[derive(Debug, Clone)]

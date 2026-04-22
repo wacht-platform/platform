@@ -651,7 +651,11 @@ pub async fn delete_agent_skill(
         .execute_with_deps(&deps)
         .await
         .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;
-    let relative = format!("{}/{}", deployment_skill_root(deployment_id, agent_id), skill_slug);
+    let relative = format!(
+        "{}/{}",
+        deployment_skill_root(deployment_id, agent_id),
+        skill_slug
+    );
     let prefix = format!("{}/", storage.object_key(&relative));
     let exists = storage
         .client()

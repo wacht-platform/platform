@@ -37,24 +37,8 @@ pub async fn process_thread_schedule(
                 thread_id
             ));
         }
-        ClaimNextSchedulableThreadEventResult::ExistingClaimNotStale {
-            event_id,
-            claimed_at,
-        } => {
-            info!(
-                deployment_id,
-                thread_id,
-                event_id,
-                ?claimed_at,
-                "Thread scheduler no-op: existing claimed event is still in flight"
-            );
-            return Ok(format!(
-                "Thread {} already has in-flight claimed event {}",
-                thread_id, event_id
-            ));
-        }
         ClaimNextSchedulableThreadEventResult::NoPendingEvent => {
-            info!(
+            tracing::debug!(
                 deployment_id,
                 thread_id, "Thread scheduler no-op: no pending event available"
             );

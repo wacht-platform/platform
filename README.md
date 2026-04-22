@@ -20,7 +20,7 @@
 
 <p align="center">
   <a href="https://wacht.dev">Website</a> |
-  <a href="https://docs.wacht.dev">Documentation</a> |
+  <a href="https://wacht.dev/docs">Documentation</a> |
   <a href="https://github.com/wacht-platform/platform-api/issues">Issues</a>
 </p>
 
@@ -73,7 +73,7 @@ cargo run -p platform-worker --bin worker
 ## Support
 
 - Report issues: [GitHub Issues](https://github.com/wacht-platform/platform-api/issues)
-- Product docs: [docs.wacht.dev](https://docs.wacht.dev)
+- Product docs: [wacht.dev/docs](https://wacht.dev/docs)
 
 ## License
 

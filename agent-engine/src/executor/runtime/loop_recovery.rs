@@ -1,7 +1,5 @@
 use super::core::AgentExecutor;
-use super::step_control::{
-    classify_runtime_correction, RuntimeCorrectionContext, RuntimeCorrectionKind,
-};
+use super::step_control::RuntimeCorrectionKind;
 use crate::executor::tools::tool_params::ToolExecutionLoopOutcome;
 
 use commands::UpdateAgentThreadStateCommand;
@@ -47,29 +45,7 @@ impl AgentExecutor {
             return Ok(());
         }
 
-        if let Some(correction) = classify_runtime_correction(&RuntimeCorrectionContext {
-            stage,
-            error_text: &error_text,
-            loaded_external_tool_ids: &self.loaded_external_tool_ids,
-            agent_tools: &self.ctx.agent.tools,
-        }) {
-            if correction_already_emitted {
-                return Err(error);
-            }
-
-            if should_emit_correction {
-                self.store_runtime_correction(correction).await?;
-            } else {
-                sleep(Self::calculate_backoff_delay(
-                    *consecutive_errors,
-                    EXECUTION_ERROR_RETRY_BASE_MS,
-                    EXECUTION_ERROR_RETRY_MAX_MS,
-                ))
-                .await;
-            }
-            return Ok(());
-        }
-
+        let _ = error_text;
         let correction = if Self::is_llm_stage(stage)
             && matches!(
                 &error,
@@ -104,7 +80,7 @@ impl AgentExecutor {
     }
 
     fn is_llm_stage(stage: &str) -> bool {
-        matches!(stage, "next-step-decision" | "decision-processing")
+        stage == "unified-iteration"
     }
 
     pub(crate) async fn store_runtime_correction(
@@ -120,30 +96,6 @@ impl AgentExecutor {
             ConversationMessageType::SystemDecision,
         )
         .await
-    }
-
-    pub(crate) fn selected_tool_call_log_fields(
-        decision: &dto::json::agent_executor::NextStepDecision,
-    ) -> (usize, Vec<String>) {
-        match decision.next_step {
-            dto::json::agent_executor::NextStep::SearchTools => {
-                let labels = decision
-                    .search_tools_directive
-                    .as_ref()
-                    .map(|directive| directive.queries.clone())
-                    .unwrap_or_default();
-                (labels.len(), labels)
-            }
-            dto::json::agent_executor::NextStep::LoadTools => {
-                let labels = decision
-                    .load_tools_directive
-                    .as_ref()
-                    .map(|directive| directive.tool_names.clone())
-                    .unwrap_or_default();
-                (labels.len(), labels)
-            }
-            _ => (0, Vec::new()),
-        }
     }
 
     pub(crate) async fn finalize_action_execution_outcome(
@@ -169,11 +121,18 @@ impl AgentExecutor {
                 .as_ref()
                 .and_then(|state| state.pending_approval_request.clone());
 
-            UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
-                .with_execution_state(self.build_execution_state_snapshot(pending_approval_request))
-                .with_status(AgentThreadStatus::WaitingForInput)
-                .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
-                .await?;
+            self.apply_thread_status(
+                UpdateAgentThreadStateCommand::new(
+                    self.ctx.thread_id,
+                    self.ctx.agent.deployment_id,
+                )
+                .with_execution_state(
+                    self.build_execution_state_snapshot(pending_approval_request),
+                ),
+                AgentThreadStatus::WaitingForInput,
+            )
+            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
+            .await?;
         } else {
             UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
                 .with_execution_state(self.build_execution_state_snapshot(None))

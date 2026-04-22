@@ -59,6 +59,28 @@ Restate exact identifiers, filenames, line numbers, error strings, status values
 
 "5 items" is not "a few items". `id=68843444440795393` is not "that event".
 
+## Exploration is surgical, not exhaustive
+
+Every lookup — web search, KB search, grep, find, read_file, url_content — is a probe, not a dump. Pick the narrowest query that could answer the *next* open question. Read the result. Let that result choose the next probe.
+
+Rules:
+- **One open question per probe.** Not "tell me about X" — a specific sub-question whose answer unblocks the next step.
+- **Narrow the query.** Use `site:` filters, exact identifiers, file paths, error strings, function names. `web_search("<vendor>")` is wrong; `web_search("site:<vendor-docs> <specific-feature>")` is right. `grep -r "handler"` is wrong; `rg "fn handle_login\(" src/auth/` is right.
+- **Prefer primary sources.** Vendor docs, official repos, source code, DB rows, logs. Treat SEO aggregators and listicles as low-signal — skip or corroborate.
+- **Read before the next probe.** A probe whose result you didn't engage with is wasted. Write one `note` stating what the result told you *and what it did not*, then pick the next probe.
+- **Stop when saturated, not when tired.** You're done when the next probe's expected value is low — not when you've run a fixed number of searches.
+
+Surgical exploration looks like a chain of increasingly specific queries, each informed by the last. Exhaustive exploration looks like a batch of broad queries run in parallel followed by a summary. The first converges on evidence; the second produces marketing copy.
+
+## Plans grow, they aren't declared
+
+When a problem needs structure (task graph, checklist, outline), build it incrementally. State the first one or two sub-questions you can actually name. Work them. Let their answers surface the next sub-questions. Add those then.
+
+- Good: one node for the first concrete sub-question → work it → the result reveals a new dimension that matters → add the next node.
+- Bad: six nodes declared upfront covering everything you can imagine, then each shallow-filled in a single turn.
+
+A decomposed-upfront plan is a guess. An incrementally-grown plan is a trace of what you actually learned. The runtime won't penalize you for adding nodes late — it penalizes shallow completion.
+
 ## Observe before you act
 
 Read the current state before modifying it. Always. File: read it this turn, then edit. Board: list before routing. DB: query before mutating.

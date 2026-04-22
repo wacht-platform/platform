@@ -170,7 +170,7 @@ impl GetProjectTaskBoardItemAssignmentByIdQuery {
             r#"
             SELECT
                 id, board_item_id, thread_id, assignment_role, assignment_order, status,
-                instructions, handoff_file_path, metadata, result_status, result_summary,
+                instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
                 updated_at
             FROM project_task_board_item_assignments
@@ -279,7 +279,7 @@ impl ListProjectTaskBoardItemAssignmentsQuery {
             r#"
             SELECT
                 id, board_item_id, thread_id, assignment_role, assignment_order, status,
-                instructions, handoff_file_path, metadata, result_status, result_summary,
+                instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
                 updated_at
             FROM project_task_board_item_assignments
@@ -315,7 +315,7 @@ impl ListAssignmentsForThreadQuery {
             r#"
             SELECT
                 id, board_item_id, thread_id, assignment_role, assignment_order, status,
-                instructions, handoff_file_path, metadata, result_status, result_summary,
+                instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
                 updated_at
             FROM project_task_board_item_assignments
@@ -351,7 +351,7 @@ impl GetNextAvailableAssignmentForBoardItemQuery {
             r#"
             SELECT
                 id, board_item_id, thread_id, assignment_role, assignment_order, status,
-                instructions, handoff_file_path, metadata, result_status, result_summary,
+                instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
                 updated_at
             FROM project_task_board_item_assignments

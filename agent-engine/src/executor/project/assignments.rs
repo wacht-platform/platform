@@ -37,7 +37,6 @@ struct PlannedAssignmentEntry {
     assignment_role: String,
     status: String,
     instructions: Option<String>,
-    handoff_file_path: Option<String>,
     metadata: serde_json::Value,
 }
 
@@ -165,7 +164,6 @@ impl AgentExecutor {
                 assignment_role,
                 status,
                 instructions: assignment.instructions.clone(),
-                handoff_file_path: assignment.handoff_file_path.clone(),
                 metadata,
             });
         }
@@ -184,7 +182,6 @@ impl AgentExecutor {
                         && existing_assignment.assignment_role == planned_entry.assignment_role
                         && existing_assignment.status == planned_entry.status
                         && existing_assignment.instructions == planned_entry.instructions
-                        && existing_assignment.handoff_file_path == planned_entry.handoff_file_path
                         && existing_assignment.metadata == planned_entry.metadata
                 },
             );
@@ -236,7 +233,6 @@ impl AgentExecutor {
                 assignment_order,
                 status: planned_entry.status,
                 instructions: planned_entry.instructions,
-                handoff_file_path: planned_entry.handoff_file_path,
                 metadata: planned_entry.metadata,
             }
             .execute_with_deps(&deps)

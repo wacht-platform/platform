@@ -234,7 +234,6 @@ pub enum InternalToolType {
     EditFile,
     ExecuteCommand,
     Sleep,
-    SnapshotExecutionState,
     WebSearch,
     UrlContent,
     SearchKnowledgebase,
@@ -249,13 +248,13 @@ pub enum InternalToolType {
     CreateThread,
     UpdateThread,
     SaveMemory,
+    UpdateMemory,
     TaskGraphAddNode,
     TaskGraphAddDependency,
     TaskGraphMarkInProgress,
     TaskGraphCompleteNode,
     TaskGraphFailNode,
-    TaskGraphMarkCompleted,
-    TaskGraphMarkFailed,
+    TaskGraphReset,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

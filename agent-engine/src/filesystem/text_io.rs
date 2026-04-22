@@ -8,6 +8,7 @@ use tokio::process::Command;
 
 impl AgentFilesystem {
     pub async fn save_upload(&self, filename: &str, data: &[u8]) -> Result<String, AppError> {
+        self.ensure_initialized().await?;
         let uploads_dir = self.persistent_uploads_path();
         fs::create_dir_all(&uploads_dir).await.ok();
 
@@ -20,6 +21,7 @@ impl AgentFilesystem {
     }
 
     pub async fn read_file_bytes(&self, path: &str) -> Result<Vec<u8>, AppError> {
+        self.ensure_initialized().await?;
         let full_path = self.resolve_path(path)?;
         fs::read(&full_path)
             .await
@@ -32,6 +34,7 @@ impl AgentFilesystem {
         start_line: Option<usize>,
         end_line: Option<usize>,
     ) -> Result<ReadFileResult, AppError> {
+        self.ensure_initialized().await?;
         let full_path = self.resolve_path(path)?;
         let content = fs::read_to_string(&full_path)
             .await
@@ -45,10 +48,9 @@ impl AgentFilesystem {
 
         let selected_lines: Vec<String> = lines
             .iter()
-            .enumerate()
             .skip(start)
             .take(end.saturating_sub(start))
-            .map(|(i, s)| Self::format_numbered_line(i + 1, s))
+            .map(|s| s.to_string())
             .collect();
         let raw_slice = lines
             .iter()
@@ -76,6 +78,7 @@ impl AgentFilesystem {
         content: &str,
         append: bool,
     ) -> Result<WriteFileResult, AppError> {
+        self.ensure_initialized().await?;
         let full_path = self.resolve_path(path)?;
 
         let writable_prefixes = ["memory/", "workspace/", "scratch/", "task/"];
@@ -140,6 +143,7 @@ impl AgentFilesystem {
         start_line: usize,
         end_line: usize,
     ) -> Result<EditFileResult, AppError> {
+        self.ensure_initialized().await?;
         let full_path = self.resolve_path(path)?;
 
         let writable_prefixes = ["memory/", "workspace/", "scratch/", "task/"];
@@ -232,6 +236,7 @@ impl AgentFilesystem {
     }
 
     pub async fn list_dir(&self, path: &str) -> Result<Vec<String>, AppError> {
+        self.ensure_initialized().await?;
         let full_path = self.resolve_path(path)?;
 
         if !full_path.exists() {
@@ -263,6 +268,7 @@ impl AgentFilesystem {
     }
 
     pub async fn search(&self, query: &str, path: &str) -> Result<String, AppError> {
+        self.ensure_initialized().await?;
         let full_path = self.resolve_path(path)?;
 
         if !full_path.exists() {
@@ -385,7 +391,7 @@ impl AgentFilesystem {
             .unwrap_or(false)
     }
 
-    fn format_numbered_line(line_number: usize, line: &str) -> String {
+    pub(crate) fn format_numbered_line(line_number: usize, line: &str) -> String {
         format!("{}: {}", line_number, line)
     }
 

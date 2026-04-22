@@ -248,14 +248,12 @@ impl PublishAgentExecutionCommand {
                     approvals,
                 ))
             }
-            "task_routing" | "assignment_execution" | "assignment_outcome_review" => {
-                Ok(Self::thread_event(
-                    thread_event.deployment_id,
-                    thread_event.thread_id,
-                    thread_event.id,
-                    agent_id,
-                ))
-            }
+            "task_routing" | "assignment_execution" => Ok(Self::thread_event(
+                thread_event.deployment_id,
+                thread_event.thread_id,
+                thread_event.id,
+                agent_id,
+            )),
             other => Err(AppError::BadRequest(format!(
                 "Unsupported thread event type for execution publish: {}",
                 other

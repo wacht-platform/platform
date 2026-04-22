@@ -27,7 +27,8 @@ impl GetDeploymentAiSettingsQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let result = sqlx::query_as::<_, DeploymentAiSettings>(
+        let result = sqlx::query_as!(
+            DeploymentAiSettings,
             r#"
             SELECT
                 id,
@@ -41,6 +42,9 @@ impl GetDeploymentAiSettingsQuery {
                 anthropic_api_key,
                 strong_model,
                 weak_model,
+                embedding_provider,
+                embedding_model,
+                embedding_dimension,
                 storage_provider,
                 storage_bucket,
                 storage_region,
@@ -55,8 +59,8 @@ impl GetDeploymentAiSettingsQuery {
             FROM deployment_ai_settings
             WHERE deployment_id = $1
             "#,
+            self.deployment_id
         )
-        .bind(self.deployment_id)
         .fetch_optional(executor)
         .await?;
 

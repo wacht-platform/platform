@@ -116,7 +116,6 @@ pub struct ProjectTaskBoardItemAssignment {
     pub assignment_order: i32,
     pub status: String,
     pub instructions: Option<String>,
-    pub handoff_file_path: Option<String>,
     pub metadata: serde_json::Value,
     pub result_status: Option<String>,
     pub result_summary: Option<String>,
@@ -172,8 +171,6 @@ pub struct ProjectTaskBoardItemAssignmentEventDetails {
     pub note: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub handoff_file_path: Option<String>,
     pub metadata: ProjectTaskBoardAssignmentMetadata,
 }
 
@@ -199,8 +196,6 @@ pub struct ProjectTaskBoardAssignmentSpec {
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub handoff_file_path: Option<String>,
 }
 
 pub mod assignment_role {

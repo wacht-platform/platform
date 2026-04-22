@@ -81,6 +81,8 @@ dependencies = [
  "serde_json",
  "sha2",
  "shellish_parse",
+ "strsim",
+ "templatekit",
  "tiktoken-rs 0.5.9",
  "tokio",
  "tokio-stream",
@@ -6419,6 +6421,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 name = "platform"
 version = "0.1.0"
 dependencies = [
+ "agent-engine",
  "async-nats",
  "aws-sdk-s3",
  "axum",
@@ -6450,6 +6453,7 @@ dependencies = [
  "sha2",
  "sonyflake",
  "sqlx",
+ "templatekit",
  "tiktoken-rs 0.5.9",
  "tokio",
  "tokio-stream",
@@ -8819,6 +8823,19 @@ dependencies = [
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.1",
+]
+
+[[package]]
+name = "templatekit"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "common",
+ "handlebars",
+ "models",
+ "serde",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]

@@ -178,7 +178,7 @@ pub(super) fn deployment_mount_base_path() -> PathBuf {
     root
 }
 
-pub(super) fn deployment_mount_path(deployment_id: i64) -> PathBuf {
+pub(crate) fn deployment_mount_path(deployment_id: i64) -> PathBuf {
     deployment_mount_base_path().join(deployment_id.to_string())
 }
 

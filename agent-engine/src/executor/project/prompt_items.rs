@@ -46,7 +46,6 @@ impl AgentExecutor {
             status: assignment.status.clone(),
             note: None,
             instructions: assignment.instructions.clone(),
-            handoff_file_path: assignment.handoff_file_path.clone(),
             requested_target: metadata.requested_target,
             result_status: assignment.result_status.clone(),
             result_summary: assignment.result_summary.clone(),

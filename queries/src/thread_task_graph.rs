@@ -5,6 +5,7 @@ use models::{ThreadTaskEdge, ThreadTaskGraph, ThreadTaskGraphSummary, ThreadTask
 pub struct GetLatestThreadTaskGraphQuery {
     pub deployment_id: i64,
     pub thread_id: i64,
+    pub board_item_id: Option<i64>,
 }
 
 impl GetLatestThreadTaskGraphQuery {
@@ -12,7 +13,13 @@ impl GetLatestThreadTaskGraphQuery {
         Self {
             deployment_id,
             thread_id,
+            board_item_id: None,
         }
+    }
+
+    pub fn with_board_item_id(mut self, board_item_id: Option<i64>) -> Self {
+        self.board_item_id = board_item_id;
+        self
     }
 
     pub async fn execute_with_db<'e, E>(
@@ -25,14 +32,17 @@ impl GetLatestThreadTaskGraphQuery {
         let row = sqlx::query_as!(
             ThreadTaskGraph,
             r#"
-            SELECT id, deployment_id, thread_id, board_item_id, version, status, metadata, created_at, updated_at
+            SELECT id, deployment_id, thread_id, board_item_id, status, metadata, created_at, updated_at
             FROM thread_task_graphs
-            WHERE deployment_id = $1 AND thread_id = $2
-            ORDER BY version DESC
+            WHERE deployment_id = $1
+              AND thread_id = $2
+              AND (($3::bigint IS NULL AND board_item_id IS NULL) OR board_item_id = $3)
+            ORDER BY id DESC
             LIMIT 1
             "#,
             self.deployment_id,
-            self.thread_id
+            self.thread_id,
+            self.board_item_id,
         )
         .fetch_optional(executor)
         .await?;
@@ -60,7 +70,7 @@ impl GetThreadTaskGraphByIdQuery {
         let row = sqlx::query_as!(
             ThreadTaskGraph,
             r#"
-            SELECT id, deployment_id, thread_id, board_item_id, version, status, metadata, created_at, updated_at
+            SELECT id, deployment_id, thread_id, board_item_id, status, metadata, created_at, updated_at
             FROM thread_task_graphs
             WHERE id = $1
             "#,

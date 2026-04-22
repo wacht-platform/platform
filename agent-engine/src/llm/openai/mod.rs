@@ -4,7 +4,6 @@ use common::error::AppError;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::{json, Value};
-use tracing::info;
 
 use crate::{
     json_schema::{normalize_openai_response_schema, normalize_openai_tool_schema},
@@ -143,16 +142,6 @@ impl OpenAiClient {
         T: for<'de> Deserialize<'de> + Serialize,
     {
         let request_body = self.build_request_body(prompt);
-        info!(
-            "{}",
-            json!({
-                "event": "openai_generate_request",
-                "model": self.model,
-                "url": OPENAI_CHAT_COMPLETIONS_URL,
-                "request": request_body,
-            })
-            .to_string()
-        );
         let parsed = self.execute_request(request_body).await?;
 
         let generated_text = parsed
@@ -189,52 +178,48 @@ impl OpenAiClient {
         tools: Vec<NativeToolDefinition>,
     ) -> Result<ToolCallGenerationOutput, AppError> {
         let request_body = self.build_tool_call_request_body(prompt, tools);
-        info!(
-            "{}",
-            json!({
-                "event": "openai_generate_request",
-                "model": self.model,
-                "url": OPENAI_CHAT_COMPLETIONS_URL,
-                "request": request_body,
-            })
-            .to_string()
-        );
-
         let parsed = self.execute_request(request_body).await?;
-        let message = parsed
+        let message = &parsed
             .choices
             .first()
             .ok_or_else(|| AppError::Internal("OpenAI returned no choices".to_string()))?
-            .message
-            .tool_calls
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("OpenAI returned no tool calls".to_string()))?;
+            .message;
 
-        let calls = message
-            .iter()
-            .map(|call| {
-                let arguments =
-                    serde_json::from_str::<Value>(&call.function.arguments).map_err(|error| {
-                        AppError::Internal(format!(
-                            "Failed to parse OpenAI tool arguments for {}: {}",
-                            call.function.name, error
-                        ))
-                    })?;
-                Ok(GeneratedToolCall {
-                    tool_name: call.function.name.clone(),
-                    arguments,
+        let calls = match message.tool_calls.as_ref() {
+            Some(tc) => tc
+                .iter()
+                .map(|call| {
+                    let arguments = serde_json::from_str::<Value>(&call.function.arguments)
+                        .map_err(|error| {
+                            AppError::Internal(format!(
+                                "Failed to parse OpenAI tool arguments for {}: {}",
+                                call.function.name, error
+                            ))
+                        })?;
+                    Ok(GeneratedToolCall {
+                        tool_name: call.function.name.clone(),
+                        arguments,
+                    })
                 })
-            })
-            .collect::<Result<Vec<_>, AppError>>()?;
+                .collect::<Result<Vec<_>, AppError>>()?,
+            None => Vec::new(),
+        };
 
-        if calls.is_empty() {
+        let content_text = message
+            .content
+            .as_ref()
+            .map(Self::message_content_as_text)
+            .filter(|t| !t.trim().is_empty());
+
+        if calls.is_empty() && content_text.is_none() {
             return Err(AppError::Internal(
-                "OpenAI returned an empty tool call list".to_string(),
+                "OpenAI returned no tool calls and no text".to_string(),
             ));
         }
 
         Ok(ToolCallGenerationOutput {
             calls,
+            content_text,
             usage_metadata: parsed.usage.map(Self::map_usage_metadata),
         })
     }
@@ -313,7 +298,9 @@ impl OpenAiClient {
         body.insert("model".to_string(), json!(self.model));
         body.insert("messages".to_string(), Value::Array(messages));
         body.insert("tools".to_string(), Value::Array(tool_values));
-        body.insert("tool_choice".to_string(), json!("required"));
+        // AUTO mode: model may emit tool calls, text, or both. Text-only response is
+        // the terminal signal in the unified ReAct loop.
+        body.insert("tool_choice".to_string(), json!("auto"));
         body.insert("stream".to_string(), json!(false));
         if let Some(temperature) = prompt.temperature {
             body.insert("temperature".to_string(), json!(temperature));
@@ -363,19 +350,6 @@ impl OpenAiClient {
             let response_text = response.text().await.map_err(|error| {
                 AppError::Internal(format!("Failed to read OpenAI response body: {}", error))
             })?;
-
-            info!(
-                "{}",
-                json!({
-                    "event": "openai_generate_response",
-                    "model": self.model,
-                    "url": OPENAI_CHAT_COMPLETIONS_URL,
-                    "status": status.as_u16(),
-                    "ok": status.is_success(),
-                    "response": response_text,
-                })
-                .to_string()
-            );
 
             if status.is_success() && Self::parse_error_envelope(&response_text).is_none() {
                 break response_text;

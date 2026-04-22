@@ -7,7 +7,10 @@ use common::{
     connect_vector_store, open_knowledge_base_table_in_connection, open_memory_table_in_connection,
 };
 use lancedb::{Connection, Table};
-use models::{AgentThreadState, AiAgentWithFeatures, DeploymentAiSettings};
+use models::{
+    default_embedding_dimension, is_supported_embedding_dimension, AgentThreadState,
+    AiAgentWithFeatures, DeploymentAiSettings,
+};
 use queries::GetAgentThreadStateQuery;
 use tokio::sync::RwLock;
 
@@ -24,6 +27,7 @@ pub struct DeploymentProviderKeys {
     pub anthropic_api_key: Option<String>,
     pub strong_model: Option<String>,
     pub weak_model: Option<String>,
+    pub embedding_dimension: i32,
 }
 
 impl DeploymentProviderKeys {
@@ -31,6 +35,16 @@ impl DeploymentProviderKeys {
         settings: Option<&DeploymentAiSettings>,
         encryption_service: &common::EncryptionService,
     ) -> Result<Self, AppError> {
+        let embedding_dimension = settings
+            .map(|s| s.embedding_dimension)
+            .unwrap_or_else(default_embedding_dimension);
+        if !is_supported_embedding_dimension(embedding_dimension) {
+            return Err(AppError::Validation(format!(
+                "Unsupported deployment embedding dimension: {}",
+                embedding_dimension
+            )));
+        }
+
         Ok(Self {
             strong_llm_provider: settings.map(|s| s.strong_llm_provider.clone()),
             weak_llm_provider: settings.map(|s| s.weak_llm_provider.clone()),
@@ -55,6 +69,7 @@ impl DeploymentProviderKeys {
                 .transpose()?,
             strong_model: settings.and_then(|s| s.strong_model.clone()),
             weak_model: settings.and_then(|s| s.weak_model.clone()),
+            embedding_dimension,
         })
     }
 }

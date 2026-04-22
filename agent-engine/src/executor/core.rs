@@ -2,9 +2,6 @@ use crate::filesystem::{shell::ShellExecutor, AgentFilesystem};
 use crate::tools::ToolExecutor;
 
 use common::error::AppError;
-use dto::json::agent_executor::{
-    SnapshotExecutionStateParams, StartActionDirective, ToolCallBrief,
-};
 use dto::json::{ProjectTaskBoardPromptItem, StreamEvent};
 use models::{AiTool, AiToolConfiguration, AiToolType, InternalToolConfiguration};
 use models::{ConversationRecord, MemoryRecord, ThreadEvent, ThreadExecutionState};
@@ -28,24 +25,22 @@ pub struct AgentExecutor {
     pub(crate) filesystem: AgentFilesystem,
     pub(crate) shell: ShellExecutor,
     pub(crate) current_iteration: usize,
-    pub(crate) long_think_mode_active: bool,
-    pub(crate) long_think_credit_snapshot: models::LongThinkCreditSnapshot,
     pub(crate) loaded_external_tool_ids: Vec<i64>,
-    pub(crate) next_step_decision_cache_state: Option<models::PromptCacheState>,
-    pub(crate) active_startaction_directive: Option<StartActionDirective>,
-    pub(crate) active_tool_call_brief: Option<ToolCallBrief>,
     pub(crate) project_task_board_items: Vec<ProjectTaskBoardPromptItem>,
     pub(crate) project_task_board_id: Option<i64>,
     pub(crate) approved_always_tool_ids: HashSet<i64>,
     pub(crate) task_graph_snapshot: Option<serde_json::Value>,
-    pub(crate) last_decision_signature: Option<String>,
-    pub(crate) repeated_decision_count: usize,
     pub(crate) active_thread_event: Option<ThreadEvent>,
     pub(crate) is_conversation_thread: bool,
     pub(crate) is_coordinator_thread: bool,
+    pub(crate) is_review_thread: bool,
     pub(crate) task_journal_start_hash: Option<String>,
     pub(crate) conversation_compaction_state: models::ConversationCompactionState,
-    pub(crate) snapshot_execution_state_requested: bool,
+    pub(crate) consecutive_note_count: usize,
+    pub(crate) last_tool_call_signature: Option<String>,
+    pub(crate) repeated_tool_call_count: usize,
+    pub(crate) last_terminal_text_normalized: Option<String>,
+    pub(crate) repeated_terminal_attempt_count: usize,
 }
 
 pub struct AgentExecutorBuilder {
@@ -69,6 +64,14 @@ impl AgentExecutorBuilder {
             ToolExecutor::new(execution_context.clone()).with_channel(self.channel.clone());
         let execution_id = self.ctx.app_state.sf.next_id()?.to_string();
 
+        let knowledge_bases: Vec<(String, String)> = self
+            .ctx
+            .agent
+            .knowledge_bases
+            .iter()
+            .map(|kb| (kb.id.to_string(), kb.name.clone()))
+            .collect();
+
         let filesystem = AgentFilesystem::new(
             &self.ctx.app_state,
             &self.ctx.agent.deployment_id.to_string(),
@@ -76,14 +79,12 @@ impl AgentExecutorBuilder {
             &thread.project_id.to_string(),
             &self.ctx.thread_id.to_string(),
             &execution_id,
-        )
-        .await?;
+            knowledge_bases,
+        )?;
 
-        filesystem.initialize().await?;
+        filesystem.spawn_initialize();
 
         let shell = ShellExecutor::new(filesystem.execution_root());
-
-        Self::link_knowledge_bases(&filesystem, &self.ctx.agent.knowledge_bases).await?;
 
         let context = execution_context.get_thread().await?;
         let is_conversation_thread =
@@ -99,6 +100,14 @@ impl AgentExecutorBuilder {
                         || value.eq_ignore_ascii_case("coordinator")
                 })
                 .unwrap_or(false);
+        let is_review_thread =
+            context.thread_purpose == models::agent_thread::purpose::REVIEW;
+        let is_service_thread = !is_coordinator_thread
+            && !is_conversation_thread
+            && matches!(
+                context.thread_purpose.as_str(),
+                models::agent_thread::purpose::EXECUTION | models::agent_thread::purpose::REVIEW
+            );
         let internal_tools = super::tools::definitions::internal_tools();
         let active_approvals = ListActiveApprovalGrantsForThreadQuery::new(
             self.ctx.agent.deployment_id,
@@ -123,11 +132,15 @@ impl AgentExecutorBuilder {
                     return true;
                 }
 
-                Self::should_inject_internal_tool(is_coordinator_thread, &tool.name)
+                Self::should_inject_internal_tool(
+                    is_coordinator_thread,
+                    is_service_thread,
+                    &tool.name,
+                )
             })
             .collect::<Vec<_>>();
         for (name, desc, tool_type, schema) in internal_tools {
-            if !Self::should_inject_internal_tool(is_coordinator_thread, name) {
+            if !Self::should_inject_internal_tool(is_coordinator_thread, is_service_thread, name) {
                 continue;
             }
             if !current_tools.iter().any(|t| t.name == name) {
@@ -164,24 +177,22 @@ impl AgentExecutorBuilder {
             filesystem,
             shell,
             current_iteration: 0,
-            long_think_mode_active: false,
-            long_think_credit_snapshot: models::LongThinkCreditSnapshot::default(),
             loaded_external_tool_ids: Vec::new(),
-            next_step_decision_cache_state: None,
-            active_startaction_directive: None,
-            active_tool_call_brief: None,
             project_task_board_items: Vec::new(),
             project_task_board_id: None,
             approved_always_tool_ids,
             task_graph_snapshot: None,
-            last_decision_signature: None,
-            repeated_decision_count: 0,
             active_thread_event: None,
             is_conversation_thread,
             is_coordinator_thread,
+            is_review_thread,
             task_journal_start_hash: None,
             conversation_compaction_state: models::ConversationCompactionState::default(),
-            snapshot_execution_state_requested: false,
+            consecutive_note_count: 0,
+            last_tool_call_signature: None,
+            repeated_tool_call_count: 0,
+            last_terminal_text_normalized: None,
+            repeated_terminal_attempt_count: 0,
         };
 
         executor.system_instructions = context.system_instructions.clone();
@@ -194,12 +205,14 @@ impl AgentExecutorBuilder {
             executor.refresh_project_task_board_items().await?;
         }
 
-        executor.ensure_task_graph_snapshot().await?;
-
         Ok(executor)
     }
 
-    fn should_inject_internal_tool(is_coordinator_thread: bool, tool_name: &str) -> bool {
+    fn should_inject_internal_tool(
+        is_coordinator_thread: bool,
+        is_service_thread: bool,
+        tool_name: &str,
+    ) -> bool {
         if is_coordinator_thread {
             return matches!(
                 tool_name,
@@ -209,60 +222,128 @@ impl AgentExecutorBuilder {
                     | "create_project_task"
                     | "update_project_task"
                     | "assign_project_task"
-                    | "snapshot_execution_state"
+                    | "read_file"
+                    | "write_file"
+                    | "edit_file"
                     | "sleep"
+            );
+        }
+
+        if is_service_thread {
+            return !matches!(
+                tool_name,
+                "list_threads"
+                    | "create_thread"
+                    | "update_thread"
+                    | "create_project_task"
+                    | "assign_project_task"
             );
         }
 
         true
     }
-
-    async fn link_knowledge_bases(
-        filesystem: &AgentFilesystem,
-        knowledge_bases: &[models::AiKnowledgeBase],
-    ) -> Result<(), AppError> {
-        for kb in knowledge_bases {
-            filesystem
-                .link_knowledge_base(&kb.id.to_string(), &kb.name)
-                .await
-                .map_err(|error| {
-                    AppError::Internal(format!(
-                        "failed to link knowledge base '{}' ({}): {}",
-                        kb.name, kb.id, error
-                    ))
-                })?;
-        }
-
-        Ok(())
-    }
-}
-
-impl AgentExecutor {
-    pub(crate) async fn execute_snapshot_execution_state(
-        &mut self,
-        params: SnapshotExecutionStateParams,
-    ) -> Result<serde_json::Value, AppError> {
-        self.snapshot_execution_state_requested = true;
-        Ok(serde_json::json!({
-            "success": true,
-            "tool": "snapshot_execution_state",
-            "message": "Local execution checkpoint flag set for this run.",
-            "reason": params.reason,
-            "task_graph_present": self.task_graph_snapshot.is_some(),
-            "task_graph_has_unfinished_nodes": self.active_task_graph_has_unfinished_nodes(),
-            "active_startaction_present": self.active_startaction_directive.is_some(),
-            "active_tool_call_brief_present": self.active_tool_call_brief.is_some(),
-        }))
-    }
 }
 
 impl AgentExecutor {
     pub(crate) fn thread_event_implies_coordinator(event_type: &str) -> bool {
-        matches!(
-            event_type,
-            models::thread_event::event_type::TASK_ROUTING
-                | models::thread_event::event_type::ASSIGNMENT_OUTCOME_REVIEW
-        )
+        matches!(event_type, models::thread_event::event_type::TASK_ROUTING)
+    }
+
+    /// Thread status is UI/gating metadata that only matters for conversation and
+    /// coordinator threads. Service-mode runs are pure workers — writing status on
+    /// them is churn. Callers pipe their `UpdateAgentThreadStateCommand` through this
+    /// helper so the status field is only set when it's actually meaningful.
+    pub(crate) fn apply_thread_status(
+        &self,
+        command: commands::UpdateAgentThreadStateCommand,
+        status: models::AgentThreadStatus,
+    ) -> commands::UpdateAgentThreadStateCommand {
+        if self.is_conversation_thread || self.is_coordinator_thread {
+            command.with_status(status)
+        } else {
+            command
+        }
+    }
+
+    pub(crate) fn current_board_item_id(&self) -> Option<i64> {
+        self.active_thread_event
+            .as_ref()
+            .and_then(|event| event.board_item_id)
+    }
+
+    pub(crate) fn active_task_graph_has_unfinished_nodes(&self) -> bool {
+        let Some(snapshot) = self.task_graph_snapshot.as_ref() else {
+            return false;
+        };
+
+        let graph_status = snapshot
+            .get("graph")
+            .and_then(|graph| graph.get("status"))
+            .and_then(|status| status.as_str())
+            .unwrap_or_default();
+
+        if graph_status != models::thread_task_graph::status::GRAPH_ACTIVE {
+            return false;
+        }
+
+        snapshot
+            .get("nodes")
+            .and_then(|nodes| nodes.as_array())
+            .map(|nodes| {
+                nodes.iter().any(|node| {
+                    matches!(
+                        node.get("status").and_then(|status| status.as_str()),
+                        Some(
+                            models::thread_task_graph::status::NODE_PENDING
+                                | models::thread_task_graph::status::NODE_IN_PROGRESS
+                        )
+                    )
+                })
+            })
+            .unwrap_or(false)
+    }
+
+    /// Summarize the unfinished nodes of the active task graph as a human-readable,
+    /// agent-voiced list. Each line names the node (id, title, status) and the concrete
+    /// action to take. Returns None if there is no active graph or no unfinished nodes.
+    pub(crate) fn describe_unfinished_task_graph_nodes(&self) -> Option<String> {
+        let snapshot = self.task_graph_snapshot.as_ref()?;
+        let graph_status = snapshot
+            .get("graph")
+            .and_then(|graph| graph.get("status"))
+            .and_then(|status| status.as_str())
+            .unwrap_or_default();
+        if graph_status != models::thread_task_graph::status::GRAPH_ACTIVE {
+            return None;
+        }
+
+        let nodes = snapshot.get("nodes").and_then(|nodes| nodes.as_array())?;
+        let mut lines: Vec<String> = Vec::new();
+        for node in nodes {
+            let status = node
+                .get("status")
+                .and_then(|s| s.as_str())
+                .unwrap_or_default();
+            let action = match status {
+                models::thread_task_graph::status::NODE_PENDING => "either start it (`task_graph_mark_in_progress`) or abandon it (`task_graph_fail_node` with a one-line reason)",
+                models::thread_task_graph::status::NODE_IN_PROGRESS => "finish the work then `task_graph_complete_node` with its output, or abandon it with `task_graph_fail_node`",
+                _ => continue,
+            };
+            let id = node
+                .get("id")
+                .and_then(|id| id.as_str().map(String::from).or_else(|| id.as_i64().map(|n| n.to_string())))
+                .unwrap_or_else(|| "?".to_string());
+            let title = node
+                .get("title")
+                .and_then(|t| t.as_str())
+                .unwrap_or("(untitled)");
+            lines.push(format!("- node {id} \"{title}\" [{status}] — {action}"));
+        }
+
+        if lines.is_empty() {
+            return None;
+        }
+        Some(lines.join("\n"))
     }
 
     pub(crate) fn effective_is_coordinator_thread(&self) -> bool {
@@ -272,6 +353,23 @@ impl AgentExecutor {
                 .as_ref()
                 .map(|event| Self::thread_event_implies_coordinator(&event.event_type))
                 .unwrap_or(false)
+    }
+
+    pub(crate) fn system_prompt_name(&self) -> &'static str {
+        if self.effective_is_coordinator_thread() {
+            "coordinator_system"
+        } else if self.is_review_thread {
+            "reviewer_system"
+        } else if self
+            .active_thread_event
+            .as_ref()
+            .map(|e| e.event_type == models::thread_event::event_type::ASSIGNMENT_EXECUTION)
+            .unwrap_or(false)
+        {
+            "service_execution_system"
+        } else {
+            "conversation_agent_system"
+        }
     }
 }
 
@@ -287,16 +385,7 @@ impl AgentExecutor {
         &mut self,
         state: ThreadExecutionState,
     ) -> Result<(), AppError> {
-        self.long_think_mode_active = false;
-        self.long_think_credit_snapshot = state.long_think_credit_snapshot;
         self.loaded_external_tool_ids = state.loaded_external_tool_ids;
-        self.next_step_decision_cache_state = state.prompt_caches.step_decision;
-        self.active_startaction_directive = state
-            .active_startaction_directive
-            .and_then(|value| serde_json::from_value::<StartActionDirective>(value).ok());
-        self.active_tool_call_brief = state
-            .active_tool_call_brief
-            .and_then(|value| serde_json::from_value::<ToolCallBrief>(value).ok());
         self.project_task_board_items.clear();
         self.task_journal_start_hash = state.task_journal_start_hash;
         self.conversation_compaction_state = state.conversation_compaction_state;
@@ -332,43 +421,11 @@ impl AgentExecutor {
                 .unwrap_or(false)
     }
 
-    pub(super) fn normal_mode_disallowed_tool(tool_name: &str) -> bool {
-        matches!(
-            tool_name,
-            "create_thread"
-                | "update_thread"
-                | "create_project_task"
-                | "update_project_task"
-                | "assign_project_task"
-        )
-    }
-
     pub(super) fn tool_allowed_in_current_mode(&self, tool_name: &str) -> bool {
-        if self.effective_is_coordinator_thread() {
-            return matches!(
-                tool_name,
-                "create_thread"
-                    | "update_thread"
-                    | "create_project_task"
-                    | "update_project_task"
-                    | "assign_project_task"
-                    | "list_threads"
-                    | "sleep"
-            );
+        match tool_name {
+            "update_project_task" => self.can_write_project_task_board_in_current_mode(),
+            "create_project_task" => self.can_create_project_task_in_current_mode(),
+            _ => true,
         }
-
-        if tool_name == "list_threads" {
-            return true;
-        }
-
-        if tool_name == "update_project_task" {
-            return self.can_write_project_task_board_in_current_mode();
-        }
-
-        if tool_name == "create_project_task" {
-            return self.can_create_project_task_in_current_mode();
-        }
-
-        !Self::normal_mode_disallowed_tool(tool_name)
     }
 }

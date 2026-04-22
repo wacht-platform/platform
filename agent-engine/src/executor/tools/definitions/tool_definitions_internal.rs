@@ -165,18 +165,6 @@ pub(crate) fn internal_tools() -> Vec<(
             ],
         ),
         (
-            "snapshot_execution_state",
-            "Set a local checkpoint flag for this run before pausing or exiting. Use this when you want to stop safely with unfinished internal execution state such as an active task graph, and you want the current run to be allowed to conclude.",
-            InternalToolType::SnapshotExecutionState,
-            vec![SchemaField {
-                name: "reason".to_string(),
-                field_type: "STRING".to_string(),
-                description: Some("Optional brief reason for taking the checkpoint before pausing or exiting.".to_string()),
-                required: false,
-                ..Default::default()
-            }],
-        ),
-        (
             "web_search",
             "Search the public web via Parallel Search. Use this first to discover relevant URLs and excerpts before extracting full page content.",
             InternalToolType::WebSearch,
@@ -335,7 +323,7 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "search_knowledgebase",
-            "Search linked local knowledge bases and return typed candidate documents and chunks. Use this when you need KB evidence inside startaction.",
+            "Search linked local knowledge bases and return typed candidate documents and chunks. Use when you need evidence from linked KBs.",
             InternalToolType::SearchKnowledgebase,
             vec![
                 SchemaField {
@@ -478,29 +466,112 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "save_memory",
-            "Save important information to long-term memory. Use for facts, preferences, procedures that should be remembered across sessions.",
+            "Save a durable fact or procedure. Use for things that will matter beyond the current task.",
             InternalToolType::SaveMemory,
             vec![
                 SchemaField {
                     name: "content".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("The information to remember".to_string()),
+                    description: Some("The distilled rule or procedure. Three lines: the fact, `Why:` the reason, `How to apply:` the trigger.".to_string()),
                     required: true,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "category".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Category: procedural (how-to), semantic (facts), episodic (events), working (temp). Defaults to working if omitted.".to_string()),
-                    enum_values: string_enum(&["procedural", "semantic", "episodic", "working"]),
+                    description: Some("Category: semantic (facts, decisions, constraints) or procedural (validated how-to). Defaults to semantic.".to_string()),
+                    enum_values: string_enum(&["semantic", "procedural"]),
                     required: false,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "scope".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Memory scope: thread, project, actor, or agent (default: thread).".to_string()),
-                    enum_values: string_enum(&["thread", "project", "actor", "agent"]),
+                    description: Some("Who can recall this. actor (user-wide), project (this project only), thread (this task lane only). Defaults to project.".to_string()),
+                    enum_values: string_enum(&["actor", "project", "thread"]),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "observation".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("The scenario that led to the insight. Populate for non-trivial memories so future retrievals can reconstruct context.".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "signals".to_string(),
+                    field_type: "ARRAY".to_string(),
+                    description: Some("Short cue phrases (3-6 words each) that signal this memory is applicable.".to_string()),
+                    items_type: Some("STRING".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "related".to_string(),
+                    field_type: "ARRAY".to_string(),
+                    description: Some("Memory IDs of related entries forming the reasoning chain.".to_string()),
+                    items_type: Some("STRING".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+            ],
+        ),
+        (
+            "update_memory",
+            "Correct or refine an existing memory in place. Use when the prior entry was wrong (bad fact, wrong category, stale location). For a rule that legitimately changed, save a new memory and link the old via `related` instead.",
+            InternalToolType::UpdateMemory,
+            vec![
+                SchemaField {
+                    name: "memory_id".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("ID of the memory to update.".to_string()),
+                    required: true,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "content".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("New content. Omit to keep the current value.".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "category".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("New category. Omit to keep current.".to_string()),
+                    enum_values: string_enum(&["semantic", "procedural"]),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "scope".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Scope changes are not supported here; re-save the memory in the new scope instead.".to_string()),
+                    enum_values: string_enum(&["actor", "project", "thread"]),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "observation".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Replace the observation. Pass an empty string to clear it.".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "signals".to_string(),
+                    field_type: "ARRAY".to_string(),
+                    description: Some("Replace the signals list. Empty array clears it.".to_string()),
+                    items_type: Some("STRING".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "related".to_string(),
+                    field_type: "ARRAY".to_string(),
+                    description: Some("Replace the related-memory-ids list. Empty array clears it.".to_string()),
+                    items_type: Some("STRING".to_string()),
                     required: false,
                     ..Default::default()
                 },

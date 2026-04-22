@@ -665,12 +665,7 @@ fn detect_nsjail_flags() -> std::collections::HashSet<String> {
             }
             let normalized = token
                 .trim_end_matches(|ch: char| {
-                    ch == ','
-                        || ch == ';'
-                        || ch == ':'
-                        || ch == ')'
-                        || ch == ']'
-                        || ch == '}'
+                    ch == ',' || ch == ';' || ch == ':' || ch == ')' || ch == ']' || ch == '}'
                 })
                 .split('=')
                 .next()

@@ -6,7 +6,8 @@ use chrono::Utc;
 
 pub struct CreateConversationCommand {
     pub id: i64,
-    pub thread_id: i64,
+    pub thread_id: Option<i64>,
+    pub board_item_id: Option<i64>,
     pub execution_run_id: Option<i64>,
     pub content: ConversationContent,
     pub message_type: ConversationMessageType,
@@ -22,7 +23,8 @@ impl CreateConversationCommand {
     ) -> Self {
         Self {
             id,
-            thread_id,
+            thread_id: Some(thread_id),
+            board_item_id: None,
             execution_run_id: None,
             content,
             message_type,
@@ -35,6 +37,11 @@ impl CreateConversationCommand {
         self
     }
 
+    pub fn with_board_item_id(mut self, board_item_id: i64) -> Self {
+        self.board_item_id = Some(board_item_id);
+        self
+    }
+
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = Some(metadata);
         self
@@ -44,6 +51,7 @@ impl CreateConversationCommand {
 pub struct CleanupCompactedConversationsCommand {
     pub thread_id: i64,
     pub cleanup_through_id: i64,
+    pub board_item_id: Option<i64>,
 }
 
 impl CleanupCompactedConversationsCommand {
@@ -51,7 +59,13 @@ impl CleanupCompactedConversationsCommand {
         Self {
             thread_id,
             cleanup_through_id,
+            board_item_id: None,
         }
+    }
+
+    pub fn with_board_item_id(mut self, board_item_id: Option<i64>) -> Self {
+        self.board_item_id = board_item_id;
+        self
     }
 }
 
@@ -65,11 +79,13 @@ impl CleanupCompactedConversationsCommand {
             DELETE FROM conversations
             WHERE thread_id = $1
               AND id <= $2
+              AND ($3::bigint IS NULL OR board_item_id = $3)
               AND message_type <> 'execution_summary'
             "#,
         )
         .bind(self.thread_id)
         .bind(self.cleanup_through_id)
+        .bind(self.board_item_id)
         .execute(executor)
         .await
         .map_err(AppError::from)?;
@@ -81,6 +97,7 @@ impl CleanupCompactedConversationsCommand {
 pub struct DispatchConversationCleanupTaskCommand {
     pub thread_id: i64,
     pub cleanup_through_id: i64,
+    pub board_item_id: Option<i64>,
 }
 
 impl DispatchConversationCleanupTaskCommand {
@@ -88,7 +105,13 @@ impl DispatchConversationCleanupTaskCommand {
         Self {
             thread_id,
             cleanup_through_id,
+            board_item_id: None,
         }
+    }
+
+    pub fn with_board_item_id(mut self, board_item_id: Option<i64>) -> Self {
+        self.board_item_id = board_item_id;
+        self
     }
 }
 
@@ -97,15 +120,20 @@ impl DispatchConversationCleanupTaskCommand {
     where
         D: HasNatsProvider + ?Sized,
     {
+        let task_id_suffix = self
+            .board_item_id
+            .map(|id| format!("-{}", id))
+            .unwrap_or_default();
         let task_message = NatsTaskMessage {
             task_type: "conversation.cleanup_compacted".to_string(),
             task_id: format!(
-                "conversation-cleanup-{}-{}",
-                self.thread_id, self.cleanup_through_id
+                "conversation-cleanup-{}-{}{}",
+                self.thread_id, self.cleanup_through_id, task_id_suffix,
             ),
             payload: serde_json::json!({
                 "thread_id": self.thread_id,
-                "cleanup_through_id": self.cleanup_through_id
+                "cleanup_through_id": self.cleanup_through_id,
+                "board_item_id": self.board_item_id,
             }),
         };
 
@@ -148,21 +176,23 @@ impl CreateConversationCommand {
             ConversationMessageType::ApprovalRequest => "approval_request",
             ConversationMessageType::ApprovalResponse => "approval_response",
             ConversationMessageType::ExecutionSummary => "execution_summary",
+            ConversationMessageType::AssignmentEvent => "assignment_event",
         };
 
         let record = sqlx::query_as::<_, ConversationRecord>(
             r#"
             INSERT INTO conversations (
-                id, thread_id, execution_run_id, timestamp, content, message_type,
+                id, thread_id, board_item_id, execution_run_id, timestamp, content, message_type,
                 created_at, updated_at, metadata
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $7, $8
+                $1, $2, $3, $4, $5, $6, $7, $8, $8, $9
             )
             RETURNING *
             "#,
         )
         .bind(self.id)
         .bind(self.thread_id)
+        .bind(self.board_item_id)
         .bind(self.execution_run_id)
         .bind(now)
         .bind(content_json)

@@ -1,9 +1,9 @@
+pub mod admission;
 pub mod executor;
 pub mod filesystem;
 mod json_schema;
 pub mod llm;
 pub mod runtime;
-pub mod template;
 pub mod tools;
 
 pub use executor::{AgentExecutor, ResumeContext};

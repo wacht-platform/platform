@@ -8,6 +8,7 @@ members = [
     "oauth-relay",
     "platform",
     "queries",
+    "templatekit",
     "worker",
 ]
 resolver = "2"

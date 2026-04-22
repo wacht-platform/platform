@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
@@ -63,61 +62,17 @@ impl Default for AgentThreadStatus {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct ThreadExecutionState {
     #[serde(default)]
-    pub long_think_credit_snapshot: LongThinkCreditSnapshot,
-    #[serde(default)]
     pub loaded_external_tool_ids: Vec<i64>,
-    #[serde(default)]
-    pub prompt_caches: PromptCacheRegistry,
     pub pending_approval_request: Option<ToolApprovalRequestState>,
-    #[serde(default)]
-    pub active_startaction_directive: Option<Value>,
-    #[serde(default)]
-    pub active_tool_call_brief: Option<Value>,
     #[serde(default)]
     pub assignment_outcome_override: Option<ThreadAssignmentOutcomeOverride>,
     #[serde(default)]
     pub task_journal_start_hash: Option<String>,
     #[serde(default)]
     pub conversation_compaction_state: ConversationCompactionState,
-}
-
-impl Default for ThreadExecutionState {
-    fn default() -> Self {
-        Self {
-            long_think_credit_snapshot: LongThinkCreditSnapshot::default(),
-            loaded_external_tool_ids: Vec::new(),
-            prompt_caches: PromptCacheRegistry::default(),
-            pending_approval_request: None,
-            active_startaction_directive: None,
-            active_tool_call_brief: None,
-            assignment_outcome_override: None,
-            task_journal_start_hash: None,
-            conversation_compaction_state: ConversationCompactionState::default(),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct PromptCacheRegistry {
-    #[serde(default)]
-    pub step_decision: Option<PromptCacheState>,
-    #[serde(default)]
-    pub action_loop: Option<PromptCacheState>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct ConversationCompactionState {
-    #[serde(default)]
-    pub last_prompt_token_count: u32,
-    #[serde(default)]
-    pub max_prompt_token_count_seen: u32,
-    #[serde(default)]
-    pub last_total_token_count: u32,
-    #[serde(default)]
-    pub last_compacted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -134,16 +89,16 @@ pub struct PromptCacheState {
     pub expire_at: DateTime<Utc>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct LongThinkCreditSnapshot {
-    #[serde(default = "default_credit_snapshot_at")]
-    pub snapshot_at: DateTime<Utc>,
-    #[serde(default = "default_input_tokens_available")]
-    pub input_tokens_available: u32,
-    #[serde(default = "default_output_tokens_available")]
-    pub output_tokens_available: u32,
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ConversationCompactionState {
     #[serde(default)]
-    pub last_used_at: Option<DateTime<Utc>>,
+    pub last_prompt_token_count: u32,
+    #[serde(default)]
+    pub max_prompt_token_count_seen: u32,
+    #[serde(default)]
+    pub last_total_token_count: u32,
+    #[serde(default)]
+    pub last_compacted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -151,29 +106,6 @@ pub struct ThreadAssignmentOutcomeOverride {
     pub assignment_status: String,
     pub result_status: Option<String>,
     pub note: Option<String>,
-}
-
-impl Default for LongThinkCreditSnapshot {
-    fn default() -> Self {
-        Self {
-            snapshot_at: default_credit_snapshot_at(),
-            input_tokens_available: default_input_tokens_available(),
-            output_tokens_available: default_output_tokens_available(),
-            last_used_at: None,
-        }
-    }
-}
-
-fn default_credit_snapshot_at() -> DateTime<Utc> {
-    Utc::now()
-}
-
-fn default_input_tokens_available() -> u32 {
-    2_000_000
-}
-
-fn default_output_tokens_available() -> u32 {
-    300_000
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

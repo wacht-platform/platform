@@ -4,6 +4,7 @@ pub mod agent_threads;
 pub mod ai_agents;
 pub mod ai_knowledge_base;
 pub mod ai_settings;
+mod ai_settings_admission;
 pub mod ai_skills;
 pub mod ai_tools;
 pub mod analytics;

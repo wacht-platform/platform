@@ -28,6 +28,43 @@ impl Default for DeploymentLlmProvider {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentEmbeddingProvider {
+    Gemini,
+    Openai,
+    Openrouter,
+}
+
+impl Default for DeploymentEmbeddingProvider {
+    fn default() -> Self {
+        Self::Gemini
+    }
+}
+
+pub const EMBEDDING_DIMENSION_1536: i32 = 1536;
+pub const EMBEDDING_DIMENSION_768: i32 = 768;
+
+pub fn default_embedding_dimension() -> i32 {
+    EMBEDDING_DIMENSION_1536
+}
+
+pub fn is_supported_embedding_dimension(value: i32) -> bool {
+    matches!(value, EMBEDDING_DIMENSION_1536 | EMBEDDING_DIMENSION_768)
+}
+
+pub fn default_embedding_provider() -> DeploymentEmbeddingProvider {
+    DeploymentEmbeddingProvider::Gemini
+}
+
+pub fn default_embedding_model_for_provider(provider: &DeploymentEmbeddingProvider) -> String {
+    match provider {
+        DeploymentEmbeddingProvider::Gemini => "gemini-embedding-2-preview".to_string(),
+        DeploymentEmbeddingProvider::Openai => "text-embedding-3-small".to_string(),
+        DeploymentEmbeddingProvider::Openrouter => "openai/text-embedding-3-small".to_string(),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeploymentStorageSettingsResponse {
     pub provider: DeploymentStorageProvider,
@@ -73,6 +110,9 @@ pub struct DeploymentAiSettings {
     pub anthropic_api_key: Option<String>,
     pub strong_model: Option<String>,
     pub weak_model: Option<String>,
+    pub embedding_provider: String,
+    pub embedding_model: String,
+    pub embedding_dimension: i32,
     pub storage_provider: String,
     pub storage_bucket: Option<String>,
     pub storage_region: Option<String>,
@@ -98,6 +138,9 @@ pub struct DeploymentAiSettingsResponse {
     pub anthropic_api_key_set: bool,
     pub strong_model: Option<String>,
     pub weak_model: Option<String>,
+    pub embedding_provider: DeploymentEmbeddingProvider,
+    pub embedding_model: String,
+    pub embedding_dimension: i32,
     pub storage: DeploymentStorageSettingsResponse,
 }
 
@@ -121,6 +164,13 @@ impl From<DeploymentAiSettings> for DeploymentAiSettingsResponse {
             anthropic_api_key_set: settings.anthropic_api_key.is_some(),
             strong_model: settings.strong_model,
             weak_model: settings.weak_model,
+            embedding_provider: match settings.embedding_provider.as_str() {
+                "openai" => DeploymentEmbeddingProvider::Openai,
+                "openrouter" => DeploymentEmbeddingProvider::Openrouter,
+                _ => DeploymentEmbeddingProvider::Gemini,
+            },
+            embedding_model: settings.embedding_model,
+            embedding_dimension: settings.embedding_dimension,
             storage: DeploymentStorageSettingsResponse {
                 provider: DeploymentStorageProvider::S3,
                 bucket: settings.storage_bucket,
@@ -156,6 +206,12 @@ pub struct UpdateDeploymentAiSettingsRequest {
     pub strong_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weak_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_provider: Option<DeploymentEmbeddingProvider>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_dimension: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage: Option<UpdateDeploymentStorageSettingsRequest>,
 }

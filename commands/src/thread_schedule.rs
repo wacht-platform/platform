@@ -1,11 +1,8 @@
-use chrono::{Duration as ChronoDuration, Utc};
 use common::{HasDbRouter, error::AppError};
 use models::ThreadEvent;
 use std::str::FromStr;
 
 use crate::{ThreadEventWakeDisposition, wake_disposition_for_thread_event};
-
-const CLAIMED_EVENT_RETRY_AFTER_SECONDS: i64 = 30;
 
 pub struct ClaimNextSchedulableThreadEventCommand {
     deployment_id: i64,
@@ -15,10 +12,6 @@ pub struct ClaimNextSchedulableThreadEventCommand {
 pub enum ClaimNextSchedulableThreadEventResult {
     Claimed(ThreadEvent),
     NoThreadAvailable,
-    ExistingClaimNotStale {
-        event_id: i64,
-        claimed_at: Option<chrono::DateTime<Utc>>,
-    },
     NoPendingEvent,
     WakeNotAllowed {
         event_id: i64,
@@ -48,14 +41,13 @@ impl ClaimNextSchedulableThreadEventCommand {
     {
         let mut tx = deps.writer_pool().begin().await?;
 
-        let locked_thread = sqlx::query!(
+        let thread_row = sqlx::query!(
             r#"
             SELECT status, reusable, accepts_assignments
             FROM agent_threads
             WHERE id = $1
               AND deployment_id = $2
               AND archived_at IS NULL
-            FOR UPDATE SKIP LOCKED
             "#,
             self.thread_id,
             self.deployment_id,
@@ -63,7 +55,7 @@ impl ClaimNextSchedulableThreadEventCommand {
         .fetch_optional(&mut *tx)
         .await?;
 
-        let Some(thread_row) = locked_thread else {
+        let Some(thread_row) = thread_row else {
             tx.commit().await?;
             return Ok(ClaimNextSchedulableThreadEventResult::NoThreadAvailable);
         };
@@ -76,20 +68,18 @@ impl ClaimNextSchedulableThreadEventCommand {
                 ))
             })?;
 
-        let stale_before = Utc::now() - ChronoDuration::seconds(CLAIMED_EVENT_RETRY_AFTER_SECONDS);
-
-        let claimed_row = sqlx::query_as!(
+        let pending_row = sqlx::query_as!(
             ThreadEvent,
             r#"
             SELECT
                 id, deployment_id, thread_id, board_item_id, event_type, status,
                 priority, payload, available_at, claimed_at, completed_at, failed_at,
-                caused_by_run_id, caused_by_thread_id, created_at, updated_at
+                caused_by_run_id, caused_by_thread_id, conversation_id, retry_count, max_retries, created_at, updated_at
             FROM thread_events
             WHERE thread_id = $1
-              AND status = 'claimed'
-              AND caused_by_run_id IS NULL
-            ORDER BY claimed_at ASC NULLS FIRST, created_at ASC
+              AND status = 'pending'
+              AND available_at <= NOW()
+            ORDER BY priority ASC, available_at ASC, created_at ASC
             LIMIT 1
             FOR UPDATE SKIP LOCKED
             "#,
@@ -98,93 +88,41 @@ impl ClaimNextSchedulableThreadEventCommand {
         .fetch_optional(&mut *tx)
         .await?;
 
-        let event = if let Some(claimed_event) = claimed_row {
-            if claimed_event
-                .claimed_at
-                .map(|claimed_at| claimed_at > stale_before)
-                .unwrap_or(false)
-            {
-                tx.commit().await?;
-                return Ok(
-                    ClaimNextSchedulableThreadEventResult::ExistingClaimNotStale {
-                        event_id: claimed_event.id,
-                        claimed_at: claimed_event.claimed_at,
-                    },
-                );
-            }
-
-            sqlx::query_as!(
-                ThreadEvent,
-                r#"
-                UPDATE thread_events
-                SET claimed_at = NOW(), updated_at = NOW()
-                WHERE id = $1
-                RETURNING
-                    id, deployment_id, thread_id, board_item_id, event_type, status,
-                    priority, payload, available_at, claimed_at, completed_at, failed_at,
-                    caused_by_run_id, caused_by_thread_id, created_at, updated_at
-                "#,
-                claimed_event.id,
-            )
-            .fetch_one(&mut *tx)
-            .await?
-        } else {
-            let pending_row = sqlx::query_as!(
-                ThreadEvent,
-                r#"
-                SELECT
-                    id, deployment_id, thread_id, board_item_id, event_type, status,
-                    priority, payload, available_at, claimed_at, completed_at, failed_at,
-                    caused_by_run_id, caused_by_thread_id, created_at, updated_at
-                FROM thread_events
-                WHERE thread_id = $1
-                  AND status = 'pending'
-                  AND available_at <= NOW()
-                ORDER BY priority ASC, available_at ASC, created_at ASC
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
-                "#,
-                self.thread_id,
-            )
-            .fetch_optional(&mut *tx)
-            .await?;
-
-            let Some(pending_event) = pending_row else {
-                tx.commit().await?;
-                return Ok(ClaimNextSchedulableThreadEventResult::NoPendingEvent);
-            };
-
-            if wake_disposition_for_thread_event(
-                &thread_status,
-                &pending_event.event_type,
-                thread_row.reusable,
-                thread_row.accepts_assignments,
-            ) != ThreadEventWakeDisposition::Published
-            {
-                tx.commit().await?;
-                return Ok(ClaimNextSchedulableThreadEventResult::WakeNotAllowed {
-                    event_id: pending_event.id,
-                    event_type: pending_event.event_type,
-                    thread_status: thread_status.to_string(),
-                });
-            }
-
-            sqlx::query_as!(
-                ThreadEvent,
-                r#"
-                UPDATE thread_events
-                SET status = 'claimed', claimed_at = NOW(), updated_at = NOW()
-                WHERE id = $1
-                RETURNING
-                    id, deployment_id, thread_id, board_item_id, event_type, status,
-                    priority, payload, available_at, claimed_at, completed_at, failed_at,
-                    caused_by_run_id, caused_by_thread_id, created_at, updated_at
-                "#,
-                pending_event.id,
-            )
-            .fetch_one(&mut *tx)
-            .await?
+        let Some(pending_event) = pending_row else {
+            tx.commit().await?;
+            return Ok(ClaimNextSchedulableThreadEventResult::NoPendingEvent);
         };
+
+        if wake_disposition_for_thread_event(
+            &thread_status,
+            &pending_event.event_type,
+            thread_row.reusable,
+            thread_row.accepts_assignments,
+        ) != ThreadEventWakeDisposition::Published
+        {
+            tx.commit().await?;
+            return Ok(ClaimNextSchedulableThreadEventResult::WakeNotAllowed {
+                event_id: pending_event.id,
+                event_type: pending_event.event_type,
+                thread_status: thread_status.to_string(),
+            });
+        }
+
+        let event = sqlx::query_as!(
+            ThreadEvent,
+            r#"
+            UPDATE thread_events
+            SET status = 'claimed', claimed_at = NOW(), updated_at = NOW()
+            WHERE id = $1
+            RETURNING
+                id, deployment_id, thread_id, board_item_id, event_type, status,
+                priority, payload, available_at, claimed_at, completed_at, failed_at,
+                caused_by_run_id, caused_by_thread_id, conversation_id, retry_count, max_retries, created_at, updated_at
+            "#,
+            pending_event.id,
+        )
+        .fetch_one(&mut *tx)
+        .await?;
 
         if matches!(thread_status, models::AgentThreadStatus::Failed)
             && wake_disposition_for_thread_event(

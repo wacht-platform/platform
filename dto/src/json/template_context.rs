@@ -98,38 +98,24 @@ impl LlmHistoryEntry {
 
 // Template Context for LLM Calls
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NextStepDecisionContext {
-    pub runtime: NextStepDecisionRuntimeContext,
-    pub conversation: NextStepDecisionConversationContext,
-    pub thread: NextStepDecisionThreadContext,
-    pub resources: NextStepDecisionResourceContext,
-    pub task: NextStepDecisionTaskContext,
+pub struct AgentLoopContext {
+    pub runtime: AgentLoopRuntimeContext,
+    pub conversation: AgentLoopConversationContext,
+    pub thread: AgentLoopThreadContext,
+    pub resources: AgentLoopResourceContext,
+    pub task: AgentLoopTaskContext,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NextStepDecisionRuntimeContext {
+pub struct AgentLoopRuntimeContext {
     pub current_datetime_utc: String,
     pub iteration_info: IterationInfo,
-    #[serde(default)]
-    pub long_think_mode_active: bool,
-    #[serde(default)]
-    pub long_think_input_tokens_available: u32,
-    #[serde(default)]
-    pub long_think_output_tokens_available: u32,
-    #[serde(default = "default_long_think_input_token_budget")]
-    pub long_think_input_token_budget: u32,
-    #[serde(default = "default_long_think_output_token_budget")]
-    pub long_think_output_token_budget: u32,
-    #[serde(default = "default_long_think_window_minutes")]
-    pub long_think_window_minutes: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub long_think_nudge: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub steer_visibility_nudge: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NextStepDecisionConversationContext {
+pub struct AgentLoopConversationContext {
     pub user_request: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub triggering_event: Option<ThreadEventPromptItem>,
@@ -138,7 +124,7 @@ pub struct NextStepDecisionConversationContext {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NextStepDecisionThreadContext {
+pub struct AgentLoopThreadContext {
     #[serde(with = "models::utils::serde::i64_as_string")]
     pub id: i64,
     pub title: String,
@@ -148,7 +134,7 @@ pub struct NextStepDecisionThreadContext {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NextStepDecisionResourceContext {
+pub struct AgentLoopResourceContext {
     pub available_tools: Vec<ToolPromptItem>,
     pub available_knowledge_bases: Vec<KnowledgeBasePromptItem>,
     #[serde(default)]
@@ -160,7 +146,7 @@ pub struct NextStepDecisionResourceContext {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NextStepDecisionTaskContext {
+pub struct AgentLoopTaskContext {
     #[serde(default)]
     pub project_task_board_items: Vec<ProjectTaskBoardPromptItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -182,9 +168,9 @@ pub struct NextStepDecisionTaskContext {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NextStepDecisionPromptEnvelope {
+pub struct AgentLoopPromptEnvelope {
     #[serde(flatten)]
-    pub base: NextStepDecisionContext,
+    pub base: AgentLoopContext,
     pub agent_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_description: Option<String>,
@@ -386,9 +372,6 @@ pub enum ThreadEventPromptPayload {
     AssignmentExecution {
         payload: ProjectTaskBoardItemAssignmentEventDetails,
     },
-    AssignmentOutcomeReview {
-        payload: ProjectTaskBoardItemAssignmentEventDetails,
-    },
     Raw {
         raw_json: String,
     },
@@ -443,8 +426,6 @@ pub struct ProjectTaskBoardAssignmentPromptItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub handoff_file_path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub requested_target: Option<ProjectTaskBoardAssignmentTarget>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_status: Option<String>,
@@ -481,18 +462,6 @@ pub struct ProjectTaskBoardItemEventPromptItem {
 pub struct IterationInfo {
     pub current_iteration: usize,
     pub max_iterations: usize,
-}
-
-fn default_long_think_input_token_budget() -> u32 {
-    2_000_000
-}
-
-fn default_long_think_output_token_budget() -> u32 {
-    300_000
-}
-
-fn default_long_think_window_minutes() -> u32 {
-    30
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

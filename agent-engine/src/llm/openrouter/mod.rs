@@ -3,7 +3,6 @@ use std::time::Duration;
 use common::error::AppError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tracing::info;
 
 use crate::{
     json_schema::{normalize_json_schema, normalize_openai_tool_schema},
@@ -169,16 +168,6 @@ impl OpenRouterClient {
         T: for<'de> Deserialize<'de> + Serialize,
     {
         let request_body = self.build_request_body(prompt, cache)?;
-        info!(
-            "{}",
-            json!({
-                "event": "openrouter_generate_request",
-                "model": self.model,
-                "url": OPENROUTER_API_BASE_URL,
-                "request": request_body,
-            })
-            .to_string()
-        );
         let parsed = self.execute_request(request_body).await?;
 
         let generated_text = parsed
@@ -215,52 +204,48 @@ impl OpenRouterClient {
         tools: Vec<NativeToolDefinition>,
     ) -> Result<ToolCallGenerationOutput, AppError> {
         let request_body = self.build_tool_call_request_body(prompt, tools)?;
-        info!(
-            "{}",
-            json!({
-                "event": "openrouter_generate_request",
-                "model": self.model,
-                "url": OPENROUTER_API_BASE_URL,
-                "request": request_body,
-            })
-            .to_string()
-        );
-
         let parsed = self.execute_request(request_body).await?;
-        let tool_calls = parsed
+        let message = &parsed
             .choices
             .first()
             .ok_or_else(|| AppError::Internal("OpenRouter returned no choices".to_string()))?
-            .message
-            .tool_calls
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("OpenRouter returned no tool calls".to_string()))?;
+            .message;
 
-        let calls = tool_calls
-            .iter()
-            .map(|call| {
-                let arguments =
-                    serde_json::from_str::<Value>(&call.function.arguments).map_err(|error| {
-                        AppError::Internal(format!(
-                            "Failed to parse OpenRouter tool arguments for {}: {}",
-                            call.function.name, error
-                        ))
-                    })?;
-                Ok(GeneratedToolCall {
-                    tool_name: call.function.name.clone(),
-                    arguments,
+        let calls = match message.tool_calls.as_ref() {
+            Some(tc) => tc
+                .iter()
+                .map(|call| {
+                    let arguments = serde_json::from_str::<Value>(&call.function.arguments)
+                        .map_err(|error| {
+                            AppError::Internal(format!(
+                                "Failed to parse OpenRouter tool arguments for {}: {}",
+                                call.function.name, error
+                            ))
+                        })?;
+                    Ok(GeneratedToolCall {
+                        tool_name: call.function.name.clone(),
+                        arguments,
+                    })
                 })
-            })
-            .collect::<Result<Vec<_>, AppError>>()?;
+                .collect::<Result<Vec<_>, AppError>>()?,
+            None => Vec::new(),
+        };
 
-        if calls.is_empty() {
+        let content_text = message
+            .content
+            .as_ref()
+            .map(Self::message_content_as_text)
+            .filter(|t| !t.trim().is_empty());
+
+        if calls.is_empty() && content_text.is_none() {
             return Err(AppError::Internal(
-                "OpenRouter returned an empty tool call list".to_string(),
+                "OpenRouter returned no tool calls and no text".to_string(),
             ));
         }
 
         Ok(ToolCallGenerationOutput {
             calls,
+            content_text,
             usage_metadata: parsed.usage.map(Self::map_usage_metadata),
         })
     }
@@ -358,7 +343,9 @@ impl OpenRouterClient {
         body.insert("model".to_string(), json!(self.model));
         body.insert("messages".to_string(), Value::Array(messages));
         body.insert("tools".to_string(), Value::Array(tool_values));
-        body.insert("tool_choice".to_string(), json!("required"));
+        // AUTO mode: model may emit tool calls, text, or both. Text-only response is
+        // the terminal signal in the unified ReAct loop.
+        body.insert("tool_choice".to_string(), json!("auto"));
         if self.require_parameters {
             body.insert(
                 "provider".to_string(),
@@ -418,19 +405,6 @@ impl OpenRouterClient {
             let response_text = response.text().await.map_err(|e| {
                 AppError::Internal(format!("Failed to read OpenRouter response body: {e}"))
             })?;
-
-            info!(
-                "{}",
-                json!({
-                    "event": "openrouter_generate_response",
-                    "model": self.model,
-                    "url": OPENROUTER_API_BASE_URL,
-                    "status": status.as_u16(),
-                    "ok": status.is_success(),
-                    "response": response_text,
-                })
-                .to_string()
-            );
 
             if status.is_success() && Self::parse_error_envelope(&response_text).is_none() {
                 break response_text;

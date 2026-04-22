@@ -23,7 +23,7 @@ impl GetRecentConversationsQuery {
         let records = sqlx::query_as::<_, ConversationRecord>(
             r#"
             SELECT
-                id, thread_id, execution_run_id, timestamp, content, message_type,
+                id, thread_id, board_item_id, execution_run_id, timestamp, content, message_type,
                 created_at, updated_at, metadata
             FROM conversations
             WHERE thread_id = $1
@@ -51,6 +51,7 @@ fn parse_conversation_message_type(value: &str) -> Result<ConversationMessageTyp
         "approval_request" => Ok(ConversationMessageType::ApprovalRequest),
         "approval_response" => Ok(ConversationMessageType::ApprovalResponse),
         "execution_summary" => Ok(ConversationMessageType::ExecutionSummary),
+        "assignment_event" => Ok(ConversationMessageType::AssignmentEvent),
         other => Err(AppError::Internal(format!(
             "Unknown conversation message_type '{}'",
             other
@@ -60,7 +61,8 @@ fn parse_conversation_message_type(value: &str) -> Result<ConversationMessageTyp
 
 fn build_conversation_record(
     id: i64,
-    thread_id: i64,
+    thread_id: Option<i64>,
+    board_item_id: Option<i64>,
     execution_run_id: Option<i64>,
     timestamp: chrono::DateTime<Utc>,
     content: serde_json::Value,
@@ -72,6 +74,7 @@ fn build_conversation_record(
     Ok(ConversationRecord {
         id,
         thread_id,
+        board_item_id,
         execution_run_id,
         timestamp,
         content: serde_json::from_value::<ConversationContent>(content).map_err(|e| {
@@ -110,7 +113,7 @@ impl GetConversationByIdQuery {
         let record = sqlx::query!(
             r#"
             SELECT
-                id, thread_id, execution_run_id, timestamp, content, message_type,
+                id, thread_id, board_item_id, execution_run_id, timestamp, content, message_type,
                 created_at, updated_at, metadata
             FROM conversations
             WHERE id = $1
@@ -127,6 +130,7 @@ impl GetConversationByIdQuery {
         build_conversation_record(
             record.id,
             record.thread_id,
+            record.board_item_id,
             record.execution_run_id,
             record.timestamp,
             record.content,
@@ -141,11 +145,20 @@ impl GetConversationByIdQuery {
 #[derive(Debug)]
 pub struct GetLLMConversationHistoryQuery {
     pub thread_id: i64,
+    pub board_item_id: Option<i64>,
 }
 
 impl GetLLMConversationHistoryQuery {
     pub fn new(thread_id: i64) -> Self {
-        Self { thread_id }
+        Self {
+            thread_id,
+            board_item_id: None,
+        }
+    }
+
+    pub fn with_board_item_id(mut self, board_item_id: Option<i64>) -> Self {
+        self.board_item_id = board_item_id;
+        self
     }
 
     pub async fn execute_with_db<'e, E>(
@@ -161,6 +174,7 @@ impl GetLLMConversationHistoryQuery {
                 SELECT id as last_summary_id
                 FROM conversations
                 WHERE thread_id = $1
+                  AND ($2::bigint IS NULL OR board_item_id = $2)
                   AND message_type = 'execution_summary'
                 ORDER BY id DESC
                 LIMIT 1
@@ -171,10 +185,11 @@ impl GetLLMConversationHistoryQuery {
                 LEFT JOIN last_summary ON TRUE
             ),
             recent_unsummarized AS (
-                SELECT c.id, c.thread_id, c.execution_run_id, c.timestamp, c.content, c.message_type,
+                SELECT c.id, c.thread_id, c.board_item_id, c.execution_run_id, c.timestamp, c.content, c.message_type,
                        c.created_at, c.updated_at, c.metadata
                 FROM conversations c, last_summary_with_default ls
                 WHERE c.thread_id = $1
+                  AND ($2::bigint IS NULL OR c.board_item_id = $2)
                   AND c.id > ls.last_summary_id
             ),
             execution_summaries AS (
@@ -182,11 +197,12 @@ impl GetLLMConversationHistoryQuery {
                        ROW_NUMBER() OVER (ORDER BY c.id DESC) as execution_count
                 FROM conversations c
                 WHERE c.thread_id = $1
+                  AND ($2::bigint IS NULL OR c.board_item_id = $2)
                   AND c.message_type = 'execution_summary'
                 ORDER BY c.id DESC
             ),
             limited_summaries AS (
-                SELECT id, thread_id, execution_run_id, timestamp, content, message_type,
+                SELECT id, thread_id, board_item_id, execution_run_id, timestamp, content, message_type,
                        created_at, updated_at, metadata
                 FROM execution_summaries
                 WHERE execution_count <= 3
@@ -196,7 +212,8 @@ impl GetLLMConversationHistoryQuery {
             SELECT * FROM limited_summaries
             ORDER BY id ASC
             "#,
-            self.thread_id
+            self.thread_id,
+            self.board_item_id,
         )
         .fetch_all(executor)
         .await
@@ -207,7 +224,8 @@ impl GetLLMConversationHistoryQuery {
             .map(|row| {
                 build_conversation_record(
                     require_conversation_field(row.id, "id")?,
-                    require_conversation_field(row.thread_id, "thread_id")?,
+                    row.thread_id,
+                    row.board_item_id,
                     row.execution_run_id,
                     require_conversation_field(row.timestamp, "timestamp")?,
                     require_conversation_field(row.content, "content")?,
@@ -225,9 +243,15 @@ impl GetLLMConversationHistoryQuery {
 pub struct GetCompactionWindowConversationsQuery {
     pub thread_id: i64,
     pub before_conversation_id: i64,
+    pub board_item_id: Option<i64>,
 }
 
 impl GetCompactionWindowConversationsQuery {
+    pub fn with_board_item_id(mut self, board_item_id: Option<i64>) -> Self {
+        self.board_item_id = board_item_id;
+        self
+    }
+
     pub async fn execute_with_db<'e, E>(
         &self,
         executor: E,
@@ -241,6 +265,7 @@ impl GetCompactionWindowConversationsQuery {
                 SELECT id as last_summary_id
                 FROM conversations
                 WHERE thread_id = $1
+                  AND ($3::bigint IS NULL OR board_item_id = $3)
                   AND message_type = 'execution_summary'
                 ORDER BY id DESC
                 LIMIT 1
@@ -251,17 +276,19 @@ impl GetCompactionWindowConversationsQuery {
                 LEFT JOIN last_summary ON TRUE
             )
             SELECT
-                c.id, c.thread_id, c.execution_run_id, c.timestamp, c.content, c.message_type,
+                c.id, c.thread_id, c.board_item_id, c.execution_run_id, c.timestamp, c.content, c.message_type,
                 c.created_at, c.updated_at, c.metadata
             FROM conversations c, last_summary_with_default ls
             WHERE c.thread_id = $1
+              AND ($3::bigint IS NULL OR c.board_item_id = $3)
               AND c.id > ls.last_summary_id
               AND c.id < $2
               AND c.message_type <> 'execution_summary'
             ORDER BY c.id ASC
             "#,
             self.thread_id,
-            self.before_conversation_id
+            self.before_conversation_id,
+            self.board_item_id,
         )
         .fetch_all(executor)
         .await
@@ -273,6 +300,7 @@ impl GetCompactionWindowConversationsQuery {
                 build_conversation_record(
                     row.id,
                     row.thread_id,
+                    row.board_item_id,
                     row.execution_run_id,
                     row.timestamp,
                     row.content,
@@ -283,5 +311,48 @@ impl GetCompactionWindowConversationsQuery {
                 )
             })
             .collect()
+    }
+}
+
+#[derive(Debug)]
+pub struct ListConversationsForBoardItemQuery {
+    pub board_item_id: i64,
+    pub limit: i64,
+}
+
+impl ListConversationsForBoardItemQuery {
+    pub fn new(board_item_id: i64, limit: i64) -> Self {
+        Self {
+            board_item_id,
+            limit,
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Vec<ConversationRecord>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let records = sqlx::query_as::<_, ConversationRecord>(
+            r#"
+            SELECT
+                id, thread_id, board_item_id, execution_run_id, timestamp, content, message_type,
+                created_at, updated_at, metadata
+            FROM conversations
+            WHERE board_item_id = $1
+                AND message_type != 'execution_summary'
+            ORDER BY id DESC
+            LIMIT $2
+            "#,
+        )
+        .bind(self.board_item_id)
+        .bind(self.limit)
+        .fetch_all(executor)
+        .await
+        .map_err(AppError::from)?;
+
+        Ok(records)
     }
 }

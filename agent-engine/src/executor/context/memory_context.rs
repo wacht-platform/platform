@@ -28,6 +28,7 @@ impl AgentExecutor {
             self.ctx.thread_id,
             thread.actor_id,
             limit,
+            self.ctx.provider_keys.embedding_dimension,
         )
         .await
     }
@@ -35,10 +36,9 @@ impl AgentExecutor {
     pub(crate) async fn get_recent_conversations(
         &self,
     ) -> Result<Vec<models::ConversationRecord>, AppError> {
-        GetLLMConversationHistoryQuery {
-            thread_id: self.ctx.thread_id,
-        }
-        .execute_with_db(self.ctx.app_state.db_router.writer())
-        .await
+        GetLLMConversationHistoryQuery::new(self.ctx.thread_id)
+            .with_board_item_id(self.current_board_item_id())
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await
     }
 }

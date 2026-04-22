@@ -147,6 +147,43 @@ impl JobScheduler {
             }
         });
 
+        let board_reconciler_state = self.app_state.clone();
+        tokio::spawn(async move {
+            let owner = board_reconciler_state
+                .sf
+                .next_id()
+                .map(|id| id.to_string())
+                .unwrap_or_else(|_| std::process::id().to_string());
+            loop {
+                match jobs::board_reconciler::acquire_lease(&board_reconciler_state, &owner).await {
+                    Ok(true) => {
+                        info!(owner = %owner, "Board reconciler acquired lease, running tick...");
+                        match jobs::board_reconciler::reconcile_stale_board_items(
+                            &board_reconciler_state,
+                        )
+                        .await
+                        {
+                            Ok(result) => info!("Board reconciler tick completed: {}", result),
+                            Err(e) => error!("Board reconciler tick failed: {}", e),
+                        }
+                        if let Err(e) =
+                            jobs::board_reconciler::release_lease(&board_reconciler_state, &owner)
+                                .await
+                        {
+                            error!("Board reconciler failed to release lease: {}", e);
+                        }
+                    }
+                    Ok(false) => {
+                        // Another worker owns the lease this tick.
+                    }
+                    Err(e) => {
+                        error!("Board reconciler failed to acquire lease: {}", e);
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(600)).await;
+            }
+        });
+
         info!("Job scheduler started successfully");
         Ok(())
     }

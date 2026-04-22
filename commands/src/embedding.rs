@@ -1,19 +1,33 @@
 use common::{
-    EmbeddingPart, HasDbRouter, HasEmbeddingProvider, HasEncryptionProvider,
+    EmbeddingApiProvider, EmbeddingPart, HasDbRouter, HasEmbeddingProvider, HasEncryptionProvider,
     db_router::ReadConsistency, error::AppError,
 };
+use models::{
+    DeploymentEmbeddingProvider, default_embedding_dimension, default_embedding_model_for_provider,
+    default_embedding_provider, is_supported_embedding_dimension,
+};
 
-const KNOWLEDGE_EMBEDDING_DIMENSION: i32 = 1536;
 const RETRIEVAL_DOCUMENT_TASK_TYPE: &str = "RETRIEVAL_DOCUMENT";
 const RETRIEVAL_QUERY_TASK_TYPE: &str = "RETRIEVAL_QUERY";
 
+#[derive(Clone)]
+pub struct ResolvedEmbeddingSettings {
+    pub provider: DeploymentEmbeddingProvider,
+    pub model: String,
+    pub api_key: String,
+    pub dimension: i32,
+}
+
 fn format_embedding_input(
+    provider: &DeploymentEmbeddingProvider,
     model: &str,
     text: &str,
     title: Option<&str>,
     task_type: Option<&str>,
 ) -> String {
-    if !model.contains("gemini-embedding-2-preview") {
+    if !matches!(provider, DeploymentEmbeddingProvider::Gemini)
+        || !model.contains("gemini-embedding-2-preview")
+    {
         return text.to_string();
     }
 
@@ -29,10 +43,26 @@ fn format_embedding_input(
     }
 }
 
-pub async fn resolve_deployment_gemini_api_key<D>(
+fn map_embedding_provider(provider: &DeploymentEmbeddingProvider) -> EmbeddingApiProvider {
+    match provider {
+        DeploymentEmbeddingProvider::Gemini => EmbeddingApiProvider::Gemini,
+        DeploymentEmbeddingProvider::Openai => EmbeddingApiProvider::Openai,
+        DeploymentEmbeddingProvider::Openrouter => EmbeddingApiProvider::Openrouter,
+    }
+}
+
+fn provider_name(provider: &DeploymentEmbeddingProvider) -> &'static str {
+    match provider {
+        DeploymentEmbeddingProvider::Gemini => "Gemini",
+        DeploymentEmbeddingProvider::Openai => "OpenAI",
+        DeploymentEmbeddingProvider::Openrouter => "OpenRouter",
+    }
+}
+
+pub async fn resolve_deployment_embedding_settings<D>(
     deps: &D,
     deployment_id: i64,
-) -> Result<Option<String>, AppError>
+) -> Result<ResolvedEmbeddingSettings, AppError>
 where
     D: HasDbRouter + HasEncryptionProvider + ?Sized,
 {
@@ -41,20 +71,101 @@ where
         .execute_with_db(reader)
         .await?;
 
-    match settings.and_then(|s| s.gemini_api_key) {
-        Some(encrypted) if !encrypted.is_empty() => {
-            Ok(Some(deps.encryption_provider().decrypt(&encrypted)?))
-        }
-        _ => Ok(None),
+    let provider = settings
+        .as_ref()
+        .map(|s| match s.embedding_provider.as_str() {
+            "openai" => DeploymentEmbeddingProvider::Openai,
+            "openrouter" => DeploymentEmbeddingProvider::Openrouter,
+            _ => DeploymentEmbeddingProvider::Gemini,
+        })
+        .unwrap_or_else(default_embedding_provider);
+
+    let model = settings
+        .as_ref()
+        .map(|s| s.embedding_model.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| default_embedding_model_for_provider(&provider));
+
+    let dimension = settings
+        .as_ref()
+        .map(|s| s.embedding_dimension)
+        .unwrap_or_else(default_embedding_dimension);
+    if !is_supported_embedding_dimension(dimension) {
+        return Err(AppError::Validation(format!(
+            "Unsupported deployment embedding_dimension {}. Supported values: 1536, 768.",
+            dimension
+        )));
     }
+
+    let encrypted_key = settings.as_ref().and_then(|s| match provider {
+        DeploymentEmbeddingProvider::Gemini => s.gemini_api_key.clone(),
+        DeploymentEmbeddingProvider::Openai => s.openai_api_key.clone(),
+        DeploymentEmbeddingProvider::Openrouter => s.openrouter_api_key.clone(),
+    });
+
+    let encrypted_key = encrypted_key.filter(|value| !value.trim().is_empty());
+    let encrypted_key = encrypted_key.ok_or_else(|| {
+        AppError::Validation(format!(
+            "{} API key is required for embeddings. Configure embedding_provider/model and key in deployment AI settings.",
+            provider_name(&provider)
+        ))
+    })?;
+
+    let api_key = deps
+        .encryption_provider()
+        .decrypt(&encrypted_key)
+        .map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to decrypt deployment {} API key for embeddings: {e}",
+                provider_name(&provider)
+            ))
+        })?;
+
+    if api_key.trim().is_empty() {
+        return Err(AppError::Validation(format!(
+            "{} API key is required for embeddings",
+            provider_name(&provider)
+        )));
+    }
+
+    Ok(ResolvedEmbeddingSettings {
+        provider,
+        model,
+        api_key,
+        dimension,
+    })
+}
+
+pub async fn resolve_deployment_embedding_dimension<D>(
+    deps: &D,
+    deployment_id: i64,
+) -> Result<i32, AppError>
+where
+    D: HasDbRouter + HasEncryptionProvider + ?Sized,
+{
+    Ok(resolve_deployment_embedding_settings(deps, deployment_id)
+        .await?
+        .dimension)
 }
 
 pub fn format_retrieval_query_input(model: &str, text: &str) -> String {
-    format_embedding_input(model, text, None, Some(RETRIEVAL_QUERY_TASK_TYPE))
+    format_embedding_input(
+        &DeploymentEmbeddingProvider::Gemini,
+        model,
+        text,
+        None,
+        Some(RETRIEVAL_QUERY_TASK_TYPE),
+    )
 }
 
 pub fn format_retrieval_document_input(model: &str, text: &str, title: Option<&str>) -> String {
-    format_embedding_input(model, text, title, Some(RETRIEVAL_DOCUMENT_TASK_TYPE))
+    format_embedding_input(
+        &DeploymentEmbeddingProvider::Gemini,
+        model,
+        text,
+        title,
+        Some(RETRIEVAL_DOCUMENT_TASK_TYPE),
+    )
 }
 
 pub fn build_multimodal_retrieval_document_parts(
@@ -115,14 +226,14 @@ impl GenerateEmbeddingCommand {
     where
         D: HasEmbeddingProvider + HasDbRouter + HasEncryptionProvider + ?Sized,
     {
-        let api_key_override = if let Some(deployment_id) = self.deployment_id {
-            resolve_deployment_gemini_api_key(deps, deployment_id).await?
-        } else {
-            None
-        };
+        let deployment_id = self.deployment_id.ok_or_else(|| {
+            AppError::Validation("deployment_id is required for embedding generation".to_string())
+        })?;
+        let settings = resolve_deployment_embedding_settings(deps, deployment_id).await?;
 
         let formatted_text = format_embedding_input(
-            deps.embedding_provider().model(),
+            &settings.provider,
+            &settings.model,
             &self.text,
             self.title.as_deref(),
             Some(if self.is_retrieval_query {
@@ -133,10 +244,12 @@ impl GenerateEmbeddingCommand {
         );
 
         deps.embedding_provider()
-            .embed_content(
+            .embed_content_with(
+                map_embedding_provider(&settings.provider),
+                &settings.model,
                 formatted_text,
-                Some(KNOWLEDGE_EMBEDDING_DIMENSION),
-                api_key_override.as_deref(),
+                Some(settings.dimension),
+                Some(settings.api_key.as_str()),
             )
             .await
     }
@@ -184,11 +297,10 @@ impl GenerateEmbeddingsCommand {
     where
         D: HasEmbeddingProvider + HasDbRouter + HasEncryptionProvider + ?Sized,
     {
-        let api_key_override = if let Some(deployment_id) = self.deployment_id {
-            resolve_deployment_gemini_api_key(deps, deployment_id).await?
-        } else {
-            None
-        };
+        let deployment_id = self.deployment_id.ok_or_else(|| {
+            AppError::Validation("deployment_id is required for embedding generation".to_string())
+        })?;
+        let settings = resolve_deployment_embedding_settings(deps, deployment_id).await?;
 
         let formatted_texts = self
             .texts
@@ -201,7 +313,8 @@ impl GenerateEmbeddingsCommand {
                     .and_then(|titles| titles.get(index))
                     .and_then(|value| value.as_deref());
                 format_embedding_input(
-                    deps.embedding_provider().model(),
+                    &settings.provider,
+                    &settings.model,
                     &text,
                     title,
                     Some(if self.is_retrieval_query {
@@ -214,10 +327,12 @@ impl GenerateEmbeddingsCommand {
             .collect();
 
         deps.embedding_provider()
-            .batch_embed_contents(
+            .batch_embed_contents_with(
+                map_embedding_provider(&settings.provider),
+                &settings.model,
                 formatted_texts,
-                Some(KNOWLEDGE_EMBEDDING_DIMENSION),
-                api_key_override.as_deref(),
+                Some(settings.dimension),
+                Some(settings.api_key.as_str()),
             )
             .await
     }

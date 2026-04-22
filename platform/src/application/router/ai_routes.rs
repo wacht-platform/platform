@@ -25,7 +25,8 @@ pub(super) fn ai_routes() -> Router<AppState> {
         )
         .route(
             "/ai/agents/{agent_id}/skills",
-            post(api::ai_skills::import_agent_skill_bundle).layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
+            post(api::ai_skills::import_agent_skill_bundle)
+                .layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
         )
         .route(
             "/ai/agents/{agent_id}/skills/{skill_slug}",
@@ -198,7 +199,8 @@ pub(super) fn ai_routes() -> Router<AppState> {
         )
         .route(
             "/ai/actor-projects/{project_id}/threads",
-            get(api::agent_threads::list_agent_threads).post(api::agent_threads::create_agent_thread),
+            get(api::agent_threads::list_agent_threads)
+                .post(api::agent_threads::create_agent_thread),
         )
         .route(
             "/ai/actor-project-threads/search",

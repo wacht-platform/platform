@@ -44,75 +44,14 @@ pub enum ConversationMessageType {
     ApprovalRequest,
     ApprovalResponse,
     ExecutionSummary,
+    AssignmentEvent,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum TaskType {
-    ToolCall,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ExecutionAction {
-    #[serde(rename = "type", default = "default_task_type")]
-    pub action_type: TaskType,
-    pub details: Value,
-    #[serde(default = "default_context_messages")]
-    pub context_messages: u32,
-}
-
-fn default_context_messages() -> u32 {
-    1
-}
-
-fn default_task_type() -> TaskType {
-    TaskType::ToolCall
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ActionsList {
-    #[serde(rename = "action")]
-    pub actions: Vec<ExecutionAction>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ActionResult {
-    pub action: String,
-    pub status: ActionResultStatus,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum ActionResultStatus {
-    Success,
-    Error,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct TaskExecution {
-    pub approach: String,
-    pub actions: ActionsList,
-    pub expected_result: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub actual_result: Option<Vec<ActionResult>>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum ActionExecutionStatus {
-    Pending,
-    Completed,
-    Failed,
-}
-
-impl Default for ActionExecutionStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
+pub enum AssignmentEventKind {
+    TaskRouting,
+    AssignmentExecution,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,6 +102,25 @@ pub enum ConversationContent {
         user_message: String,
         agent_execution: String,
     },
+    AssignmentEvent {
+        kind: AssignmentEventKind,
+        #[serde(
+            default,
+            with = "crate::utils::serde::i64_as_string_option",
+            skip_serializing_if = "Option::is_none"
+        )]
+        assignment_id: Option<i64>,
+        #[serde(
+            default,
+            with = "crate::utils::serde::i64_as_string_option",
+            skip_serializing_if = "Option::is_none"
+        )]
+        thread_event_id: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        summary: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<Value>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -192,8 +150,16 @@ pub enum ToolApprovalMode {
 pub struct ConversationRecord {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub thread_id: i64,
+    #[serde(
+        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub thread_id: Option<i64>,
+    #[serde(
+        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub board_item_id: Option<i64>,
     #[serde(
         serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
         skip_serializing_if = "Option::is_none"
@@ -221,6 +187,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
             "approval_request" => ConversationMessageType::ApprovalRequest,
             "approval_response" => ConversationMessageType::ApprovalResponse,
             "execution_summary" => ConversationMessageType::ExecutionSummary,
+            "assignment_event" => ConversationMessageType::AssignmentEvent,
             _ => {
                 return Err(sqlx::Error::ColumnDecode {
                     index: "message_type".to_string(),
@@ -239,6 +206,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
         Ok(ConversationRecord {
             id: row.try_get("id")?,
             thread_id: row.try_get("thread_id")?,
+            board_item_id: row.try_get("board_item_id")?,
             execution_run_id: row.try_get("execution_run_id")?,
             timestamp: row.try_get("timestamp")?,
             content,

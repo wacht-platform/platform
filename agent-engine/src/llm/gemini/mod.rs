@@ -7,7 +7,6 @@ use common::error::AppError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
-use tracing::info;
 
 use crate::llm::{
     GeneratedToolCall, NativeToolDefinition, SemanticLlmRequest, ToolCallGenerationOutput,
@@ -61,33 +60,6 @@ impl GeminiClient {
         Self::parse_error_envelope(response_text)
             .map(|(code, _)| matches!(code, 408 | 409 | 429 | 500 | 502 | 503 | 504))
             .unwrap_or(false)
-    }
-
-    fn sanitize_response_for_logging(response_text: &str) -> String {
-        fn strip_thought_signature(value: &mut serde_json::Value) {
-            match value {
-                serde_json::Value::Object(map) => {
-                    map.remove("thoughtSignature");
-                    for child in map.values_mut() {
-                        strip_thought_signature(child);
-                    }
-                }
-                serde_json::Value::Array(items) => {
-                    for item in items {
-                        strip_thought_signature(item);
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        match serde_json::from_str::<serde_json::Value>(response_text) {
-            Ok(mut value) => {
-                strip_thought_signature(&mut value);
-                serde_json::to_string_pretty(&value).unwrap_or_else(|_| response_text.to_string())
-            }
-            Err(_) => response_text.to_string(),
-        }
     }
 
     pub fn new(api_key: String, model: String) -> Self {
@@ -269,14 +241,22 @@ impl GeminiClient {
             })
             .collect::<Vec<_>>();
 
-        if calls.is_empty() {
+        let text = Self::response_text(&parsed);
+        let content_text = if text.trim().is_empty() {
+            None
+        } else {
+            Some(text)
+        };
+
+        if calls.is_empty() && content_text.is_none() {
             return Err(AppError::Internal(
-                "Gemini returned no function calls".to_string(),
+                "Gemini returned no function calls and no text".to_string(),
             ));
         }
 
         Ok(ToolCallGenerationOutput {
             calls,
+            content_text,
             usage_metadata: parsed.usage_metadata,
         })
     }
@@ -295,53 +275,79 @@ impl GeminiClient {
         prompt: SemanticLlmRequest,
         tools: Vec<NativeToolDefinition>,
     ) -> Result<String, AppError> {
-        let contents = serde_json::to_value(&json!({
-            "system_instruction": {
-                "parts": [{ "text": prompt.system_prompt }]
-            },
-            "contents": prompt
-                .messages
-                .iter()
-                .map(|message| {
-                    let parts = message
-                        .content_blocks
-                        .iter()
-                        .map(|block| match block {
-                            crate::llm::SemanticLlmContentBlock::Text { text } => {
-                                json!({ "text": text })
-                            }
-                            crate::llm::SemanticLlmContentBlock::InlineData { mime_type, data } => {
-                                json!({ "inline_data": { "mime_type": mime_type, "data": data } })
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    json!({
-                        "role": message.role,
-                        "parts": parts,
+        let contents = prompt
+            .messages
+            .iter()
+            .map(|message| {
+                let parts = message
+                    .content_blocks
+                    .iter()
+                    .map(|block| match block {
+                        crate::llm::SemanticLlmContentBlock::Text { text } => {
+                            json!({ "text": text })
+                        }
+                        crate::llm::SemanticLlmContentBlock::InlineData { mime_type, data } => {
+                            json!({ "inline_data": { "mime_type": mime_type, "data": data } })
+                        }
                     })
-                })
-                .collect::<Vec<_>>(),
-            "tools": [{
-                "functionDeclarations": tools
-                    .into_iter()
-                    .map(|tool| json!({
-                        "name": tool.name,
-                        "description": tool.description,
-                        "parameters": normalize_gemini_function_schema(tool.input_schema),
-                    }))
-                    .collect::<Vec<_>>()
-            }],
-            "toolConfig": {
-                "functionCallingConfig": {
-                    "mode": "ANY"
-                }
-            }
-        }))
-        .map_err(|e| {
-            AppError::Internal(format!("Failed to build Gemini tool-call request: {e}"))
-        })?;
+                    .collect::<Vec<_>>();
+                json!({ "role": message.role, "parts": parts })
+            })
+            .collect::<Vec<_>>();
 
-        serde_json::to_string(&contents).map_err(|e| {
+        let function_declarations = tools
+            .into_iter()
+            .map(|tool| {
+                json!({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": normalize_gemini_function_schema(tool.input_schema),
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let mut generation_config = serde_json::Map::new();
+        if let Some(temperature) = prompt.temperature {
+            generation_config.insert("temperature".to_string(), json!(temperature));
+        }
+        if let Some(max_output_tokens) = prompt.max_output_tokens {
+            generation_config.insert("maxOutputTokens".to_string(), json!(max_output_tokens));
+        }
+        if let Some(ref reasoning_effort) = prompt.reasoning_effort {
+            // Gemini 2.5 uses thinkingBudget (integer); Gemini 3+ uses thinkingLevel (string).
+            // Detect by whether the value parses as an integer.
+            let thinking_config = if let Ok(budget) = reasoning_effort.parse::<i64>() {
+                json!({ "thinkingBudget": budget })
+            } else {
+                json!({ "thinkingLevel": reasoning_effort })
+            };
+            generation_config.insert("thinkingConfig".to_string(), thinking_config);
+        }
+
+        let mut body = serde_json::Map::new();
+        body.insert(
+            "system_instruction".to_string(),
+            json!({ "parts": [{ "text": prompt.system_prompt }] }),
+        );
+        body.insert("contents".to_string(), json!(contents));
+        body.insert(
+            "tools".to_string(),
+            json!([{ "functionDeclarations": function_declarations }]),
+        );
+        // AUTO mode: model may emit tool calls, text, or both. Text-only response is
+        // the terminal signal in the unified ReAct loop.
+        body.insert(
+            "toolConfig".to_string(),
+            json!({ "functionCallingConfig": { "mode": "AUTO" } }),
+        );
+        if !generation_config.is_empty() {
+            body.insert(
+                "generationConfig".to_string(),
+                serde_json::Value::Object(generation_config),
+            );
+        }
+
+        serde_json::to_string(&serde_json::Value::Object(body)).map_err(|e| {
             AppError::Internal(format!("Failed to serialize Gemini tool-call request: {e}"))
         })
     }
@@ -353,17 +359,6 @@ impl GeminiClient {
     ) -> Result<GeminiResponse, AppError> {
         let mut attempt = 0u32;
         const MAX_RETRIES: u32 = 3;
-        info!(
-            "{}",
-            json!({
-                "event": "gemini_generate_request",
-                "model": self.model,
-                "url": url,
-                "request": serde_json::from_str::<serde_json::Value>(request_body)
-                    .unwrap_or_else(|_| json!({ "raw": request_body })),
-            })
-            .to_string()
-        );
 
         let last_error = loop {
             let response = self
@@ -392,18 +387,6 @@ impl GeminiClient {
                             break error;
                         }
                     };
-                    info!(
-                        "{}",
-                        json!({
-                            "event": "gemini_generate_response",
-                            "model": self.model,
-                            "url": url,
-                            "status": status.as_u16(),
-                            "ok": status.is_success(),
-                            "response": Self::sanitize_response_for_logging(&response_text),
-                        })
-                        .to_string()
-                    );
                     if !status.is_success() || Self::parse_error_envelope(&response_text).is_some()
                     {
                         let error = format!(

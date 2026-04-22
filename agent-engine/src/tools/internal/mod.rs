@@ -37,7 +37,8 @@ impl ToolExecutor {
                     .await
             }
             ToolCallRequest::ExecuteCommand { params, .. } => {
-                self.execute_command(tool, shell, params.clone()).await
+                self.execute_command(tool, shell, filesystem, params.clone())
+                    .await
             }
             ToolCallRequest::WebSearch { params, .. } => {
                 self.execute_web_search_tool(tool, params.clone()).await
@@ -54,10 +55,10 @@ impl ToolExecutor {
             ToolCallRequest::SaveMemory { params, .. } => {
                 self.execute_save_memory(tool, params.clone()).await
             }
+            ToolCallRequest::UpdateMemory { params, .. } => {
+                self.execute_update_memory(tool, params.clone()).await
+            }
             ToolCallRequest::Sleep { params, .. } => self.execute_sleep(tool, params.clone()).await,
-            ToolCallRequest::SnapshotExecutionState { .. } => Err(AppError::BadRequest(
-                "snapshot_execution_state must be executed by the agent runtime".to_string(),
-            )),
             ToolCallRequest::ListThreads { params, .. } => {
                 self.execute_list_threads(tool, params.clone()).await
             }
@@ -86,13 +87,8 @@ impl ToolExecutor {
                 self.execute_task_graph_fail_node(tool, params.clone())
                     .await
             }
-            ToolCallRequest::TaskGraphMarkCompleted { params, .. } => {
-                self.execute_task_graph_mark_completed(tool, params.clone(), filesystem)
-                    .await
-            }
-            ToolCallRequest::TaskGraphMarkFailed { params, .. } => {
-                self.execute_task_graph_mark_failed(tool, params.clone(), filesystem)
-                    .await
+            ToolCallRequest::TaskGraphReset { params, .. } => {
+                self.execute_task_graph_reset(tool, params.clone()).await
             }
             ToolCallRequest::SearchTools { .. }
             | ToolCallRequest::LoadTools { .. }

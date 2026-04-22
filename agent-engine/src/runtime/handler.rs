@@ -18,6 +18,13 @@ enum ExecutionMode {
     ThreadEvent(ThreadEvent),
 }
 
+fn thread_owns_status(thread_purpose: &str) -> bool {
+    matches!(
+        thread_purpose,
+        models::agent_thread::purpose::CONVERSATION | models::agent_thread::purpose::COORDINATOR
+    )
+}
+
 fn assignment_id_from_thread_event(thread_event: &ThreadEvent) -> Option<i64> {
     thread_event
         .assignment_execution_payload()
@@ -166,7 +173,7 @@ impl AgentHandler {
             )
             .await;
 
-        if execution_result.is_err() {
+        if execution_result.is_err() && thread_owns_status(&thread_state.thread_purpose) {
             let _ = commands::UpdateAgentThreadStateCommand::new(thread_state.id, deployment_id)
                 .with_status(models::AgentThreadStatus::Failed)
                 .execute_with_deps(&common::deps::from_app(&self.app_state).db().nats().id())
@@ -181,11 +188,16 @@ impl AgentHandler {
         )
         .await;
 
-        if let Err(e) =
-            clear_execution_token_if_current(&thread_key, &request.execution_token, &self.app_state)
-                .await
-        {
-            let _ = e;
+        if !request.execution_token.is_empty() {
+            if let Err(e) = clear_execution_token_if_current(
+                &thread_key,
+                &request.execution_token,
+                &self.app_state,
+            )
+            .await
+            {
+                let _ = e;
+            }
         }
 
         execution_result
@@ -254,6 +266,57 @@ impl AgentHandler {
                     agent_executor.execute_with_thread_event(thread_event),
                 )
                 .await
+            }
+        }
+    }
+
+    async fn run_with_execution_watch<F>(
+        &self,
+        thread_key: &str,
+        execution_token: &str,
+        thread_id: i64,
+        deployment_id: i64,
+        execution_future: F,
+    ) -> Result<(), AppError>
+    where
+        F: std::future::Future<Output = Result<(), AppError>>,
+    {
+        if execution_token.is_empty() {
+            let _ = (thread_id, deployment_id);
+            return execution_future.await;
+        }
+        tokio::pin!(execution_future);
+        let mut token_watch =
+            watch_execution_token_changes(&self.app_state, thread_key, execution_token).await?;
+
+        loop {
+            tokio::select! {
+                result = &mut execution_future => {
+                    return result;
+                }
+                next = token_watch.next() => {
+                    match next {
+                        Some(Ok(entry)) => {
+                            if entry.value.as_ref() != execution_token.as_bytes() {
+                                mark_thread_interrupted(&self.app_state, thread_id, deployment_id).await;
+                                return Ok(());
+                            }
+                        }
+                        Some(Err(error)) => {
+                            return Err(AppError::Internal(format!(
+                                "Failed to watch execution token for thread {}: {}",
+                                thread_key, error
+                            )));
+                        }
+                        None => {
+                            if execution_token_superseded(&self.app_state, thread_key, execution_token).await? {
+                                mark_thread_interrupted(&self.app_state, thread_id, deployment_id).await;
+                                return Ok(());
+                            }
+                            return execution_future.await;
+                        }
+                    }
+                }
             }
         }
     }
@@ -436,96 +499,6 @@ impl AgentHandler {
             .execute_with_deps(&publish_deps)
             .await;
     }
-
-    async fn run_with_execution_watch<F>(
-        &self,
-        thread_key: &str,
-        execution_token: &str,
-        thread_id: i64,
-        deployment_id: i64,
-        execution_future: F,
-    ) -> Result<(), AppError>
-    where
-        F: std::future::Future<Output = Result<(), AppError>>,
-    {
-        tokio::pin!(execution_future);
-        let mut token_watch =
-            watch_execution_token_changes(&self.app_state, thread_key, execution_token).await?;
-
-        loop {
-            tokio::select! {
-                result = &mut execution_future => {
-                    return result;
-                }
-                next = token_watch.next() => {
-                    match next {
-                        Some(Ok(entry)) => {
-                            if entry.value.as_ref() != execution_token.as_bytes() {
-                                mark_thread_interrupted(&self.app_state, thread_id, deployment_id).await;
-                                return Ok(());
-                            }
-                        }
-                        Some(Err(error)) => {
-                            return Err(AppError::Internal(format!(
-                                "Failed to watch execution token for thread {}: {}",
-                                thread_key, error
-                            )));
-                        }
-                        None => {
-                            if execution_token_superseded(&self.app_state, thread_key, execution_token).await? {
-                                mark_thread_interrupted(&self.app_state, thread_id, deployment_id).await;
-                                return Ok(());
-                            }
-                            return execution_future.await;
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-async fn watch_execution_token_changes(
-    app_state: &AppState,
-    thread_key: &str,
-    current_execution_token: &str,
-) -> Result<async_nats::jetstream::kv::Watch, AppError> {
-    let kv = app_state
-        .nats_jetstream
-        .get_key_value("agent_execution_kv")
-        .await
-        .map_err(|error| {
-            AppError::Internal(format!(
-                "Failed to access execution token KV bucket for thread {}: {}",
-                thread_key, error
-            ))
-        })?;
-
-    let mut watch = kv.watch_with_history(thread_key).await.map_err(|error| {
-        AppError::Internal(format!(
-            "Failed to create execution token watch for thread {}: {}",
-            thread_key, error
-        ))
-    })?;
-
-    while let Some(entry) = watch.next().await {
-        let entry = entry.map_err(|error| {
-            AppError::Internal(format!(
-                "Failed to initialize execution token watch for thread {}: {}",
-                thread_key, error
-            ))
-        })?;
-
-        if entry.seen_current && entry.value.as_ref() == current_execution_token.as_bytes() {
-            break;
-        }
-
-        if entry.seen_current {
-            break;
-        }
-    }
-
-    Ok(watch)
 }
 
 async fn publish_stream_event(
@@ -582,6 +555,49 @@ async fn publish_stream_event(
     }
 
     Ok(())
+}
+
+async fn watch_execution_token_changes(
+    app_state: &AppState,
+    thread_key: &str,
+    current_execution_token: &str,
+) -> Result<async_nats::jetstream::kv::Watch, AppError> {
+    let kv = app_state
+        .nats_jetstream
+        .get_key_value("agent_execution_kv")
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "Failed to access execution token KV bucket for thread {}: {}",
+                thread_key, error
+            ))
+        })?;
+
+    let mut watch = kv.watch_with_history(thread_key).await.map_err(|error| {
+        AppError::Internal(format!(
+            "Failed to create execution token watch for thread {}: {}",
+            thread_key, error
+        ))
+    })?;
+
+    while let Some(entry) = watch.next().await {
+        let entry = entry.map_err(|error| {
+            AppError::Internal(format!(
+                "Failed to initialize execution token watch for thread {}: {}",
+                thread_key, error
+            ))
+        })?;
+
+        if entry.seen_current && entry.value.as_ref() == current_execution_token.as_bytes() {
+            break;
+        }
+
+        if entry.seen_current {
+            break;
+        }
+    }
+
+    Ok(watch)
 }
 
 async fn clear_execution_token_if_current(

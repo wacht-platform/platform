@@ -63,7 +63,6 @@ fn user_management_routes() -> Router<AppState> {
         )
 }
 
-
 fn b2b_routes() -> Router<AppState> {
     Router::new()
         .route("/workspaces", get(api::b2b::get_workspace_list))

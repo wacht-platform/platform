@@ -2,8 +2,8 @@ mod rclone;
 mod state;
 
 use self::rclone::*;
-pub(crate) use self::state::detect_local_execution_base_path;
 use self::state::*;
+pub(crate) use self::state::{deployment_mount_path, detect_local_execution_base_path};
 
 use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;

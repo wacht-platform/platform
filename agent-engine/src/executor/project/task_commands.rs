@@ -204,6 +204,9 @@ impl AgentExecutor {
         }
         let task_key = params.task_key.clone();
 
+        self.guard_routing_requires_task_brief(&task_key, "update_project_task")
+            .await?;
+
         let board_item = self
             .update_project_task_board_item(
                 task_key.clone(),
@@ -245,6 +248,9 @@ impl AgentExecutor {
             ));
         }
 
+        self.guard_routing_requires_task_brief(&params.task_key, "assign_project_task")
+            .await?;
+
         let board_id = self.ensure_project_task_board_id().await?;
         let board_item =
             queries::GetProjectTaskBoardItemByTaskKeyQuery::new(board_id, params.task_key.clone())
@@ -268,5 +274,35 @@ impl AgentExecutor {
             "updated": changed,
             "board_item_id": board_item.id.to_string(),
         }))
+    }
+
+    async fn guard_routing_requires_task_brief(
+        &self,
+        target_task_key: &str,
+        tool_name: &str,
+    ) -> Result<(), AppError> {
+        if !self.effective_is_coordinator_thread() {
+            return Ok(());
+        }
+        let Some(active_board_item_id) = self.current_board_item_id() else {
+            return Ok(());
+        };
+        let Some(active_board_item) =
+            queries::GetProjectTaskBoardItemByIdQuery::new(active_board_item_id)
+                .execute_with_db(self.ctx.app_state.db_router.writer())
+                .await?
+        else {
+            return Ok(());
+        };
+        if active_board_item.task_key != target_task_key {
+            return Ok(());
+        }
+        if self.task_brief_is_ready().await? {
+            return Ok(());
+        }
+        Err(AppError::BadRequest(format!(
+            "{} blocked: `/task/TASK.md` is missing or too thin for task {}. Write the operative task brief with `write_file` before routing this task so the executor has a concrete contract.",
+            tool_name, target_task_key
+        )))
     }
 }

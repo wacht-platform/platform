@@ -35,6 +35,13 @@ pub struct ThreadEvent {
         skip_serializing_if = "Option::is_none"
     )]
     pub caused_by_thread_id: Option<i64>,
+    #[serde(
+        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub conversation_id: Option<i64>,
+    pub retry_count: i32,
+    pub max_retries: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -83,12 +90,6 @@ impl ThreadEvent {
             .flatten()
     }
 
-    pub fn assignment_outcome_review_payload(&self) -> Option<ThreadAssignmentEventPayload> {
-        (self.event_type == event_type::ASSIGNMENT_OUTCOME_REVIEW)
-            .then(|| serde_json::from_value(self.payload.clone()).ok())
-            .flatten()
-    }
-
     pub fn approval_response_received_payload(
         &self,
     ) -> Option<ApprovalResponseReceivedEventPayload> {
@@ -112,13 +113,23 @@ pub mod status {
     pub const FAILED: &str = "failed";
 }
 
+pub mod event_purpose {
+    use super::event_type;
+
+    pub fn is_user_facing(event_type: &str) -> bool {
+        matches!(
+            event_type,
+            event_type::USER_MESSAGE_RECEIVED
+                | event_type::USER_INPUT_RECEIVED
+                | event_type::APPROVAL_RESPONSE_RECEIVED
+        )
+    }
+}
+
 pub mod event_type {
     pub const USER_MESSAGE_RECEIVED: &str = "user_message_received";
     pub const USER_INPUT_RECEIVED: &str = "user_input_received";
     pub const APPROVAL_RESPONSE_RECEIVED: &str = "approval_response_received";
     pub const TASK_ROUTING: &str = "task_routing";
     pub const ASSIGNMENT_EXECUTION: &str = "assignment_execution";
-    pub const ASSIGNMENT_OUTCOME_REVIEW: &str = "assignment_outcome_review";
-    pub const CONTROL_STOP: &str = "thread_control_stop";
-    pub const CONTROL_INTERRUPT: &str = "thread_control_interrupt";
 }

@@ -4,7 +4,10 @@ use axum::extract::{Path, Query, State};
 use common::state::AppState;
 use dto::{
     clickhouse::webhook::WebhookDeliveryListResponse,
-    json::{WebhookStats, webhook_requests::{GetAppWebhookDeliveriesQuery, WebhookDeliveryDetails}},
+    json::{
+        WebhookStats,
+        webhook_requests::{GetAppWebhookDeliveriesQuery, WebhookDeliveryDetails},
+    },
 };
 
 use crate::application::{

@@ -5,7 +5,7 @@ fn project_task_assignments_schema() -> SchemaField {
     SchemaField {
         name: "assignments".to_string(),
         field_type: "ARRAY".to_string(),
-        description: Some("Ordered assignment chain. Each item may include thread_id or a reusable-thread selector via responsibility/capability_tags, plus assignment_role (`executor`, `reviewer`, `specialist_reviewer`, `approver`, `observer`), assignment_order, status, instructions, and handoff_file_path. Ordering is 1-based within the submitted batch: use 1 for the first assignment in the batch, 2 for the next, and so on. Runtime appends the batch after existing assignment history for the task. When a stage completes successfully, the backend auto-activates the next pending stage if one exists.".to_string()),
+        description: Some("Ordered assignment chain. Each item may include thread_id or a reusable-thread selector via responsibility/capability_tags, plus assignment_role (`executor`, `reviewer`, `specialist_reviewer`, `approver`, `observer`), assignment_order, status, and instructions. Ordering is 1-based within the submitted batch: use 1 for the first assignment in the batch, 2 for the next, and so on. Runtime appends the batch after existing assignment history for the task. When a stage completes successfully, the backend auto-activates the next pending stage if one exists.".to_string()),
         min_items: Some(1),
         items_schema: Some(Box::new(SchemaField {
             field_type: "OBJECT".to_string(),
@@ -75,13 +75,6 @@ fn project_task_assignments_schema() -> SchemaField {
                     name: "instructions".to_string(),
                     field_type: "STRING".to_string(),
                     description: Some("Optional task-specific instructions for this assignment stage.".to_string()),
-                    required: false,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "handoff_file_path".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("Optional /task/handoffs/ file path containing the richer brief for this assignment stage.".to_string()),
                     required: false,
                     ..Default::default()
                 },

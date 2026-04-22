@@ -75,7 +75,8 @@ pub async fn backend_deployment_middleware(
         .and_then(|raw| raw.parse::<i64>().ok())
         .ok_or_else(|| ApiErrorResponse::unauthorized("Authentication failed"))?;
 
-    req.extensions_mut().insert(DeploymentContext { deployment_id });
+    req.extensions_mut()
+        .insert(DeploymentContext { deployment_id });
     req.extensions_mut().insert(ApiKeyContext {
         key_id: response.key_id,
         app_slug: response.app_slug,

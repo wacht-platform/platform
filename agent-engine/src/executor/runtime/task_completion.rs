@@ -10,7 +10,6 @@ use common::error::AppError;
 use models::{
     AgentThreadStatus, ConversationContent, ConversationMessageType, ProjectTaskBoardItemMetadata,
 };
-use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TaskWorkspaceContext {
@@ -144,6 +143,22 @@ impl AgentExecutor {
         Ok(children)
     }
 
+    pub(crate) fn is_service_mode_execution(&self) -> bool {
+        self.active_thread_event
+            .as_ref()
+            .map(|event| event.event_type == models::thread_event::event_type::ASSIGNMENT_EXECUTION)
+            .unwrap_or(false)
+    }
+
+    pub(crate) async fn service_mode_journal_was_updated(&self) -> Result<bool, AppError> {
+        let Some(start_hash) = self.task_journal_start_hash.as_ref() else {
+            return Ok(true);
+        };
+        let current_hash =
+            crate::runtime::task_workspace::compute_task_journal_hash(&self.filesystem).await?;
+        Ok(&current_hash != start_hash)
+    }
+
     pub(crate) async fn allow_complete_for_current_task_owner(&mut self) -> Result<bool, AppError> {
         let Some(board_item) = self.active_board_item_for_completion_guard().await? else {
             return Ok(true);
@@ -256,7 +271,7 @@ impl AgentExecutor {
         Ok(false)
     }
 
-    async fn task_brief_is_ready(&self) -> Result<bool, AppError> {
+    pub(crate) async fn task_brief_is_ready(&self) -> Result<bool, AppError> {
         let bytes = match self
             .filesystem
             .read_file_bytes(TASK_WORKSPACE_TASK_FILE)
@@ -284,6 +299,7 @@ impl AgentExecutor {
             self.ctx.agent.deployment_id,
             self.ctx.thread_id,
         )
+        .with_board_item_id(self.current_board_item_id())
         .execute_with_db(self.ctx.app_state.db_router.writer())
         .await?;
 
@@ -312,12 +328,6 @@ impl AgentExecutor {
         &mut self,
         directive: &dto::json::agent_executor::AbortDirective,
     ) -> Result<(), AppError> {
-        if !self.can_abort_current_assignment_execution() {
-            return Err(AppError::BadRequest(
-                "abort is only valid for assignment execution threads".to_string(),
-            ));
-        }
-
         let note = directive.reason.trim();
         if note.is_empty() {
             return Err(AppError::BadRequest(
@@ -325,10 +335,16 @@ impl AgentExecutor {
             ));
         }
 
-        if matches!(
+        let is_service_run = self.can_abort_current_assignment_execution();
+        let is_blocked_outcome = matches!(
             directive.outcome,
             dto::json::agent_executor::AbortOutcome::Blocked
-        ) {
+        );
+
+        // If we're running against a board item (coordinator or service run), and the
+        // agent signalled a real block, transition the board item to `blocked`. This
+        // keeps routing consistent across both modes.
+        if is_blocked_outcome {
             if let Some(board_item) = self.active_board_item_for_completion_guard().await? {
                 self.update_project_task_board_item(
                     board_item.task_key,
@@ -347,17 +363,6 @@ impl AgentExecutor {
 
         self.cancel_active_task_graph_if_any().await?;
 
-        let (assignment_status, result_status) = match directive.outcome {
-            dto::json::agent_executor::AbortOutcome::Blocked => (
-                models::project_task_board::assignment_status::BLOCKED.to_string(),
-                Some(models::project_task_board::assignment_result_status::BLOCKED.to_string()),
-            ),
-            dto::json::agent_executor::AbortOutcome::ReturnToCoordinator => (
-                models::project_task_board::assignment_status::CANCELLED.to_string(),
-                Some(models::project_task_board::assignment_result_status::CANCELLED.to_string()),
-            ),
-        };
-
         self.store_conversation(
             ConversationContent::SystemDecision {
                 step: "abort".to_string(),
@@ -369,17 +374,36 @@ impl AgentExecutor {
         .await?;
 
         let mut state = self.build_execution_state_snapshot(None);
-        state.assignment_outcome_override = Some(models::ThreadAssignmentOutcomeOverride {
-            assignment_status,
-            result_status,
-            note: Some(note.to_string()),
-        });
 
-        UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
-            .with_execution_state(state)
-            .with_status(AgentThreadStatus::Idle)
-            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
-            .await?;
+        // Only service runs have an in-flight assignment to transition on abort.
+        // Coordinator / conversation runs just idle the thread.
+        if is_service_run {
+            let (assignment_status, result_status) = match directive.outcome {
+                dto::json::agent_executor::AbortOutcome::Blocked => (
+                    models::project_task_board::assignment_status::BLOCKED.to_string(),
+                    Some(models::project_task_board::assignment_result_status::BLOCKED.to_string()),
+                ),
+                dto::json::agent_executor::AbortOutcome::ReturnToCoordinator => (
+                    models::project_task_board::assignment_status::CANCELLED.to_string(),
+                    Some(
+                        models::project_task_board::assignment_result_status::CANCELLED.to_string(),
+                    ),
+                ),
+            };
+            state.assignment_outcome_override = Some(models::ThreadAssignmentOutcomeOverride {
+                assignment_status,
+                result_status,
+                note: Some(note.to_string()),
+            });
+        }
+
+        self.apply_thread_status(
+            UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
+                .with_execution_state(state),
+            AgentThreadStatus::Idle,
+        )
+        .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
+        .await?;
 
         Ok(())
     }
@@ -438,8 +462,6 @@ impl AgentExecutor {
             },
         )
         .await?;
-        self.sync_related_task_workspaces(&persistent_task_path, board_item_id)
-            .await?;
         self.initialize_task_journal_start_hash(prepared.journal_hash.clone())
             .await?;
 
@@ -463,162 +485,6 @@ impl AgentExecutor {
             .await?;
 
         self.ctx.invalidate_cache();
-        Ok(())
-    }
-
-    pub(crate) async fn sync_related_task_workspaces(
-        &self,
-        active_task_path: &Path,
-        board_item_id: i64,
-    ) -> Result<(), AppError> {
-        let related_root = active_task_path.join("related");
-        let parent_mount = related_root.join("parent");
-        let children_root = related_root.join("children");
-
-        tokio::fs::create_dir_all(&related_root)
-            .await
-            .map_err(|err| {
-                AppError::Internal(format!(
-                    "Failed to prepare related task workspace root '{}': {}",
-                    related_root.display(),
-                    err
-                ))
-            })?;
-        Self::remove_existing_mount_path(&parent_mount).await?;
-        if tokio::fs::metadata(&children_root).await.is_ok() {
-            tokio::fs::remove_dir_all(&children_root)
-                .await
-                .map_err(|err| {
-                    AppError::Internal(format!(
-                        "Failed to clear related child task mounts '{}': {}",
-                        children_root.display(),
-                        err
-                    ))
-                })?;
-        }
-        tokio::fs::create_dir_all(&children_root)
-            .await
-            .map_err(|err| {
-                AppError::Internal(format!(
-                    "Failed to prepare related child task mounts '{}': {}",
-                    children_root.display(),
-                    err
-                ))
-            })?;
-
-        let relations = queries::ListProjectTaskBoardItemRelationsQuery::new(board_item_id)
-            .execute_with_db(self.ctx.app_state.db_router.writer())
-            .await?;
-
-        for relation in relations {
-            if relation.relation_type != models::project_task_board::relation_type::CHILD_OF {
-                continue;
-            }
-
-            if relation.child_board_item_id == board_item_id {
-                if let Some(parent_item) =
-                    queries::GetProjectTaskBoardItemByIdQuery::new(relation.parent_board_item_id)
-                        .execute_with_db(self.ctx.app_state.db_router.writer())
-                        .await?
-                {
-                    self.mount_related_task_workspace(
-                        active_task_path,
-                        Path::new("related/parent"),
-                        &parent_item,
-                    )
-                    .await?;
-                }
-                continue;
-            }
-
-            if relation.parent_board_item_id == board_item_id {
-                if let Some(child_item) =
-                    queries::GetProjectTaskBoardItemByIdQuery::new(relation.child_board_item_id)
-                        .execute_with_db(self.ctx.app_state.db_router.writer())
-                        .await?
-                {
-                    let child_mount_name = Self::sanitize_task_path_segment(&child_item.task_key);
-                    self.mount_related_task_workspace(
-                        active_task_path,
-                        Path::new("related").join("children").join(child_mount_name),
-                        &child_item,
-                    )
-                    .await?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    pub(crate) async fn mount_related_task_workspace<P: AsRef<Path>>(
-        &self,
-        active_task_path: &Path,
-        relative_mount_path: P,
-        related_item: &models::ProjectTaskBoardItem,
-    ) -> Result<(), AppError> {
-        let safe_task_key = Self::sanitize_task_path_segment(&related_item.task_key);
-        let related_task_path = self.filesystem.persistent_task_path(&safe_task_key);
-        prepare_task_workspace_layout_at_path(
-            &related_task_path,
-            &TaskWorkspaceBriefInput {
-                task_key: &related_item.task_key,
-                title: &related_item.title,
-                is_recurring: false,
-            },
-        )
-        .await?;
-
-        let mount_path = active_task_path.join(relative_mount_path.as_ref());
-        if let Some(parent) = mount_path.parent() {
-            tokio::fs::create_dir_all(parent).await.map_err(|err| {
-                AppError::Internal(format!(
-                    "Failed to prepare related task mount parent '{}': {}",
-                    parent.display(),
-                    err
-                ))
-            })?;
-        }
-
-        Self::remove_existing_mount_path(&mount_path).await?;
-        tokio::fs::symlink(&related_task_path, &mount_path)
-            .await
-            .map_err(|err| {
-                AppError::Internal(format!(
-                    "Failed to mount related task workspace '{}' -> '{}': {}",
-                    mount_path.display(),
-                    related_task_path.display(),
-                    err
-                ))
-            })?;
-
-        Ok(())
-    }
-
-    pub(crate) async fn remove_existing_mount_path(path: &Path) -> Result<(), AppError> {
-        let metadata = match tokio::fs::symlink_metadata(path).await {
-            Ok(metadata) => metadata,
-            Err(_) => return Ok(()),
-        };
-
-        if metadata.is_dir() && !metadata.file_type().is_symlink() {
-            tokio::fs::remove_dir_all(path).await.map_err(|err| {
-                AppError::Internal(format!(
-                    "Failed to remove existing mount directory '{}': {}",
-                    path.display(),
-                    err
-                ))
-            })?;
-        } else {
-            tokio::fs::remove_file(path).await.map_err(|err| {
-                AppError::Internal(format!(
-                    "Failed to remove existing mount path '{}': {}",
-                    path.display(),
-                    err
-                ))
-            })?;
-        }
-
         Ok(())
     }
 

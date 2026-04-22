@@ -19,6 +19,8 @@ pub struct EnqueueThreadEventCommand {
     pub available_at: Option<chrono::DateTime<Utc>>,
     pub caused_by_run_id: Option<i64>,
     pub caused_by_thread_id: Option<i64>,
+    pub conversation_id: Option<i64>,
+    pub max_retries: i32,
 }
 
 pub struct UpdateThreadEventStateCommand {
@@ -54,24 +56,27 @@ pub fn wake_disposition_for_thread_event(
     reusable: bool,
     accepts_assignments: bool,
 ) -> ThreadEventWakeDisposition {
-    let recoverable_failed_for_work = matches!(
+    let is_orchestration_event = matches!(
         event_type,
         models::thread_event::event_type::TASK_ROUTING
             | models::thread_event::event_type::ASSIGNMENT_EXECUTION
-            | models::thread_event::event_type::ASSIGNMENT_OUTCOME_REVIEW
-    ) && (reusable || accepts_assignments);
+    );
+    let recoverable_failed_for_work = is_orchestration_event && (reusable || accepts_assignments);
 
     match thread_status {
-        AgentThreadStatus::Running => ThreadEventWakeDisposition::NoopThreadActive,
+        AgentThreadStatus::Running => {
+            if is_orchestration_event {
+                ThreadEventWakeDisposition::Published
+            } else {
+                ThreadEventWakeDisposition::NoopThreadActive
+            }
+        }
         AgentThreadStatus::WaitingForInput => match event_type {
             models::thread_event::event_type::USER_MESSAGE_RECEIVED
             | models::thread_event::event_type::USER_INPUT_RECEIVED
             | models::thread_event::event_type::APPROVAL_RESPONSE_RECEIVED
             | models::thread_event::event_type::TASK_ROUTING
-            | models::thread_event::event_type::ASSIGNMENT_EXECUTION
-            | models::thread_event::event_type::ASSIGNMENT_OUTCOME_REVIEW
-            | models::thread_event::event_type::CONTROL_STOP
-            | models::thread_event::event_type::CONTROL_INTERRUPT => {
+            | models::thread_event::event_type::ASSIGNMENT_EXECUTION => {
                 ThreadEventWakeDisposition::Published
             }
             _ => ThreadEventWakeDisposition::NoopThreadActive,
@@ -86,8 +91,17 @@ pub fn wake_disposition_for_thread_event(
     }
 }
 
+fn default_max_retries_for_event_type(event_type: &str) -> i32 {
+    if models::thread_event::event_purpose::is_user_facing(event_type) {
+        2
+    } else {
+        0
+    }
+}
+
 impl EnqueueThreadEventCommand {
     pub fn new(id: i64, deployment_id: i64, thread_id: i64, event_type: String) -> Self {
+        let max_retries = default_max_retries_for_event_type(event_type.as_str());
         Self {
             id,
             deployment_id,
@@ -100,7 +114,14 @@ impl EnqueueThreadEventCommand {
             available_at: None,
             caused_by_run_id: None,
             caused_by_thread_id: None,
+            conversation_id: None,
+            max_retries,
         }
+    }
+
+    pub fn with_max_retries(mut self, max_retries: i32) -> Self {
+        self.max_retries = max_retries;
+        self
     }
 
     pub fn with_board_item_id(mut self, board_item_id: i64) -> Self {
@@ -133,6 +154,11 @@ impl EnqueueThreadEventCommand {
         self
     }
 
+    pub fn with_conversation_id(mut self, conversation_id: i64) -> Self {
+        self.conversation_id = Some(conversation_id);
+        self
+    }
+
     pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<ThreadEvent, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -146,25 +172,27 @@ impl EnqueueThreadEventCommand {
             INSERT INTO thread_events (
                 id, deployment_id, thread_id, board_item_id, event_type, status,
                 priority, payload, available_at, claimed_at, completed_at, failed_at,
-                caused_by_run_id, caused_by_thread_id, created_at, updated_at
+                caused_by_run_id, caused_by_thread_id, conversation_id, retry_count, max_retries, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6,
                 $7, $8, $9, NULL, NULL, NULL,
-                $10, $11, $12, $12
+                $10, $11, $12, 0, $13, $14, $14
             )
             ON CONFLICT (thread_id, event_type, board_item_id)
             WHERE board_item_id IS NOT NULL
               AND status = 'pending'
-              AND event_type IN ('task_routing', 'assignment_execution', 'assignment_outcome_review')
+              AND event_type IN ('task_routing', 'assignment_execution')
             DO UPDATE SET
                 priority = LEAST(thread_events.priority, EXCLUDED.priority),
                 payload = EXCLUDED.payload,
                 available_at = LEAST(thread_events.available_at, EXCLUDED.available_at),
+                conversation_id = COALESCE(thread_events.conversation_id, EXCLUDED.conversation_id),
+                max_retries = GREATEST(thread_events.max_retries, EXCLUDED.max_retries),
                 updated_at = EXCLUDED.updated_at
             RETURNING
                 id, deployment_id, thread_id, board_item_id, event_type, status,
                 priority, payload, available_at, claimed_at, completed_at, failed_at,
-                caused_by_run_id, caused_by_thread_id, created_at, updated_at
+                caused_by_run_id, caused_by_thread_id, conversation_id, retry_count, max_retries, created_at, updated_at
             "#,
             self.id,
             self.deployment_id,
@@ -177,6 +205,8 @@ impl EnqueueThreadEventCommand {
             available_at,
             self.caused_by_run_id,
             self.caused_by_thread_id,
+            self.conversation_id,
+            self.max_retries,
             now,
         )
         .fetch_one(executor)
@@ -208,8 +238,7 @@ impl EnqueueThreadEventCommand {
                     )));
                 }
             }
-            models::thread_event::event_type::ASSIGNMENT_EXECUTION
-            | models::thread_event::event_type::ASSIGNMENT_OUTCOME_REVIEW => {
+            models::thread_event::event_type::ASSIGNMENT_EXECUTION => {
                 let board_item_id = self.board_item_id.ok_or_else(|| {
                     AppError::BadRequest(format!(
                         "{} event requires board_item_id",
@@ -342,7 +371,7 @@ impl UpdateThreadEventStateCommand {
             RETURNING
                 id, deployment_id, thread_id, board_item_id, event_type, status,
                 priority, payload, available_at, claimed_at, completed_at, failed_at,
-                caused_by_run_id, caused_by_thread_id, created_at, updated_at
+                caused_by_run_id, caused_by_thread_id, conversation_id, retry_count, max_retries, created_at, updated_at
             "#,
             self.event_id,
             self.status,
@@ -356,5 +385,75 @@ impl UpdateThreadEventStateCommand {
         .await?;
 
         Ok(event)
+    }
+}
+
+pub struct RecoveredStaleEvent {
+    pub id: i64,
+    pub deployment_id: i64,
+    pub thread_id: i64,
+}
+
+pub struct RecoverStaleClaimedThreadEventsCommand {
+    pub stale_before: chrono::DateTime<Utc>,
+}
+
+impl RecoverStaleClaimedThreadEventsCommand {
+    pub fn new(stale_before: chrono::DateTime<Utc>) -> Self {
+        Self { stale_before }
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<(Vec<RecoveredStaleEvent>, u64), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres> + Copy,
+    {
+        let retriable_rows = sqlx::query!(
+            r#"
+            UPDATE thread_events
+            SET status = 'pending',
+                retry_count = retry_count + 1,
+                claimed_at = NULL,
+                updated_at = NOW()
+            WHERE status = 'claimed'
+              AND claimed_at < $1
+              AND retry_count < max_retries
+              AND event_type IN ('user_message_received', 'user_input_received', 'approval_response_received')
+            RETURNING id, deployment_id, thread_id
+            "#,
+            self.stale_before,
+        )
+        .fetch_all(executor)
+        .await?;
+
+        let exhausted_rows = sqlx::query!(
+            r#"
+            UPDATE thread_events
+            SET status = 'failed',
+                failed_at = NOW(),
+                updated_at = NOW()
+            WHERE status = 'claimed'
+              AND claimed_at < $1
+              AND retry_count >= max_retries
+              AND event_type IN ('user_message_received', 'user_input_received', 'approval_response_received')
+            RETURNING id
+            "#,
+            self.stale_before,
+        )
+        .fetch_all(executor)
+        .await?;
+
+        let retriable = retriable_rows
+            .into_iter()
+            .map(|row| RecoveredStaleEvent {
+                id: row.id,
+                deployment_id: row.deployment_id,
+                thread_id: row.thread_id,
+            })
+            .collect();
+
+        Ok((retriable, exhausted_rows.len() as u64))
     }
 }

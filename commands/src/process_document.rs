@@ -2,11 +2,13 @@ use crate::{
     DispatchVectorStoreMaintenanceTaskCommand, GenerateEmbeddingsCommand,
     ResolveDeploymentStorageCommand, VECTOR_STORE_KNOWLEDGE_BASE,
     ai_knowledge_base_document_status::MarkKnowledgeBaseDocumentFailedCommand,
-    build_multimodal_retrieval_document_parts, resolve_deployment_gemini_api_key,
+    build_multimodal_retrieval_document_parts, resolve_deployment_embedding_dimension,
+    resolve_deployment_embedding_settings,
 };
 use common::{
-    HasDbRouter, HasEmbeddingProvider, HasEncryptionProvider, HasNatsProvider,
-    HasTextProcessingProvider, KnowledgeBaseChunkRecord, error::AppError, replace_document_chunks,
+    EmbeddingApiProvider, EmbeddingPart, HasDbRouter, HasEmbeddingProvider, HasEncryptionProvider,
+    HasNatsProvider, HasTextProcessingProvider, KnowledgeBaseChunkRecord, error::AppError,
+    replace_document_chunks,
 };
 const KNOWLEDGE_CHUNK_SIZE_TOKENS: usize = 5_000;
 const KNOWLEDGE_CHUNK_OVERLAP_TOKENS: usize = 500;
@@ -102,24 +104,44 @@ impl ProcessDocumentCommand {
                 ));
             }
 
-            let api_key_override =
-                resolve_deployment_gemini_api_key(deps, self.deployment_id).await?;
+            let embedding_settings =
+                resolve_deployment_embedding_settings(deps, self.deployment_id).await?;
             let mut rows = Vec::with_capacity(pdf_chunks.len());
             for pdf_chunk in pdf_chunks {
                 let content = format!(
                     "title: {} | pages: {}-{}",
                     title, pdf_chunk.start_page, pdf_chunk.end_page
                 );
-                let parts = build_multimodal_retrieval_document_parts(
-                    deps.embedding_provider().model(),
-                    &content,
-                    Some(&title),
-                    "application/pdf",
-                    pdf_chunk.content,
-                );
+                let provider = match embedding_settings.provider {
+                    models::DeploymentEmbeddingProvider::Gemini => EmbeddingApiProvider::Gemini,
+                    models::DeploymentEmbeddingProvider::Openai => EmbeddingApiProvider::Openai,
+                    models::DeploymentEmbeddingProvider::Openrouter => {
+                        EmbeddingApiProvider::Openrouter
+                    }
+                };
+                let parts = if matches!(provider, EmbeddingApiProvider::Gemini) {
+                    build_multimodal_retrieval_document_parts(
+                        &embedding_settings.model,
+                        &content,
+                        Some(&title),
+                        "application/pdf",
+                        pdf_chunk.content,
+                    )
+                } else {
+                    let extracted_text = deps
+                        .text_processing_provider()
+                        .extract_text_from_file(&pdf_chunk.content, "application/pdf")?;
+                    vec![EmbeddingPart::Text(extracted_text)]
+                };
                 let embedding = match deps
                     .embedding_provider()
-                    .embed_parts(parts, Some(1536), api_key_override.as_deref())
+                    .embed_parts_with(
+                        provider,
+                        &embedding_settings.model,
+                        parts,
+                        Some(embedding_settings.dimension),
+                        Some(embedding_settings.api_key.as_str()),
+                    )
                     .await
                 {
                     Ok(embedding) => embedding,
@@ -200,7 +222,10 @@ impl ProcessDocumentCommand {
                 .collect::<Vec<_>>()
         };
 
-        replace_document_chunks(&lance_config, document_id, &lance_rows).await?;
+        let embedding_dimension =
+            resolve_deployment_embedding_dimension(deps, self.deployment_id).await?;
+        replace_document_chunks(&lance_config, document_id, &lance_rows, embedding_dimension)
+            .await?;
 
         DispatchVectorStoreMaintenanceTaskCommand::new(
             self.deployment_id,

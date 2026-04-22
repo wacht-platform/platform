@@ -7,9 +7,9 @@ use commands::{
 use common::ReadConsistency;
 use common::error::AppError;
 use dto::json::deployment::{
-    CreateActorProjectRequest, CreateActorRequest, CreateAgentThreadRequest, ExecuteAgentRequest,
-    ExecuteAgentResponse, UpdateActorProjectRequest, UpdateAgentThreadRequest,
-    CreateProjectTaskBoardItemRequest, UpdateProjectTaskBoardItemRequest,
+    CreateActorProjectRequest, CreateActorRequest, CreateAgentThreadRequest,
+    CreateProjectTaskBoardItemRequest, ExecuteAgentRequest, ExecuteAgentResponse,
+    UpdateActorProjectRequest, UpdateAgentThreadRequest, UpdateProjectTaskBoardItemRequest,
 };
 use models::{
     Actor, ActorProject, AgentThread, AgentThreadState, ConversationRecord, ProjectTaskBoard,
@@ -20,13 +20,13 @@ use models::{
 use queries::{
     GetActorByIdQuery, GetActorProjectByIdQuery, GetAgentThreadByIdQuery, GetAgentThreadStateQuery,
     GetLatestThreadTaskGraphQuery, GetMcpServerByIdQuery, GetMcpServersQuery,
-    GetProjectTaskBoardByIdQuery,
-    GetProjectTaskBoardByProjectIdQuery, GetProjectTaskBoardItemByIdQuery, GetThreadEventByIdQuery,
-    GetThreadTaskGraphByIdQuery, GetThreadTaskGraphSummaryQuery, ListActorProjectsQuery,
-    ListActorsQuery, ListAgentThreadsQuery, ListAssignmentsForThreadQuery,
-    ListPendingThreadEventsQuery, ListProjectTaskBoardItemAssignmentsQuery,
-    ListProjectTaskBoardItemEventsQuery, ListProjectTaskBoardItemRelationsQuery,
-    ListProjectTaskBoardItemsQuery, ListThreadTaskEdgesQuery, ListThreadTaskNodesQuery,
+    GetProjectTaskBoardByIdQuery, GetProjectTaskBoardByProjectIdQuery,
+    GetProjectTaskBoardItemByIdQuery, GetThreadEventByIdQuery, GetThreadTaskGraphByIdQuery,
+    GetThreadTaskGraphSummaryQuery, ListActorProjectsQuery, ListActorsQuery, ListAgentThreadsQuery,
+    ListAssignmentsForThreadQuery, ListPendingThreadEventsQuery,
+    ListProjectTaskBoardItemAssignmentsQuery, ListProjectTaskBoardItemEventsQuery,
+    ListProjectTaskBoardItemRelationsQuery, ListProjectTaskBoardItemsQuery,
+    ListThreadTaskEdgesQuery, ListThreadTaskNodesQuery,
 };
 
 use crate::application::{AppState, agent_thread_execution as agent_thread_execution_app};
@@ -158,10 +158,16 @@ pub struct ActorMcpServerConnectResponse {
 
 fn encode_time_id_cursor(ts: chrono::DateTime<chrono::Utc>, id: i64) -> String {
     use base64::Engine;
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!("{}|{}", ts.timestamp_nanos_opt().unwrap_or(0), id))
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!(
+        "{}|{}",
+        ts.timestamp_nanos_opt().unwrap_or(0),
+        id
+    ))
 }
 
-fn decode_time_id_cursor(cursor: &str) -> Result<Option<(chrono::DateTime<chrono::Utc>, i64)>, AppError> {
+fn decode_time_id_cursor(
+    cursor: &str,
+) -> Result<Option<(chrono::DateTime<chrono::Utc>, i64)>, AppError> {
     use base64::Engine;
     if cursor.trim().is_empty() {
         return Ok(None);
@@ -223,7 +229,9 @@ fn sanitize_optional_relative_path(raw: &str) -> Result<String, AppError> {
 fn sanitize_relative_path(raw: &str) -> Result<String, AppError> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return Err(AppError::BadRequest("path query parameter is required".to_string()));
+        return Err(AppError::BadRequest(
+            "path query parameter is required".to_string(),
+        ));
     }
     let normalized = trimmed.replace('\\', "/");
     let mut segments = Vec::new();
@@ -289,11 +297,34 @@ fn is_text_like(path: &str, mime_type: &str, body: &[u8]) -> bool {
         || Path::new(path)
             .extension()
             .and_then(|ext| ext.to_str())
-            .map(|ext| matches!(ext, "txt" | "md" | "json" | "js" | "ts" | "tsx" | "jsx" | "py" | "rs" | "go" | "yml" | "yaml" | "xml" | "html" | "css" | "sql" | "toml"))
+            .map(|ext| {
+                matches!(
+                    ext,
+                    "txt"
+                        | "md"
+                        | "json"
+                        | "js"
+                        | "ts"
+                        | "tsx"
+                        | "jsx"
+                        | "py"
+                        | "rs"
+                        | "go"
+                        | "yml"
+                        | "yaml"
+                        | "xml"
+                        | "html"
+                        | "css"
+                        | "sql"
+                        | "toml"
+                )
+            })
             .unwrap_or(false)
 }
 
-fn parse_conversation_message_type(value: &str) -> Result<models::ConversationMessageType, AppError> {
+fn parse_conversation_message_type(
+    value: &str,
+) -> Result<models::ConversationMessageType, AppError> {
     match value {
         "user_message" => Ok(models::ConversationMessageType::UserMessage),
         "steer" => Ok(models::ConversationMessageType::Steer),
@@ -302,6 +333,7 @@ fn parse_conversation_message_type(value: &str) -> Result<models::ConversationMe
         "approval_request" => Ok(models::ConversationMessageType::ApprovalRequest),
         "approval_response" => Ok(models::ConversationMessageType::ApprovalResponse),
         "execution_summary" => Ok(models::ConversationMessageType::ExecutionSummary),
+        "assignment_event" => Ok(models::ConversationMessageType::AssignmentEvent),
         other => Err(AppError::Internal(format!(
             "Unknown conversation message_type '{}'",
             other
@@ -375,7 +407,10 @@ async fn list_workspace_directory(
             if key == target_key_prefix || key.ends_with('/') {
                 continue;
             }
-            let relative = key.strip_prefix(&base_key_prefix).unwrap_or(key).to_string();
+            let relative = key
+                .strip_prefix(&base_key_prefix)
+                .unwrap_or(key)
+                .to_string();
             if relative.is_empty() {
                 continue;
             }
@@ -388,7 +423,9 @@ async fn list_workspace_directory(
                 path: relative,
                 is_dir: false,
                 size_bytes: object.size().map(|v| v.max(0) as u64),
-                modified_at: object.last_modified().map(|v| chrono::DateTime::from_timestamp(v.secs(), 0).unwrap_or_else(Utc::now)),
+                modified_at: object.last_modified().map(|v| {
+                    chrono::DateTime::from_timestamp(v.secs(), 0).unwrap_or_else(Utc::now)
+                }),
             });
         }
 
@@ -529,7 +566,9 @@ pub async fn create_actor_project(
         command = command.with_metadata(metadata);
     }
 
-    let project = command.execute_with_db(app_state.db_router.writer()).await?;
+    let project = command
+        .execute_with_db(app_state.db_router.writer())
+        .await?;
 
     if let Some(agent_id) = selected_agent_id {
         if let Some(coordinator_thread_id) = project.coordinator_thread_id {
@@ -610,14 +649,11 @@ pub async fn create_agent_thread(
     let resolved_capability_tags = capability_tags.unwrap_or_default();
     let resolved_reusable = reusable.unwrap_or(false);
     let resolved_accepts_assignments = accepts_assignments.unwrap_or(false);
-    let generated_system_instructions = build_default_thread_system_instructions(
-        &title,
-        &resolved_thread_purpose,
-        resolved_responsibility.as_deref(),
-        resolved_reusable,
-        resolved_accepts_assignments,
-        &resolved_capability_tags,
-    );
+    let generated_system_instructions = templatekit::render_project_instructions(
+        &project.name,
+        project.description.as_deref(),
+        None,
+    )?;
 
     let mut create_thread = CreateAgentThreadCommand::new(
         thread_id,
@@ -658,91 +694,6 @@ pub async fn create_agent_thread(
     get_agent_thread_by_id(app_state, deployment_id, thread_id).await
 }
 
-fn build_default_thread_system_instructions(
-    title: &str,
-    thread_purpose: &str,
-    responsibility: Option<&str>,
-    reusable: bool,
-    accepts_assignments: bool,
-    capability_tags: &[String],
-) -> String {
-    let mut lines = vec![format!(
-        "You are the '{}' thread. Operate as a stable {} work lane.",
-        title, thread_purpose
-    )];
-
-    lines.push(format!(
-        "Thread purpose: {}. Visibility: {}.",
-        thread_purpose,
-        if thread_purpose == models::agent_thread::purpose::CONVERSATION {
-            "user_facing"
-        } else {
-            "internal"
-        }
-    ));
-
-    if let Some(responsibility) = responsibility {
-        lines.push(format!(
-            "Primary responsibility: {}. Default to that specialization unless the active assignment clearly narrows the scope further.",
-            responsibility
-        ));
-    }
-
-    if !capability_tags.is_empty() {
-        lines.push(format!(
-            "Primary capabilities: {}. Prefer solutions and reviews that stay inside these strengths.",
-            capability_tags.join(", ")
-        ));
-    }
-
-    match thread_purpose {
-        models::agent_thread::purpose::COORDINATOR => {
-            lines.push(
-                "Act as the coordinator for this project lane. Route work, decide next steps, and own task completion decisions instead of absorbing delegated execution yourself."
-                    .to_string(),
-            );
-        }
-        models::agent_thread::purpose::EXECUTION => {
-            lines.push(
-                "Treat this thread as an execution lane. Work from assigned board items and handoff files first, not from broad conversation reinterpretation."
-                    .to_string(),
-            );
-        }
-        models::agent_thread::purpose::REVIEW => {
-            lines.push(
-                "Default to evidence-first review behavior. Validate claims, call out gaps directly, and keep findings concrete."
-                    .to_string(),
-            );
-        }
-        _ => {
-            lines.push(
-                "Keep work aligned to the active thread event, board item, assignment chain, and task graph before falling back to broader conversation history."
-                    .to_string(),
-            );
-        }
-    }
-
-    if reusable {
-        lines.push(
-            "Preserve continuity in task state and `/workspace/` handoff files so this thread remains reusable across tasks."
-                .to_string(),
-        );
-    }
-
-    if accepts_assignments {
-        lines.push(
-            "When assignments exist, treat the assignment queue as the workload source of truth. Complete the active assignment cleanly before expanding scope."
-                .to_string(),
-        );
-    }
-
-    lines.push(
-        "For substantial work, keep the project task board current, use the thread task graph for dependent execution steps, and prefer `/workspace/` files for briefs, planning, and handoffs."
-            .to_string(),
-    );
-
-    lines.join("\n")
-}
 
 pub async fn get_agent_thread_by_id(
     app_state: &AppState,
@@ -827,9 +778,15 @@ pub async fn update_actor_project(
     request: UpdateActorProjectRequest,
 ) -> Result<ActorProject, AppError> {
     let existing = get_actor_project_by_id(app_state, deployment_id, project_id).await?;
-    let name = request.name.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    let name = request
+        .name
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
     let description = request.description.map(|v| v.trim().to_string());
-    let status = request.status.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    let status = request
+        .status
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
 
     if name.is_none() && description.is_none() && status.is_none() {
         return Ok(existing);
@@ -914,7 +871,9 @@ pub async fn update_agent_thread(
     if let Some(system_instructions) = system_instructions {
         command = command.with_system_instructions(Some(system_instructions));
     }
-    let thread = command.execute_with_db(app_state.db_router.writer()).await?;
+    let thread = command
+        .execute_with_db(app_state.db_router.writer())
+        .await?;
 
     if let Some(agent_id) = agent_id {
         UpsertThreadAgentAssignmentCommand::new(thread.id, agent_id)
@@ -976,7 +935,7 @@ pub async fn list_thread_messages(
     let limit = normalize_limit(limit, 50, 100);
     let rows = sqlx::query!(
         r#"
-        SELECT id, thread_id, execution_run_id, timestamp, content, message_type, created_at, updated_at, metadata
+        SELECT id, thread_id, board_item_id, execution_run_id, timestamp, content, message_type, created_at, updated_at, metadata
         FROM conversations
         WHERE thread_id = $1
           AND ($2::bigint IS NULL OR id < $2)
@@ -1001,13 +960,11 @@ pub async fn list_thread_messages(
             Ok(ConversationRecord {
                 id: row.id,
                 thread_id: row.thread_id,
+                board_item_id: row.board_item_id,
                 execution_run_id: row.execution_run_id,
                 timestamp: row.timestamp,
                 content: serde_json::from_value(row.content).map_err(|e| {
-                    AppError::Internal(format!(
-                        "Failed to deserialize conversation content: {}",
-                        e
-                    ))
+                    AppError::Internal(format!("Failed to deserialize conversation content: {}", e))
                 })?,
                 message_type: parse_conversation_message_type(&row.message_type)?,
                 created_at: row.created_at,
@@ -1103,7 +1060,9 @@ pub async fn get_thread_filesystem_file(
     get_agent_thread_by_id(app_state, deployment_id, thread_id).await?;
     let cleaned = sanitize_relative_path(&path)?;
     let (base_prefix, relative) = if cleaned == "workspace" || cleaned == "uploads" {
-        return Err(AppError::BadRequest("requested path is a directory".to_string()));
+        return Err(AppError::BadRequest(
+            "requested path is a directory".to_string(),
+        ));
     } else if cleaned.starts_with("workspace/") {
         (
             thread_workspace_storage_prefix(deployment_id, thread_id),
@@ -1119,7 +1078,8 @@ pub async fn get_thread_filesystem_file(
             "path must be inside workspace or uploads".to_string(),
         ));
     };
-    let (body, mime_type) = read_workspace_file(app_state, deployment_id, base_prefix, relative).await?;
+    let (body, mime_type) =
+        read_workspace_file(app_state, deployment_id, base_prefix, relative).await?;
     Ok((body, mime_type, cleaned))
 }
 
@@ -1228,10 +1188,9 @@ pub async fn build_actor_mcp_server_connect_url(
     let server = GetMcpServerByIdQuery::new(deployment_id, mcp_server_id)
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
-    let auth = server
-        .config
-        .auth
-        .ok_or_else(|| AppError::BadRequest("This MCP server does not require actor consent".to_string()))?;
+    let auth = server.config.auth.ok_or_else(|| {
+        AppError::BadRequest("This MCP server does not require actor consent".to_string())
+    })?;
 
     let (client_id, auth_url, token_url, scopes, resource) = match auth {
         models::McpAuthConfig::OAuthAuthorizationCodePublicPkce {
@@ -1242,9 +1201,15 @@ pub async fn build_actor_mcp_server_connect_url(
             resource,
             ..
         } => (
-            client_id.ok_or_else(|| AppError::BadRequest("MCP server client_id is missing".to_string()))?,
-            auth_url.ok_or_else(|| AppError::BadRequest("MCP server auth_url is missing".to_string()))?,
-            token_url.ok_or_else(|| AppError::BadRequest("MCP server token_url is missing".to_string()))?,
+            client_id.ok_or_else(|| {
+                AppError::BadRequest("MCP server client_id is missing".to_string())
+            })?,
+            auth_url.ok_or_else(|| {
+                AppError::BadRequest("MCP server auth_url is missing".to_string())
+            })?,
+            token_url.ok_or_else(|| {
+                AppError::BadRequest("MCP server token_url is missing".to_string())
+            })?,
             scopes,
             resource,
         ),
@@ -1257,15 +1222,19 @@ pub async fn build_actor_mcp_server_connect_url(
             ..
         } => (
             client_id,
-            auth_url.ok_or_else(|| AppError::BadRequest("MCP server auth_url is missing".to_string()))?,
-            token_url.ok_or_else(|| AppError::BadRequest("MCP server token_url is missing".to_string()))?,
+            auth_url.ok_or_else(|| {
+                AppError::BadRequest("MCP server auth_url is missing".to_string())
+            })?,
+            token_url.ok_or_else(|| {
+                AppError::BadRequest("MCP server token_url is missing".to_string())
+            })?,
             scopes,
             resource,
         ),
         _ => {
             return Err(AppError::BadRequest(
                 "This MCP server does not require actor consent".to_string(),
-            ))
+            ));
         }
     };
 
@@ -1420,6 +1389,20 @@ pub async fn create_project_task_board_item(
         let payload = models::thread_event::TaskRoutingEventPayload {
             board_item_id: item.id,
         };
+        let summary = commands::build_task_routing_summary(&item, 0);
+        let conversation_id = commands::WriteAssignmentEventConversation {
+            thread_id: coordinator_thread_id,
+            board_item_id: item.id,
+            kind: models::AssignmentEventKind::TaskRouting,
+            assignment_id: None,
+            summary,
+            payload: Some(serde_json::to_value(&payload).map_err(|err| {
+                AppError::Internal(format!("Failed to serialize task routing payload: {}", err))
+            })?),
+        }
+        .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
+        .await?;
+
         DispatchThreadEventCommand::new(
             EnqueueThreadEventCommand::new(
                 app_state.sf.next_id()? as i64,
@@ -1431,7 +1414,8 @@ pub async fn create_project_task_board_item(
             .with_priority(30)
             .with_payload(serde_json::to_value(payload).map_err(|err| {
                 AppError::Internal(format!("Failed to serialize task routing payload: {}", err))
-            })?),
+            })?)
+            .with_conversation_id(conversation_id),
         )
         .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
         .await?;
@@ -1559,6 +1543,22 @@ pub async fn append_project_task_board_item_journal_entry(
             let payload = models::thread_event::TaskRoutingEventPayload {
                 board_item_id: item.id,
             };
+            let summary = commands::build_task_routing_summary(&item, 0);
+            let conversation_id = commands::WriteAssignmentEventConversation {
+                thread_id: coordinator_thread_id,
+                board_item_id: item.id,
+                kind: models::AssignmentEventKind::TaskRouting,
+                assignment_id: None,
+                summary,
+                payload: Some(serde_json::to_value(&payload).map_err(|err| {
+                    AppError::Internal(format!(
+                        "Failed to serialize coordinator reroute payload: {}",
+                        err
+                    ))
+                })?),
+            }
+            .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
+            .await?;
 
             DispatchThreadEventCommand::new(
                 EnqueueThreadEventCommand::new(
@@ -1574,7 +1574,8 @@ pub async fn append_project_task_board_item_journal_entry(
                         "Failed to serialize coordinator reroute payload: {}",
                         err
                     ))
-                })?),
+                })?)
+                .with_conversation_id(conversation_id),
             )
             .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
             .await?;
@@ -1594,10 +1595,15 @@ pub async fn update_project_task_board_item(
     let item = get_project_task_board_item_by_id(app_state, deployment_id, item_id).await?;
     let board = get_project_task_board_by_project_id(app_state, deployment_id, project_id).await?;
     if item.board_id != board.id {
-        return Err(AppError::NotFound("Project task board item not found".to_string()));
+        return Err(AppError::NotFound(
+            "Project task board item not found".to_string(),
+        ));
     }
 
-    let title = request.title.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    let title = request
+        .title
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
     let description = request.description.map(|v| v.trim().to_string());
 
     if title.is_some() || description.is_some() {
@@ -1647,7 +1653,9 @@ pub async fn set_project_task_board_item_archived(
     let item = get_project_task_board_item_by_id(app_state, deployment_id, item_id).await?;
     let board = get_project_task_board_by_project_id(app_state, deployment_id, project_id).await?;
     if item.board_id != board.id {
-        return Err(AppError::NotFound("Project task board item not found".to_string()));
+        return Err(AppError::NotFound(
+            "Project task board item not found".to_string(),
+        ));
     }
 
     let updated = sqlx::query_as!(
@@ -1681,7 +1689,9 @@ pub async fn list_project_task_board_item_filesystem(
     let item = get_project_task_board_item_by_id(app_state, deployment_id, item_id).await?;
     let board = get_project_task_board_by_project_id(app_state, deployment_id, project_id).await?;
     if item.board_id != board.id {
-        return Err(AppError::NotFound("Project task board item not found".to_string()));
+        return Err(AppError::NotFound(
+            "Project task board item not found".to_string(),
+        ));
     }
     list_workspace_directory(
         app_state,
@@ -1702,7 +1712,9 @@ pub async fn get_project_task_board_item_filesystem_file(
     let item = get_project_task_board_item_by_id(app_state, deployment_id, item_id).await?;
     let board = get_project_task_board_by_project_id(app_state, deployment_id, project_id).await?;
     if item.board_id != board.id {
-        return Err(AppError::NotFound("Project task board item not found".to_string()));
+        return Err(AppError::NotFound(
+            "Project task board item not found".to_string(),
+        ));
     }
     let (body, mime_type) = read_workspace_file(
         app_state,

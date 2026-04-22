@@ -17,6 +17,7 @@ use serde_json::Value;
 pub struct ToolExecutor {
     ctx: std::sync::Arc<crate::runtime::thread_execution_context::ThreadExecutionContext>,
     channel: Option<tokio::sync::mpsc::Sender<StreamEvent>>,
+    active_board_item_id: Option<i64>,
 }
 
 const DEFAULT_INLINE_OUTPUT_THRESHOLD_CHARS: usize = 60_000;
@@ -26,12 +27,25 @@ impl ToolExecutor {
     pub fn new(
         ctx: std::sync::Arc<crate::runtime::thread_execution_context::ThreadExecutionContext>,
     ) -> Self {
-        Self { ctx, channel: None }
+        Self {
+            ctx,
+            channel: None,
+            active_board_item_id: None,
+        }
     }
 
     pub fn with_channel(mut self, channel: tokio::sync::mpsc::Sender<StreamEvent>) -> Self {
         self.channel = Some(channel);
         self
+    }
+
+    pub fn set_active_board_item_id(&mut self, board_item_id: Option<i64>) {
+        self.active_board_item_id = board_item_id;
+    }
+
+    #[inline]
+    pub(crate) fn active_board_item_id(&self) -> Option<i64> {
+        self.active_board_item_id
     }
 
     #[inline]

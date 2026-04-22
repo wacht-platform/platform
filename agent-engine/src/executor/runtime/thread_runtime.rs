@@ -13,10 +13,6 @@ use models::{
 };
 use std::collections::HashSet;
 
-const LONG_THINK_INPUT_TOKEN_BUDGET: u32 = 2_000_000;
-const LONG_THINK_OUTPUT_TOKEN_BUDGET: u32 = 300_000;
-const LONG_THINK_CREDIT_WINDOW_MILLIS: i64 = 30 * 60 * 1000;
-
 impl AgentExecutor {
     async fn cleanup_filesystem(&mut self) {
         if let Err(e) = self.filesystem.cleanup().await {
@@ -28,9 +24,10 @@ impl AgentExecutor {
         &self,
         execution_state: Option<ThreadExecutionState>,
     ) -> Result<(), AppError> {
-        let mut command =
-            UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
-                .with_status(AgentThreadStatus::Running);
+        let mut command = self.apply_thread_status(
+            UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id),
+            AgentThreadStatus::Running,
+        );
         if let Some(execution_state) = execution_state {
             command = command.with_execution_state(execution_state);
         }
@@ -48,11 +45,16 @@ impl AgentExecutor {
             .compact_history_before_execution_if_needed(trigger_conversation)
             .await
         {
-            UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
-                .with_status(AgentThreadStatus::Idle)
-                .with_execution_state(self.build_execution_state_snapshot(None))
-                .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
-                .await?;
+            self.apply_thread_status(
+                UpdateAgentThreadStateCommand::new(
+                    self.ctx.thread_id,
+                    self.ctx.agent.deployment_id,
+                ),
+                AgentThreadStatus::Idle,
+            )
+            .with_execution_state(self.build_execution_state_snapshot(None))
+            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
+            .await?;
             return Err(error);
         }
 
@@ -162,6 +164,8 @@ impl AgentExecutor {
         thread_event: models::ThreadEvent,
     ) -> Result<(), AppError> {
         self.active_thread_event = Some(thread_event.clone());
+        self.tool_executor
+            .set_active_board_item_id(thread_event.board_item_id);
 
         let thread_event_message = self.build_thread_event_message(&thread_event).await?;
         let conversation = self
@@ -178,16 +182,15 @@ impl AgentExecutor {
         self.load_context_for_execution_trigger(&conversation)
             .await?;
 
-        if matches!(
-            thread_event.event_type.as_str(),
-            "task_routing" | "assignment_outcome_review"
-        ) && self.effective_is_coordinator_thread()
+        if thread_event.event_type.as_str() == "task_routing"
+            && self.effective_is_coordinator_thread()
         {
             self.refresh_project_task_board_items().await?;
         }
 
         let result = self.repl().await;
         self.active_thread_event = None;
+        self.tool_executor.set_active_board_item_id(None);
         result
     }
 
@@ -196,78 +199,12 @@ impl AgentExecutor {
         pending_approval_request: Option<ToolApprovalRequestState>,
     ) -> ThreadExecutionState {
         ThreadExecutionState {
-            long_think_credit_snapshot: self.long_think_credit_snapshot.clone(),
             loaded_external_tool_ids: self.loaded_external_tool_ids.clone(),
-            prompt_caches: models::PromptCacheRegistry {
-                step_decision: self.next_step_decision_cache_state.clone(),
-                action_loop: None,
-            },
             pending_approval_request,
-            active_startaction_directive: self
-                .active_startaction_directive
-                .as_ref()
-                .and_then(|directive| serde_json::to_value(directive).ok()),
-            active_tool_call_brief: self
-                .active_tool_call_brief
-                .as_ref()
-                .and_then(|brief| serde_json::to_value(brief).ok()),
             assignment_outcome_override: None,
             task_journal_start_hash: self.task_journal_start_hash.clone(),
             conversation_compaction_state: self.conversation_compaction_state.clone(),
         }
-    }
-
-    pub(crate) fn refresh_long_think_credits(&mut self) {
-        let now = chrono::Utc::now();
-        let elapsed_ms = (now - self.long_think_credit_snapshot.snapshot_at).num_milliseconds();
-        if elapsed_ms <= 0 {
-            return;
-        }
-
-        let input_refill = ((elapsed_ms as i128 * LONG_THINK_INPUT_TOKEN_BUDGET as i128)
-            / LONG_THINK_CREDIT_WINDOW_MILLIS as i128) as u32;
-        let output_refill = ((elapsed_ms as i128 * LONG_THINK_OUTPUT_TOKEN_BUDGET as i128)
-            / LONG_THINK_CREDIT_WINDOW_MILLIS as i128) as u32;
-
-        self.long_think_credit_snapshot.input_tokens_available = self
-            .long_think_credit_snapshot
-            .input_tokens_available
-            .saturating_add(input_refill)
-            .min(LONG_THINK_INPUT_TOKEN_BUDGET);
-        self.long_think_credit_snapshot.output_tokens_available = self
-            .long_think_credit_snapshot
-            .output_tokens_available
-            .saturating_add(output_refill)
-            .min(LONG_THINK_OUTPUT_TOKEN_BUDGET);
-        self.long_think_credit_snapshot.snapshot_at = now;
-    }
-
-    pub(crate) fn long_think_credits_available(&self) -> bool {
-        self.long_think_credit_snapshot.input_tokens_available > 0
-            && self.long_think_credit_snapshot.output_tokens_available > 0
-    }
-
-    pub(crate) fn consume_long_think_credits(&mut self, usage: Option<&UsageMetadata>) {
-        self.refresh_long_think_credits();
-        let now = chrono::Utc::now();
-
-        if let Some(usage) = usage {
-            let output_tokens = usage
-                .candidates_token_count
-                .saturating_add(usage.thoughts_token_count.unwrap_or(0));
-
-            self.long_think_credit_snapshot.input_tokens_available = self
-                .long_think_credit_snapshot
-                .input_tokens_available
-                .saturating_sub(usage.prompt_token_count);
-            self.long_think_credit_snapshot.output_tokens_available = self
-                .long_think_credit_snapshot
-                .output_tokens_available
-                .saturating_sub(output_tokens);
-        }
-
-        self.long_think_credit_snapshot.snapshot_at = now;
-        self.long_think_credit_snapshot.last_used_at = Some(now);
     }
 
     pub(crate) fn record_llm_usage_for_compaction(&mut self, usage: Option<&UsageMetadata>) {
@@ -282,20 +219,6 @@ impl AgentExecutor {
             .conversation_compaction_state
             .max_prompt_token_count_seen
             .max(usage.prompt_token_count);
-    }
-
-    pub(crate) fn long_think_nudge(&self) -> Option<String> {
-        if !self.long_think_mode_active {
-            return None;
-        }
-
-        Some(format!(
-            "High-thinking mode is active for this next-step decision and this is accruing rolling credit usage. Remaining credits right now: input {} / {}, output {} / {}. Use the extra thinking to get unstuck, then step back down by choosing a concrete next step instead of requesting high-thinking mode again.",
-            self.long_think_credit_snapshot.input_tokens_available,
-            LONG_THINK_INPUT_TOKEN_BUDGET,
-            self.long_think_credit_snapshot.output_tokens_available,
-            LONG_THINK_OUTPUT_TOKEN_BUDGET
-        ))
     }
 
     pub(crate) async fn request_user_approval(
@@ -367,13 +290,15 @@ impl AgentExecutor {
             tools: requested_tools,
         };
 
-        UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
-            .with_execution_state(
-                self.build_execution_state_snapshot(Some(pending_approval_request)),
-            )
-            .with_status(AgentThreadStatus::WaitingForInput)
-            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
-            .await?;
+        self.apply_thread_status(
+            UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
+                .with_execution_state(
+                    self.build_execution_state_snapshot(Some(pending_approval_request)),
+                ),
+            AgentThreadStatus::WaitingForInput,
+        )
+        .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
+        .await?;
 
         self.conversations.push(approval_conversation.clone());
         let _ = self
@@ -445,26 +370,5 @@ impl AgentExecutor {
 
     pub(crate) async fn create_weak_llm(&self) -> Result<ResolvedLlm, AppError> {
         self.ctx.create_llm(LlmRole::Weak).await
-    }
-
-    pub(crate) fn next_step_decision_cache_key(&self, model_name: &str) -> String {
-        format!("{}:next-step-decision:{model_name}", self.ctx.thread_id)
-    }
-
-    pub(crate) async fn persist_next_step_decision_cache_state(
-        &mut self,
-        cache_state: Option<models::PromptCacheState>,
-    ) -> Result<(), AppError> {
-        if self.next_step_decision_cache_state == cache_state {
-            return Ok(());
-        }
-
-        self.next_step_decision_cache_state = cache_state;
-        UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
-            .with_execution_state(self.build_execution_state_snapshot(None))
-            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
-            .await?;
-        self.ctx.invalidate_cache();
-        Ok(())
     }
 }

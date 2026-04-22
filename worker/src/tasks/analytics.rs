@@ -37,7 +37,10 @@ pub async fn store_analytics_event_impl(
         ip_address: task.ip_address,
     };
 
-    app_state.clickhouse_service.insert_user_event(&user_event).await?;
+    app_state
+        .clickhouse_service
+        .insert_user_event(&user_event)
+        .await?;
 
     info!(
         "[ANALYTICS WORKER] Successfully stored {} event for deployment {}",

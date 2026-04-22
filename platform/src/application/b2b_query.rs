@@ -1,5 +1,7 @@
+use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
 use commands::UpdateDeploymentB2bSettingsCommand;
 use common::db_router::ReadConsistency;
+use common::deps;
 use common::error::AppError;
 use common::state::AppState;
 use dto::{
@@ -13,8 +15,6 @@ use queries::{
     DeploymentOrganizationListQuery, DeploymentWorkspaceListQuery, GetOrganizationDetailsQuery,
     GetOrganizationMembersQuery, GetWorkspaceDetailsQuery, GetWorkspaceMembersQuery,
 };
-use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
-use common::deps;
 
 fn paginated_with_has_more<T>(
     data: Vec<T>,

@@ -1,16 +1,12 @@
 use super::core::AgentExecutor;
-use super::tool_params::{
-    PlannedToolCall, ResolvedToolCall, ToolExecutionIterationResult, ToolExecutionLoopOutcome,
-};
+use super::tool_params::{PlannedToolCall, ResolvedToolCall, ToolExecutionLoopOutcome};
 
 use commands::ConsumeOnceApprovalGrantForThreadCommand;
 use common::error::AppError;
 use dto::json::agent_executor::{ApprovalRequestData, ToolCallRequest};
-use models::{
-    ActionResult, ActionResultStatus, AiTool, ConversationContent, ConversationMessageType,
-};
+use models::{AiTool, ConversationContent, ConversationMessageType};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 impl AgentExecutor {
     pub(crate) async fn execute_requested_actions(
         &mut self,
@@ -23,10 +19,7 @@ impl AgentExecutor {
                 retryable_on_failure: false,
             })
             .collect();
-        let mut all_results = Vec::new();
-        let mut prior_iteration_results: Vec<ToolExecutionIterationResult> = Vec::new();
         let mut any_pending = false;
-        let mut task_graph_node_refs: HashMap<String, i64> = HashMap::new();
 
         if let Some(approval_request) = self
             .build_runtime_approval_request_for_calls(&planned_calls)
@@ -40,14 +33,8 @@ impl AgentExecutor {
             let tool = match self.authorize_tool_call(call.tool_name()).await {
                 Ok(tool) => tool,
                 Err(error) => {
-                    self.record_tool_execution_result(
-                        &call,
-                        Err(error),
-                        &mut prior_iteration_results,
-                        &mut all_results,
-                        &mut any_pending,
-                    )
-                    .await?;
+                    self.record_tool_execution_result(&call, Err(error), &mut any_pending)
+                        .await?;
                     continue;
                 }
             };
@@ -55,49 +42,22 @@ impl AgentExecutor {
                 request: call,
                 tool,
             };
-            let execution_params =
-                match Self::resolve_task_graph_request(&resolved.request, &task_graph_node_refs) {
-                    Ok(parameters) => parameters,
-                    Err(error) => {
-                        self.record_tool_execution_result(
-                            &resolved.request,
-                            Err(error),
-                            &mut prior_iteration_results,
-                            &mut all_results,
-                            &mut any_pending,
-                        )
-                        .await?;
-                        continue;
-                    }
-                };
 
-            let result = self
-                .execute_planned_tool_call(&resolved, execution_params)
-                .await;
+            let tool_name = resolved.request.tool_name().to_string();
+            let result = self.execute_planned_tool_call(&resolved).await;
 
-            if let Ok(ref result_value) = result {
-                Self::capture_task_graph_node_ref(
-                    &resolved.request,
-                    result_value,
-                    &mut task_graph_node_refs,
-                );
+            if Self::tool_name_mutates_task_graph(&tool_name) && result.is_ok() {
+                self.invalidate_task_graph_snapshot();
             }
 
-            self.record_tool_execution_result(
-                &resolved.request,
-                result,
-                &mut prior_iteration_results,
-                &mut all_results,
-                &mut any_pending,
-            )
-            .await?;
+            self.record_tool_execution_result(&resolved.request, result, &mut any_pending)
+                .await?;
 
             if any_pending {
                 break;
             }
         }
 
-        let _ = (all_results, prior_iteration_results);
         Ok(ToolExecutionLoopOutcome { any_pending })
     }
 
@@ -124,16 +84,10 @@ impl AgentExecutor {
     async fn execute_planned_tool_call(
         &mut self,
         resolved: &ResolvedToolCall,
-        execution_params: ToolCallRequest,
     ) -> Result<Value, AppError> {
-        let _request = &resolved.request;
-
-        match execution_params {
+        match resolved.request.request.clone() {
             ToolCallRequest::SearchTools { params, .. } => self.execute_search_tools(params).await,
             ToolCallRequest::LoadTools { params, .. } => self.execute_load_tools(params).await,
-            ToolCallRequest::SnapshotExecutionState { params, .. } => {
-                self.execute_snapshot_execution_state(params).await
-            }
             ToolCallRequest::CreateProjectTask { params, .. } => {
                 self.handle_create_project_task(params).await
             }
@@ -154,8 +108,6 @@ impl AgentExecutor {
         &mut self,
         call: &PlannedToolCall,
         result: Result<Value, AppError>,
-        prior_iteration_results: &mut Vec<ToolExecutionIterationResult>,
-        all_results: &mut Vec<ActionResult>,
         any_pending: &mut bool,
     ) -> Result<(), AppError> {
         match result {
@@ -170,29 +122,8 @@ impl AgentExecutor {
                 if status == "pending" {
                     *any_pending = true;
                 }
-                prior_iteration_results.push(ToolExecutionIterationResult {
-                    tool_name: call.tool_name().to_string(),
-                    status,
-                    retryable_on_failure: call.retryable_on_failure,
-                    output: Some(standardized.clone()),
-                    error: None,
-                });
-                self.store_tool_result_conversation(
-                    call,
-                    prior_iteration_results
-                        .last()
-                        .map(|item| item.status.as_str())
-                        .unwrap_or("success"),
-                    Some(standardized.clone()),
-                    None,
-                )
-                .await?;
-                all_results.push(ActionResult {
-                    action: call.tool_name().to_string(),
-                    status: ActionResultStatus::Success,
-                    result: Some(standardized),
-                    error: None,
-                });
+                self.store_tool_result_conversation(call, &status, Some(standardized), None)
+                    .await?;
             }
             Err(e) => {
                 let error_message = e.to_string();
@@ -201,26 +132,13 @@ impl AgentExecutor {
                     None,
                     Some(error_message.clone()),
                 );
-                prior_iteration_results.push(ToolExecutionIterationResult {
-                    tool_name: call.tool_name().to_string(),
-                    status: "error".to_string(),
-                    retryable_on_failure: call.retryable_on_failure,
-                    output: Some(standardized.clone()),
-                    error: Some(error_message.clone()),
-                });
                 self.store_tool_result_conversation(
                     call,
                     "error",
-                    Some(standardized.clone()),
-                    Some(error_message.clone()),
+                    Some(standardized),
+                    Some(error_message),
                 )
                 .await?;
-                all_results.push(ActionResult {
-                    action: call.tool_name().to_string(),
-                    status: ActionResultStatus::Error,
-                    result: Some(standardized),
-                    error: Some(error_message.clone()),
-                });
             }
         }
 
@@ -346,5 +264,17 @@ impl AgentExecutor {
         }
 
         Ok(())
+    }
+
+    fn tool_name_mutates_task_graph(tool_name: &str) -> bool {
+        matches!(
+            tool_name,
+            "task_graph_add_node"
+                | "task_graph_add_dependency"
+                | "task_graph_mark_in_progress"
+                | "task_graph_complete_node"
+                | "task_graph_fail_node"
+                | "task_graph_reset"
+        )
     }
 }

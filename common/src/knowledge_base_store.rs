@@ -10,6 +10,7 @@ use lancedb::index::Index;
 use lancedb::index::scalar::BTreeIndexBuilder;
 use lancedb::index::scalar::FullTextSearchQuery;
 use lancedb::query::{ExecutableQuery, QueryBase, Select};
+use lancedb::table::NewColumnTransform;
 use lancedb::{Connection, DistanceType, Error as LanceError, Table};
 use models::ai_knowledge_base::DocumentChunkSearchResult;
 use models::error::AppError;
@@ -20,6 +21,7 @@ use crate::vector_store::{VectorStoreConfig, map_vector_store_error};
 const KB_CHUNKS_TABLE: &str = "knowledge_base_chunks";
 const RELEVANCE_SCORE_COLUMN: &str = "_relevance_score";
 const KNOWLEDGE_EMBEDDING_DIMENSION: i32 = 1536;
+const KNOWLEDGE_EMBEDDING_DIMENSION_768: i32 = 768;
 
 #[derive(Debug, Clone)]
 pub struct KnowledgeBaseChunkRecord {
@@ -36,6 +38,7 @@ pub async fn replace_document_chunks(
     config: &VectorStoreConfig,
     document_id: i64,
     chunks: &[KnowledgeBaseChunkRecord],
+    embedding_dimension: i32,
 ) -> Result<(), AppError> {
     let table = open_or_create_kb_table(config).await?;
 
@@ -48,7 +51,7 @@ pub async fn replace_document_chunks(
         return Ok(());
     }
 
-    let batch = build_record_batch(chunks)?;
+    let batch = build_record_batch(chunks, embedding_dimension)?;
     table
         .add(batch)
         .execute()
@@ -59,32 +62,54 @@ pub async fn replace_document_chunks(
 }
 
 pub async fn ensure_knowledge_base_indices(config: &VectorStoreConfig) -> Result<(), AppError> {
-    let table = open_or_create_kb_table(config).await?;
+    let table =
+        crate::vector_store::open_or_create_table(config, KB_CHUNKS_TABLE, kb_schema()).await?;
+    ensure_kb_table_schema(&table).await?;
     ensure_kb_indices(&table).await
 }
 
 pub async fn count_indexable_knowledge_base_rows(
     config: &VectorStoreConfig,
+    embedding_dimension: i32,
 ) -> Result<usize, AppError> {
-    crate::vector_store::count_rows_with_filter(
-        config,
-        KB_CHUNKS_TABLE,
-        "knowledge_base_id > 0 AND embedding IS NOT NULL",
-    )
-    .await
+    let table = open_or_create_kb_table(config).await?;
+    table
+        .count_rows(Some(format!(
+            "knowledge_base_id > 0 AND {} IS NOT NULL",
+            embedding_column_for_dimension(embedding_dimension)
+        )))
+        .await
+        .map_err(map_vector_store_error)
 }
 
 pub async fn knowledge_base_vector_index_exists(
     config: &VectorStoreConfig,
+    embedding_dimension: i32,
 ) -> Result<bool, AppError> {
-    crate::vector_store::vector_index_exists(config, KB_CHUNKS_TABLE, "embedding").await
+    let table = match open_kb_table(config).await? {
+        Some(table) => table,
+        None => return Ok(false),
+    };
+
+    let existing = table.list_indices().await.map_err(map_vector_store_error)?;
+    Ok(existing.into_iter().any(|idx| {
+        idx.columns == vec![embedding_column_for_dimension(embedding_dimension).to_string()]
+    }))
 }
 
 pub async fn create_knowledge_base_vector_index(
     config: &VectorStoreConfig,
+    embedding_dimension: i32,
 ) -> Result<(), AppError> {
-    crate::vector_store::create_auto_vector_index(config, KB_CHUNKS_TABLE, kb_schema(), "embedding")
+    let table = open_or_create_kb_table(config).await?;
+    table
+        .create_index(
+            &[embedding_column_for_dimension(embedding_dimension)],
+            Index::Auto,
+        )
+        .execute()
         .await
+        .map_err(map_vector_store_error)
 }
 
 pub async fn optimize_knowledge_base_vector_index(
@@ -132,6 +157,7 @@ pub async fn search_full_text(
     knowledge_base_ids: &[i64],
     query: &str,
     limit: usize,
+    embedding_dimension: i32,
 ) -> Result<Vec<FullTextSearchResult>, AppError> {
     let table = match open_kb_table(config).await? {
         Some(table) => table,
@@ -141,7 +167,10 @@ pub async fn search_full_text(
     let batches = table
         .query()
         .full_text_search(FullTextSearchQuery::new(query.to_string()))
-        .only_if(searchable_kb_filter(knowledge_base_ids))
+        .only_if(searchable_kb_filter(
+            knowledge_base_ids,
+            embedding_dimension,
+        ))
         .limit(limit)
         .select(Select::columns(&[
             "document_id",
@@ -166,6 +195,7 @@ pub async fn search_vector(
     knowledge_base_ids: &[i64],
     query_embedding: &[f32],
     limit: usize,
+    embedding_dimension: i32,
 ) -> Result<Vec<DocumentChunkSearchResult>, AppError> {
     let table = match open_kb_table(config).await? {
         Some(table) => table,
@@ -175,8 +205,12 @@ pub async fn search_vector(
     let batches = table
         .vector_search(query_embedding.to_vec())
         .map_err(map_vector_store_error)?
+        .column(embedding_column_for_dimension(embedding_dimension))
         .distance_type(DistanceType::Cosine)
-        .only_if(searchable_kb_filter(knowledge_base_ids))
+        .only_if(searchable_kb_filter(
+            knowledge_base_ids,
+            embedding_dimension,
+        ))
         .limit(limit)
         .select(Select::columns(&[
             "document_id",
@@ -202,6 +236,7 @@ pub async fn search_hybrid(
     query: &str,
     query_embedding: &[f32],
     limit: usize,
+    embedding_dimension: i32,
 ) -> Result<Vec<HybridSearchKbResult>, AppError> {
     let table = match open_kb_table(config).await? {
         Some(table) => table,
@@ -211,9 +246,13 @@ pub async fn search_hybrid(
     let batches = table
         .vector_search(query_embedding.to_vec())
         .map_err(map_vector_store_error)?
+        .column(embedding_column_for_dimension(embedding_dimension))
         .distance_type(DistanceType::Cosine)
         .full_text_search(FullTextSearchQuery::new(query.to_string()))
-        .only_if(searchable_kb_filter(knowledge_base_ids))
+        .only_if(searchable_kb_filter(
+            knowledge_base_ids,
+            embedding_dimension,
+        ))
         .limit(limit)
         .execute()
         .await
@@ -246,11 +285,15 @@ pub async fn search_full_text_in_table(
     knowledge_base_ids: &[i64],
     query: &str,
     limit: usize,
+    embedding_dimension: i32,
 ) -> Result<Vec<FullTextSearchResult>, AppError> {
     let batches = table
         .query()
         .full_text_search(FullTextSearchQuery::new(query.to_string()))
-        .only_if(searchable_kb_filter(knowledge_base_ids))
+        .only_if(searchable_kb_filter(
+            knowledge_base_ids,
+            embedding_dimension,
+        ))
         .limit(limit)
         .select(Select::columns(&[
             "document_id",
@@ -275,12 +318,17 @@ pub async fn search_vector_in_table(
     knowledge_base_ids: &[i64],
     query_embedding: &[f32],
     limit: usize,
+    embedding_dimension: i32,
 ) -> Result<Vec<DocumentChunkSearchResult>, AppError> {
     let batches = table
         .vector_search(query_embedding.to_vec())
         .map_err(map_vector_store_error)?
+        .column(embedding_column_for_dimension(embedding_dimension))
         .distance_type(DistanceType::Cosine)
-        .only_if(searchable_kb_filter(knowledge_base_ids))
+        .only_if(searchable_kb_filter(
+            knowledge_base_ids,
+            embedding_dimension,
+        ))
         .limit(limit)
         .select(Select::columns(&[
             "document_id",
@@ -306,13 +354,18 @@ pub async fn search_hybrid_in_table(
     query: &str,
     query_embedding: &[f32],
     limit: usize,
+    embedding_dimension: i32,
 ) -> Result<Vec<HybridSearchKbResult>, AppError> {
     let batches = table
         .vector_search(query_embedding.to_vec())
         .map_err(map_vector_store_error)?
+        .column(embedding_column_for_dimension(embedding_dimension))
         .distance_type(DistanceType::Cosine)
         .full_text_search(FullTextSearchQuery::new(query.to_string()))
-        .only_if(searchable_kb_filter(knowledge_base_ids))
+        .only_if(searchable_kb_filter(
+            knowledge_base_ids,
+            embedding_dimension,
+        ))
         .limit(limit)
         .execute()
         .await
@@ -333,11 +386,19 @@ fn kb_filter(knowledge_base_ids: &[i64]) -> String {
     format!("knowledge_base_id IN ({})", ids)
 }
 
-fn searchable_kb_filter(knowledge_base_ids: &[i64]) -> String {
+fn searchable_kb_filter(knowledge_base_ids: &[i64], embedding_dimension: i32) -> String {
     format!(
-        "{} AND embedding IS NOT NULL",
-        kb_filter(knowledge_base_ids)
+        "{} AND {} IS NOT NULL",
+        kb_filter(knowledge_base_ids),
+        embedding_column_for_dimension(embedding_dimension),
     )
+}
+
+fn embedding_column_for_dimension(embedding_dimension: i32) -> &'static str {
+    match embedding_dimension {
+        768 => "embedding_768",
+        _ => "embedding",
+    }
 }
 
 async fn open_or_create_kb_table(config: &VectorStoreConfig) -> Result<Table, AppError> {
@@ -394,6 +455,33 @@ async fn ensure_kb_indices(table: &Table) -> Result<(), AppError> {
     Ok(())
 }
 
+async fn ensure_kb_table_schema(table: &Table) -> Result<(), AppError> {
+    let schema = table.schema().await.map_err(map_vector_store_error)?;
+
+    if schema.field_with_name("embedding_768").is_err() {
+        tracing::info!(
+            table = KB_CHUNKS_TABLE,
+            "Adding missing embedding_768 column to knowledge base table"
+        );
+        table
+            .add_columns(
+                NewColumnTransform::AllNulls(Arc::new(Schema::new(vec![Field::new(
+                    "embedding_768",
+                    DataType::FixedSizeList(
+                        Arc::new(Field::new("item", DataType::Float32, true)),
+                        KNOWLEDGE_EMBEDDING_DIMENSION_768,
+                    ),
+                    true,
+                )]))),
+                None,
+            )
+            .await
+            .map_err(map_vector_store_error)?;
+    }
+
+    Ok(())
+}
+
 fn kb_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("knowledge_base_id", DataType::Int64, false),
@@ -410,10 +498,21 @@ fn kb_schema() -> SchemaRef {
             ),
             true,
         ),
+        Field::new(
+            "embedding_768",
+            DataType::FixedSizeList(
+                Arc::new(Field::new("item", DataType::Float32, true)),
+                KNOWLEDGE_EMBEDDING_DIMENSION_768,
+            ),
+            true,
+        ),
     ]))
 }
 
-fn build_record_batch(chunks: &[KnowledgeBaseChunkRecord]) -> Result<RecordBatch, AppError> {
+fn build_record_batch(
+    chunks: &[KnowledgeBaseChunkRecord],
+    embedding_dimension: i32,
+) -> Result<RecordBatch, AppError> {
     let schema = kb_schema();
     let knowledge_base_ids = Arc::new(Int64Array::from(
         chunks
@@ -452,31 +551,13 @@ fn build_record_batch(chunks: &[KnowledgeBaseChunkRecord]) -> Result<RecordBatch
             .collect::<Vec<_>>(),
     )) as ArrayRef;
 
-    let embedding_values = Arc::new(Float32Array::from(
-        chunks
-            .iter()
-            .flat_map(|chunk| {
-                chunk
-                    .embedding
-                    .as_ref()
-                    .into_iter()
-                    .flat_map(|embedding| embedding.iter().copied())
-            })
-            .collect::<Vec<_>>(),
-    )) as ArrayRef;
-    let embedding_nulls = chunks
-        .iter()
-        .map(|chunk| chunk.embedding.is_none())
-        .collect::<Vec<_>>();
-    let embeddings = Arc::new(
-        FixedSizeListArray::try_new(
-            Arc::new(Field::new("item", DataType::Float32, true)),
-            KNOWLEDGE_EMBEDDING_DIMENSION,
-            embedding_values,
-            Some(embedding_nulls.into()),
-        )
-        .map_err(|err| AppError::Internal(format!("Failed to build embedding array: {}", err)))?,
-    ) as ArrayRef;
+    let embeddings =
+        build_embedding_array(chunks, embedding_dimension, KNOWLEDGE_EMBEDDING_DIMENSION)?;
+    let embeddings_768 = build_embedding_array(
+        chunks,
+        embedding_dimension,
+        KNOWLEDGE_EMBEDDING_DIMENSION_768,
+    )?;
 
     RecordBatch::try_new(
         schema,
@@ -488,9 +569,49 @@ fn build_record_batch(chunks: &[KnowledgeBaseChunkRecord]) -> Result<RecordBatch
             descriptions,
             contents,
             embeddings,
+            embeddings_768,
         ],
     )
     .map_err(|err| AppError::Internal(format!("Failed to build LanceDB record batch: {}", err)))
+}
+
+fn build_embedding_array(
+    chunks: &[KnowledgeBaseChunkRecord],
+    source_dimension: i32,
+    target_dimension: i32,
+) -> Result<ArrayRef, AppError> {
+    let mut values = Vec::with_capacity(chunks.len() * target_dimension as usize);
+    let mut nulls = Vec::with_capacity(chunks.len());
+
+    // Arrow NullBuffer convention: `true` = valid, `false` = null.
+    for chunk in chunks {
+        let use_embedding = source_dimension == target_dimension && chunk.embedding.is_some();
+        if use_embedding {
+            let embedding = chunk.embedding.as_ref().expect("checked is_some");
+            if embedding.len() != target_dimension as usize {
+                return Err(AppError::Validation(format!(
+                    "Embedding length {} does not match target dimension {}",
+                    embedding.len(),
+                    target_dimension
+                )));
+            }
+            values.extend_from_slice(embedding);
+            nulls.push(true);
+        } else {
+            values.extend(std::iter::repeat(0.0f32).take(target_dimension as usize));
+            nulls.push(false);
+        }
+    }
+
+    let values = Arc::new(Float32Array::from(values)) as ArrayRef;
+    let array = FixedSizeListArray::try_new(
+        Arc::new(Field::new("item", DataType::Float32, true)),
+        target_dimension,
+        values,
+        Some(nulls.into()),
+    )
+    .map_err(|err| AppError::Internal(format!("Failed to build embedding array: {}", err)))?;
+    Ok(Arc::new(array) as ArrayRef)
 }
 
 fn parse_vector_results(batches: &[RecordBatch]) -> Vec<DocumentChunkSearchResult> {

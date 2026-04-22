@@ -69,12 +69,6 @@ pub struct SleepParams {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct SnapshotExecutionStateParams {
-    #[serde(default)]
-    pub reason: Option<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct WebSearchParams {
     #[serde(default)]
     pub objective: Option<String>,
@@ -137,6 +131,43 @@ pub struct SaveMemoryParams {
     pub category: Option<String>,
     #[serde(default)]
     pub scope: Option<String>,
+    /// The narrative around this memory — the scenario / chain of thought that
+    /// led to the insight. Populate for non-trivial memories so later retrieval
+    /// can reconstruct context without assumptions.
+    #[serde(default)]
+    pub observation: Option<String>,
+    /// Short cue phrases that signal this memory is applicable. Used during
+    /// retrieval to judge relevance without reading the full observation.
+    #[serde(default)]
+    pub signals: Vec<String>,
+    /// Memory IDs of related entries that form the reasoning chain. When this
+    /// memory fires, these are the neighbors worth considering.
+    #[serde(default)]
+    pub related: Vec<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct UpdateMemoryParams {
+    /// ID of the memory to update. Required.
+    pub memory_id: String,
+    /// New content. Unspecified leaves it unchanged.
+    #[serde(default)]
+    pub content: Option<String>,
+    /// New category. Unspecified leaves it unchanged.
+    #[serde(default)]
+    pub category: Option<String>,
+    /// New scope. Unspecified leaves it unchanged.
+    #[serde(default)]
+    pub scope: Option<String>,
+    /// Replace the observation field. Pass empty string to clear it.
+    #[serde(default)]
+    pub observation: Option<String>,
+    /// Replace the signals list. Unspecified leaves it unchanged; empty vec clears it.
+    #[serde(default)]
+    pub signals: Option<Vec<String>>,
+    /// Replace the related list. Unspecified leaves it unchanged; empty vec clears it.
+    #[serde(default)]
+    pub related: Option<Vec<String>>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -241,8 +272,6 @@ pub struct UpdateThreadParams {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct TaskGraphAddNodeParams {
-    #[serde(default)]
-    pub node_ref: Option<String>,
     pub title: String,
     #[serde(default)]
     pub description: Option<String>,
@@ -254,22 +283,13 @@ pub struct TaskGraphAddNodeParams {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct TaskGraphAddDependencyParams {
-    #[serde(default)]
-    pub from_node_id: Option<FlexibleI64>,
-    #[serde(default)]
-    pub from_node_ref: Option<String>,
-    #[serde(default)]
-    pub to_node_id: Option<FlexibleI64>,
-    #[serde(default)]
-    pub to_node_ref: Option<String>,
+    pub from_node_id: FlexibleI64,
+    pub to_node_id: FlexibleI64,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct TaskGraphNodeTargetParams {
-    #[serde(default)]
-    pub node_id: Option<FlexibleI64>,
-    #[serde(default)]
-    pub node_ref: Option<String>,
+    pub node_id: FlexibleI64,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -289,13 +309,8 @@ pub struct TaskGraphFailNodeParams {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct TaskGraphMarkCompletedParams {
-    pub handoff_path: String,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct TaskGraphMarkFailedParams {
-    pub handoff_path: String,
+pub struct TaskGraphResetParams {
+    pub reason: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -336,9 +351,6 @@ pub enum ToolCallRequest {
     Sleep {
         params: SleepParams,
     },
-    SnapshotExecutionState {
-        params: SnapshotExecutionStateParams,
-    },
     WebSearch {
         params: WebSearchParams,
     },
@@ -353,6 +365,9 @@ pub enum ToolCallRequest {
     },
     SaveMemory {
         params: SaveMemoryParams,
+    },
+    UpdateMemory {
+        params: UpdateMemoryParams,
     },
     CreateProjectTask {
         params: CreateProjectTaskParams,
@@ -387,11 +402,8 @@ pub enum ToolCallRequest {
     TaskGraphFailNode {
         params: TaskGraphFailNodeParams,
     },
-    TaskGraphMarkCompleted {
-        params: TaskGraphMarkCompletedParams,
-    },
-    TaskGraphMarkFailed {
-        params: TaskGraphMarkFailedParams,
+    TaskGraphReset {
+        params: TaskGraphResetParams,
     },
     External(ExternalToolCall),
 }
@@ -407,12 +419,12 @@ impl ToolCallRequest {
             Self::EditFile { .. } => "edit_file",
             Self::ExecuteCommand { .. } => "execute_command",
             Self::Sleep { .. } => "sleep",
-            Self::SnapshotExecutionState { .. } => "snapshot_execution_state",
             Self::WebSearch { .. } => "web_search",
             Self::UrlContent { .. } => "url_content",
             Self::SearchKnowledgebase { .. } => "search_knowledgebase",
             Self::LoadMemory { .. } => "load_memory",
             Self::SaveMemory { .. } => "save_memory",
+            Self::UpdateMemory { .. } => "update_memory",
             Self::CreateProjectTask { .. } => "create_project_task",
             Self::UpdateProjectTask { .. } => "update_project_task",
             Self::AssignProjectTask { .. } => "assign_project_task",
@@ -424,8 +436,7 @@ impl ToolCallRequest {
             Self::TaskGraphMarkInProgress { .. } => "task_graph_mark_in_progress",
             Self::TaskGraphCompleteNode { .. } => "task_graph_complete_node",
             Self::TaskGraphFailNode { .. } => "task_graph_fail_node",
-            Self::TaskGraphMarkCompleted { .. } => "task_graph_mark_completed",
-            Self::TaskGraphMarkFailed { .. } => "task_graph_mark_failed",
+            Self::TaskGraphReset { .. } => "task_graph_reset",
             Self::External(call) => call.tool_name.as_str(),
         }
     }
@@ -440,12 +451,12 @@ impl ToolCallRequest {
             Self::EditFile { .. } => Some(InternalToolType::EditFile),
             Self::ExecuteCommand { .. } => Some(InternalToolType::ExecuteCommand),
             Self::Sleep { .. } => Some(InternalToolType::Sleep),
-            Self::SnapshotExecutionState { .. } => Some(InternalToolType::SnapshotExecutionState),
             Self::WebSearch { .. } => Some(InternalToolType::WebSearch),
             Self::UrlContent { .. } => Some(InternalToolType::UrlContent),
             Self::SearchKnowledgebase { .. } => Some(InternalToolType::SearchKnowledgebase),
             Self::LoadMemory { .. } => Some(InternalToolType::LoadMemory),
             Self::SaveMemory { .. } => Some(InternalToolType::SaveMemory),
+            Self::UpdateMemory { .. } => Some(InternalToolType::UpdateMemory),
             Self::CreateProjectTask { .. } => Some(InternalToolType::CreateProjectTask),
             Self::UpdateProjectTask { .. } => Some(InternalToolType::UpdateProjectTask),
             Self::AssignProjectTask { .. } => Some(InternalToolType::AssignProjectTask),
@@ -457,8 +468,7 @@ impl ToolCallRequest {
             Self::TaskGraphMarkInProgress { .. } => Some(InternalToolType::TaskGraphMarkInProgress),
             Self::TaskGraphCompleteNode { .. } => Some(InternalToolType::TaskGraphCompleteNode),
             Self::TaskGraphFailNode { .. } => Some(InternalToolType::TaskGraphFailNode),
-            Self::TaskGraphMarkCompleted { .. } => Some(InternalToolType::TaskGraphMarkCompleted),
-            Self::TaskGraphMarkFailed { .. } => Some(InternalToolType::TaskGraphMarkFailed),
+            Self::TaskGraphReset { .. } => Some(InternalToolType::TaskGraphReset),
             Self::External(_) => None,
         }
     }
@@ -473,12 +483,12 @@ impl ToolCallRequest {
             Self::EditFile { params, .. } => serde_json::to_value(params),
             Self::ExecuteCommand { params, .. } => serde_json::to_value(params),
             Self::Sleep { params, .. } => serde_json::to_value(params),
-            Self::SnapshotExecutionState { params, .. } => serde_json::to_value(params),
             Self::WebSearch { params, .. } => serde_json::to_value(params),
             Self::UrlContent { params, .. } => serde_json::to_value(params),
             Self::SearchKnowledgebase { params, .. } => serde_json::to_value(params),
             Self::LoadMemory { params, .. } => serde_json::to_value(params),
             Self::SaveMemory { params, .. } => serde_json::to_value(params),
+            Self::UpdateMemory { params, .. } => serde_json::to_value(params),
             Self::CreateProjectTask { params, .. } => serde_json::to_value(params),
             Self::UpdateProjectTask { params, .. } => serde_json::to_value(params),
             Self::AssignProjectTask { params, .. } => serde_json::to_value(params),
@@ -490,8 +500,7 @@ impl ToolCallRequest {
             Self::TaskGraphMarkInProgress { params, .. } => serde_json::to_value(params),
             Self::TaskGraphCompleteNode { params, .. } => serde_json::to_value(params),
             Self::TaskGraphFailNode { params, .. } => serde_json::to_value(params),
-            Self::TaskGraphMarkCompleted { params, .. } => serde_json::to_value(params),
-            Self::TaskGraphMarkFailed { params, .. } => serde_json::to_value(params),
+            Self::TaskGraphReset { params, .. } => serde_json::to_value(params),
             Self::External(call) => Ok(call.input.clone()),
         }
     }

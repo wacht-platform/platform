@@ -86,8 +86,7 @@ pub async fn update_organization_member(
         format!("api-key-org-membership-{}", membership_id),
         ApiKeyOrgMembershipSyncPayload { membership_id },
     )
-    .await
-    ?;
+    .await?;
 
     Ok(())
 }
@@ -335,8 +334,7 @@ pub async fn update_workspace_member(
         format!("api-key-workspace-membership-{}", membership_id),
         ApiKeyWorkspaceMembershipSyncPayload { membership_id },
     )
-    .await
-    ?;
+    .await?;
 
     Ok(())
 }

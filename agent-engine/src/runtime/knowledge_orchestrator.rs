@@ -271,7 +271,14 @@ impl KnowledgeOrchestrator {
         let Some(table) = self.ctx.get_kb_table().await? else {
             return Ok(Vec::new());
         };
-        let results = search_full_text_in_table(&table, kb_ids, query, max_results).await?;
+        let results = search_full_text_in_table(
+            &table,
+            kb_ids,
+            query,
+            max_results,
+            self.ctx.provider_keys.embedding_dimension,
+        )
+        .await?;
 
         Ok(results
             .into_iter()
@@ -304,7 +311,14 @@ impl KnowledgeOrchestrator {
         let Some(table) = self.ctx.get_kb_table().await? else {
             return Ok(Vec::new());
         };
-        let results = search_vector_in_table(&table, kb_ids, query_embedding, max_results).await?;
+        let results = search_vector_in_table(
+            &table,
+            kb_ids,
+            query_embedding,
+            max_results,
+            self.ctx.provider_keys.embedding_dimension,
+        )
+        .await?;
 
         Ok(results
             .into_iter()
@@ -346,9 +360,15 @@ impl KnowledgeOrchestrator {
         let Some(table) = self.ctx.get_kb_table().await? else {
             return Ok(Vec::new());
         };
-        let results =
-            search_hybrid_in_table(&table, kb_ids, &query_text, query_embedding, max_results)
-                .await?;
+        let results = search_hybrid_in_table(
+            &table,
+            kb_ids,
+            &query_text,
+            query_embedding,
+            max_results,
+            self.ctx.provider_keys.embedding_dimension,
+        )
+        .await?;
 
         Ok(results
             .into_iter()

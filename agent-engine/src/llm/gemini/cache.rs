@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use tracing::info;
 
 use super::types::{CachedContentResponse, ExplicitCachePlan, PreparedGenerateRequest};
 use super::{ExplicitCacheRequest, GeminiClient};
@@ -245,20 +244,6 @@ impl GeminiClient {
         let serialized_payload = serde_json::to_string(&plan.full_cache_payload).map_err(|e| {
             AppError::Internal(format!("Failed to serialize Gemini cache payload: {e}"))
         })?;
-        info!(
-            "{}",
-            json!({
-                "event": "gemini_cache_create_request",
-                "model": self.model,
-                "url": cache_url,
-                "cache_key": cache_request.cache_key,
-                "ttl_secs": cache_request.ttl_secs,
-                "live_tail_count": cache_request.live_tail_count,
-                "reuse_only": cache_request.reuse_only,
-                "request": plan.full_cache_payload,
-            })
-            .to_string()
-        );
         let cache_response = self
             .client
             .post(&cache_url)
@@ -273,19 +258,6 @@ impl GeminiClient {
         if !cache_response.status().is_success() {
             let status = cache_response.status();
             let body = cache_response.text().await.unwrap_or_default();
-            info!(
-                "{}",
-                json!({
-                    "event": "gemini_cache_create_response",
-                    "model": self.model,
-                    "url": cache_url,
-                    "cache_key": cache_request.cache_key,
-                    "status": status.as_u16(),
-                    "ok": false,
-                    "response": body,
-                })
-                .to_string()
-            );
             return Err(AppError::Internal(format!(
                 "Gemini cache create request failed with status {}: {}",
                 status,
@@ -296,19 +268,6 @@ impl GeminiClient {
         let response_body = cache_response.text().await.map_err(|e| {
             AppError::Internal(format!("Failed to read Gemini cache create response: {e}"))
         })?;
-        info!(
-            "{}",
-            json!({
-                "event": "gemini_cache_create_response",
-                "model": self.model,
-                "url": cache_url,
-                "cache_key": cache_request.cache_key,
-                "status": 200,
-                "ok": true,
-                "response": response_body,
-            })
-            .to_string()
-        );
         let parsed: CachedContentResponse = serde_json::from_str(&response_body).map_err(|e| {
             AppError::Internal(format!(
                 "Failed to parse Gemini cache create response JSON: {}. Raw body (first 2000 chars): {}",

@@ -1,11 +1,13 @@
 use chrono::{Duration, Utc};
 use common::{
     HasDbRouter, HasEncryptionProvider, HasNatsProvider, count_indexable_knowledge_base_rows,
-    count_indexable_memory_rows, create_knowledge_base_vector_index, create_memory_vector_index,
-    error::AppError, knowledge_base_vector_index_exists, memory_vector_index_exists,
+    count_indexable_memory_rows_for_dimension, create_knowledge_base_vector_index,
+    create_memory_vector_index_for_dimension, error::AppError, knowledge_base_vector_index_exists,
     optimize_knowledge_base_vector_index, optimize_memory_vector_index,
 };
 use dto::json::nats::NatsTaskMessage;
+use models::{default_embedding_dimension, is_supported_embedding_dimension};
+use queries::GetDeploymentAiSettingsQuery;
 
 use crate::ResolveDeploymentStorageCommand;
 
@@ -90,15 +92,32 @@ impl MaintainVectorStoreIndexCommand {
             .execute_with_deps(deps)
             .await?;
         let lance_config = storage.vector_store_config();
+        let embedding_dimension = GetDeploymentAiSettingsQuery::new(deployment_id)
+            .execute_with_db(deps.writer_pool())
+            .await?
+            .map(|settings| settings.embedding_dimension)
+            .unwrap_or_else(default_embedding_dimension);
+        if !is_supported_embedding_dimension(embedding_dimension) {
+            return Err(AppError::Validation(format!(
+                "Unsupported embedding dimension {} for deployment {}",
+                embedding_dimension, deployment_id
+            )));
+        }
 
         let (tracked_row_count, vector_index_exists) = match store_name.as_str() {
             VECTOR_STORE_KNOWLEDGE_BASE => (
-                count_indexable_knowledge_base_rows(&lance_config).await? as i64,
-                knowledge_base_vector_index_exists(&lance_config).await?,
+                count_indexable_knowledge_base_rows(&lance_config, embedding_dimension).await?
+                    as i64,
+                knowledge_base_vector_index_exists(&lance_config, embedding_dimension).await?,
             ),
             VECTOR_STORE_MEMORY => (
-                count_indexable_memory_rows(&lance_config).await? as i64,
-                memory_vector_index_exists(&lance_config).await?,
+                count_indexable_memory_rows_for_dimension(&lance_config, embedding_dimension)
+                    .await? as i64,
+                common::memory_vector_index_exists_for_dimension(
+                    &lance_config,
+                    embedding_dimension,
+                )
+                .await?,
             ),
             other => {
                 return Err(AppError::Validation(format!(
@@ -217,9 +236,12 @@ impl MaintainVectorStoreIndexCommand {
 
             let create_result = match store_name.as_str() {
                 VECTOR_STORE_KNOWLEDGE_BASE => {
-                    create_knowledge_base_vector_index(&lance_config).await
+                    create_knowledge_base_vector_index(&lance_config, embedding_dimension).await
                 }
-                VECTOR_STORE_MEMORY => create_memory_vector_index(&lance_config).await,
+                VECTOR_STORE_MEMORY => {
+                    create_memory_vector_index_for_dimension(&lance_config, embedding_dimension)
+                        .await
+                }
                 _ => unreachable!(),
             };
 

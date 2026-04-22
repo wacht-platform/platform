@@ -219,7 +219,25 @@ impl ToolExecutor {
             .filter(|value| !value.trim().is_empty())
         {
             Some(value) => validate_custom_thread_instructions(&value)?,
-            None => default_thread_instructions(&title, &thread_purpose, responsibility.as_deref()),
+            None => {
+                let project = queries::GetActorProjectByIdQuery::new(
+                    current_thread.project_id,
+                    self.agent().deployment_id,
+                )
+                .execute_with_db(
+                    self.app_state()
+                        .db_router
+                        .reader(common::db_router::ReadConsistency::Strong),
+                )
+                .await?
+                .ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "Project {} not found for thread {}",
+                        current_thread.project_id, current_thread.id
+                    ))
+                })?;
+                default_thread_instructions(&project.name, project.description.as_deref())?
+            }
         };
         let available_sub_agents = if let Some(sub_agent_ids) = &self.agent().sub_agents {
             if sub_agent_ids.is_empty() {
@@ -414,28 +432,8 @@ impl ToolExecutor {
 }
 
 fn default_thread_instructions(
-    title: &str,
-    thread_purpose: &str,
-    responsibility: Option<&str>,
-) -> String {
-    let mut lines = vec![format!(
-        "You are the '{}' thread. Operate as a stable reusable {} lane.",
-        title, thread_purpose
-    )];
-    if let Some(responsibility) = responsibility {
-        lines.push(format!("Primary responsibility: {}.", responsibility));
-    }
-    lines.push(
-        "Follow assignment instructions and the project task board as the workflow source of truth."
-            .to_string(),
-    );
-    lines.push(
-        "When a mounted task workspace is present, keep notes in `/task/notes/`, artifacts in `/task/artifacts/`, and handoffs in `/task/handoffs/`."
-            .to_string(),
-    );
-    lines.push(
-        "Verify important claims before concluding, keep outputs structured and decision-useful, and state uncertainty explicitly instead of guessing."
-            .to_string(),
-    );
-    lines.join("\n")
+    project_name: &str,
+    project_brief: Option<&str>,
+) -> Result<String, AppError> {
+    templatekit::render_project_instructions(project_name, project_brief, None)
 }

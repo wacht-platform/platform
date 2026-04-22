@@ -1,8 +1,15 @@
-use crate::{DispatchThreadEventCommand, EnqueueThreadEventCommand};
+use crate::{
+    DispatchThreadEventCommand, EnqueueThreadEventCommand,
+    assignment_event::{
+        WriteAssignmentEventConversation, build_assignment_execution_summary,
+        build_task_routing_summary, fetch_assignment_siblings,
+    },
+};
 use chrono::Utc;
 use common::{
     HasDbRouter, HasIdProvider, HasNatsJetStreamProvider, ReadConsistency, error::AppError,
 };
+use models::AssignmentEventKind;
 use models::{
     ProjectTaskBoard, ProjectTaskBoardItem, ProjectTaskBoardItemAssignment,
     ProjectTaskBoardItemAssignmentEventDetails, ProjectTaskBoardItemEvent,
@@ -27,7 +34,6 @@ fn assignment_details(
         result_payload: assignment.result_payload.clone(),
         note,
         instructions: assignment.instructions.clone(),
-        handoff_file_path: assignment.handoff_file_path.clone(),
         metadata: assignment.typed_metadata(),
     })
     .unwrap_or_else(|_| serde_json::Value::Null)
@@ -69,7 +75,7 @@ where
     .await
 }
 
-async fn enqueue_assignment_execution_event_with_deps<D>(
+pub(crate) async fn enqueue_assignment_execution_event_with_deps<D>(
     deps: &D,
     assignment: &ProjectTaskBoardItemAssignment,
 ) -> Result<(), AppError>
@@ -91,24 +97,54 @@ where
         return Ok(());
     };
 
-    DispatchThreadEventCommand::new(
-        EnqueueThreadEventCommand::new(
-            deps.id_provider().next_id()? as i64,
-            thread.deployment_id,
-            assignment.thread_id,
-            models::thread_event::event_type::ASSIGNMENT_EXECUTION.to_string(),
+    let board_item = queries::GetProjectTaskBoardItemByIdQuery::new(assignment.board_item_id)
+        .execute_with_db(deps.reader_pool(ReadConsistency::Strong))
+        .await?;
+    let conversation_id = if let Some(board_item) = board_item.as_ref() {
+        let siblings = fetch_assignment_siblings(deps, assignment.board_item_id).await?;
+        let total = siblings.len();
+        let prior = siblings
+            .iter()
+            .filter(|a| a.assignment_order < assignment.assignment_order)
+            .max_by_key(|a| a.assignment_order);
+        let summary = build_assignment_execution_summary(assignment, board_item, total, prior);
+        Some(
+            WriteAssignmentEventConversation {
+                thread_id: assignment.thread_id,
+                board_item_id: assignment.board_item_id,
+                kind: AssignmentEventKind::AssignmentExecution,
+                assignment_id: Some(assignment.id),
+                summary,
+                payload: Some(assignment_thread_event_payload(assignment)),
+            }
+            .execute_with_deps(deps)
+            .await?,
         )
-        .with_board_item_id(assignment.board_item_id)
-        .with_priority(20)
-        .with_payload(assignment_thread_event_payload(assignment)),
+    } else {
+        None
+    };
+
+    let mut enqueue = EnqueueThreadEventCommand::new(
+        deps.id_provider().next_id()? as i64,
+        thread.deployment_id,
+        assignment.thread_id,
+        models::thread_event::event_type::ASSIGNMENT_EXECUTION.to_string(),
     )
-    .execute_with_deps(deps)
-    .await?;
+    .with_board_item_id(assignment.board_item_id)
+    .with_priority(20)
+    .with_payload(assignment_thread_event_payload(assignment));
+    if let Some(conversation_id) = conversation_id {
+        enqueue = enqueue.with_conversation_id(conversation_id);
+    }
+
+    DispatchThreadEventCommand::new(enqueue)
+        .execute_with_deps(deps)
+        .await?;
 
     Ok(())
 }
 
-async fn enqueue_board_item_to_coordinator_with_deps<D>(
+pub(crate) async fn enqueue_board_item_to_coordinator_with_deps<D>(
     deps: &D,
     board_item: &ProjectTaskBoardItem,
     note: Option<String>,
@@ -170,6 +206,24 @@ where
         board_item_id: board_item.id,
     };
 
+    let siblings = fetch_assignment_siblings(deps, board_item.id).await?;
+    let summary = build_task_routing_summary(board_item, siblings.len());
+    let conversation_id = WriteAssignmentEventConversation {
+        thread_id: coordinator_thread_id,
+        board_item_id: board_item.id,
+        kind: AssignmentEventKind::TaskRouting,
+        assignment_id: None,
+        summary,
+        payload: Some(serde_json::to_value(&payload).map_err(|err| {
+            AppError::Internal(format!(
+                "Failed to serialize coordinator routing payload: {}",
+                err
+            ))
+        })?),
+    }
+    .execute_with_deps(deps)
+    .await?;
+
     let mut enqueue = EnqueueThreadEventCommand::new(
         deps.id_provider().next_id()? as i64,
         coordinator.deployment_id,
@@ -183,7 +237,8 @@ where
             "Failed to serialize coordinator routing payload: {}",
             err
         ))
-    })?);
+    })?)
+    .with_conversation_id(conversation_id);
 
     if let Some(caused_by_thread_id) = caused_by_thread_id {
         enqueue = enqueue.with_caused_by_thread_id(caused_by_thread_id);
@@ -192,99 +247,6 @@ where
     DispatchThreadEventCommand::new(enqueue)
         .execute_with_deps(deps)
         .await?;
-
-    Ok(())
-}
-
-async fn preempt_board_item_work_with_deps<D>(
-    deps: &D,
-    board_item: &ProjectTaskBoardItem,
-    note: String,
-) -> Result<(), AppError>
-where
-    D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + ?Sized,
-{
-    let now = Utc::now();
-
-    sqlx::query(
-        r#"
-        UPDATE thread_events
-        SET status = 'cancelled', updated_at = $2
-        WHERE board_item_id = $1
-          AND status = 'pending'
-          AND event_type IN (
-            'task_routing',
-            'assignment_execution',
-            'assignment_outcome_review'
-          )
-        "#,
-    )
-    .bind(board_item.id)
-    .bind(now)
-    .execute(deps.writer_pool())
-    .await?;
-
-    sqlx::query(
-        r#"
-        UPDATE project_task_board_item_assignments
-        SET
-            status = 'cancelled',
-            result_status = COALESCE(result_status, 'cancelled'),
-            result_summary = COALESCE(result_summary, $2),
-            updated_at = $3
-        WHERE board_item_id = $1
-          AND status IN ('pending', 'available', 'claimed', 'in_progress', 'blocked')
-        "#,
-    )
-    .bind(board_item.id)
-    .bind(note.clone())
-    .bind(now)
-    .execute(deps.writer_pool())
-    .await?;
-
-    if let Some(thread_id) = board_item.assigned_thread_id {
-        let thread = sqlx::query(
-            r#"
-            SELECT deployment_id
-            FROM agent_threads
-            WHERE id = $1 AND archived_at IS NULL
-            "#,
-        )
-        .bind(thread_id)
-        .fetch_optional(deps.reader_pool(ReadConsistency::Strong))
-        .await?;
-
-        if let Some(thread) = thread {
-            let deployment_id: i64 = thread.get("deployment_id");
-            let _ = DispatchThreadEventCommand::new(
-                EnqueueThreadEventCommand::new(
-                    deps.id_provider().next_id()? as i64,
-                    deployment_id,
-                    thread_id,
-                    models::thread_event::event_type::CONTROL_INTERRUPT.to_string(),
-                )
-                .with_payload(serde_json::json!({
-                    "board_item_id": board_item.id.to_string(),
-                    "task_key": board_item.task_key.clone(),
-                    "note": note.clone(),
-                })),
-            )
-            .execute_with_deps(deps)
-            .await?;
-        }
-    }
-
-    sqlx::query(
-        r#"
-        UPDATE project_task_board_items
-        SET assigned_thread_id = NULL, updated_at = $2
-        WHERE id = $1
-        "#,
-    )
-    .bind(board_item.id)
-    .bind(now)
-    .execute(deps.writer_pool())
-    .await?;
 
     Ok(())
 }
@@ -765,24 +727,7 @@ impl UpdateProjectTaskBoardItemCommand {
 
         tx.commit().await?;
 
-        let should_preempt = item.assigned_thread_id.is_some()
-            && !board_item_status_is_terminal(&item.status)
-            && requested_status.as_deref() != Some("completed");
-        if should_preempt {
-            preempt_board_item_work_with_deps(
-                deps,
-                &item,
-                "Task updated while active work existed; interrupted current routing and returned control to coordinator"
-                    .to_string(),
-            )
-            .await?;
-        }
-
         let _ = maybe_ready_parent_after_child_completion_with_deps(deps, &item).await?;
-        ReconcileProjectTaskBoardItemCommand::new(item.id)
-            .with_note("Task changed; scheduler reevaluated routing".to_string())
-            .execute_with_deps(deps)
-            .await?;
 
         Ok(item)
     }
@@ -994,7 +939,6 @@ pub struct CreateProjectTaskBoardItemAssignmentCommand {
     pub assignment_order: i32,
     pub status: String,
     pub instructions: Option<String>,
-    pub handoff_file_path: Option<String>,
     pub metadata: serde_json::Value,
 }
 
@@ -1050,17 +994,17 @@ impl CreateProjectTaskBoardItemAssignmentCommand {
             r#"
             INSERT INTO project_task_board_item_assignments (
                 id, board_item_id, thread_id, assignment_role, assignment_order, status,
-                instructions, handoff_file_path, metadata, result_status, result_summary,
+                instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
                 updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6,
-                $7, $8, $9, NULL, NULL,
-                NULL, NULL, NULL, NULL, NULL, $10, $10
+                $7, $8, NULL, NULL,
+                NULL, NULL, NULL, NULL, NULL, $9, $9
             )
             RETURNING
                 id, board_item_id, thread_id, assignment_role, assignment_order, status,
-                instructions, handoff_file_path, metadata, result_status, result_summary,
+                instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
                 updated_at
             "#,
@@ -1071,7 +1015,6 @@ impl CreateProjectTaskBoardItemAssignmentCommand {
             self.assignment_order,
             self.status,
             self.instructions,
-            self.handoff_file_path,
             self.metadata,
             now,
         )
@@ -1109,7 +1052,6 @@ pub struct UpdateProjectTaskBoardItemAssignmentCommand {
     pub assignment_role: String,
     pub status: String,
     pub instructions: Option<String>,
-    pub handoff_file_path: Option<String>,
     pub metadata: serde_json::Value,
 }
 
@@ -1143,11 +1085,6 @@ impl UpdateProjectTaskBoardItemAssignmentCommand {
             .await?;
         }
 
-        ReconcileProjectTaskBoardItemCommand::new(assignment.board_item_id)
-            .with_note("Task assignment updated; scheduler reevaluated routing".to_string())
-            .execute_with_deps(deps)
-            .await?;
-
         Ok(assignment)
     }
 
@@ -1166,7 +1103,7 @@ impl UpdateProjectTaskBoardItemAssignmentCommand {
             r#"
             SELECT
                 id, board_item_id, thread_id, assignment_role, assignment_order, status,
-                instructions, handoff_file_path, metadata, result_status, result_summary,
+                instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
                 updated_at
             FROM project_task_board_item_assignments
@@ -1195,8 +1132,7 @@ impl UpdateProjectTaskBoardItemAssignmentCommand {
                 assignment_role = $3,
                 status = $4,
                 instructions = $5,
-                handoff_file_path = $6,
-                metadata = $7,
+                metadata = $6,
                 result_status = CASE
                     WHEN $4 IN ('pending', 'available', 'claimed', 'in_progress') THEN NULL
                     ELSE result_status
@@ -1209,11 +1145,11 @@ impl UpdateProjectTaskBoardItemAssignmentCommand {
                     WHEN $4 IN ('pending', 'available', 'claimed', 'in_progress') THEN NULL
                     ELSE result_payload
                 END,
-                updated_at = $8
+                updated_at = $7
             WHERE id = $1
             RETURNING
                 id, board_item_id, thread_id, assignment_role, assignment_order, status,
-                instructions, handoff_file_path, metadata, result_status, result_summary,
+                instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
                 updated_at
             "#,
@@ -1222,7 +1158,6 @@ impl UpdateProjectTaskBoardItemAssignmentCommand {
             self.assignment_role,
             self.status,
             self.instructions,
-            self.handoff_file_path,
             self.metadata,
             now,
         )
@@ -1426,7 +1361,7 @@ impl UpdateProjectTaskBoardItemAssignmentStateCommand {
             WHERE id = $1
             RETURNING
                 id, board_item_id, thread_id, assignment_role, assignment_order, status,
-                instructions, handoff_file_path, metadata, result_status, result_summary,
+                instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
                 updated_at
             "#,

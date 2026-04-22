@@ -45,8 +45,6 @@ pub struct CreateConversationRequest {
 pub enum MemoryCategory {
     Procedural,
     Semantic,
-    Episodic,
-    Working,
 }
 
 impl ToString for MemoryCategory {
@@ -54,8 +52,6 @@ impl ToString for MemoryCategory {
         match self {
             MemoryCategory::Procedural => "procedural".to_string(),
             MemoryCategory::Semantic => "semantic".to_string(),
-            MemoryCategory::Episodic => "episodic".to_string(),
-            MemoryCategory::Working => "working".to_string(),
         }
     }
 }
@@ -65,8 +61,6 @@ impl MemoryCategory {
         match s.to_lowercase().as_str() {
             "procedural" => Some(MemoryCategory::Procedural),
             "semantic" => Some(MemoryCategory::Semantic),
-            "episodic" => Some(MemoryCategory::Episodic),
-            "working" => Some(MemoryCategory::Working),
             _ => None,
         }
     }

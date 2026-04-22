@@ -138,8 +138,10 @@ impl ToolExecutor {
         &self,
         tool: &AiTool,
         shell: &ShellExecutor,
+        filesystem: &AgentFilesystem,
         params: ExecuteCommandParams,
     ) -> Result<Value, AppError> {
+        filesystem.ensure_initialized().await?;
         let output = shell.execute(&params.command).await?;
 
         if output.exit_code != 0 {

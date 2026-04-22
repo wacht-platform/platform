@@ -1,17 +1,19 @@
-use super::{paths::knowledge_base_mount_name, AgentFilesystem};
+use super::{paths::knowledge_base_mount_name, AgentFilesystem, InitCell};
 use common::error::AppError;
 use common::state::AppState;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::fs;
 
 impl AgentFilesystem {
-    pub async fn new(
+    pub fn new(
         app_state: &AppState,
         deployment_id: &str,
         agent_id: &str,
         project_id: &str,
         thread_id: &str,
         execution_id: &str,
+        knowledge_bases: Vec<(String, String)>,
     ) -> Result<Self, AppError> {
         let deployment_id_num = deployment_id.parse::<i64>().map_err(|e| {
             AppError::Internal(format!(
@@ -19,27 +21,64 @@ impl AgentFilesystem {
                 deployment_id, e
             ))
         })?;
-        let mount_lease =
-            super::mounts::acquire_deployment_root(app_state, deployment_id_num).await?;
         let execution_base_path = super::mounts::detect_local_execution_base_path()
             .join(deployment_id)
             .join("executions");
+        let durable_root_path = super::mounts::deployment_mount_path(deployment_id_num);
 
         Ok(Self {
             execution_base_path,
-            durable_root_path: mount_lease.root_path().to_path_buf(),
-            mount_lease,
+            durable_root_path,
+            deployment_id: deployment_id_num,
+            app_state: app_state.clone(),
             agent_id: agent_id.to_string(),
             project_id: project_id.to_string(),
             thread_id: thread_id.to_string(),
             execution_id: execution_id.to_string(),
+            knowledge_bases,
             read_windows: std::sync::Arc::new(std::sync::RwLock::new(
                 std::collections::HashMap::new(),
             )),
+            init_cell: Arc::new(InitCell::new()),
         })
     }
 
-    pub async fn initialize(&self) -> Result<(), AppError> {
+    pub fn spawn_initialize(&self) {
+        let fs = self.clone();
+        tokio::spawn(async move {
+            let _ = fs.ensure_initialized().await;
+        });
+    }
+
+    pub async fn ensure_initialized(&self) -> Result<(), AppError> {
+        let result = self
+            .init_cell
+            .get_or_init(|| async move {
+                match self.acquire_and_initialize().await {
+                    Ok(lease) => Ok(lease),
+                    Err(e) => Err(Arc::new(e)),
+                }
+            })
+            .await;
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(AppError::Internal(format!(
+                "Agent filesystem initialization failed: {}",
+                e
+            ))),
+        }
+    }
+
+    async fn acquire_and_initialize(
+        &self,
+    ) -> Result<super::mounts::DeploymentMountLease, AppError> {
+        let lease =
+            super::mounts::acquire_deployment_root(&self.app_state, self.deployment_id).await?;
+        self.do_initialize().await?;
+        Ok(lease)
+    }
+
+    async fn do_initialize(&self) -> Result<(), AppError> {
         let root = self.execution_root();
 
         fs::create_dir_all(&root)
@@ -120,6 +159,39 @@ impl AgentFilesystem {
                 })?;
         }
 
+        for (kb_id, kb_name) in &self.knowledge_bases {
+            self.do_link_knowledge_base(kb_id, kb_name).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn do_link_knowledge_base(&self, kb_id: &str, kb_name: &str) -> Result<(), AppError> {
+        let source = self.shared_kb_path(kb_id);
+        let target = self
+            .execution_root()
+            .join("knowledge")
+            .join(knowledge_base_mount_name(kb_id, kb_name));
+
+        if !source.exists() {
+            fs::create_dir_all(&source)
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to create KB directory: {}", e)))?;
+        }
+
+        if target.exists() {
+            let metadata = fs::symlink_metadata(&target).await.ok();
+            if let Some(m) = metadata {
+                if m.is_symlink() {
+                    fs::remove_file(&target).await.ok();
+                }
+            }
+        }
+
+        fs::symlink(&source, &target)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to link KB: {}", e)))?;
+
         Ok(())
     }
 
@@ -154,36 +226,9 @@ impl AgentFilesystem {
         })
     }
 
-    pub async fn link_knowledge_base(&self, kb_id: &str, kb_name: &str) -> Result<(), AppError> {
-        let source = self.shared_kb_path(kb_id);
-        let target = self
-            .execution_root()
-            .join("knowledge")
-            .join(knowledge_base_mount_name(kb_id, kb_name));
-
-        if !source.exists() {
-            fs::create_dir_all(&source)
-                .await
-                .map_err(|e| AppError::Internal(format!("Failed to create KB directory: {}", e)))?;
-        }
-
-        if target.exists() {
-            let metadata = fs::symlink_metadata(&target).await.ok();
-            if let Some(m) = metadata {
-                if m.is_symlink() {
-                    fs::remove_file(&target).await.ok();
-                }
-            }
-        }
-
-        fs::symlink(&source, &target)
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to link KB: {}", e)))?;
-
-        Ok(())
-    }
-
     pub async fn mount_task_workspace(&self, task_key: &str) -> Result<PathBuf, AppError> {
+        self.ensure_initialized().await?;
+
         let persistent_task = self.persistent_task_path(task_key);
         fs::create_dir_all(&persistent_task).await.map_err(|e| {
             AppError::Internal(format!("Failed to create persistent task workspace: {}", e))
@@ -215,6 +260,16 @@ impl AgentFilesystem {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to mount task workspace: {}", e)))?;
 
+        for subdir in ["artifacts", "review"] {
+            let dir = persistent_task.join(subdir);
+            fs::create_dir_all(&dir).await.map_err(|e| {
+                AppError::Internal(format!(
+                    "Failed to create /task/{} directory: {}",
+                    subdir, e
+                ))
+            })?;
+        }
+
         Ok(persistent_task)
     }
 
@@ -225,7 +280,9 @@ impl AgentFilesystem {
                 AppError::Internal(format!("Failed to cleanup execution root: {}", e))
             })?;
         }
-        self.mount_lease.release().await?;
+        if let Some(Ok(lease)) = self.init_cell.get() {
+            lease.release().await?;
+        }
         Ok(())
     }
 }

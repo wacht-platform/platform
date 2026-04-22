@@ -634,7 +634,10 @@ impl ClickHouseService {
     }
 
     pub async fn insert_webhook_log(&self, log: &WebhookLog) -> Result<(), AppError> {
-        let mut full_insert = self.client.insert::<WebhookLog>("webhook_logs_full").await?;
+        let mut full_insert = self
+            .client
+            .insert::<WebhookLog>("webhook_logs_full")
+            .await?;
         full_insert.write(log).await?;
         full_insert.end().await?;
 

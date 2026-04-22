@@ -1,9 +1,7 @@
 use common::error::AppError;
 use models::{AiAgentWithDetails, AiAgentWithFeatures};
 
-fn parse_sub_agents(
-    value: serde_json::Value,
-) -> Result<Option<Vec<i64>>, AppError> {
+fn parse_sub_agents(value: serde_json::Value) -> Result<Option<Vec<i64>>, AppError> {
     let parsed = serde_json::from_value::<Vec<i64>>(value)
         .map_err(|e| AppError::Internal(format!("Failed to parse sub_agents: {}", e)))?;
     Ok(Some(parsed))

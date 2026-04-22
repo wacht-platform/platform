@@ -33,60 +33,54 @@ impl EnsureThreadTaskGraphCommand {
         let existing = sqlx::query_as!(
             ThreadTaskGraph,
             r#"
-            SELECT id, deployment_id, thread_id, board_item_id, version, status, metadata, created_at, updated_at
+            SELECT id, deployment_id, thread_id, board_item_id, status, metadata, created_at, updated_at
             FROM thread_task_graphs
-            WHERE deployment_id = $1 AND thread_id = $2
-            ORDER BY version DESC
+            WHERE deployment_id = $1
+              AND thread_id = $2
+              AND (($3::bigint IS NULL AND board_item_id IS NULL) OR board_item_id = $3)
+              AND status = $4
+            ORDER BY id DESC
             LIMIT 1
             FOR UPDATE
             "#,
             self.deployment_id,
-            self.thread_id
+            self.thread_id,
+            self.board_item_id,
+            status::GRAPH_ACTIVE,
         )
         .fetch_optional(&mut *tx)
         .await?;
 
-        let next_version = existing
-            .as_ref()
-            .map(|graph| graph.version + 1)
-            .unwrap_or(1);
-
         if let Some(active) = existing {
-            if !matches!(
-                active.status.as_str(),
-                status::GRAPH_COMPLETED | status::GRAPH_FAILED | status::GRAPH_CANCELLED
-            ) {
-                let refreshed = sqlx::query_as!(
-                    ThreadTaskGraph,
-                    r#"
-                    UPDATE thread_task_graphs
-                    SET updated_at = NOW()
-                    WHERE id = $1
-                    RETURNING id, deployment_id, thread_id, board_item_id, version, status, metadata, created_at, updated_at
-                    "#,
-                    active.id
-                )
-                .fetch_one(&mut *tx)
-                .await?;
+            let refreshed = sqlx::query_as!(
+                ThreadTaskGraph,
+                r#"
+                UPDATE thread_task_graphs
+                SET updated_at = NOW()
+                WHERE id = $1
+                RETURNING id, deployment_id, thread_id, board_item_id, status, metadata, created_at, updated_at
+                "#,
+                active.id
+            )
+            .fetch_one(&mut *tx)
+            .await?;
 
-                tx.commit().await?;
-                return Ok(refreshed);
-            }
+            tx.commit().await?;
+            return Ok(refreshed);
         }
 
         let created = sqlx::query_as!(
             ThreadTaskGraph,
             r#"
             INSERT INTO thread_task_graphs (
-                id, deployment_id, thread_id, board_item_id, version, status, metadata, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, '{}'::jsonb, NOW(), NOW())
-            RETURNING id, deployment_id, thread_id, board_item_id, version, status, metadata, created_at, updated_at
+                id, deployment_id, thread_id, board_item_id, status, metadata, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, NOW(), NOW())
+            RETURNING id, deployment_id, thread_id, board_item_id, status, metadata, created_at, updated_at
             "#,
             self.id,
             self.deployment_id,
             self.thread_id,
             self.board_item_id,
-            next_version,
             status::GRAPH_ACTIVE,
         )
         .fetch_one(&mut *tx)
@@ -423,100 +417,6 @@ impl MarkThreadTaskNodeInProgressCommand {
     }
 }
 
-pub struct MarkThreadTaskGraphCompletedCommand {
-    pub graph_id: i64,
-}
-
-impl MarkThreadTaskGraphCompletedCommand {
-    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<ThreadTaskGraph, AppError>
-    where
-        E: sqlx::Executor<'e, Database = sqlx::Postgres> + Copy,
-    {
-        let blocking = sqlx::query!(
-            r#"
-            SELECT COUNT(*)::bigint AS "count!"
-            FROM thread_task_nodes
-            WHERE graph_id = $1 AND status IN ($2, $3, $4)
-            "#,
-            self.graph_id,
-            status::NODE_PENDING,
-            status::NODE_IN_PROGRESS,
-            status::NODE_FAILED
-        )
-        .fetch_one(executor)
-        .await?;
-
-        if blocking.count > 0 {
-            return Err(AppError::BadRequest(
-                "Cannot mark task graph completed while nodes are still pending, in progress, or failed".to_string(),
-            ));
-        }
-
-        let row = sqlx::query_as!(
-            ThreadTaskGraph,
-            r#"
-            UPDATE thread_task_graphs
-            SET status = $2, updated_at = NOW()
-            WHERE id = $1
-            RETURNING id, deployment_id, thread_id, board_item_id, version, status, metadata, created_at, updated_at
-            "#,
-            self.graph_id,
-            status::GRAPH_COMPLETED
-        )
-        .fetch_one(executor)
-        .await?;
-
-        Ok(row)
-    }
-}
-
-pub struct MarkThreadTaskGraphFailedCommand {
-    pub graph_id: i64,
-}
-
-impl MarkThreadTaskGraphFailedCommand {
-    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<ThreadTaskGraph, AppError>
-    where
-        E: sqlx::Executor<'e, Database = sqlx::Postgres> + Copy,
-    {
-        let blocking = sqlx::query!(
-            r#"
-            SELECT COUNT(*)::bigint AS "count!"
-            FROM thread_task_nodes
-            WHERE graph_id = $1 AND status IN ($2, $3)
-            "#,
-            self.graph_id,
-            status::NODE_PENDING,
-            status::NODE_IN_PROGRESS
-        )
-        .fetch_one(executor)
-        .await?;
-
-        if blocking.count > 0 {
-            return Err(AppError::BadRequest(
-                "Cannot mark task graph failed while nodes are still pending or in progress"
-                    .to_string(),
-            ));
-        }
-
-        let row = sqlx::query_as!(
-            ThreadTaskGraph,
-            r#"
-            UPDATE thread_task_graphs
-            SET status = $2, updated_at = NOW()
-            WHERE id = $1
-            RETURNING id, deployment_id, thread_id, board_item_id, version, status, metadata, created_at, updated_at
-            "#,
-            self.graph_id,
-            status::GRAPH_FAILED
-        )
-        .fetch_one(executor)
-        .await?;
-
-        Ok(row)
-    }
-}
-
 pub struct CancelThreadTaskGraphCommand {
     pub graph_id: i64,
 }
@@ -556,7 +456,7 @@ impl CancelThreadTaskGraphCommand {
             UPDATE thread_task_graphs
             SET status = $2, updated_at = NOW()
             WHERE id = $1
-            RETURNING id, deployment_id, thread_id, board_item_id, version, status, metadata, created_at, updated_at
+            RETURNING id, deployment_id, thread_id, board_item_id, status, metadata, created_at, updated_at
             "#,
         )
         .bind(self.graph_id)

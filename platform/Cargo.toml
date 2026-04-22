@@ -25,6 +25,8 @@ dto = { path = "../dto" }
 commands = { path = "../commands" }
 queries = { path = "../queries" }
 common = { path = "../common" }
+agent-engine = { path = "../agent-engine" }
+templatekit = { path = "../templatekit" }
 wacht = { version = "0.1.0-beta.4", features = ["axum"] }
 axum = { version = "0.8", features = ["macros", "multipart"] }
 tokio = { version = "1.35", features = ["full"] }

@@ -17,9 +17,13 @@ pub async fn create_actor(
 ) -> Result<Actor, AppError> {
     let id = app_state.sf.next_id()? as i64;
 
-    let mut cmd =
-        CreateActorCommand::new(id, deployment_id, request.subject_type, request.external_key)
-            .with_metadata(request.metadata.unwrap_or_else(|| serde_json::json!({})));
+    let mut cmd = CreateActorCommand::new(
+        id,
+        deployment_id,
+        request.subject_type,
+        request.external_key,
+    )
+    .with_metadata(request.metadata.unwrap_or_else(|| serde_json::json!({})));
 
     if let Some(display_name) = request.display_name {
         cmd = cmd.with_display_name(display_name);

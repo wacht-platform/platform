@@ -7,7 +7,6 @@ pub mod scope {
     pub const ACTOR: &str = "actor";
     pub const PROJECT: &str = "project";
     pub const THREAD: &str = "thread";
-    pub const AGENT: &str = "agent";
 }
 
 /// Memory record used for retrieval

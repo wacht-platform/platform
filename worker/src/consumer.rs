@@ -383,10 +383,9 @@ impl NatsConsumer {
                     })?;
             }
             WorkerTask::AgentThreadSchedule(request) => {
-                let outcome = thread_schedule::process_thread_schedule(&self.app_state, request)
+                thread_schedule::process_thread_schedule(&self.app_state, request)
                     .await
                     .map_err(|e| TaskError::Permanent(e.to_string()))?;
-                info!(task_id, outcome = %outcome, "Thread schedule task finished");
             }
             WorkerTask::VectorStoreMaintain(task) => {
                 let outcome = vector_store::maintain_vector_store_impl(
@@ -512,6 +511,10 @@ impl NatsConsumer {
         }
 
         if let WorkerTask::AgentExecutionRequest(request) = task_message.task {
+            let thread_event_id = request
+                .thread_event_id
+                .as_deref()
+                .and_then(|value| value.parse::<i64>().ok());
             match agent::prepare_agent_execution(&self.app_state, &task_message.task_id, request)
                 .await
             {
@@ -566,6 +569,25 @@ impl NatsConsumer {
                         "Task {} permanently failed: {}",
                         task_message.task_id, other
                     );
+                    if other.is_unrecoverable() {
+                        if let Some(event_id) = thread_event_id {
+                            if let Err(e) = commands::UpdateThreadEventStateCommand::new(
+                                event_id,
+                                models::thread_event::status::FAILED.to_string(),
+                            )
+                            .mark_failed()
+                            .execute_with_db(self.app_state.db_router.writer())
+                            .await
+                            {
+                                error!(
+                                    task_id = %task_message.task_id,
+                                    event_id,
+                                    %e,
+                                    "Failed to mark thread event terminally failed",
+                                );
+                            }
+                        }
+                    }
                     if let Err(e) = message.ack().await {
                         error!(
                             "Failed to acknowledge failed task {}: {}",

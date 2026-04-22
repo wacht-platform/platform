@@ -1,49 +1,6 @@
 pub use super::tool_calls::*;
 use serde::{Deserialize, Serialize};
 
-// DTO types for agent executor
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct NextStepDecision {
-    pub next_step: NextStep,
-    pub reasoning: String,
-    pub confidence: f64,
-    pub steer: Option<SteerData>,
-    pub search_tools_directive: Option<SearchToolsDirective>,
-    pub load_tools_directive: Option<LoadToolsDirective>,
-    pub startaction_directive: Option<StartActionDirective>,
-    pub continueaction_directive: Option<ContinueActionDirective>,
-    pub abort_directive: Option<AbortDirective>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct StartActionDirective {
-    pub objective: String,
-    #[serde(default)]
-    pub allowed_tools: Vec<String>,
-    #[serde(default)]
-    pub tool_call_brief: Option<ToolCallBrief>,
-}
-
-pub type ExecuteActionDirective = StartActionDirective;
-
-#[derive(Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq)]
-pub struct ToolCallBrief {
-    #[serde(default)]
-    pub summary: Option<String>,
-    #[serde(default)]
-    pub focus_points: Vec<String>,
-    #[serde(default)]
-    pub tool_parameter_briefs: Vec<String>,
-    #[serde(default)]
-    pub constraints: Vec<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct ContinueActionDirective {
-    pub guidance: String,
-}
-
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct AbortDirective {
     pub outcome: AbortOutcome,
@@ -103,28 +60,6 @@ pub enum MemorySource {
     Thread,
     Project,
     Actor,
-    Agent,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct SteerData {
-    pub message: String,
-    pub further_actions_required: bool,
-    pub attachments: Option<Vec<ResponseAttachment>>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ResponseAttachment {
-    pub path: String,
-    #[serde(rename = "type")]
-    pub attachment_type: ResponseAttachmentType,
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum ResponseAttachmentType {
-    File,
-    Folder,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -132,36 +67,6 @@ pub struct ApprovalRequestData {
     #[serde(default)]
     pub description: String,
     pub tool_names: Vec<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct SearchToolsDirective {
-    pub queries: Vec<String>,
-    #[serde(default)]
-    pub max_results_per_query: Option<usize>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct LoadToolsDirective {
-    pub tool_names: Vec<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum NextStep {
-    #[serde(rename = "steer")]
-    Steer,
-    #[serde(rename = "searchtools")]
-    SearchTools,
-    #[serde(rename = "loadtools")]
-    LoadTools,
-    #[serde(rename = "startaction")]
-    StartAction,
-    #[serde(rename = "continueaction")]
-    ContinueAction,
-    #[serde(rename = "enablelongthink")]
-    EnableLongThink,
-    #[serde(rename = "abort")]
-    Abort,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -181,27 +86,6 @@ pub struct FileData {
 #[derive(Clone, Debug)]
 pub struct ConverseRequest {
     pub conversation_id: i64,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct IdeationResponse {
-    pub reasoning_summary: String,
-    pub needs_more_iteration: bool,
-    pub context_search_request: Option<String>,
-    pub execution_plan: ExecutionPlan,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ExecutionPlan {
-    pub analysis: PlanAnalysis,
-    pub success_criteria: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PlanAnalysis {
-    pub understanding: String,
-    pub approach: String,
-    pub tradeoffs: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

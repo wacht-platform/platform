@@ -1,12 +1,11 @@
 use super::core::AgentExecutor;
 use crate::executor::runtime::step_control::{
     DATABASE_ERROR_RETRY_STEP, LLM_REQUEST_FAILED_STEP, RETRYABLE_EXECUTION_ERROR_STEP,
-    STRUCTURED_OUTPUT_TRUNCATED_STEP, TOOL_LOAD_REQUIRED_STEP,
 };
 use crate::llm::{
     SemanticLlmContentBlock, SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest,
 };
-use crate::template::{render_prompt_text, render_template_json, AgentTemplates};
+use templatekit::{AgentTemplates, render_prompt_text, render_template_json};
 
 use commands::{CreateConversationCommand, DispatchConversationCleanupTaskCommand};
 use common::error::AppError;
@@ -127,6 +126,9 @@ impl AgentExecutor {
             message_type,
         )
         .with_execution_run_id(self.ctx.execution_run_id);
+        if let Some(board_item_id) = self.current_board_item_id() {
+            command = command.with_board_item_id(board_item_id);
+        }
         if let Some(metadata) = metadata {
             command = command.with_metadata(metadata);
         }
@@ -167,7 +169,7 @@ impl AgentExecutor {
             None
         };
 
-        let command = CreateConversationCommand::new(
+        let mut command = CreateConversationCommand::new(
             self.ctx.app_state.sf.next_id()? as i64,
             self.ctx.thread_id,
             ConversationContent::UserMessage {
@@ -178,6 +180,9 @@ impl AgentExecutor {
             ConversationMessageType::UserMessage,
         )
         .with_execution_run_id(self.ctx.execution_run_id);
+        if let Some(board_item_id) = self.current_board_item_id() {
+            command = command.with_board_item_id(board_item_id);
+        }
         let conversation = command
             .execute_with_db(self.ctx.app_state.db_router.writer())
             .await?;
@@ -218,15 +223,14 @@ impl AgentExecutor {
                             "execution_summary",
                             timestamp.clone(),
                             format!(
-                                "[Compressed prior thread history]\nThis entry was generated to condense older conversation history while preserving important decisions, constraints, failures, corrections, and results. Treat it as archival context for what already happened, not as a fresh user request.\nHistorical anchor: {}\n{}",
-                                user_message,
-                                agent_execution
+                                "[Compressed prior thread history — treat as archival context, not a fresh request]\nOriginal request: {}\n\n{}",
+                                user_message, agent_execution
                             ),
                         ));
-
                         i += 1;
                     }
                 }
+
                 ConversationMessageType::UserMessage => {
                     if let ConversationContent::UserMessage {
                         message,
@@ -244,7 +248,7 @@ impl AgentExecutor {
                                         file.filename, file.url, file.url
                                     )
                                 } else {
-                                    format!("\n[Attached: {} ({})]", file.filename, file.url)
+                                    format!("[Attached file: {} ({})]", file.filename, file.url)
                                 };
                                 parts.push(LlmHistoryPart::text(attachment_note));
                             }
@@ -252,88 +256,199 @@ impl AgentExecutor {
 
                         let mut entry = LlmHistoryEntry::with_parts(
                             "user",
-                            conversation_message_type_label(&conv.message_type),
+                            "user_message",
                             timestamp.clone(),
                             parts,
                         );
                         entry.sender = sender_name.clone();
                         entry.metadata = conv.metadata.clone();
                         history.push(entry);
-                    } else {
-                        let mut entry = LlmHistoryEntry::with_content(
+                    }
+                    i += 1;
+                }
+
+                ConversationMessageType::Steer => {
+                    if let ConversationContent::Steer {
+                        message, attachments, ..
+                    } = &conv.content
+                    {
+                        // Render the message verbatim under role="model". Do NOT wrap it in a
+                        // narrative like `I sent this message to the user: "..."` — the model
+                        // imitates that structure in its own subsequent replies. Timestamps
+                        // are also intentionally omitted from model turns; gap markers between
+                        // entries provide any needed temporal context without making timestamps
+                        // look like an output format the model should copy.
+                        let mut text = message.trim().to_string();
+                        if let Some(att_list) = attachments {
+                            if !att_list.is_empty() {
+                                let paths = att_list
+                                    .iter()
+                                    .map(|a| a.path.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                text.push_str(&format!("\n[attachments: {paths}]"));
+                            }
+                        }
+                        history.push(LlmHistoryEntry::with_content(
+                            "model",
+                            "steer",
+                            None,
+                            text,
+                        ));
+                    }
+                    i += 1;
+                }
+
+                ConversationMessageType::ToolResult => {
+                    if let ConversationContent::ToolResult {
+                        tool_name,
+                        status,
+                        input,
+                        output,
+                        error,
+                    } = &conv.content
+                    {
+                        let mut inline_parts: Vec<LlmHistoryPart> = Vec::new();
+
+                        // Special case: read_image embeds image bytes as inline data for vision.
+                        if tool_name == "read_image" {
+                            let path = output
+                                .as_ref()
+                                .and_then(|v| v.get("data"))
+                                .and_then(|v| v.get("path"))
+                                .and_then(|v| v.as_str());
+                            let mime_type = output
+                                .as_ref()
+                                .and_then(|v| v.get("data"))
+                                .and_then(|v| v.get("mime_type"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("application/octet-stream");
+                            if let Some(path) = path {
+                                if let Ok(bytes) = self.filesystem.read_file_bytes(path).await {
+                                    use base64::{engine::general_purpose::STANDARD, Engine};
+                                    inline_parts.push(LlmHistoryPart::inline_data(
+                                        mime_type,
+                                        STANDARD.encode(bytes),
+                                    ));
+                                }
+                            }
+                        }
+
+                        let input_text = Self::format_input_for_history(input);
+                        let narrative = match status.as_str() {
+                            "success" => {
+                                let output_text = output
+                                    .as_ref()
+                                    .map(|v| Self::format_output_for_history(tool_name, v))
+                                    .unwrap_or_else(|| "(no output)".to_string());
+                                format!(
+                                    "Tool `{tool_name}` ran successfully.\nInput: {input_text}\nOutput:\n{output_text}"
+                                )
+                            }
+                            "error" => {
+                                let error_text =
+                                    error.as_deref().unwrap_or("(no error detail provided)");
+                                format!(
+                                    "Tool `{tool_name}` failed.\nInput: {input_text}\nError: {error_text}"
+                                )
+                            }
+                            "pending" => {
+                                format!("Tool `{tool_name}` is pending (awaiting approval or async completion).\nInput: {input_text}")
+                            }
+                            other => {
+                                format!("Tool `{tool_name}` returned status `{other}`.\nInput: {input_text}")
+                            }
+                        };
+
+                        let mut parts = vec![LlmHistoryPart::text(narrative)];
+                        parts.extend(inline_parts);
+
+                        let mut entry = LlmHistoryEntry::with_parts(
                             "user",
-                            conversation_message_type_label(&conv.message_type),
+                            "tool_result",
                             timestamp.clone(),
-                            self.extract_conversation_content(&conv.content),
+                            parts,
                         );
                         entry.metadata = conv.metadata.clone();
                         history.push(entry);
                     }
                     i += 1;
                 }
-                ConversationMessageType::ToolResult => {
-                    let content_value =
-                        serde_json::to_value(&conv.content).unwrap_or_else(|_| json!({}));
-                    let mut inline_parts: Vec<LlmHistoryPart> = Vec::new();
 
-                    if matches!(conv.message_type, ConversationMessageType::ToolResult) {
-                        let tool_name = content_value
-                            .get("tool_name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or_default();
-                        if tool_name == "read_image" {
-                            let path = content_value
-                                .get("output")
-                                .and_then(|v| v.get("data"))
-                                .and_then(|v| v.get("path"))
-                                .and_then(|v| v.as_str());
-                            let mime_type = content_value
-                                .get("output")
-                                .and_then(|v| v.get("data"))
-                                .and_then(|v| v.get("mime_type"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("application/octet-stream");
-
-                            if let Some(path) = path {
-                                if let Ok(bytes) = self.filesystem.read_file_bytes(path).await {
-                                    use base64::{engine::general_purpose::STANDARD, Engine};
-                                    let base64_data = STANDARD.encode(bytes);
-                                    inline_parts
-                                        .push(LlmHistoryPart::inline_data(mime_type, base64_data));
-                                }
-                            }
-                        }
-                    }
-
-                    let serialized = serde_json::to_string(&content_value).unwrap_or_default();
-                    let mut parts = vec![LlmHistoryPart::text(serialized)];
-                    parts.extend(inline_parts);
-
-                    let mut entry = LlmHistoryEntry::with_parts(
-                        self.map_conversation_type_to_role(&conv.message_type),
-                        conversation_message_type_label(&conv.message_type),
-                        timestamp.clone(),
-                        parts,
-                    );
-                    entry.metadata = conv.metadata.clone();
-                    history.push(entry);
-                    i += 1;
-                }
                 ConversationMessageType::SystemDecision => {
                     if let Some(entry) = self.system_decision_history_entry(conv) {
                         history.push(entry);
                     }
                     i += 1;
                 }
-                _ => {
-                    let mut entry = LlmHistoryEntry::with_content(
-                        self.map_conversation_type_to_role(&conv.message_type),
-                        conversation_message_type_label(&conv.message_type),
-                        timestamp,
-                        self.extract_conversation_content(&conv.content),
-                    );
-                    entry.metadata = conv.metadata.clone();
-                    history.push(entry);
+
+                ConversationMessageType::ApprovalRequest => {
+                    if let ConversationContent::ApprovalRequest { description, tools } =
+                        &conv.content
+                    {
+                        let mut text =
+                            format!("I requested user approval to use the following tools:");
+                        for tool in tools {
+                            if let Some(desc) = &tool.tool_description {
+                                text.push_str(&format!("\n  - {} — {}", tool.tool_name, desc));
+                            } else {
+                                text.push_str(&format!("\n  - {}", tool.tool_name));
+                            }
+                        }
+                        text.push_str(&format!("\nReason: {description}"));
+                        text.push_str(
+                            "\n[Waiting for the user to approve or deny before continuing.]",
+                        );
+                        // Model-role — omit timestamp prefix (see steer comment above).
+                        let mut entry = LlmHistoryEntry::with_content(
+                            "model",
+                            "approval_request",
+                            None,
+                            text,
+                        );
+                        entry.metadata = conv.metadata.clone();
+                        history.push(entry);
+                    }
+                    i += 1;
+                }
+
+                ConversationMessageType::ApprovalResponse => {
+                    if let ConversationContent::ApprovalResponse { approvals, .. } = &conv.content {
+                        let mut text = String::from("The user responded to my approval request:");
+                        for decision in approvals {
+                            let mode = match decision.mode {
+                                models::ToolApprovalMode::AllowOnce => "allowed once",
+                                models::ToolApprovalMode::AllowAlways => "always allowed",
+                            };
+                            text.push_str(&format!("\n  - {}: {}", decision.tool_name, mode));
+                        }
+                        let mut entry = LlmHistoryEntry::with_content(
+                            "user",
+                            "approval_response",
+                            timestamp.clone(),
+                            text,
+                        );
+                        entry.metadata = conv.metadata.clone();
+                        history.push(entry);
+                    }
+                    i += 1;
+                }
+
+                ConversationMessageType::AssignmentEvent => {
+                    if let ConversationContent::AssignmentEvent { summary, .. } = &conv.content {
+                        let text = summary
+                            .as_deref()
+                            .unwrap_or("Assignment event (no summary)")
+                            .to_string();
+                        let mut entry = LlmHistoryEntry::with_content(
+                            "user",
+                            "assignment_event",
+                            timestamp.clone(),
+                            format!("[Task event]\n{text}"),
+                        );
+                        entry.metadata = conv.metadata.clone();
+                        history.push(entry);
+                    }
                     i += 1;
                 }
             }
@@ -343,42 +458,98 @@ impl AgentExecutor {
     }
 
     fn system_decision_history_entry(&self, conv: &ConversationRecord) -> Option<LlmHistoryEntry> {
-        let content_value = serde_json::to_value(&conv.content).ok()?;
-        let mut parts = Vec::new();
-
-        if let ConversationContent::SystemDecision {
+        let ConversationContent::SystemDecision {
             step, reasoning, ..
         } = &conv.content
-        {
-            let runtime_correction = matches!(
-                step.as_str(),
-                STRUCTURED_OUTPUT_TRUNCATED_STEP
-                    | TOOL_LOAD_REQUIRED_STEP
-                    | DATABASE_ERROR_RETRY_STEP
-                    | LLM_REQUEST_FAILED_STEP
-                    | RETRYABLE_EXECUTION_ERROR_STEP
-            );
+        else {
+            return None;
+        };
 
-            if runtime_correction {
-                parts.push(LlmHistoryPart::text(format!(
-                    "[Runtime correction] {}",
-                    reasoning
-                )));
+        let runtime_correction = matches!(
+            step.as_str(),
+            DATABASE_ERROR_RETRY_STEP | LLM_REQUEST_FAILED_STEP | RETRYABLE_EXECUTION_ERROR_STEP
+        );
+
+        let text = if runtime_correction {
+            format!("[Runtime correction — {step}]\n{reasoning}")
+        } else {
+            Self::format_agent_decision_narrative(step, reasoning)
+        };
+
+        // Model-role entry — skip timestamp prefix so the model doesn't treat
+        // `[2026-...T...] ` as part of its own output format.
+        let mut entry = LlmHistoryEntry::with_content("model", "system_decision", None, text);
+        entry.metadata = conv.metadata.clone();
+        Some(entry)
+    }
+
+    fn format_agent_decision_narrative(step: &str, reasoning: &str) -> String {
+        match step {
+            "note" => format!("[Note]\n{reasoning}"),
+            "note_loop_guard" => format!("[System — note guard]\n{reasoning}"),
+            "tool_call_loop_guard" => format!("[System — tool-call loop guard]\n{reasoning}"),
+            "empty_response_guard" => format!("[System — empty response]\n{reasoning}"),
+            "complete_blocked_by_task_graph" => {
+                format!("[System — task graph still has unfinished work]\n{reasoning}")
+            }
+            other => format!("[System — {other}]\n{reasoning}"),
+        }
+    }
+
+    // Full output — no truncation. The decision LLM needs every byte to reason correctly.
+    // Context overflow is handled by the conversation compaction path, not here.
+    fn format_output_for_history(tool_name: &str, value: &Value) -> String {
+        // read_file stores raw content in the DB; number lines only for the
+        // LLM view so the conversation record stays clean.
+        if tool_name == "read_file" {
+            if let Some(obj) = value.as_object() {
+                let content = obj.get("content").and_then(|v| v.as_str());
+                let start_line = obj.get("start_line").and_then(|v| v.as_u64());
+                if let (Some(content), Some(start)) = (content, start_line) {
+                    let numbered = content
+                        .lines()
+                        .enumerate()
+                        .map(|(i, line)| {
+                            crate::filesystem::AgentFilesystem::format_numbered_line(
+                                start as usize + i,
+                                line,
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let mut preview = obj.clone();
+                    preview.insert(
+                        "content".to_string(),
+                        Value::String(numbered),
+                    );
+                    return serde_json::to_string_pretty(&Value::Object(preview))
+                        .unwrap_or_else(|_| value.to_string());
+                }
             }
         }
 
-        parts.push(LlmHistoryPart::text(
-            serde_json::to_string(&content_value).unwrap_or_default(),
-        ));
+        match value {
+            Value::String(s) => s.clone(),
+            Value::Null => "(empty)".to_string(),
+            _ => serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string()),
+        }
+    }
 
-        let mut entry = LlmHistoryEntry::with_parts(
-            self.map_conversation_type_to_role(&conv.message_type),
-            "system_decision",
-            Some(conv.created_at.to_rfc3339()),
-            parts,
-        );
-        entry.metadata = conv.metadata.clone();
-        Some(entry)
+    // Input is just an echo of what was sent — cap it to avoid wasting context on verbose params.
+    fn format_input_for_history(value: &Value) -> String {
+        const MAX: usize = 800;
+        let raw = match value {
+            Value::String(s) => s.clone(),
+            Value::Null => "(empty)".to_string(),
+            _ => serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string()),
+        };
+        let char_count = raw.chars().count();
+        if char_count > MAX {
+            let truncated: String = raw.chars().take(MAX).collect();
+            format!("{}… [truncated — {} chars total]", truncated, char_count)
+        } else {
+            raw
+        }
     }
 
     pub(crate) fn map_conversation_type_to_role(
@@ -390,19 +561,6 @@ impl AgentExecutor {
             | ConversationMessageType::ApprovalResponse
             | ConversationMessageType::ToolResult => "user",
             _ => "model",
-        }
-    }
-
-    pub(crate) fn extract_conversation_content(&self, content: &ConversationContent) -> String {
-        match content {
-            ConversationContent::UserMessage { message, .. } => message.clone(),
-            ConversationContent::Steer { message, .. } => message.clone(),
-            ConversationContent::ToolResult { .. } => {
-                serde_json::to_string(content).unwrap_or_default()
-            }
-            ConversationContent::ApprovalRequest { description, .. } => description.clone(),
-            ConversationContent::SystemDecision { .. } => String::new(),
-            _ => serde_json::to_string(content).unwrap_or_default(),
         }
     }
 }
@@ -423,9 +581,23 @@ impl AgentExecutor {
             return Ok(false);
         }
 
+        if self.is_service_mode_execution() && !self.service_mode_journal_was_updated().await? {
+            self.store_conversation(
+                ConversationContent::SystemDecision {
+                    step: "compaction_blocked_by_journal_guard".to_string(),
+                    reasoning: "Conversation compaction was blocked because /task/JOURNAL.md has not been updated since the last checkpoint. The journal is the lossy summary that survives compaction — write it before the window is dropped. Update /task/JOURNAL.md with the key facts from the recent turns, then continue; compaction will retry on the next trigger.".to_string(),
+                    confidence: 1.0,
+                },
+                ConversationMessageType::SystemDecision,
+            )
+            .await?;
+            return Ok(false);
+        }
+
         let conversations = GetCompactionWindowConversationsQuery {
             thread_id: self.ctx.thread_id,
             before_conversation_id: trigger_conversation.id,
+            board_item_id: self.current_board_item_id(),
         }
         .execute_with_db(self.ctx.app_state.db_router.writer())
         .await?;
@@ -462,6 +634,7 @@ impl AgentExecutor {
             .await?;
 
         DispatchConversationCleanupTaskCommand::new(self.ctx.thread_id, cleanup_through_id)
+            .with_board_item_id(self.current_board_item_id())
             .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).nats().id())
             .await?;
 
@@ -483,6 +656,12 @@ impl AgentExecutor {
         self.conversation_compaction_state.last_prompt_token_count = 0;
         self.conversation_compaction_state.last_total_token_count = 0;
         self.conversation_compaction_state.last_compacted_at = Some(chrono::Utc::now());
+
+        if self.current_board_item_id().is_some() {
+            self.task_journal_start_hash = Some(
+                crate::runtime::task_workspace::compute_task_journal_hash(&self.filesystem).await?,
+            );
+        }
 
         UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
             .with_execution_state(self.build_execution_state_snapshot(None))
@@ -622,6 +801,19 @@ If later user turns superseded earlier goals, make that clear in the summary."#,
             ConversationContent::ExecutionSummary {
                 agent_execution, ..
             } => format!("SUMMARY {}", truncate_for_summary(agent_execution, 320)),
+            ConversationContent::AssignmentEvent {
+                kind,
+                assignment_id,
+                summary,
+                ..
+            } => format!(
+                "ASSIGNMENT_EVENT kind={:?} assignment_id={} summary={}",
+                kind,
+                assignment_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+                truncate_for_summary(summary.as_deref().unwrap_or(""), 180)
+            ),
         }
     }
 }
@@ -680,5 +872,6 @@ fn conversation_message_type_label(message_type: &ConversationMessageType) -> &'
         ConversationMessageType::ApprovalRequest => "approval_request",
         ConversationMessageType::ApprovalResponse => "approval_response",
         ConversationMessageType::ExecutionSummary => "execution_summary",
+        ConversationMessageType::AssignmentEvent => "assignment_event",
     }
 }

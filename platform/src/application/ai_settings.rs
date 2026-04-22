@@ -9,10 +9,17 @@ use models::{
     DeploymentAiSettings, DeploymentAiSettingsResponse, DeploymentLlmProvider,
     DeploymentStorageProvider, DeploymentStorageSettingsResponse,
     UpdateDeploymentAiSettingsRequest, UpdateDeploymentStorageSettingsRequest,
+    default_embedding_dimension, default_embedding_model_for_provider, default_embedding_provider,
+    is_supported_embedding_dimension,
 };
 use queries::GetDeploymentAiSettingsQuery;
 
 use crate::application::AppState;
+use crate::application::ai_settings_admission::{
+    run_embedding_admission_if_needed, run_model_admission_if_needed,
+    validate_embedding_provider_settings, validate_openrouter_strong_model,
+    validate_provider_key_consistency,
+};
 use common::deps;
 
 pub async fn get_ai_settings(
@@ -37,6 +44,9 @@ pub async fn get_ai_settings(
             anthropic_api_key_set: false,
             strong_model: None,
             weak_model: None,
+            embedding_provider: default_embedding_provider(),
+            embedding_model: default_embedding_model_for_provider(&default_embedding_provider()),
+            embedding_dimension: default_embedding_dimension(),
             storage: DeploymentStorageSettingsResponse {
                 provider: DeploymentStorageProvider::S3,
                 bucket: None,
@@ -65,6 +75,8 @@ pub async fn update_ai_settings(
     let normalized_updates = normalize_ai_settings_updates(updates);
     validate_provider_key_consistency(existing_settings.as_ref(), &normalized_updates)?;
     validate_openrouter_strong_model(existing_settings.as_ref(), &normalized_updates)?;
+    validate_embedding_provider_settings(existing_settings.as_ref(), &normalized_updates)?;
+    validate_embedding_dimension(existing_settings.as_ref(), &normalized_updates)?;
 
     if normalized_updates.storage.is_some() {
         validate_storage_settings(existing_settings.as_ref(), &normalized_updates)?;
@@ -91,6 +103,10 @@ pub async fn update_ai_settings(
             })?;
     }
 
+    run_model_admission_if_needed(existing_settings.as_ref(), &normalized_updates, &deps).await?;
+    run_embedding_admission_if_needed(existing_settings.as_ref(), &normalized_updates, &deps)
+        .await?;
+
     let settings = UpdateDeploymentAiSettingsCommand::builder()
         .deployment_id(deployment_id)
         .updates(normalized_updates)
@@ -99,110 +115,6 @@ pub async fn update_ai_settings(
         .await?;
 
     Ok(DeploymentAiSettingsResponse::from(settings))
-}
-
-fn provider_name(provider: &DeploymentLlmProvider) -> &'static str {
-    match provider {
-        DeploymentLlmProvider::Gemini => "Gemini",
-        DeploymentLlmProvider::Openai => "OpenAI",
-        DeploymentLlmProvider::Openrouter => "OpenRouter",
-    }
-}
-
-fn parse_llm_provider(s: &str) -> DeploymentLlmProvider {
-    match s {
-        "openai" => DeploymentLlmProvider::Openai,
-        "openrouter" => DeploymentLlmProvider::Openrouter,
-        _ => DeploymentLlmProvider::Gemini,
-    }
-}
-
-fn key_available_for_provider(
-    provider: &DeploymentLlmProvider,
-    existing: Option<&DeploymentAiSettings>,
-    updates: &UpdateDeploymentAiSettingsRequest,
-) -> bool {
-    match provider {
-        DeploymentLlmProvider::Gemini => {
-            updates.gemini_api_key.is_some()
-                || existing.and_then(|e| e.gemini_api_key.as_ref()).is_some()
-        }
-        DeploymentLlmProvider::Openai => {
-            updates.openai_api_key.is_some()
-                || existing.and_then(|e| e.openai_api_key.as_ref()).is_some()
-        }
-        DeploymentLlmProvider::Openrouter => {
-            updates.openrouter_api_key.is_some()
-                || existing.and_then(|e| e.openrouter_api_key.as_ref()).is_some()
-        }
-    }
-}
-
-/// Errors if a provider is being explicitly set (or already set) but no API key exists for it.
-/// Only checks providers that are explicitly being changed in this request to avoid blocking
-/// unrelated updates when historical settings are inconsistent.
-fn validate_provider_key_consistency(
-    existing: Option<&DeploymentAiSettings>,
-    updates: &UpdateDeploymentAiSettingsRequest,
-) -> Result<(), AppError> {
-    if let Some(strong_provider) = updates.strong_llm_provider.as_ref() {
-        if !key_available_for_provider(strong_provider, existing, updates) {
-            return Err(AppError::Validation(format!(
-                "strong_llm_provider is set to {} but no {} API key is configured",
-                provider_name(strong_provider),
-                provider_name(strong_provider),
-            )));
-        }
-    }
-
-    if let Some(weak_provider) = updates.weak_llm_provider.as_ref() {
-        if !key_available_for_provider(weak_provider, existing, updates) {
-            return Err(AppError::Validation(format!(
-                "weak_llm_provider is set to {} but no {} API key is configured",
-                provider_name(weak_provider),
-                provider_name(weak_provider),
-            )));
-        }
-    }
-
-    Ok(())
-}
-
-/// Errors if the effective strong provider is OpenRouter and require_parameters is false.
-/// The strong model is used for structured JSON schema output; without require_parameters,
-/// OpenRouter may route to an endpoint that silently ignores the schema.
-fn validate_openrouter_strong_model(
-    existing: Option<&DeploymentAiSettings>,
-    updates: &UpdateDeploymentAiSettingsRequest,
-) -> Result<(), AppError> {
-    let effective_strong_provider = updates
-        .strong_llm_provider
-        .as_ref()
-        .cloned()
-        .or_else(|| existing.map(|e| parse_llm_provider(&e.strong_llm_provider)));
-
-    if !matches!(
-        effective_strong_provider.as_ref(),
-        Some(DeploymentLlmProvider::Openrouter)
-    ) {
-        return Ok(());
-    }
-
-    let effective_require_parameters = updates
-        .openrouter_require_parameters
-        .or_else(|| existing.map(|e| e.openrouter_require_parameters))
-        .unwrap_or(true);
-
-    if !effective_require_parameters {
-        return Err(AppError::Validation(
-            "OpenRouter is selected as the strong model provider but 'require parameters' is \
-             disabled. The strong model must support JSON schema output — enable 'require \
-             parameters' to ensure OpenRouter only routes to capable endpoints."
-                .to_string(),
-        ));
-    }
-
-    Ok(())
 }
 
 fn normalize_ai_settings_updates(
@@ -218,8 +130,26 @@ fn normalize_ai_settings_updates(
         anthropic_api_key: normalize_optional_text(updates.anthropic_api_key),
         strong_model: normalize_optional_text(updates.strong_model),
         weak_model: normalize_optional_text(updates.weak_model),
+        embedding_provider: updates.embedding_provider,
+        embedding_model: normalize_optional_text(updates.embedding_model),
+        embedding_dimension: updates.embedding_dimension,
         storage: updates.storage.and_then(normalize_storage_settings_updates),
     }
+}
+
+fn validate_embedding_dimension(
+    _existing: Option<&DeploymentAiSettings>,
+    updates: &UpdateDeploymentAiSettingsRequest,
+) -> Result<(), AppError> {
+    if let Some(value) = updates.embedding_dimension {
+        if !is_supported_embedding_dimension(value) {
+            return Err(AppError::Validation(format!(
+                "embedding_dimension must be one of: 1536 or 768 (received {})",
+                value
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn normalize_storage_settings_updates(

@@ -1,11 +1,13 @@
 pub mod agent_execution;
 pub mod agent_execution_recovery;
 pub mod agent_thread_model;
+pub mod board_reconciler;
 pub mod ai_agents;
 pub mod ai_knowledge_base;
 pub mod ai_tools;
 pub mod api_key;
 pub mod api_key_app;
+pub mod assignment_event;
 pub mod billing;
 pub mod conversation;
 pub mod create_organization;
@@ -100,10 +102,12 @@ pub use workspace_role::*;
 
 pub use agent_execution::*;
 pub use agent_execution_recovery::*;
+pub use board_reconciler::*;
 pub use agent_thread_model::*;
 pub use ai_agents::*;
 pub use ai_knowledge_base::*;
 pub use ai_tools::*;
+pub use assignment_event::*;
 pub use conversation::*;
 pub use embedding::*;
 pub use embedding_task::*;

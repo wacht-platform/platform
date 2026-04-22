@@ -47,6 +47,11 @@ pub struct GeneratedToolCall {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCallGenerationOutput {
     pub calls: Vec<GeneratedToolCall>,
+    /// Model's free-form text output. Present when the model wrote a text response
+    /// alongside (or instead of) tool calls. In the unified ReAct loop, text with no
+    /// tool calls signals the terminal user-facing response.
+    #[serde(default)]
+    pub content_text: Option<String>,
     pub usage_metadata: Option<UsageMetadata>,
 }
 
