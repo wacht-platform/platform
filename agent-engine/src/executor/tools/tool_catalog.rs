@@ -3,6 +3,9 @@ use super::tool_params::MAX_LOADED_EXTERNAL_TOOLS;
 use crate::llm::{
     NativeToolDefinition, SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest,
 };
+use crate::tools::external::{
+    search_external_tools, synthetic_tool_id, EXTERNAL_PROVIDER_COMPOSIO,
+};
 use common::error::AppError;
 use dto::json::agent_executor::{
     ExternalToolCall, LoadToolsParams, SearchToolsParams, ToolCallRequest,
@@ -153,6 +156,11 @@ impl AgentExecutor {
                 config.request_body_schema.clone().unwrap_or_default()
             }
             AiToolConfiguration::PlatformEvent(_) => Vec::new(),
+            AiToolConfiguration::Virtual(config) => config
+                .input_schema
+                .as_ref()
+                .map(mcp_schema_to_fields)
+                .unwrap_or_default(),
         }
     }
 
@@ -189,6 +197,15 @@ impl AgentExecutor {
             .unwrap_or_else(|| format!("Call the {} tool.", tool.name));
 
         if let AiToolConfiguration::Mcp(config) = &tool.configuration {
+            return NativeToolDefinition {
+                name: tool.name.clone(),
+                description,
+                input_schema: config.input_schema.clone().unwrap_or_else(|| {
+                    serde_json::json!({"type": "object", "properties": {}})
+                }),
+            };
+        }
+        if let AiToolConfiguration::Virtual(config) = &tool.configuration {
             return NativeToolDefinition {
                 name: tool.name.clone(),
                 description,
@@ -350,17 +367,20 @@ impl AgentExecutor {
     }
 
     pub(crate) fn external_tool_catalog(&self) -> Vec<AiTool> {
-        self.ctx
+        let mut tools: Vec<AiTool> = self
+            .ctx
             .agent
             .tools
             .iter()
             .filter(|tool| !matches!(tool.tool_type, models::AiToolType::Internal))
             .cloned()
-            .collect()
+            .collect();
+        tools.extend(self.virtual_tool_cache.values().cloned());
+        tools
     }
 
     pub(crate) async fn execute_search_tools(
-        &self,
+        &mut self,
         params: SearchToolsParams,
     ) -> Result<Value, AppError> {
         let queries = params
@@ -379,6 +399,8 @@ impl AgentExecutor {
         }
 
         let max_results_per_query = params.max_results_per_query.unwrap_or(3).clamp(1, 5);
+        self.populate_virtual_tool_cache(&queries, max_results_per_query)
+            .await;
         let external_tools = self.external_tool_catalog();
         if external_tools.is_empty() {
             return Ok(json!({
@@ -397,6 +419,10 @@ impl AgentExecutor {
             .map(|tool| {
                 let input_schema = match &tool.configuration {
                     AiToolConfiguration::Mcp(config) => config
+                        .input_schema
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
+                    AiToolConfiguration::Virtual(config) => config
                         .input_schema
                         .clone()
                         .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
@@ -600,6 +626,10 @@ External tool catalog with descriptions and input schemas:
                         .input_schema
                         .clone()
                         .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
+                    AiToolConfiguration::Virtual(config) => config
+                        .input_schema
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
                     _ => SchemaField::object_json_schema(&Self::tool_input_schema_for_search(tool)),
                 };
                 json!({
@@ -609,5 +639,41 @@ External tool catalog with descriptions and input schemas:
                 })
             }).collect::<Vec<_>>(),
         }))
+    }
+
+    async fn populate_virtual_tool_cache(
+        &mut self,
+        queries: &[String],
+        per_query_limit: usize,
+    ) {
+        let deployment_id = self.ctx.agent.deployment_id;
+        let actor_id = match self.ctx.get_thread().await {
+            Ok(thread) => thread.actor_id,
+            Err(_) => return,
+        };
+
+        let futures = queries.iter().map(|query| {
+            let state = &self.ctx.app_state;
+            let query = query.clone();
+            async move {
+                search_external_tools(state, deployment_id, actor_id, &query, per_query_limit)
+                    .await
+                    .unwrap_or_default()
+            }
+        });
+        let batches = futures::future::join_all(futures).await;
+
+        for batch in batches {
+            for candidate in batch {
+                let id = synthetic_tool_id(
+                    EXTERNAL_PROVIDER_COMPOSIO,
+                    &candidate.toolkit_slug,
+                    &candidate.remote_tool_slug,
+                );
+                self.virtual_tool_cache
+                    .entry(id)
+                    .or_insert_with(|| candidate.into_ai_tool(id));
+            }
+        }
     }
 }

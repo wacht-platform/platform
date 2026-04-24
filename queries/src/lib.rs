@@ -4,6 +4,7 @@ pub mod prelude {
 }
 
 pub mod b2b;
+pub mod composio;
 pub mod deployment;
 pub mod enterprise_sso;
 pub mod invitation;

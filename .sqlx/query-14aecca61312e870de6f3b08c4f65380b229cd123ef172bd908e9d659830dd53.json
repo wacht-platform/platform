@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT slug\n            FROM actor_external_connections\n            WHERE deployment_id = $1\n              AND actor_id = $2\n              AND provider = 'composio'\n              AND status = 'active'\n              AND slug = ANY($3)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "14aecca61312e870de6f3b08c4f65380b229cd123ef172bd908e9d659830dd53"
+}

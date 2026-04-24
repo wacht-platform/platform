@@ -44,6 +44,7 @@ pub enum AiToolType {
     CodeRunner,
     Internal,
     Mcp,
+    Virtual,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -54,12 +55,30 @@ pub enum AiToolConfiguration {
     CodeRunner(CodeRunnerToolConfiguration),
     Internal(InternalToolConfiguration),
     Mcp(McpToolConfiguration),
+    Virtual(VirtualToolConfiguration),
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct McpToolConfiguration {
     pub mcp_server_id: i64,
     pub remote_tool_name: String,
+    pub input_schema: Option<serde_json::Value>,
+}
+
+/// Virtual tool: a runtime-only reference into a third-party integration
+/// provider (Composio, Arcade, Pipedream, ...). Never persisted to the DB;
+/// instances are constructed at runtime from the provider's search API and
+/// held in the agent context. Kept distinct from a future "external" type
+/// which would cover typed, DB-backed external-service integrations.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct VirtualToolConfiguration {
+    /// Provider slug (e.g. `composio`).
+    pub provider: String,
+    /// Provider-specific toolkit slug (e.g. `gmail`).
+    pub toolkit_slug: String,
+    /// Provider-specific tool slug (e.g. `GMAIL_SEND_EMAIL`).
+    pub remote_tool_slug: String,
+    /// Raw JSON Schema for the tool's arguments.
     pub input_schema: Option<serde_json::Value>,
 }
 
@@ -295,6 +314,7 @@ impl From<String> for AiToolType {
             "code_runner" => AiToolType::CodeRunner,
             "internal" => AiToolType::Internal,
             "mcp" => AiToolType::Mcp,
+            "virtual" => AiToolType::Virtual,
             _ => AiToolType::Api,
         }
     }
@@ -308,6 +328,7 @@ impl From<AiToolType> for String {
             AiToolType::CodeRunner => "code_runner".to_string(),
             AiToolType::Internal => "internal".to_string(),
             AiToolType::Mcp => "mcp".to_string(),
+            AiToolType::Virtual => "virtual".to_string(),
         }
     }
 }

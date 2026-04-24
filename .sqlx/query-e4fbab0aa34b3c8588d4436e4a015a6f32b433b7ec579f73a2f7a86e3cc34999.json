@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE deployment_ai_settings SET\n                composio_enabled = COALESCE($2, composio_enabled),\n                composio_use_platform_key = COALESCE($3, composio_use_platform_key),\n                composio_api_key = CASE\n                    WHEN $4::boolean THEN $5\n                    ELSE composio_api_key\n                END,\n                composio_enabled_apps = COALESCE($6, composio_enabled_apps),\n                updated_at = NOW()\n            WHERE deployment_id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e4fbab0aa34b3c8588d4436e4a015a6f32b433b7ec579f73a2f7a86e3cc34999"
+}

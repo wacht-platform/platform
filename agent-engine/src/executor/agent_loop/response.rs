@@ -150,6 +150,13 @@ impl AgentExecutor {
             .filter(|t| self.tool_allowed_in_current_mode(&t.name))
             .cloned()
             .collect::<Vec<_>>();
+        for tool in self.virtual_tool_cache.values() {
+            if loaded_tool_ids.contains(&tool.id)
+                && self.tool_allowed_in_current_mode(&tool.name)
+            {
+                loaded_external_tools.push(tool.clone());
+            }
+        }
         loaded_external_tools
             .sort_by_key(|tool| load_order.get(&tool.id).copied().unwrap_or(usize::MAX));
         tools.extend(loaded_external_tools);

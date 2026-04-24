@@ -259,6 +259,11 @@ impl ToolPromptItem {
                 config.request_body_schema.clone().unwrap_or_default()
             }
             AiToolConfiguration::PlatformEvent(_) => Vec::new(),
+            AiToolConfiguration::Virtual(config) => config
+                .input_schema
+                .as_ref()
+                .map(mcp_json_schema_to_fields)
+                .unwrap_or_default(),
         };
 
         Self {

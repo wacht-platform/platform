@@ -124,5 +124,6 @@ pub use webhook_subscription::*;
 pub use webhook_trigger::*;
 mod ai_knowledge_base_document_status;
 pub mod ai_settings;
+pub mod composio;
 pub use ai_settings::*;
 pub use session_ticket::*;

@@ -71,6 +71,12 @@ impl CreateAiToolCommand {
                 // Internal tools don't need validation - they're system-defined
             }
             AiToolConfiguration::Mcp(_) => {}
+            AiToolConfiguration::Virtual(_) => {
+                return Err(AppError::BadRequest(
+                    "Virtual tools cannot be created directly — they are discovered at runtime"
+                        .to_string(),
+                ));
+            }
         }
 
         Ok(())
@@ -213,6 +219,12 @@ impl UpdateAiToolCommand {
                     // Internal tools don't need validation - they're system-defined
                 }
                 AiToolConfiguration::Mcp(_) => {}
+                AiToolConfiguration::Virtual(_) => {
+                    return Err(AppError::BadRequest(
+                        "Virtual tools cannot be updated — they are discovered at runtime"
+                            .to_string(),
+                    ));
+                }
             }
         }
 

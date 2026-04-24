@@ -1,5 +1,5 @@
 mod code_runner;
-mod external;
+pub mod external;
 pub mod mcp;
 mod internal;
 mod platform;
@@ -102,6 +102,17 @@ impl ToolExecutor {
             AiToolConfiguration::Mcp(config) => {
                 self.execute_mcp_tool(tool, config, &execution_params, filesystem)
                     .await?
+            }
+            AiToolConfiguration::Virtual(config) => {
+                let thread = self.ctx.get_thread().await?;
+                external::execute_external_tool(
+                    &self.ctx.app_state,
+                    self.ctx.agent.deployment_id,
+                    thread.actor_id,
+                    config,
+                    &execution_params,
+                )
+                .await?
             }
         };
 

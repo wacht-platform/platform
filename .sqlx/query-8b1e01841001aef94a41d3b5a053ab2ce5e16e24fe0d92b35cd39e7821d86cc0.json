@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                composio_enabled AS \"enabled!: bool\",\n                composio_use_platform_key AS \"use_platform_key!: bool\",\n                composio_api_key AS \"api_key?: String\",\n                composio_enabled_apps AS \"enabled_apps!: serde_json::Value\"\n            FROM deployment_ai_settings\n            WHERE deployment_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enabled!: bool",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "use_platform_key!: bool",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "api_key?: String",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "enabled_apps!: serde_json::Value",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "8b1e01841001aef94a41d3b5a053ab2ce5e16e24fe0d92b35cd39e7821d86cc0"
+}
