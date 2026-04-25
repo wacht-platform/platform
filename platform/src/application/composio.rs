@@ -102,8 +102,13 @@ pub async fn list_toolkits(
         .header("x-api-key", &api_key);
 
     let mut query: Vec<(&str, String)> = Vec::new();
-    if let Some(s) = params.search.as_ref().filter(|s| !s.trim().is_empty()) {
-        query.push(("search", s.trim().to_string()));
+    if let Some(s) = params
+        .search
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| s.chars().count() >= 3)
+    {
+        query.push(("search", s.to_string()));
     }
     if let Some(c) = params.category.as_ref().filter(|s| !s.trim().is_empty()) {
         query.push(("category", c.trim().to_string()));
