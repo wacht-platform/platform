@@ -2,7 +2,7 @@ use axum::extract::{Json, Path, State};
 use axum::http::StatusCode;
 
 use crate::application::{api_key_rate_limit as api_key_rate_limit_app, response::ApiResult};
-use crate::middleware::RequireDeployment;
+use crate::middleware::{RequireDeployment, SlugParams};
 use common::state::AppState;
 use dto::json::api_key::*;
 use queries::rate_limit_scheme::RateLimitSchemeData;
@@ -19,7 +19,7 @@ pub async fn list_rate_limit_schemes(
 pub async fn get_rate_limit_scheme(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(slug): Path<String>,
+    Path(SlugParams { slug, .. }): Path<SlugParams>,
 ) -> ApiResult<RateLimitSchemeData> {
     let scheme =
         api_key_rate_limit_app::get_rate_limit_scheme(&app_state, deployment_id, slug).await?;
@@ -40,7 +40,7 @@ pub async fn create_rate_limit_scheme(
 pub async fn update_rate_limit_scheme(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(slug): Path<String>,
+    Path(SlugParams { slug, .. }): Path<SlugParams>,
     Json(request): Json<UpdateRateLimitSchemeRequest>,
 ) -> ApiResult<RateLimitSchemeData> {
     let scheme =
@@ -53,7 +53,7 @@ pub async fn update_rate_limit_scheme(
 pub async fn delete_rate_limit_scheme(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(slug): Path<String>,
+    Path(SlugParams { slug, .. }): Path<SlugParams>,
 ) -> ApiResult<()> {
     api_key_rate_limit_app::delete_rate_limit_scheme(&app_state, deployment_id, slug).await?;
     Ok((StatusCode::NO_CONTENT, ()).into())

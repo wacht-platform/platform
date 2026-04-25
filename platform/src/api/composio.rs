@@ -1,6 +1,6 @@
 use crate::{
     application::composio as composio_app, application::response::ApiResult,
-    middleware::RequireDeployment,
+    middleware::{RequireDeployment, SlugParams},
 };
 use common::state::AppState;
 
@@ -76,27 +76,28 @@ pub async fn enable_composio_app(
 pub async fn disable_composio_app(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(slug): Path<String>,
+    Path(params): Path<SlugParams>,
 ) -> ApiResult<ComposioConfigResponse> {
-    let response = composio_app::disable_app(&app_state, deployment_id, &slug).await?;
+    let response = composio_app::disable_app(&app_state, deployment_id, &params.slug).await?;
     Ok(response.into())
 }
 
 pub async fn get_toolkit_auth_details(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(slug): Path<String>,
+    Path(params): Path<SlugParams>,
 ) -> ApiResult<ComposioToolkitDetailsResponse> {
-    let response = composio_app::get_toolkit_auth_details(&app_state, deployment_id, &slug).await?;
+    let response =
+        composio_app::get_toolkit_auth_details(&app_state, deployment_id, &params.slug).await?;
     Ok(response.into())
 }
 
 pub async fn list_toolkit_auth_configs(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(slug): Path<String>,
+    Path(params): Path<SlugParams>,
 ) -> ApiResult<ComposioAuthConfigListResponse> {
     let response =
-        composio_app::list_toolkit_auth_configs(&app_state, deployment_id, &slug).await?;
+        composio_app::list_toolkit_auth_configs(&app_state, deployment_id, &params.slug).await?;
     Ok(response.into())
 }

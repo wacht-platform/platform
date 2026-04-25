@@ -1,8 +1,55 @@
 use axum::{extract::FromRequestParts, http::request::Parts};
+use serde::Deserialize;
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use super::{deployment_context::DeploymentContext, platform_source::PlatformSource};
 use crate::application::response::ApiErrorResponse;
+
+/// Path-params shapes that pair with `RequireDeployment` on routes nested under
+/// `/deployments/{deployment_id}/...`. `rest` flattens any other captured
+/// segments so axum can deserialize the full set without losing the named one.
+#[derive(Deserialize)]
+pub struct SlugParams {
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
+    pub slug: String,
+}
+
+#[derive(Deserialize)]
+pub struct AppSlugParams {
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
+    pub app_slug: String,
+}
+
+#[derive(Deserialize)]
+pub struct EndpointIdParams {
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
+    pub endpoint_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct DeliveryIdParams {
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
+    pub delivery_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct ProjectIdParams {
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
+    pub project_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct DeploymentIdParams {
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
+    pub deployment_id: i64,
+}
 
 /// Extractor that requires deployment context to be present.
 ///
@@ -29,6 +76,7 @@ where
     type Rejection = ApiErrorResponse;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        println!("we got here");
         parts
             .extensions
             .get::<DeploymentContext>()

@@ -4,12 +4,12 @@ use dto::json::webhook_requests::{WebhookAnalyticsQuery, WebhookTimeseriesQuery}
 use models::webhook_analytics::{WebhookAnalyticsResult, WebhookTimeseriesResult};
 
 use crate::application::{response::ApiResult, webhook_analytics as webhook_analytics_app};
-use crate::middleware::RequireDeployment;
+use crate::middleware::{AppSlugParams, RequireDeployment};
 
 pub async fn get_webhook_analytics(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
     Query(params): Query<WebhookAnalyticsQuery>,
 ) -> ApiResult<WebhookAnalyticsResult> {
     let result =
@@ -22,7 +22,7 @@ pub async fn get_webhook_analytics(
 pub async fn get_webhook_timeseries(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
     Query(params): Query<WebhookTimeseriesQuery>,
 ) -> ApiResult<WebhookTimeseriesResult> {
     let result =

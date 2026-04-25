@@ -6,12 +6,12 @@ use common::state::AppState;
 use dto::json::webhook_requests::{TriggerWebhookEventRequest, TriggerWebhookEventResponse};
 
 use crate::application::{response::ApiResult, webhook_dispatch as webhook_dispatch_app};
-use crate::middleware::RequireDeployment;
+use crate::middleware::{AppSlugParams, RequireDeployment};
 
 pub async fn trigger_webhook_event(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
     Json(request): Json<TriggerWebhookEventRequest>,
 ) -> ApiResult<TriggerWebhookEventResponse> {
     let response =

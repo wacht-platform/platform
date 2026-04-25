@@ -9,12 +9,12 @@ use dto::json::webhook_requests::{
 };
 
 use crate::application::{response::ApiResult, webhook_replay as webhook_replay_app};
-use crate::middleware::RequireDeployment;
+use crate::middleware::{AppSlugParams, RequireDeployment};
 
 pub async fn replay_webhook_delivery(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
     Json(request): Json<ReplayWebhookDeliveryRequest>,
 ) -> ApiResult<ReplayWebhookDeliveryResponse> {
     let response =
@@ -59,7 +59,7 @@ pub async fn cancel_webhook_replay_task(
 pub async fn list_webhook_replay_tasks(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
     Query(params): Query<ReplayTaskListQuery>,
 ) -> ApiResult<ReplayTaskListResponse> {
     let response =

@@ -1,7 +1,7 @@
 use axum::extract::{Json, Path, Query, State};
 
 use crate::application::{api_key_key as api_key_key_app, response::ApiResult};
-use crate::middleware::RequireDeployment;
+use crate::middleware::{AppSlugParams, RequireDeployment};
 use common::state::AppState;
 use dto::json::api_key::*;
 use models::api_key::ApiKeyWithSecret;
@@ -9,7 +9,7 @@ use models::api_key::ApiKeyWithSecret;
 pub async fn list_api_keys(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
     Query(params): Query<ListApiKeysQuery>,
 ) -> ApiResult<ListApiKeysResponse> {
     let keys = api_key_key_app::list_api_keys(&app_state, deployment_id, app_slug, params).await?;
@@ -19,7 +19,7 @@ pub async fn list_api_keys(
 pub async fn create_api_key(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
     Json(request): Json<CreateApiKeyRequest>,
 ) -> ApiResult<ApiKeyWithSecret> {
     let key = api_key_key_app::create_api_key(&app_state, deployment_id, app_slug, request).await?;

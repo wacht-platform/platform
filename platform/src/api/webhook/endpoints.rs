@@ -14,12 +14,12 @@ use crate::application::{
     response::{ApiResult, PaginatedResponse},
     webhook_endpoints as webhook_endpoints_app,
 };
-use crate::middleware::RequireDeployment;
+use crate::middleware::{AppSlugParams, EndpointIdParams, RequireDeployment};
 
 pub async fn list_webhook_endpoints(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
     Query(params): Query<ListWebhookEndpointsQuery>,
 ) -> ApiResult<PaginatedResponse<WebhookEndpointDto>> {
     let endpoints =
@@ -43,7 +43,7 @@ pub async fn create_webhook_endpoint(
 pub async fn create_webhook_endpoint_for_app(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
     Json(mut request): Json<CreateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
     request.app_slug = app_slug;
@@ -58,7 +58,7 @@ pub async fn create_webhook_endpoint_for_app(
 pub async fn update_webhook_endpoint(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(endpoint_id): Path<i64>,
+    Path(EndpointIdParams { endpoint_id, .. }): Path<EndpointIdParams>,
     Json(request): Json<UpdateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
     let endpoint = webhook_endpoints_app::update_webhook_endpoint(
@@ -89,7 +89,7 @@ pub async fn update_webhook_endpoint_for_app(
     update_webhook_endpoint(
         State(app_state),
         RequireDeployment(deployment_id),
-        Path(endpoint_id),
+        Path(EndpointIdParams { endpoint_id, rest: Default::default() }),
         Json(request),
     )
     .await
@@ -98,7 +98,7 @@ pub async fn update_webhook_endpoint_for_app(
 pub async fn delete_webhook_endpoint(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(endpoint_id): Path<i64>,
+    Path(EndpointIdParams { endpoint_id, .. }): Path<EndpointIdParams>,
 ) -> ApiResult<()> {
     webhook_endpoints_app::delete_webhook_endpoint(&app_state, deployment_id, endpoint_id).await?;
 
@@ -122,7 +122,7 @@ pub async fn delete_webhook_endpoint_for_app(
     delete_webhook_endpoint(
         State(app_state),
         RequireDeployment(deployment_id),
-        Path(endpoint_id),
+        Path(EndpointIdParams { endpoint_id, rest: Default::default() }),
     )
     .await
 }
@@ -130,7 +130,7 @@ pub async fn delete_webhook_endpoint_for_app(
 pub async fn reactivate_webhook_endpoint(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(endpoint_id): Path<i64>,
+    Path(EndpointIdParams { endpoint_id, .. }): Path<EndpointIdParams>,
 ) -> ApiResult<ReactivateEndpointResponse> {
     let response =
         webhook_endpoints_app::reactivate_webhook_endpoint(&app_state, deployment_id, endpoint_id)

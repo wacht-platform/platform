@@ -1,14 +1,14 @@
 use axum::extract::{Path, Query, State};
 
 use crate::application::{api_key_audit as api_key_audit_app, response::ApiResult};
-use crate::middleware::RequireDeployment;
+use crate::middleware::{AppSlugParams, RequireDeployment};
 use common::state::AppState;
 use dto::json::api_key::*;
 
 pub async fn get_api_audit_logs(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
     Query(params): Query<ListApiAuditLogsQuery>,
 ) -> ApiResult<ApiAuditLogsResponse> {
     let result =
@@ -19,7 +19,7 @@ pub async fn get_api_audit_logs(
 pub async fn get_api_audit_analytics(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
     Query(params): Query<GetApiAuditAnalyticsQuery>,
 ) -> ApiResult<ApiAuditAnalyticsResponse> {
     let result =
@@ -31,7 +31,7 @@ pub async fn get_api_audit_analytics(
 pub async fn get_api_audit_timeseries(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
     Query(params): Query<GetApiAuditTimeseriesQuery>,
 ) -> ApiResult<ApiAuditTimeseriesResponse> {
     let result =

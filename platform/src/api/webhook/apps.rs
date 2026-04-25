@@ -14,7 +14,7 @@ use crate::application::{
     response::{ApiResult, PaginatedResponse},
     webhook_apps as webhook_apps_app,
 };
-use crate::middleware::RequireDeployment;
+use crate::middleware::{AppSlugParams, RequireDeployment, SlugParams};
 
 pub async fn list_webhook_apps(
     State(app_state): State<AppState>,
@@ -55,7 +55,7 @@ pub async fn create_event_catalog(
 pub async fn get_event_catalog(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(slug): Path<String>,
+    Path(SlugParams { slug, .. }): Path<SlugParams>,
 ) -> ApiResult<models::webhook::WebhookEventCatalog> {
     let catalog = webhook_apps_app::get_event_catalog(&app_state, deployment_id, slug).await?;
     Ok(catalog.into())
@@ -64,7 +64,7 @@ pub async fn get_event_catalog(
 pub async fn update_event_catalog(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(slug): Path<String>,
+    Path(SlugParams { slug, .. }): Path<SlugParams>,
     Json(request): Json<UpdateEventCatalogRequest>,
 ) -> ApiResult<models::webhook::WebhookEventCatalog> {
     let catalog =
@@ -75,7 +75,7 @@ pub async fn update_event_catalog(
 pub async fn append_events_to_catalog(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(slug): Path<String>,
+    Path(SlugParams { slug, .. }): Path<SlugParams>,
     Json(request): Json<AppendEventsToCatalogRequest>,
 ) -> ApiResult<models::webhook::WebhookEventCatalog> {
     let catalog =
@@ -87,7 +87,7 @@ pub async fn append_events_to_catalog(
 pub async fn archive_event_in_catalog(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(slug): Path<String>,
+    Path(SlugParams { slug, .. }): Path<SlugParams>,
     Json(request): Json<ArchiveEventInCatalogRequest>,
 ) -> ApiResult<models::webhook::WebhookEventCatalog> {
     let catalog =
@@ -99,7 +99,7 @@ pub async fn archive_event_in_catalog(
 pub async fn update_webhook_app(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
     Json(request): Json<UpdateWebhookAppRequest>,
 ) -> ApiResult<WebhookApp> {
     let app =
@@ -110,7 +110,7 @@ pub async fn update_webhook_app(
 pub async fn get_webhook_app(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
 ) -> ApiResult<WebhookApp> {
     let app = webhook_apps_app::get_webhook_app(&app_state, deployment_id, app_slug).await?;
     Ok(app.into())
@@ -119,7 +119,7 @@ pub async fn get_webhook_app(
 pub async fn delete_webhook_app(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
 ) -> ApiResult<()> {
     webhook_apps_app::delete_webhook_app(&app_state, deployment_id, app_slug).await?;
     Ok(().into())
@@ -128,7 +128,7 @@ pub async fn delete_webhook_app(
 pub async fn rotate_webhook_secret(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
 ) -> ApiResult<WebhookApp> {
     let app = webhook_apps_app::rotate_webhook_secret(&app_state, deployment_id, app_slug).await?;
     Ok(app.into())
@@ -137,7 +137,7 @@ pub async fn rotate_webhook_secret(
 pub async fn get_webhook_events(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
 ) -> ApiResult<GetAvailableEventsResponse> {
     let events = webhook_apps_app::get_webhook_events(&app_state, deployment_id, app_slug).await?;
     Ok(events.into())
@@ -146,7 +146,7 @@ pub async fn get_webhook_events(
 pub async fn get_webhook_catalog(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(app_slug): Path<String>,
+    Path(AppSlugParams { app_slug, .. }): Path<AppSlugParams>,
 ) -> ApiResult<models::webhook::WebhookEventCatalog> {
     let catalog = webhook_apps_app::get_webhook_catalog(&app_state, deployment_id, app_slug)
         .await
