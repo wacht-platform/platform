@@ -351,7 +351,9 @@ pub async fn disable_app(
     slug: &str,
 ) -> Result<ComposioConfigResponse, AppError> {
     let slug = slug.trim().to_lowercase();
-    let existing = get_composio_config(app_state, deployment_id).await?;
+    let existing = get_composio_config(app_state, deployment_id).await.inspect_err(|e| {
+        tracing::error!(deployment_id, %slug, error = %e, "[CMP_DISABLE] load config failed")
+    })?;
 
     let (mut remaining, removed): (Vec<_>, Vec<_>) = existing
         .enabled_apps
@@ -362,10 +364,14 @@ pub async fn disable_app(
         return Err(AppError::NotFound(format!("{slug} is not enabled")));
     }
 
-    // Best-effort cleanup of the Composio-side auth config.
     if let Ok(api_key) = resolve_composio_api_key(app_state, deployment_id).await {
         for app in &removed {
-            let _ = delete_composio_auth_config(&api_key, &app.auth_config_id).await;
+            if let Err(e) = delete_composio_auth_config(&api_key, &app.auth_config_id).await {
+                tracing::warn!(
+                    deployment_id, %slug, auth_config_id = %app.auth_config_id, error = %e,
+                    "[CMP_DISABLE] composio delete failed (continuing)"
+                );
+            }
         }
     }
 
@@ -381,7 +387,10 @@ pub async fn disable_app(
         },
     )
     .execute_with_deps(&deps)
-    .await?;
+    .await
+    .inspect_err(|e| {
+        tracing::error!(deployment_id, %slug, error = %e, "[CMP_DISABLE] DB update failed")
+    })?;
 
     get_composio_config(app_state, deployment_id).await
 }
@@ -478,7 +487,11 @@ pub async fn get_toolkit_auth_details(
         return Err(AppError::Validation("slug is required".to_string()));
     }
 
-    let api_key = resolve_composio_api_key(app_state, deployment_id).await?;
+    let api_key = resolve_composio_api_key(app_state, deployment_id)
+        .await
+        .inspect_err(|e| {
+            tracing::error!(deployment_id, %slug, error = %e, "[CMP_AUTH_DETAILS] resolve api key failed")
+        })?;
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
@@ -489,7 +502,10 @@ pub async fn get_toolkit_auth_details(
         .header("x-api-key", api_key)
         .send()
         .await
-        .map_err(|e| AppError::Internal(format!("composio toolkit details: {e}")))?;
+        .map_err(|e| {
+            tracing::error!(deployment_id, %slug, error = %e, "[CMP_AUTH_DETAILS] http send failed");
+            AppError::Internal(format!("composio toolkit details: {e}"))
+        })?;
 
     let status = resp.status();
     let text = resp
@@ -497,13 +513,15 @@ pub async fn get_toolkit_auth_details(
         .await
         .map_err(|e| AppError::Internal(format!("composio read body: {e}")))?;
     if !status.is_success() {
+        tracing::error!(deployment_id, %slug, %status, body = %text, "[CMP_AUTH_DETAILS] upstream non-2xx");
         return Err(AppError::Internal(format!(
             "composio returned {status}: {text}"
         )));
     }
 
     let raw: RawToolkitDetails = serde_json::from_str(&text).map_err(|e| {
-        AppError::Internal(format!("composio toolkit details parse: {e}; body: {text}"))
+        tracing::error!(deployment_id, %slug, error = %e, body = %text, "[CMP_AUTH_DETAILS] parse failed");
+        AppError::Internal(format!("composio toolkit details parse: {e}"))
     })?;
 
     Ok(ComposioToolkitDetailsResponse {
