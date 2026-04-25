@@ -103,6 +103,35 @@ fn normalize_openai_tool_schema_node(value: Value) -> Value {
                     continue;
                 }
 
+                if !matches!(
+                    key.as_str(),
+                    "type"
+                        | "format"
+                        | "description"
+                        | "nullable"
+                        | "enum"
+                        | "items"
+                        | "properties"
+                        | "required"
+                        | "additionalProperties"
+                        | "$ref"
+                        | "$defs"
+                        | "minItems"
+                        | "maxItems"
+                        | "minLength"
+                        | "maxLength"
+                        | "pattern"
+                        | "minimum"
+                        | "maximum"
+                        | "multipleOf"
+                        | "anyOf"
+                        | "allOf"
+                        | "oneOf"
+                        | "default"
+                ) {
+                    continue;
+                }
+
                 let value = if key == "type" {
                     match value {
                         Value::String(type_name) => Value::String(
@@ -240,7 +269,31 @@ pub(crate) fn normalize_gemini_function_schema(value: Value) -> Value {
                     normalize_gemini_function_schema(value)
                 };
 
-                if matches!(key.as_str(), "additionalProperties" | "title") {
+                if !matches!(
+                    key.as_str(),
+                    "type"
+                        | "format"
+                        | "description"
+                        | "nullable"
+                        | "enum"
+                        | "items"
+                        | "properties"
+                        | "required"
+                        | "minItems"
+                        | "maxItems"
+                        | "minLength"
+                        | "maxLength"
+                        | "pattern"
+                        | "minimum"
+                        | "maximum"
+                        | "multipleOf"
+                        | "anyOf"
+                        | "allOf"
+                        | "oneOf"
+                        | "example"
+                        | "default"
+                        | "propertyOrdering"
+                ) {
                     continue;
                 }
 

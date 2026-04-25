@@ -390,7 +390,22 @@ impl AgentExecutor {
             .filter(|query| !query.is_empty())
             .take(10)
             .collect::<Vec<_>>();
-        if queries.is_empty() {
+        let apps = params
+            .apps
+            .into_iter()
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
+
+        let mode = match params.mode {
+            dto::json::tool_calls::SearchToolsMode::Search => crate::tools::external::ExternalSearchMode::Keyword,
+            dto::json::tool_calls::SearchToolsMode::Browse => crate::tools::external::ExternalSearchMode::Browse,
+        };
+
+        let is_browse = matches!(mode, crate::tools::external::ExternalSearchMode::Browse);
+        let browse_unscoped = is_browse && apps.is_empty();
+
+        if !is_browse && queries.is_empty() {
             return Ok(json!({
                 "results": [],
                 "recommended_tool_names": [],
@@ -398,9 +413,26 @@ impl AgentExecutor {
             }));
         }
 
-        let max_results_per_query = params.max_results_per_query.unwrap_or(3).clamp(1, 5);
-        self.populate_virtual_tool_cache(&queries, max_results_per_query)
-            .await;
+        let max_results = params
+            .max_results_per_query
+            .unwrap_or(if is_browse { 10 } else { 3 })
+            .clamp(1, if is_browse { 25 } else { 5 });
+        let effective_browse_limit = if browse_unscoped {
+            max_results.min(5)
+        } else {
+            max_results
+        };
+
+        if is_browse {
+            let apps_arg: Option<&[String]> =
+                if apps.is_empty() { None } else { Some(apps.as_slice()) };
+            self.populate_virtual_tool_cache_browse(apps_arg, effective_browse_limit)
+                .await;
+        } else {
+            let apps_filter = if apps.is_empty() { None } else { Some(apps.as_slice()) };
+            self.populate_virtual_tool_cache(&queries, apps_filter, max_results)
+                .await;
+        }
         let external_tools = self.external_tool_catalog();
         if external_tools.is_empty() {
             return Ok(json!({
@@ -408,6 +440,64 @@ impl AgentExecutor {
                 "recommended_tool_names": [],
                 "tool_catalog_size": 0
             }));
+        }
+
+        if is_browse {
+            let matches = external_tools
+                .iter()
+                .map(|tool| {
+                    let input_schema = match &tool.configuration {
+                        AiToolConfiguration::Virtual(config) => config
+                            .input_schema
+                            .clone()
+                            .unwrap_or_else(|| json!({"type": "object", "properties": {}})),
+                        AiToolConfiguration::Mcp(config) => config
+                            .input_schema
+                            .clone()
+                            .unwrap_or_else(|| json!({"type": "object", "properties": {}})),
+                        _ => SchemaField::object_json_schema(&Self::tool_input_schema_for_search(tool)),
+                    };
+                    json!({
+                        "tool_name": tool.name,
+                        "description": tool.description,
+                        "input_schema": input_schema,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let recommended = external_tools
+                .iter()
+                .map(|tool| tool.name.clone())
+                .collect::<Vec<_>>();
+            let apps_searched: Vec<String> = if apps.is_empty() {
+                external_tools
+                    .iter()
+                    .filter_map(|tool| match &tool.configuration {
+                        AiToolConfiguration::Virtual(cfg) => Some(cfg.toolkit_slug.clone()),
+                        _ => None,
+                    })
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect()
+            } else {
+                apps.clone()
+            };
+            let mut response = json!({
+                "results": [{ "apps": apps_searched, "matches": matches }],
+                "recommended_tool_names": recommended,
+                "tool_catalog_size": external_tools.len(),
+            });
+            if browse_unscoped {
+                if let Some(obj) = response.as_object_mut() {
+                    obj.insert(
+                        "hint".to_string(),
+                        json!(format!(
+                            "browse was called without `apps`; auto-expanded across all connected apps with a reduced per-app cap of {}. For deeper coverage of a specific service, re-call with `apps: [\"<slug>\"]`.",
+                            effective_browse_limit
+                        )),
+                    );
+                }
+            }
+            return Ok(response);
         }
 
         let tool_names = external_tools
@@ -473,7 +563,7 @@ impl AgentExecutor {
             r#"Find the best external tool matches for the given queries.
 Use only exact tool names from the provided catalog.
 Consider the chat history and current user request as context.
-Return at most {max_results_per_query} matches per query.
+Return at most {} matches per query.
 
 Current user request:
 {}
@@ -483,6 +573,7 @@ Queries:
 
 External tool catalog with descriptions and input schemas:
 {}"#,
+            max_results,
             self.user_request,
             serde_json::to_string_pretty(&queries).unwrap_or_else(|_| "[]".to_string()),
             serde_json::to_string_pretty(&tool_catalog).unwrap_or_else(|_| "[]".to_string())
@@ -644,6 +735,7 @@ External tool catalog with descriptions and input schemas:
     async fn populate_virtual_tool_cache(
         &mut self,
         queries: &[String],
+        apps: Option<&[String]>,
         per_query_limit: usize,
     ) {
         let deployment_id = self.ctx.agent.deployment_id;
@@ -656,13 +748,56 @@ External tool catalog with descriptions and input schemas:
             let state = &self.ctx.app_state;
             let query = query.clone();
             async move {
-                search_external_tools(state, deployment_id, actor_id, &query, per_query_limit)
-                    .await
-                    .unwrap_or_default()
+                search_external_tools(
+                    state,
+                    deployment_id,
+                    actor_id,
+                    crate::tools::external::ExternalSearchOptions {
+                        mode: crate::tools::external::ExternalSearchMode::Keyword,
+                        query: Some(query.as_str()),
+                        apps,
+                        limit: per_query_limit,
+                    },
+                )
+                .await
+                .unwrap_or_default()
             }
         });
         let batches = futures::future::join_all(futures).await;
+        self.merge_search_batches(batches);
+    }
 
+    async fn populate_virtual_tool_cache_browse(
+        &mut self,
+        apps: Option<&[String]>,
+        limit: usize,
+    ) {
+        let deployment_id = self.ctx.agent.deployment_id;
+        let actor_id = match self.ctx.get_thread().await {
+            Ok(thread) => thread.actor_id,
+            Err(_) => return,
+        };
+
+        let candidates = search_external_tools(
+            &self.ctx.app_state,
+            deployment_id,
+            actor_id,
+            crate::tools::external::ExternalSearchOptions {
+                mode: crate::tools::external::ExternalSearchMode::Browse,
+                query: None,
+                apps,
+                limit,
+            },
+        )
+        .await
+        .unwrap_or_default();
+        self.merge_search_batches(vec![candidates]);
+    }
+
+    fn merge_search_batches(
+        &mut self,
+        batches: Vec<Vec<crate::tools::external::ExternalToolCandidate>>,
+    ) {
         for batch in batches {
             for candidate in batch {
                 let id = synthetic_tool_id(

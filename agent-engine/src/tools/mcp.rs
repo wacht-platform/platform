@@ -170,16 +170,15 @@ pub async fn refresh_connection_metadata(
     Some(new_meta)
 }
 
-async fn resolve_auth_header(
+async fn resolve_bearer_token(
     server_config: &McpServerConfig,
     connection_metadata: Option<&McpConnectionMetadata>,
 ) -> Option<String> {
     if let Some(meta) = connection_metadata {
-        let token_type = meta.token_type.as_deref().unwrap_or("Bearer");
-        return Some(format!("{} {}", token_type, meta.access_token));
+        return Some(meta.access_token.clone());
     }
     match server_config.auth.as_ref()? {
-        McpAuthConfig::Token { auth_token } => Some(format!("Bearer {}", auth_token)),
+        McpAuthConfig::Token { auth_token } => Some(auth_token.clone()),
         McpAuthConfig::OAuthClientCredentials {
             client_id,
             client_secret,
@@ -187,9 +186,7 @@ async fn resolve_auth_header(
             scopes,
         } => {
             let url = token_url.as_deref()?;
-            let token =
-                fetch_client_credentials_token(client_id, client_secret, url, scopes).await?;
-            Some(format!("Bearer {}", token))
+            fetch_client_credentials_token(client_id, client_secret, url, scopes).await
         }
         _ => None,
     }
@@ -201,8 +198,8 @@ async fn build_transport(
 ) -> StreamableHttpClientTransport<reqwest::Client> {
     let mut config = StreamableHttpClientTransportConfig::with_uri(server_config.endpoint.clone());
 
-    if let Some(auth_header) = resolve_auth_header(server_config, connection_metadata).await {
-        config = config.auth_header(auth_header);
+    if let Some(token) = resolve_bearer_token(server_config, connection_metadata).await {
+        config = config.auth_header(token);
     }
 
     let client = if let Some(headers) = &server_config.headers {

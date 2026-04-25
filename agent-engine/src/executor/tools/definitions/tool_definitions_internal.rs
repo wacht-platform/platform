@@ -380,24 +380,39 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "search_tools",
-            "Search the full external tool catalog by one or more natural-language descriptions. Returns the best matching tool names plus their input schemas and usage guidance.",
+            "Discover external tools across connected apps. Two modes: \"search\" (default) ranks tools by your natural-language `queries`; \"browse\" lists featured tools for specific `apps` when you know the service but not the keyword. Returns matching tool names plus input schemas. Use \"browse\" if a keyword search comes back empty or you just want the headline capabilities of a service.",
             InternalToolType::SearchTools,
             vec![
                 SchemaField {
                     name: "queries".to_string(),
                     field_type: "ARRAY".to_string(),
-                    description: Some("One or more natural-language descriptions of the tools you need.".to_string()),
-                    required: true,
+                    description: Some("Natural-language descriptions of the tools you need (e.g. \"send an email\", \"create a calendar event\"). Required for mode=search; ignored for mode=browse.".to_string()),
+                    required: false,
                     items_type: Some("STRING".to_string()),
-                    min_items: Some(1),
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "apps".to_string(),
+                    field_type: "ARRAY".to_string(),
+                    description: Some("Optional list of app slugs to restrict the search to (e.g. [\"gmail\"], [\"google_calendar\", \"google_drive\"]). When omitted, searches across all connected apps. Strongly recommended for mode=browse — without it, the call auto-expands across every connected app with a reduced per-app cap, which dilutes results.".to_string()),
+                    required: false,
+                    items_type: Some("STRING".to_string()),
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "mode".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("\"search\" (default): keyword-rank tools by `queries`. \"browse\": list featured tools for the specified `apps` without needing keywords.".to_string()),
+                    required: false,
+                    enum_values: string_enum(&["search", "browse"]),
                     ..Default::default()
                 },
                 SchemaField {
                     name: "max_results_per_query".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Optional max number of matches to return for each query (default 3, max 5).".to_string()),
+                    description: Some("Max matches per query (default 3, max 5 in search mode; up to 25 in browse mode).".to_string()),
                     minimum: Some(1.0),
-                    maximum: Some(5.0),
+                    maximum: Some(25.0),
                     required: false,
                     ..Default::default()
                 },

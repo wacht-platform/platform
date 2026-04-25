@@ -181,6 +181,8 @@ pub struct AgentLoopPromptEnvelope {
     pub discoverable_external_tool_names: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub loaded_external_tool_names: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub connected_external_integrations: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_system_instructions: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

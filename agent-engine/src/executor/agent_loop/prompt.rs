@@ -43,6 +43,7 @@ struct ToolPromptContext {
     available_sub_agents: Vec<dto::json::SubAgentPromptInfo>,
     discoverable_external_tool_names: Vec<String>,
     loaded_external_tool_names: Vec<String>,
+    connected_external_integrations: Vec<String>,
 }
 
 impl AgentExecutor {
@@ -161,6 +162,7 @@ impl AgentExecutor {
             current_request_entry: conversation_context.current_request_entry,
             discoverable_external_tool_names: tool_context.discoverable_external_tool_names,
             loaded_external_tool_names: tool_context.loaded_external_tool_names,
+            connected_external_integrations: tool_context.connected_external_integrations,
             custom_system_instructions: self
                 .system_instructions
                 .as_deref()
@@ -377,6 +379,8 @@ impl AgentExecutor {
         let (system_skill_prompt_items, agent_skill_prompt_items) =
             self.filesystem.list_skill_prompt_items().await?;
 
+        let connected_external_integrations = self.load_connected_external_integrations().await;
+
         Ok(ToolPromptContext {
             available_sub_agents: if is_coordinator_thread {
                 self.load_available_sub_agents().await
@@ -389,7 +393,38 @@ impl AgentExecutor {
             agent_skill_prompt_items,
             discoverable_external_tool_names,
             loaded_external_tool_names,
+            connected_external_integrations,
         })
+    }
+
+    async fn load_connected_external_integrations(&self) -> Vec<String> {
+        use queries::composio::{GetActiveComposioSlugsForActorQuery, GetComposioSettingsQuery};
+        let deployment_id = self.ctx.agent.deployment_id;
+        let Ok(thread) = self.ctx.get_thread().await else {
+            return Vec::new();
+        };
+        let actor_id = thread.actor_id;
+
+        let Ok(Some(settings)) = GetComposioSettingsQuery::new(deployment_id)
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await
+        else {
+            return Vec::new();
+        };
+        if !settings.enabled {
+            return Vec::new();
+        }
+        let enabled_apps: Vec<models::ComposioEnabledApp> =
+            serde_json::from_value(settings.enabled_apps).unwrap_or_default();
+        let candidate_slugs: Vec<String> = enabled_apps.into_iter().map(|a| a.slug).collect();
+        if candidate_slugs.is_empty() {
+            return Vec::new();
+        }
+
+        GetActiveComposioSlugsForActorQuery::new(deployment_id, actor_id, candidate_slugs)
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await
+            .unwrap_or_default()
     }
 
     async fn load_available_sub_agents(&self) -> Vec<dto::json::SubAgentPromptInfo> {

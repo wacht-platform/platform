@@ -5,8 +5,8 @@ use crate::{
 use common::state::AppState;
 
 use models::{
-    ComposioAuthConfigListResponse, ComposioConfigResponse, ComposioToolkitListResponse,
-    EnableComposioAppRequest, UpdateComposioConfigRequest,
+    ComposioAuthConfigListResponse, ComposioConfigResponse, ComposioToolkitDetailsResponse,
+    ComposioToolkitListResponse, EnableComposioAppRequest, UpdateComposioConfigRequest,
 };
 
 use axum::{
@@ -79,6 +79,15 @@ pub async fn disable_composio_app(
     Path(slug): Path<String>,
 ) -> ApiResult<ComposioConfigResponse> {
     let response = composio_app::disable_app(&app_state, deployment_id, &slug).await?;
+    Ok(response.into())
+}
+
+pub async fn get_toolkit_auth_details(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(slug): Path<String>,
+) -> ApiResult<ComposioToolkitDetailsResponse> {
+    let response = composio_app::get_toolkit_auth_details(&app_state, deployment_id, &slug).await?;
     Ok(response.into())
 }
 

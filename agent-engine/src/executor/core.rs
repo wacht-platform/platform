@@ -398,6 +398,9 @@ impl AgentExecutor {
         state: ThreadExecutionState,
     ) -> Result<(), AppError> {
         self.loaded_external_tool_ids = state.loaded_external_tool_ids;
+        for tool in state.virtual_tool_cache_snapshot {
+            self.virtual_tool_cache.insert(tool.id, tool);
+        }
         self.project_task_board_items.clear();
         self.task_journal_start_hash = state.task_journal_start_hash;
         self.conversation_compaction_state = state.conversation_compaction_state;

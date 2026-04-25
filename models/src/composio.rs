@@ -8,6 +8,8 @@ pub struct ComposioEnabledApp {
     pub display_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logo_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_scheme: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,16 +96,63 @@ pub struct ComposioAuthConfigListResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ComposioEnableAppAuth {
-    Managed,
+    Managed {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        auth_scheme: Option<String>,
+        #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+        credentials: serde_json::Map<String, serde_json::Value>,
+    },
     Custom {
-        client_id: String,
-        client_secret: String,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        scopes: Vec<String>,
+        auth_scheme: String,
+        #[serde(default)]
+        credentials: serde_json::Map<String, serde_json::Value>,
     },
     UseExisting {
         auth_config_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        auth_scheme: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComposioToolkitAuthField {
+    pub name: String,
+    pub display_name: String,
+    #[serde(rename = "type")]
+    pub field_type: String,
+    pub description: String,
+    pub required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ComposioToolkitAuthFields {
+    #[serde(default)]
+    pub required: Vec<ComposioToolkitAuthField>,
+    #[serde(default)]
+    pub optional: Vec<ComposioToolkitAuthField>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComposioToolkitAuthMode {
+    pub mode: String,
+    pub name: String,
+    pub auth_config_creation: ComposioToolkitAuthFields,
+    pub connected_account_initiation: ComposioToolkitAuthFields,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_hint_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComposioToolkitDetailsResponse {
+    pub slug: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo: Option<String>,
+    #[serde(default)]
+    pub composio_managed_auth_schemes: Vec<String>,
+    pub auth_modes: Vec<ComposioToolkitAuthMode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

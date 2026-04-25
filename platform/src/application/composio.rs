@@ -4,8 +4,9 @@ use common::deps;
 use common::error::AppError;
 use models::{
     ComposioAuthConfigListResponse, ComposioAuthConfigSummary, ComposioConfigResponse,
-    ComposioEnableAppAuth, ComposioEnabledApp, ComposioToolkit, ComposioToolkitListResponse,
-    EnableComposioAppRequest, UpdateComposioConfigRequest,
+    ComposioEnableAppAuth, ComposioEnabledApp, ComposioToolkit, ComposioToolkitAuthField,
+    ComposioToolkitAuthFields, ComposioToolkitAuthMode, ComposioToolkitDetailsResponse,
+    ComposioToolkitListResponse, EnableComposioAppRequest, UpdateComposioConfigRequest,
 };
 use queries::composio::GetComposioSettingsQuery;
 use serde::{Deserialize, Serialize};
@@ -296,17 +297,22 @@ pub async fn enable_app(
     }
 
     let api_key = resolve_composio_api_key(app_state, deployment_id).await?;
-    let auth_config_id = match &request.auth {
-        ComposioEnableAppAuth::UseExisting { auth_config_id } => auth_config_id.trim().to_string(),
-        _ => {
-            create_composio_auth_config(
-                &api_key,
-                deployment_id,
-                &slug,
-                &request.auth,
-            )
-            .await?
-        }
+    let (auth_config_id, auth_scheme) = match &request.auth {
+        ComposioEnableAppAuth::UseExisting {
+            auth_config_id,
+            auth_scheme,
+        } => (
+            auth_config_id.trim().to_string(),
+            auth_scheme.as_ref().map(|s| s.to_uppercase()),
+        ),
+        ComposioEnableAppAuth::Custom { auth_scheme, .. } => (
+            create_composio_auth_config(&api_key, deployment_id, &slug, &request.auth).await?,
+            Some(auth_scheme.to_uppercase()),
+        ),
+        ComposioEnableAppAuth::Managed { auth_scheme, .. } => (
+            create_composio_auth_config(&api_key, deployment_id, &slug, &request.auth).await?,
+            auth_scheme.as_ref().map(|s| s.to_uppercase()),
+        ),
     };
 
     let mut apps = existing.enabled_apps;
@@ -315,6 +321,7 @@ pub async fn enable_app(
         auth_config_id,
         display_name: request.display_name,
         logo_url: request.logo_url,
+        auth_scheme,
     });
 
     let deps = deps::from_app(app_state).db().enc();
@@ -387,28 +394,31 @@ async fn create_composio_auth_config(
 
     let name = wacht_auth_config_name(deployment_id, slug);
     let body = match auth {
-        ComposioEnableAppAuth::Managed => json!({
-            "toolkit": { "slug": slug },
-            "auth_config": {
-                "type": "use_composio_managed_auth",
-                "name": name,
-            },
-        }),
+        ComposioEnableAppAuth::Managed { credentials, .. } => {
+            let mut auth_config = serde_json::Map::new();
+            auth_config.insert("type".to_string(), json!("use_composio_managed_auth"));
+            auth_config.insert("name".to_string(), json!(name));
+            if !credentials.is_empty() {
+                auth_config.insert(
+                    "credentials".to_string(),
+                    serde_json::Value::Object(credentials.clone()),
+                );
+            }
+            json!({
+                "toolkit": { "slug": slug },
+                "auth_config": auth_config,
+            })
+        }
         ComposioEnableAppAuth::Custom {
-            client_id,
-            client_secret,
-            scopes,
+            auth_scheme,
+            credentials,
         } => json!({
             "toolkit": { "slug": slug },
             "auth_config": {
                 "type": "use_custom_auth",
-                "auth_scheme": "OAUTH2",
+                "authScheme": auth_scheme.to_uppercase(),
                 "name": name,
-                "credentials": {
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "scopes": scopes,
-                },
+                "credentials": credentials,
             },
         }),
         ComposioEnableAppAuth::UseExisting { .. } => {
@@ -451,6 +461,155 @@ async fn create_composio_auth_config(
                 "composio did not return an auth_config id: {text}"
             ))
         })
+}
+
+pub async fn get_toolkit_auth_details(
+    app_state: &AppState,
+    deployment_id: i64,
+    slug: &str,
+) -> Result<ComposioToolkitDetailsResponse, AppError> {
+    let slug = slug.trim().to_lowercase();
+    if slug.is_empty() {
+        return Err(AppError::Validation("slug is required".to_string()));
+    }
+
+    let api_key = resolve_composio_api_key(app_state, deployment_id).await?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| AppError::Internal(format!("composio client: {e}")))?;
+
+    let resp = client
+        .get(format!("{COMPOSIO_API_BASE}/api/v3/toolkits/{slug}"))
+        .header("x-api-key", api_key)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("composio toolkit details: {e}")))?;
+
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| AppError::Internal(format!("composio read body: {e}")))?;
+    if !status.is_success() {
+        return Err(AppError::Internal(format!(
+            "composio returned {status}: {text}"
+        )));
+    }
+
+    let raw: RawToolkitDetails = serde_json::from_str(&text).map_err(|e| {
+        AppError::Internal(format!("composio toolkit details parse: {e}; body: {text}"))
+    })?;
+
+    Ok(ComposioToolkitDetailsResponse {
+        slug: raw.slug,
+        name: raw.name.unwrap_or_else(|| slug.clone()),
+        logo: raw.meta.as_ref().and_then(|m| m.logo.clone()).or(raw.logo),
+        composio_managed_auth_schemes: raw.composio_managed_auth_schemes,
+        auth_modes: raw
+            .auth_config_details
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct RawToolkitDetails {
+    slug: String,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    logo: Option<String>,
+    #[serde(default)]
+    meta: Option<RawToolkitMeta>,
+    #[serde(default)]
+    composio_managed_auth_schemes: Vec<String>,
+    #[serde(default)]
+    auth_config_details: Vec<RawAuthConfigDetail>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawAuthConfigDetail {
+    mode: String,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    fields: Option<RawAuthConfigFields>,
+    #[serde(default)]
+    auth_hint_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawAuthConfigFields {
+    #[serde(default)]
+    auth_config_creation: Option<RawAuthFieldGroup>,
+    #[serde(default)]
+    connected_account_initiation: Option<RawAuthFieldGroup>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawAuthFieldGroup {
+    #[serde(default)]
+    required: Vec<RawAuthField>,
+    #[serde(default)]
+    optional: Vec<RawAuthField>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawAuthField {
+    name: String,
+    #[serde(rename = "displayName")]
+    display_name: String,
+    #[serde(rename = "type")]
+    field_type: String,
+    description: String,
+    required: bool,
+    #[serde(default)]
+    default: Option<String>,
+}
+
+impl From<RawAuthField> for ComposioToolkitAuthField {
+    fn from(raw: RawAuthField) -> Self {
+        Self {
+            name: raw.name,
+            display_name: raw.display_name,
+            field_type: raw.field_type,
+            description: raw.description,
+            required: raw.required,
+            default: raw.default,
+        }
+    }
+}
+
+impl From<RawAuthFieldGroup> for ComposioToolkitAuthFields {
+    fn from(raw: RawAuthFieldGroup) -> Self {
+        Self {
+            required: raw.required.into_iter().map(Into::into).collect(),
+            optional: raw.optional.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<RawAuthConfigDetail> for ComposioToolkitAuthMode {
+    fn from(raw: RawAuthConfigDetail) -> Self {
+        let (auth_config_creation, connected_account_initiation) = match raw.fields {
+            Some(f) => (
+                f.auth_config_creation.map(Into::into).unwrap_or_default(),
+                f.connected_account_initiation
+                    .map(Into::into)
+                    .unwrap_or_default(),
+            ),
+            None => Default::default(),
+        };
+        Self {
+            name: raw.name.unwrap_or_else(|| raw.mode.clone()),
+            mode: raw.mode,
+            auth_config_creation,
+            connected_account_initiation,
+            auth_hint_url: raw.auth_hint_url,
+        }
+    }
 }
 
 async fn delete_composio_auth_config(api_key: &str, auth_config_id: &str) -> Result<(), AppError> {

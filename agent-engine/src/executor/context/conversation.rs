@@ -2,10 +2,8 @@ use super::core::AgentExecutor;
 use crate::executor::runtime::step_control::{
     DATABASE_ERROR_RETRY_STEP, LLM_REQUEST_FAILED_STEP, RETRYABLE_EXECUTION_ERROR_STEP,
 };
-use crate::llm::{
-    SemanticLlmContentBlock, SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest,
-};
-use templatekit::{AgentTemplates, render_prompt_text, render_template_json};
+use crate::llm::{SemanticLlmContentBlock, SemanticLlmMessage, SemanticLlmRequest};
+use templatekit::render_prompt_text;
 
 use commands::{CreateConversationCommand, DispatchConversationCleanupTaskCommand};
 use common::error::AppError;
@@ -680,8 +678,6 @@ impl AgentExecutor {
             "user_request": user_request,
             "execution_messages": execution_messages,
         });
-        let config: SemanticLlmPromptConfig =
-            render_template_json(AgentTemplates::EXECUTION_SUMMARY, &template_context)?;
         let system_prompt = render_prompt_text("execution_summary_system", &template_context)?;
         let messages = execution_messages
             .iter()
@@ -693,34 +689,32 @@ impl AgentExecutor {
             .chain(std::iter::once(SemanticLlmMessage::text(
                 "user",
                 format!(
-                    r#"Analyze this archival execution window.
+                    r#"Compact this archival execution window into the Thought / Acted / Learnt / Open log described in the system prompt.
 Historical anchor: {}
 
-Return a compact historical script map.
-Preserve important user corrections, changed priorities, stop/continue instructions, exact failures, durable constraints, and verified file/path details.
-Do not turn unfinished or speculative work into active instructions for the future.
-Use OPEN only for a real blocker, required user input/approval/data, or genuinely incomplete work at the end of this compacted window.
-Do not use OPEN for speculative next steps, stale unfinished ideas, or optional future improvements.
-If later user turns superseded earlier goals, make that clear in the summary."#,
+Preserve payload content from tool calls (email bodies, drafted text, file contents, fetched records, query results), user corrections verbatim, exact errors, and IDs.
+Use OPEN only for genuine blockers or incomplete work at the end of the window.
+Output plain text only — no JSON, no code fences, no surrounding prose."#,
                     user_request
                 ),
             )))
             .collect::<Vec<_>>();
-        let request = SemanticLlmRequest::from_config(system_prompt, messages, config);
+        let request = SemanticLlmRequest {
+            system_prompt,
+            messages,
+            response_json_schema: serde_json::Value::Null,
+            temperature: None,
+            max_output_tokens: Some(4096),
+            reasoning_effort: None,
+        };
 
-        let summary_response = self
+        let agent_execution = self
             .create_weak_llm()
             .await?
-            .generate_structured_from_prompt::<serde_json::Value>(request, None)
+            .generate_text_from_prompt(request)
             .await
-            .map(|output| output.value)
+            .map(|output| output.text)
             .map_err(|e| AppError::Internal(format!("Summary generation failed: {e}")))?;
-
-        let agent_execution = summary_response
-            .get("agent_execution")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Completed the requested task")
-            .to_string();
 
         let summary_record = self
             .create_conversation(
@@ -745,14 +739,14 @@ If later user turns superseded earlier goals, make that clear in the summary."#,
     fn compact_execution_message(&self, message: &ConversationRecord) -> String {
         match &message.content {
             ConversationContent::UserMessage { message, .. } => {
-                format!("USER {}", truncate_for_summary(message, 240))
+                format!("USER {}", message)
             }
             ConversationContent::Steer { message, .. } => {
-                format!("STEER {}", truncate_for_summary(message, 220))
+                format!("STEER {}", message)
             }
             ConversationContent::ApprovalRequest { description, tools } => format!(
                 "APPROVAL_REQUEST description={} tools={}",
-                truncate_for_summary(description, 180),
+                description,
                 tools
                     .iter()
                     .map(|tool| tool.tool_name.as_str())
@@ -774,9 +768,7 @@ If later user turns superseded earlier goals, make that clear in the summary."#,
                 ..
             } => format!(
                 "DECISION step={} confidence={:.2} reasoning={}",
-                step,
-                confidence,
-                truncate_for_summary(reasoning, 220)
+                step, confidence, reasoning
             ),
             ConversationContent::ToolResult {
                 tool_name,
@@ -785,22 +777,19 @@ If later user turns superseded earlier goals, make that clear in the summary."#,
                 output,
                 error,
             } => format!(
-                "TOOL_RESULT tool={} status={} input={} preview={} error={}",
+                "TOOL_RESULT tool={} status={}\n  input={}\n  output={}\n  error={}",
                 tool_name,
                 status,
-                truncate_for_summary(&compact_json_preview(input, 180), 180),
-                truncate_for_summary(
-                    &output
-                        .as_ref()
-                        .map(|value| compact_json_preview(value, 180))
-                        .unwrap_or_else(|| "no_output".to_string()),
-                    180
-                ),
-                truncate_for_summary(error.as_deref().unwrap_or(""), 120)
+                compact_json_preview(input, 4000),
+                output
+                    .as_ref()
+                    .map(|value| compact_json_preview(value, 8000))
+                    .unwrap_or_else(|| "no_output".to_string()),
+                error.as_deref().unwrap_or("")
             ),
             ConversationContent::ExecutionSummary {
                 agent_execution, ..
-            } => format!("SUMMARY {}", truncate_for_summary(agent_execution, 320)),
+            } => format!("SUMMARY {}", agent_execution),
             ConversationContent::AssignmentEvent {
                 kind,
                 assignment_id,
@@ -812,7 +801,7 @@ If later user turns superseded earlier goals, make that clear in the summary."#,
                 assignment_id
                     .map(|id| id.to_string())
                     .unwrap_or_else(|| "-".to_string()),
-                truncate_for_summary(summary.as_deref().unwrap_or(""), 180)
+                summary.as_deref().unwrap_or("")
             ),
         }
     }

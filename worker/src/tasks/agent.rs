@@ -572,9 +572,35 @@ pub async fn process_agent_execution(
     task_id: &str,
     request: AgentExecutionRequest,
 ) -> Result<String, AgentExecutionError> {
-    match prepare_agent_execution(app_state, task_id, request).await? {
-        PreparedAgentExecutionOutcome::Noop(message) => Ok(message),
-        PreparedAgentExecutionOutcome::Ready(execution) => execution.execute().await,
+    tracing::info!(
+        task_id,
+        thread_id = %request.thread_id,
+        deployment_id = %request.deployment_id,
+        "agent task: received"
+    );
+    match prepare_agent_execution(app_state, task_id, request).await {
+        Ok(PreparedAgentExecutionOutcome::Noop(message)) => {
+            tracing::info!(task_id, %message, "agent task: noop");
+            Ok(message)
+        }
+        Ok(PreparedAgentExecutionOutcome::Ready(execution)) => {
+            let thread_id = execution.thread_id;
+            tracing::info!(task_id, thread_id, "agent task: prepared, executing");
+            let started = std::time::Instant::now();
+            let result = execution.execute().await;
+            tracing::info!(
+                task_id,
+                thread_id,
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                ok = result.is_ok(),
+                "agent task: execution finished"
+            );
+            result
+        }
+        Err(e) => {
+            tracing::warn!(task_id, "agent task: prepare failed: {}", e);
+            Err(e)
+        }
     }
 }
 
@@ -652,6 +678,12 @@ pub async fn prepare_agent_execution(
                     e
                 ))
             })?;
+        tracing::info!(
+            thread_id = execution_envelope.thread_id,
+            deployment_id = execution_envelope.deployment_id,
+            token_len = token.len(),
+            "agent task: advanced execution token"
+        );
         execution_envelope.execution_token = token;
     }
 
@@ -806,6 +838,7 @@ struct DeploymentExecutionGuard {
 
 impl Drop for DeploymentExecutionGuard {
     fn drop(&mut self) {
+        tracing::info!(key = %self.key, "agent task: releasing execution slot");
         if let Some(stop_tx) = self.heartbeat_stop.take() {
             let _ = stop_tx.send(());
         }

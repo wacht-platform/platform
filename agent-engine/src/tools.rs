@@ -1,7 +1,7 @@
 mod code_runner;
 pub mod external;
-pub mod mcp;
 mod internal;
+pub mod mcp;
 mod platform;
 mod result_shape;
 
@@ -212,22 +212,9 @@ impl ToolExecutor {
             } else if let Some(error) = scratch_write_error.as_ref() {
                 obj.insert("persistence_error".to_string(), serde_json::json!(error));
             }
-            obj.insert(
-                "output_notice".to_string(),
-                serde_json::json!(if scratch_saved {
-                    "Output is shown inline once and saved as an execution-scoped temp file."
-                } else {
-                    "Output is shown inline, but the execution-scoped temp file could not be persisted."
-                }),
-            );
         } else {
             let mut payload = serde_json::json!({
                 "result": final_result,
-                "output_notice": if scratch_saved {
-                    "Output is shown inline once and saved as an execution-scoped temp file."
-                } else {
-                    "Output is shown inline, but the execution-scoped temp file could not be persisted."
-                }
             });
             if let Some(obj) = payload.as_object_mut() {
                 if scratch_saved {

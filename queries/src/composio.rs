@@ -1,9 +1,6 @@
 use common::error::AppError;
 use models::ComposioSettingsRow;
 
-/// Fetch the subset of `candidate_slugs` this actor has actively connected
-/// via Composio. Used at runtime to filter virtual tool search results to
-/// apps the user can actually invoke.
 pub struct GetActiveComposioSlugsForActorQuery {
     deployment_id: i64,
     actor_id: i64,

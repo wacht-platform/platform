@@ -8,12 +8,6 @@ pub fn register_all_templates(hb: &mut Handlebars) {
     .expect("Failed to register agent_loop_live_context template");
 
     hb.register_template_string(
-        "execution_summary_prompt",
-        include_str!("templates/execution_summary_prompt.hbs"),
-    )
-    .expect("Failed to register execution_summary_prompt template");
-
-    hb.register_template_string(
         "worker_task_routing_context",
         include_str!("templates/worker_task_routing_context.hbs"),
     )

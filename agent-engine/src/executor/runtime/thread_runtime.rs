@@ -198,8 +198,26 @@ impl AgentExecutor {
         &self,
         pending_approval_request: Option<ToolApprovalRequestState>,
     ) -> ThreadExecutionState {
+        const MAX_CACHED_VIRTUAL_TOOLS: usize = 200;
+        let loaded_set: std::collections::HashSet<i64> =
+            self.loaded_external_tool_ids.iter().copied().collect();
+        let mut virtual_tool_cache_snapshot: Vec<models::AiTool> = self
+            .loaded_external_tool_ids
+            .iter()
+            .filter_map(|id| self.virtual_tool_cache.get(id).cloned())
+            .collect();
+        for (id, tool) in &self.virtual_tool_cache {
+            if loaded_set.contains(id) {
+                continue;
+            }
+            if virtual_tool_cache_snapshot.len() >= MAX_CACHED_VIRTUAL_TOOLS {
+                break;
+            }
+            virtual_tool_cache_snapshot.push(tool.clone());
+        }
         ThreadExecutionState {
             loaded_external_tool_ids: self.loaded_external_tool_ids.clone(),
+            virtual_tool_cache_snapshot,
             pending_approval_request,
             assignment_outcome_override: None,
             task_journal_start_hash: self.task_journal_start_hash.clone(),

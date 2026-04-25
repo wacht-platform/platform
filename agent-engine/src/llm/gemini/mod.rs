@@ -215,6 +215,29 @@ impl GeminiClient {
         })
     }
 
+    pub async fn generate_text(
+        &self,
+        request_body: String,
+    ) -> Result<crate::llm::TextGenerationOutput, AppError> {
+        let url = format!("{}/{}:generateContent", GEMINI_API_BASE_URL, self.model);
+        let parsed = self
+            .execute_generate_content_request(&url, &request_body)
+            .await?;
+        let text = Self::response_text(&parsed);
+        if text.is_empty() {
+            return Err(AppError::Internal(
+                "No response content from Gemini API".to_string(),
+            ));
+        }
+        if let Some(usage) = parsed.usage_metadata.as_ref() {
+            self.track_token_usage(usage, &parsed).await;
+        }
+        Ok(crate::llm::TextGenerationOutput {
+            text,
+            usage_metadata: parsed.usage_metadata,
+        })
+    }
+
     pub async fn generate_tool_calls(
         &self,
         prompt: SemanticLlmRequest,

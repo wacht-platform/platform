@@ -10,9 +10,22 @@ fn default_true() -> bool {
     true
 }
 
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchToolsMode {
+    #[default]
+    Search,
+    Browse,
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct SearchToolsParams {
+    #[serde(default)]
     pub queries: Vec<String>,
+    #[serde(default)]
+    pub apps: Vec<String>,
+    #[serde(default)]
+    pub mode: SearchToolsMode,
     #[serde(default)]
     pub max_results_per_query: Option<usize>,
 }

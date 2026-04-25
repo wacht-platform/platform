@@ -198,6 +198,32 @@ impl OpenRouterClient {
         })
     }
 
+    pub async fn generate_text_from_prompt(
+        &self,
+        prompt: SemanticLlmRequest,
+    ) -> Result<crate::llm::TextGenerationOutput, AppError> {
+        let request_body = self.build_text_request_body(prompt)?;
+        let parsed = self.execute_request(request_body).await?;
+
+        let generated_text = parsed
+            .choices
+            .first()
+            .and_then(|choice| choice.message.content.as_ref())
+            .map(Self::message_content_as_text)
+            .unwrap_or_default();
+
+        if generated_text.is_empty() {
+            return Err(AppError::Internal(
+                "No response content from OpenRouter API".to_string(),
+            ));
+        }
+
+        Ok(crate::llm::TextGenerationOutput {
+            text: generated_text,
+            usage_metadata: parsed.usage.map(Self::map_usage_metadata),
+        })
+    }
+
     pub async fn generate_tool_calls(
         &self,
         prompt: SemanticLlmRequest,
@@ -248,6 +274,44 @@ impl OpenRouterClient {
             content_text,
             usage_metadata: parsed.usage.map(Self::map_usage_metadata),
         })
+    }
+
+    fn build_text_request_body(&self, prompt: SemanticLlmRequest) -> Result<Value, AppError> {
+        let mut messages = Vec::with_capacity(prompt.messages.len() + 1);
+        messages.push(self.system_message(&prompt.system_prompt));
+        messages.extend(
+            prompt
+                .messages
+                .into_iter()
+                .map(|message| self.semantic_message_to_openrouter(message)),
+        );
+
+        let mut body = serde_json::Map::new();
+        body.insert("model".to_string(), json!(self.model));
+        body.insert("messages".to_string(), Value::Array(messages));
+        if self.require_parameters {
+            body.insert(
+                "provider".to_string(),
+                json!({ "require_parameters": true }),
+            );
+        }
+        body.insert("stream".to_string(), json!(false));
+        if let Some(temperature) = prompt.temperature {
+            body.insert("temperature".to_string(), json!(temperature));
+        }
+        if let Some(max_output_tokens) = prompt.max_output_tokens {
+            body.insert("max_tokens".to_string(), json!(max_output_tokens));
+        }
+        if let Some(reasoning_effort) = prompt.reasoning_effort {
+            body.insert(
+                "reasoning".to_string(),
+                json!({
+                    "effort": reasoning_effort,
+                    "exclude": true,
+                }),
+            );
+        }
+        Ok(Value::Object(body))
     }
 
     fn build_request_body(

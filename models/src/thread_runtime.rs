@@ -62,10 +62,12 @@ impl Default for AgentThreadStatus {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct ThreadExecutionState {
     #[serde(default)]
     pub loaded_external_tool_ids: Vec<i64>,
+    #[serde(default)]
+    pub virtual_tool_cache_snapshot: Vec<crate::AiTool>,
     pub pending_approval_request: Option<ToolApprovalRequestState>,
     #[serde(default)]
     pub assignment_outcome_override: Option<ThreadAssignmentOutcomeOverride>,

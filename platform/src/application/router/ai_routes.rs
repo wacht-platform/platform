@@ -117,6 +117,10 @@ pub(super) fn ai_routes() -> Router<AppState> {
             get(api::composio::list_toolkit_auth_configs),
         )
         .route(
+            "/ai/composio/toolkits/{slug}/auth-details",
+            get(api::composio::get_toolkit_auth_details),
+        )
+        .route(
             "/ai/mcp-servers/{mcp_server_id}",
             get(api::mcp_servers::get_mcp_server_by_id)
                 .patch(api::mcp_servers::update_mcp_server)

@@ -129,6 +129,12 @@ pub struct StructuredGenerationOutput<T> {
     pub cache_state: Option<PromptCacheState>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextGenerationOutput {
+    pub text: String,
+    pub usage_metadata: Option<UsageMetadata>,
+}
+
 #[derive(Debug, Clone)]
 pub enum LlmClient {
     Gemini(GeminiClient),
@@ -174,6 +180,13 @@ impl ResolvedLlm {
     ) -> Result<ToolCallGenerationOutput, AppError> {
         self.client.generate_tool_calls(prompt, tools).await
     }
+
+    pub async fn generate_text_from_prompt(
+        &self,
+        prompt: SemanticLlmRequest,
+    ) -> Result<TextGenerationOutput, AppError> {
+        self.client.generate_text_from_prompt(prompt).await
+    }
 }
 
 impl LlmClient {
@@ -213,6 +226,21 @@ impl LlmClient {
             Self::Gemini(client) => client.generate_tool_calls(prompt, tools).await,
             Self::OpenAi(client) => client.generate_tool_calls(prompt, tools).await,
             Self::OpenRouter(client) => client.generate_tool_calls(prompt, tools).await,
+        }
+    }
+
+    pub async fn generate_text_from_prompt(
+        &self,
+        prompt: SemanticLlmRequest,
+    ) -> Result<TextGenerationOutput, AppError> {
+        match self {
+            Self::Gemini(client) => {
+                client
+                    .generate_text(serialize_gemini_text_request(&prompt)?)
+                    .await
+            }
+            Self::OpenAi(client) => client.generate_text_from_prompt(prompt).await,
+            Self::OpenRouter(client) => client.generate_text_from_prompt(prompt).await,
         }
     }
 }
@@ -259,6 +287,54 @@ fn serialize_gemini_request(prompt: &SemanticLlmRequest) -> Result<String, AppEr
         "responseSchema".to_string(),
         prompt.response_json_schema.clone(),
     );
+    if let Some(temperature) = prompt.temperature {
+        generation_config.insert("temperature".to_string(), json!(temperature));
+    }
+    if let Some(max_output_tokens) = prompt.max_output_tokens {
+        generation_config.insert("maxOutputTokens".to_string(), json!(max_output_tokens));
+    }
+    if let Some(reasoning_effort) = prompt.reasoning_effort.as_ref() {
+        generation_config.insert(
+            "thinkingConfig".to_string(),
+            json!({ "thinkingLevel": reasoning_effort }),
+        );
+    }
+
+    serde_json::to_string(&json!({
+        "system_instruction": {
+            "parts": [{ "text": prompt.system_prompt }]
+        },
+        "contents": contents,
+        "generationConfig": generation_config,
+    }))
+    .map_err(|e| AppError::Internal(format!("Failed to serialize LLM request: {e}")))
+}
+
+fn serialize_gemini_text_request(prompt: &SemanticLlmRequest) -> Result<String, AppError> {
+    let contents = prompt
+        .messages
+        .iter()
+        .map(|message| {
+            let parts = message
+                .content_blocks
+                .iter()
+                .map(|block| match block {
+                    SemanticLlmContentBlock::Text { text } => {
+                        json!({ "text": text })
+                    }
+                    SemanticLlmContentBlock::InlineData { mime_type, data } => {
+                        json!({ "inline_data": { "mime_type": mime_type, "data": data } })
+                    }
+                })
+                .collect::<Vec<_>>();
+            json!({
+                "role": message.role,
+                "parts": parts,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let mut generation_config = serde_json::Map::new();
     if let Some(temperature) = prompt.temperature {
         generation_config.insert("temperature".to_string(), json!(temperature));
     }
