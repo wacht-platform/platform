@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE event_log\n        SET publish_status = 'pending',\n            publishing_started_at = NULL,\n            next_publish_at = NOW() + ($1::text)::interval,\n            last_publish_error = $2\n        WHERE id = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e88160e224c434736e30ccc86c8acb47f32b1e414f06bd3489ff1da7c5955e03"
+}

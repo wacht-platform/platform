@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT i.task_key AS \"task_key!\"\n            FROM project_task_board_item_relations r\n            JOIN project_task_board_items i ON r.parent_board_item_id = i.id\n            WHERE r.child_board_item_id = $1\n              AND r.relation_type = $2\n            ORDER BY r.created_at ASC, r.id ASC\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "task_key!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "76ed9cef006e294c04c94867e903f697fbe475516fd39d4827c6bb3882145e52"
+}

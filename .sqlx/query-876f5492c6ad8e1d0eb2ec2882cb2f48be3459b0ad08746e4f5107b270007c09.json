@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id, board_id, task_key, template_payload, state, state_version,\n                status, schedule_kind, interval_seconds, next_run_at, last_fired_at,\n                overlap_policy, created_at, updated_at\n            FROM project_task_schedules\n            WHERE board_id = $1\n              AND task_key = $2\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "board_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "task_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "template_payload",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "state",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "state_version",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "schedule_kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "interval_seconds",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "next_run_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "last_fired_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "overlap_policy",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "876f5492c6ad8e1d0eb2ec2882cb2f48be3459b0ad08746e4f5107b270007c09"
+}

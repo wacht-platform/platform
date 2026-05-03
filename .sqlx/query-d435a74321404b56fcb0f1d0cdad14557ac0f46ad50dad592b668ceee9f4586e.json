@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE project_task_board_item_comments\n            SET resolved_at = NOW(),\n                resolved_by_thread_id = $3,\n                resolution_summary = $4,\n                updated_at = NOW()\n            WHERE board_item_id = $1\n              AND id = ANY($2)\n              AND archived_at IS NULL\n              AND resolved_at IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d435a74321404b56fcb0f1d0cdad14557ac0f46ad50dad592b668ceee9f4586e"
+}

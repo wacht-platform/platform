@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE event_log\n        SET completed_at = $1\n        WHERE id = $2 AND completed_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "33e602c020642fa7cd559d172c13ad4461cca91bf3bc1eb6f331a976dee9c623"
+}

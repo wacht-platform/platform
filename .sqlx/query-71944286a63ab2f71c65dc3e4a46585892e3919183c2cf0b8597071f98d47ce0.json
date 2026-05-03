@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.id,\n               a.board_item_id,\n               a.thread_id,\n               a.status,\n               EXTRACT(EPOCH FROM (NOW() - a.updated_at))::bigint AS \"stale_seconds!\"\n        FROM project_task_board_item_assignments a\n        WHERE a.status IN ('claimed', 'in_progress')\n          AND a.updated_at < NOW() - INTERVAL '1 second' * $1\n          AND NOT EXISTS (\n              SELECT 1\n              FROM event_log el\n              INNER JOIN work_lease wl ON wl.event_id = el.id\n              WHERE el.aggregate_type = 'assignment'\n                AND el.aggregate_id = a.id\n                AND wl.expires_at > NOW()\n          )\n        ORDER BY a.updated_at ASC\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "board_item_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "thread_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "stale_seconds!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "71944286a63ab2f71c65dc3e4a46585892e3919183c2cf0b8597071f98d47ce0"
+}

@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH existing AS (\n                SELECT id FROM thread_task_graphs\n                WHERE deployment_id = $2\n                  AND thread_id = $3\n                  AND (($4::bigint IS NULL AND board_item_id IS NULL) OR board_item_id = $4)\n                  AND status = $5\n                ORDER BY id DESC\n                LIMIT 1\n            ),\n            inserted AS (\n                INSERT INTO thread_task_graphs (\n                    id, deployment_id, thread_id, board_item_id, status, metadata, created_at, updated_at\n                )\n                SELECT $1, $2, $3, $4, $5, '{}'::jsonb, NOW(), NOW()\n                WHERE NOT EXISTS (SELECT 1 FROM existing)\n                RETURNING id, deployment_id, thread_id, board_item_id, status, metadata, created_at, updated_at\n            ),\n            updated AS (\n                UPDATE thread_task_graphs\n                SET updated_at = NOW()\n                WHERE id IN (SELECT id FROM existing)\n                RETURNING id, deployment_id, thread_id, board_item_id, status, metadata, created_at, updated_at\n            ),\n            graph AS (\n                SELECT * FROM updated\n                UNION ALL\n                SELECT * FROM inserted\n            )\n            SELECT\n                json_build_object(\n                    'id', g.id::text,\n                    'deployment_id', g.deployment_id::text,\n                    'thread_id', g.thread_id::text,\n                    'board_item_id', g.board_item_id::text,\n                    'status', g.status,\n                    'metadata', g.metadata,\n                    'created_at', g.created_at,\n                    'updated_at', g.updated_at\n                ) AS \"graph!: sqlx::types::Json<ThreadTaskGraph>\",\n                COALESCE((\n                    SELECT jsonb_agg(\n                        json_build_object(\n                            'id', n.id::text,\n                            'graph_id', n.graph_id::text,\n                            'board_item_id', n.board_item_id::text,\n                            'title', n.title,\n                            'description', n.description,\n                            'status', n.status,\n                            'priority', n.priority,\n                            'owner_agent_id', n.owner_agent_id::text,\n                            'assigned_thread_id', n.assigned_thread_id::text,\n                            'retry_count', n.retry_count,\n                            'max_retries', n.max_retries,\n                            'input', n.input,\n                            'output', n.output,\n                            'error', n.error,\n                            'lease_owner', n.lease_owner,\n                            'lease_until', n.lease_until,\n                            'completed_at', n.completed_at,\n                            'created_at', n.created_at,\n                            'updated_at', n.updated_at\n                        )\n                        ORDER BY n.created_at ASC\n                    )\n                    FROM thread_task_nodes n\n                    WHERE n.graph_id = g.id\n                ), '[]'::jsonb) AS \"nodes!: sqlx::types::Json<Vec<ThreadTaskNode>>\",\n                COALESCE((\n                    SELECT jsonb_agg(\n                        json_build_object(\n                            'graph_id', e.graph_id::text,\n                            'from_node_id', e.from_node_id::text,\n                            'to_node_id', e.to_node_id::text,\n                            'dependency_type', e.dependency_type,\n                            'created_at', e.created_at\n                        )\n                        ORDER BY e.created_at ASC\n                    )\n                    FROM thread_task_edges e\n                    WHERE e.graph_id = g.id\n                ), '[]'::jsonb) AS \"edges!: sqlx::types::Json<Vec<ThreadTaskEdge>>\",\n                COALESCE((\n                    SELECT jsonb_agg(n.id::text ORDER BY n.priority ASC, n.created_at ASC)\n                    FROM thread_task_nodes n\n                    WHERE n.graph_id = g.id\n                      AND n.status = $6\n                      AND NOT EXISTS (\n                          SELECT 1 FROM thread_task_edges e\n                          JOIN thread_task_nodes dep\n                            ON dep.id = e.from_node_id AND dep.graph_id = e.graph_id\n                          WHERE e.graph_id = n.graph_id\n                            AND e.to_node_id = n.id\n                            AND dep.status != $7\n                      )\n                ), '[]'::jsonb) AS \"ready_node_ids!: sqlx::types::Json<Vec<String>>\"\n            FROM graph g\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "graph!: sqlx::types::Json<ThreadTaskGraph>",
+        "type_info": "Json"
+      },
+      {
+        "ordinal": 1,
+        "name": "nodes!: sqlx::types::Json<Vec<ThreadTaskNode>>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "edges!: sqlx::types::Json<Vec<ThreadTaskEdge>>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "ready_node_ids!: sqlx::types::Json<Vec<String>>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "cebf12b7b85c889d847b0bf8620918067404a8ae211be1658bdc7d96c2a3ac3d"
+}

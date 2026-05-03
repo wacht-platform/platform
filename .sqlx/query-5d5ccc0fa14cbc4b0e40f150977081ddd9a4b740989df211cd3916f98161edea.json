@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH expired AS (\n            DELETE FROM work_lease\n            WHERE expires_at < NOW()\n              AND attempts < $1\n            RETURNING event_id\n        )\n        UPDATE event_log\n        SET publish_status = 'pending',\n            next_publish_at = NOW(),\n            publishing_started_at = NULL\n        WHERE id IN (SELECT event_id FROM expired)\n        RETURNING id AS \"id!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5d5ccc0fa14cbc4b0e40f150977081ddd9a4b740989df211cd3916f98161edea"
+}

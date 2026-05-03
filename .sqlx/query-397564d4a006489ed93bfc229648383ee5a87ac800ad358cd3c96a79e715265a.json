@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO work_lease (event_id, worker_id, expires_at)\n        VALUES ($1, $2, NOW() + ($3::text)::interval)\n        ON CONFLICT (event_id) DO NOTHING\n        RETURNING event_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "event_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "397564d4a006489ed93bfc229648383ee5a87ac800ad358cd3c96a79e715265a"
+}

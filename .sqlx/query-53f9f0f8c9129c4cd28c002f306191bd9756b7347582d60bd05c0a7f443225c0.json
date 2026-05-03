@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT MIN(next_publish_at) AS \"earliest\"\n        FROM event_log\n        WHERE publish_subject IS NOT NULL\n          AND publish_status = 'pending'\n          AND next_publish_at > NOW()\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "earliest",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "53f9f0f8c9129c4cd28c002f306191bd9756b7347582d60bd05c0a7f443225c0"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE event_log\n        SET publish_status = 'published',\n            published_at = NOW(),\n            publishing_started_at = NULL,\n            last_publish_error = NULL\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "61dd3d8c736728ab69ee03ac605f398b390d8f7b3b8e59efc9c802e30b5bfe64"
+}

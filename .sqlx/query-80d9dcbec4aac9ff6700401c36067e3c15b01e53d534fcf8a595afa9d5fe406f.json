@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE project_task_schedules\n            SET state = state || $2::jsonb,\n                state_version = state_version + 1,\n                updated_at = NOW()\n            WHERE id = $1\n              AND state_version = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Jsonb",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "80d9dcbec4aac9ff6700401c36067e3c15b01e53d534fcf8a595afa9d5fe406f"
+}

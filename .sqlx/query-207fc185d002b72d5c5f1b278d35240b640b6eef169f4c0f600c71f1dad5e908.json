@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE event_log\n        SET publish_status = 'failed',\n            publishing_started_at = NULL,\n            last_publish_error = $1\n        WHERE id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "207fc185d002b72d5c5f1b278d35240b640b6eef169f4c0f600c71f1dad5e908"
+}

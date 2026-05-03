@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE event_log\n        SET publish_status = 'publishing',\n            publishing_started_at = NOW(),\n            publish_attempts = publish_attempts + 1\n        WHERE id = ANY (\n            SELECT id FROM event_log\n            WHERE publish_subject IS NOT NULL\n              AND (\n                  (publish_status = 'pending' AND next_publish_at <= NOW())\n                  OR (publish_status = 'publishing' AND publishing_started_at < NOW() - INTERVAL '60 seconds')\n              )\n            ORDER BY priority ASC, next_publish_at ASC\n            FOR UPDATE SKIP LOCKED\n            LIMIT $1\n        )\n        RETURNING\n            id AS \"id!\",\n            deployment_id AS \"deployment_id!\",\n            event_type AS \"event_type!\",\n            publish_subject AS \"publish_subject!\",\n            payload AS \"payload!\",\n            publish_attempts AS \"publish_attempts!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "event_type!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "publish_subject!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "payload!",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "publish_attempts!",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "9236deb9e4fe5c693667ab490e317c342380bd69da22db4c55eee96a0b25a87a"
+}

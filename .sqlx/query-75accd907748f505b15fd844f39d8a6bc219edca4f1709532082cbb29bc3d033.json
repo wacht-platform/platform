@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH target AS (\n                SELECT id, schedule_id\n                FROM project_task_board_items\n                WHERE id = $1\n            )\n            SELECT\n                c.id AS \"id!\",\n                c.deployment_id AS \"deployment_id!\",\n                c.board_item_id AS \"board_item_id!\",\n                c.actor_id AS \"actor_id!\",\n                c.body AS \"body!\",\n                c.metadata AS \"metadata!\",\n                c.created_at AS \"created_at!\",\n                c.updated_at AS \"updated_at!\",\n                c.archived_at,\n                c.resolved_at,\n                c.resolved_by_thread_id,\n                c.resolution_summary\n            FROM project_task_board_item_comments c\n            INNER JOIN project_task_board_items i ON i.id = c.board_item_id\n            INNER JOIN target t ON (\n                i.id = t.id\n                OR (t.schedule_id IS NOT NULL AND i.schedule_id = t.schedule_id)\n            )\n            WHERE c.archived_at IS NULL\n              AND i.archived_at IS NULL\n            ORDER BY c.created_at ASC, c.id ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "board_item_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "actor_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "body!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "metadata!",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "archived_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "resolved_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "resolved_by_thread_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "resolution_summary",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "75accd907748f505b15fd844f39d8a6bc219edca4f1709532082cbb29bc3d033"
+}

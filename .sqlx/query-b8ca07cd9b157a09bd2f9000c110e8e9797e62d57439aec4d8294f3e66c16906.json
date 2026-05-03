@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO event_log (\n                id, deployment_id,\n                aggregate_type, aggregate_id, event_type, payload, priority,\n                publish_subject, publish_status,\n                idempotency_key,\n                actor_id, caused_by_event_id\n            ) VALUES (\n                $1, $2,\n                $3, $4, $5, $6, $7,\n                $8, $9,\n                $10,\n                $11, $12\n            )\n            ON CONFLICT (idempotency_key) DO NOTHING\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Int8",
+        "Text",
+        "Jsonb",
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b8ca07cd9b157a09bd2f9000c110e8e9797e62d57439aec4d8294f3e66c16906"
+}

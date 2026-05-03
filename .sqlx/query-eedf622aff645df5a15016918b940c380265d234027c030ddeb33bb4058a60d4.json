@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE work_lease\n        SET heartbeat_at = NOW(),\n            expires_at = NOW() + ($3::text)::interval,\n            attempts = attempts + 1\n        WHERE event_id = $1 AND worker_id = $2\n        RETURNING event_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "event_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "eedf622aff645df5a15016918b940c380265d234027c030ddeb33bb4058a60d4"
+}
