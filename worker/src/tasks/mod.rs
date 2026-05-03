@@ -6,7 +6,6 @@ pub mod billing;
 pub mod conversation;
 pub mod document;
 pub mod email;
-pub mod thread_schedule;
 pub mod token;
 pub mod vector_store;
 pub mod webhook;

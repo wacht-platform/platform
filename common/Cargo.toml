@@ -29,9 +29,9 @@ totp-rs = "5.4.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json", "registry"] }
 tracing-opentelemetry = "0.32.0"
-opentelemetry = { version = "0.31", features = ["logs"] }
-opentelemetry_sdk = { version = "0.31", features = ["trace", "logs", "rt-tokio"] }
-opentelemetry-otlp = { version = "0.31", default-features = false, features = ["trace", "logs", "http-proto", "reqwest-blocking-client"] }
+opentelemetry = { version = "0.31", features = ["logs", "metrics"] }
+opentelemetry_sdk = { version = "0.31", features = ["trace", "logs", "metrics", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.31", default-features = false, features = ["trace", "logs", "metrics", "http-proto", "reqwest-blocking-client"] }
 opentelemetry-appender-tracing = "0.31.1"
 base64 = "0.22.1"
 jsonwebtoken = "9.3"

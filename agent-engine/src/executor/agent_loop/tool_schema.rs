@@ -10,14 +10,14 @@ impl AgentExecutor {
         fields: &mut [SchemaField],
         active_board_item: Option<&ProjectTaskBoardPromptItem>,
     ) {
-        if !self.effective_is_coordinator_thread() {
-            return;
-        }
+        let is_coordinator = self.effective_is_coordinator_thread();
 
-        if matches!(
-            tool.name.as_str(),
-            "assign_project_task" | "update_project_task"
-        ) {
+        if is_coordinator
+            && matches!(
+                tool.name.as_str(),
+                "assign_project_task" | "update_project_task"
+            )
+        {
             if let Some(active_board_item) = active_board_item {
                 if let Some(task_key_field) =
                     fields.iter_mut().find(|field| field.name == "task_key")
@@ -34,15 +34,26 @@ impl AgentExecutor {
 
         if tool.name == "update_project_task" {
             if let Some(status_field) = fields.iter_mut().find(|field| field.name == "status") {
-                status_field.enum_values = Some(vec![
-                    json!("pending"),
-                    json!("blocked"),
-                    json!("completed"),
-                    json!("failed"),
-                ]);
-                status_field.description = Some(
-                    "Optional updated task status for coordinator decisions. Omit when status should stay unchanged. Do not use `in_progress` from the coordinator lane; the assigned execution lane owns that transition.".to_string(),
-                );
+                if is_coordinator {
+                    status_field.enum_values = Some(vec![
+                        json!("pending"),
+                        json!("blocked"),
+                        json!("completed"),
+                        json!("failed"),
+                    ]);
+                    status_field.description = Some(
+                        "Optional updated task status for coordinator decisions. Omit when status should stay unchanged. Do not use `in_progress` from the coordinator lane; the assigned execution lane owns that transition.".to_string(),
+                    );
+                } else {
+                    status_field.enum_values = Some(vec![
+                        json!("in_progress"),
+                        json!("blocked"),
+                        json!("failed"),
+                    ]);
+                    status_field.description = Some(
+                        "Optional updated task status. Execution lanes may set `in_progress` (work has started), `blocked` (stuck on a missing dependency the coordinator must resolve), or `failed` (work cannot complete in its current shape). Terminal states like `completed` and `cancelled` are coordinator-only and not available here — finish your assignment cleanly and let the coordinator close or re-route the task. Omit when status should stay unchanged.".to_string(),
+                    );
+                }
             }
         }
     }

@@ -1,31 +1,45 @@
 use super::{AgentFilesystem, EditFileResult, ReadFileResult, WriteFileResult};
+use crate::sandbox::{ExecRequest, SandboxError};
 use common::error::AppError;
+use commands::WriteToDeploymentStorageCommand;
 use sha2::{Digest, Sha256};
-use std::path::PathBuf;
-use tokio::fs;
-use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
+use std::collections::BTreeMap;
+use std::time::Duration;
+
+fn map_sandbox_error(path: &str, op: &str, err: SandboxError) -> AppError {
+    match err {
+        SandboxError::NotFound(msg) => AppError::NotFound(format!("{op} {path}: {msg}")),
+        SandboxError::Timeout(msg) => {
+            AppError::Internal(format!("{op} {path}: timed out: {msg}"))
+        }
+        SandboxError::Cancelled => AppError::Internal(format!("{op} {path}: cancelled")),
+        SandboxError::Transient(msg) => {
+            AppError::Internal(format!("{op} {path}: transient sandbox error: {msg}"))
+        }
+        SandboxError::Config(msg) => {
+            AppError::Internal(format!("{op} {path}: sandbox config error: {msg}"))
+        }
+        SandboxError::Other(msg) => AppError::Internal(format!("{op} {path}: {msg}")),
+    }
+}
 
 impl AgentFilesystem {
     pub async fn save_upload(&self, filename: &str, data: &[u8]) -> Result<String, AppError> {
-        self.ensure_initialized().await?;
-        let uploads_dir = self.persistent_uploads_path();
-        fs::create_dir_all(&uploads_dir).await.ok();
-
-        let file_path = uploads_dir.join(filename);
-        fs::write(&file_path, data)
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to save upload: {}", e)))?;
-
+        let key = format!(
+            "{}/persistent/{}/uploads/{}",
+            self.deployment_id, self.thread_id, filename
+        );
+        WriteToDeploymentStorageCommand::new(self.deployment_id, key, data.to_vec())
+            .execute_with_deps(&common::deps::from_app(&self.app_state).db().enc())
+            .await?;
         Ok(format!("/uploads/{}", filename))
     }
 
     pub async fn read_file_bytes(&self, path: &str) -> Result<Vec<u8>, AppError> {
-        self.ensure_initialized().await?;
-        let full_path = self.resolve_path(path)?;
-        fs::read(&full_path)
+        self.sandbox_handle
+            .read_file(&sandbox_path(path))
             .await
-            .map_err(|e| AppError::NotFound(format!("Failed to read {}: {}", path, e)))
+            .map_err(|e| map_sandbox_error(path, "read", e))
     }
 
     pub async fn read_file(
@@ -34,11 +48,9 @@ impl AgentFilesystem {
         start_line: Option<usize>,
         end_line: Option<usize>,
     ) -> Result<ReadFileResult, AppError> {
-        self.ensure_initialized().await?;
-        let full_path = self.resolve_path(path)?;
-        let content = fs::read_to_string(&full_path)
-            .await
-            .map_err(|e| AppError::NotFound(format!("Failed to read {}: {}", path, e)))?;
+        let bytes = self.read_file_bytes(path).await?;
+        let content = String::from_utf8(bytes)
+            .map_err(|e| AppError::Internal(format!("file {} is not valid utf-8: {}", path, e)))?;
 
         let lines: Vec<&str> = content.lines().collect();
         let total_lines = lines.len();
@@ -61,7 +73,7 @@ impl AgentFilesystem {
             .join("\n");
 
         let slice_hash = Self::slice_hash(&raw_slice);
-        self.record_read_window(path, start + 1, end, slice_hash.clone());
+        self.mark_read(path);
 
         Ok(ReadFileResult {
             content: selected_lines.join("\n"),
@@ -78,58 +90,30 @@ impl AgentFilesystem {
         content: &str,
         append: bool,
     ) -> Result<WriteFileResult, AppError> {
-        self.ensure_initialized().await?;
-        let full_path = self.resolve_path(path)?;
-
-        let writable_prefixes = ["memory/", "workspace/", "scratch/", "task/"];
-        let clean = path.trim_start_matches('/');
-        if !writable_prefixes.iter().any(|p| clean.starts_with(p)) {
-            return Err(AppError::Forbidden(
-                "Can only write to memory/, workspace/, scratch/, task/".to_string(),
-            ));
-        }
-
-        if let Some(parent) = full_path.parent() {
-            fs::create_dir_all(parent).await.ok();
-        }
-
-        if append {
-            let mut file = fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&full_path)
+        let final_bytes = if append {
+            let existing = self
+                .sandbox_handle
+                .read_file(&sandbox_path(path))
                 .await
-                .map_err(|e| AppError::Internal(format!("Failed to open {}: {}", path, e)))?;
+                .unwrap_or_default();
+            let mut buf = existing;
+            buf.extend_from_slice(content.as_bytes());
+            buf
+        } else {
+            content.as_bytes().to_vec()
+        };
 
-            file.write_all(content.as_bytes())
-                .await
-                .map_err(|e| AppError::Internal(format!("Failed to append {}: {}", path, e)))?;
-            let _ = file.sync_all().await;
-
-            self.clear_read_windows(path);
-
-            let final_content = fs::read_to_string(&full_path).await.unwrap_or_default();
-
-            return Ok(WriteFileResult {
-                lines_written: content.lines().count(),
-                total_lines: final_content.lines().count(),
-                partial: false,
-            });
-        }
-
-        fs::write(&full_path, content)
+        self.sandbox_handle
+            .write_file(&sandbox_path(path), &final_bytes)
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to write {}: {}", path, e)))?;
+            .map_err(|e| map_sandbox_error(path, "write", e))?;
 
-        if let Ok(file) = fs::File::open(&full_path).await {
-            let _ = file.sync_all().await;
-        }
+        self.unmark_read(path);
 
-        self.clear_read_windows(path);
-
+        let total_lines = String::from_utf8_lossy(&final_bytes).lines().count();
         Ok(WriteFileResult {
             lines_written: content.lines().count(),
-            total_lines: content.lines().count(),
+            total_lines,
             partial: false,
         })
     }
@@ -137,258 +121,151 @@ impl AgentFilesystem {
     pub async fn edit_file(
         &self,
         path: &str,
-        new_content: &str,
-        live_slice_hash: Option<&str>,
-        dangerously_skip_slice_comparison: bool,
-        start_line: usize,
-        end_line: usize,
+        old_string: &str,
+        new_string: &str,
+        replace_all: bool,
     ) -> Result<EditFileResult, AppError> {
-        self.ensure_initialized().await?;
-        let full_path = self.resolve_path(path)?;
-
-        let writable_prefixes = ["memory/", "workspace/", "scratch/", "task/"];
-        let clean = path.trim_start_matches('/');
-        if !writable_prefixes.iter().any(|p| clean.starts_with(p)) {
-            return Err(AppError::Forbidden(
-                "Can only write to memory/, workspace/, scratch/, task/".to_string(),
-            ));
-        }
-
-        if !dangerously_skip_slice_comparison
-            && !self.has_covering_read_window(path, start_line, end_line.max(start_line))
-        {
+        if old_string.is_empty() {
             return Err(AppError::BadRequest(
-                "Must read the target range before edit_file. Use read_file(path, start_line, end_line) first.".to_string(),
+                "edit_file: old_string must not be empty. To create or fully overwrite a file use write_file; to add content at end-of-file use append_file.".to_string(),
             ));
         }
 
-        let existing = fs::read_to_string(&full_path).await.unwrap_or_default();
-        let lines: Vec<String> = existing.lines().map(|s| s.to_string()).collect();
-
-        if start_line == 0 || end_line < start_line {
+        if old_string == new_string {
             return Err(AppError::BadRequest(
-                "edit_file requires a valid inclusive line range.".to_string(),
+                "edit_file: old_string and new_string are identical — this would be a no-op."
+                    .to_string(),
             ));
         }
 
-        if lines.is_empty() || start_line > lines.len() || end_line > lines.len() {
-            return Err(AppError::BadRequest(
-                "edit_file range must stay within the current file. Re-read the exact range before editing.".to_string(),
-            ));
+        if !self.has_read_path(path) {
+            return Err(AppError::BadRequest(format!(
+                "edit_file: must read_file({path}) at least once this turn before editing. The Read step is what proves you've seen the current file state."
+            )));
         }
 
-        let start = start_line.saturating_sub(1);
-        let end = end_line.max(start_line).min(lines.len());
-        let replaced_content = lines
-            .iter()
-            .skip(start)
-            .take(end.saturating_sub(start))
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n");
+        let existing_bytes = self.read_file_bytes(path).await.map_err(|e| match e {
+            AppError::NotFound(_) => AppError::BadRequest(format!(
+                "edit_file: {path} does not exist. Use write_file to create it."
+            )),
+            other => other,
+        })?;
+        let existing = String::from_utf8(existing_bytes)
+            .map_err(|e| AppError::Internal(format!("file {} is not valid utf-8: {}", path, e)))?;
 
-        if !dangerously_skip_slice_comparison {
-            let live_slice_hash = live_slice_hash.ok_or_else(|| {
-                AppError::BadRequest(
-                    "edit_file requires live_slice_hash unless dangerously_skip_slice_comparison is true.".to_string(),
-                )
-            })?;
-
-            if !self.has_covering_read_window_with_live_hash(
-                path,
-                start_line,
-                end_line.max(start_line),
-                live_slice_hash,
-                &lines,
-            ) {
-                return Err(AppError::BadRequest(
-                    "edit_file live_slice_hash does not match any current covering read window for this edit range. Re-read the file or exact target range before editing.".to_string(),
-                ));
+        let count = existing.matches(old_string).count();
+        match (count, replace_all) {
+            (0, _) => {
+                return Err(AppError::BadRequest(format!(
+                    "edit_file: old_string not found in {path}. The file may have changed since you last read it, or your old_string contains paraphrased whitespace. Re-read the file and copy the exact bytes."
+                )));
             }
+            (n, false) if n > 1 => {
+                return Err(AppError::BadRequest(format!(
+                    "edit_file: old_string matched {n} times in {path}. Add surrounding context to make it unique, or set replace_all=true to replace every occurrence."
+                )));
+            }
+            _ => {}
         }
 
-        let new_lines: Vec<String> = new_content.lines().map(|s| s.to_string()).collect();
+        let new_content = if replace_all {
+            existing.replace(old_string, new_string)
+        } else {
+            existing.replacen(old_string, new_string, 1)
+        };
 
-        let before: Vec<String> = lines.iter().take(start).cloned().collect();
-        let after: Vec<String> = lines.iter().skip(end).cloned().collect();
-
-        let mut result = before;
-        result.extend(new_lines);
-        result.extend(after);
-
-        let final_content = result.join("\n");
-        fs::write(&full_path, &final_content)
+        self.sandbox_handle
+            .write_file(&sandbox_path(path), new_content.as_bytes())
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to write {}: {}", path, e)))?;
+            .map_err(|e| map_sandbox_error(path, "write", e))?;
 
-        if let Ok(file) = fs::File::open(&full_path).await {
-            let _ = file.sync_all().await;
-        }
-
-        self.clear_read_windows(path);
+        self.unmark_read(path);
 
         Ok(EditFileResult {
-            lines_written: new_content.lines().count(),
-            total_lines: result.len(),
-            partial: true,
-            replaced_content,
+            replacements: if replace_all { count } else { 1 },
+            total_lines: new_content.lines().count(),
         })
     }
 
-    pub async fn list_dir(&self, path: &str) -> Result<Vec<String>, AppError> {
-        self.ensure_initialized().await?;
-        let full_path = self.resolve_path(path)?;
+    fn has_read_path(&self, path: &str) -> bool {
+        let tracked_path = Self::tracked_path(path);
+        self.read_paths
+            .read()
+            .ok()
+            .map(|read_paths| read_paths.contains(&tracked_path))
+            .unwrap_or(false)
+    }
 
-        if !full_path.exists() {
+    pub async fn list_dir(&self, path: &str) -> Result<Vec<String>, AppError> {
+        let result = self
+            .sandbox_handle
+            .exec(ExecRequest {
+                command: vec![
+                    "bash".into(),
+                    "-c".into(),
+                    "ls -1AF \"$1\"".into(),
+                    "_".into(),
+                    sandbox_path(path),
+                ],
+                cwd: None,
+                env: BTreeMap::new(),
+                timeout: Some(Duration::from_secs(30)),
+                exec_id: None,
+            })
+            .await
+            .map_err(|e| AppError::Internal(format!("list_dir {}: {}", path, e)))?;
+
+        if result.exit_code != 0 {
             return Err(AppError::NotFound(format!("Directory not found: {}", path)));
         }
 
-        let mut entries = fs::read_dir(&full_path)
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to read directory: {}", e)))?;
-
-        let mut files = Vec::new();
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to read entry: {}", e)))?
-        {
-            if let Some(name) = entry.file_name().to_str() {
-                let metadata = entry.metadata().await.ok();
-                let suffix = if metadata.map(|m| m.is_dir()).unwrap_or(false) {
-                    "/"
-                } else {
-                    ""
-                };
-                files.push(format!("{}{}", name, suffix));
-            }
-        }
-
-        Ok(files)
+        Ok(String::from_utf8_lossy(&result.stdout)
+            .lines()
+            .map(|line| line.to_string())
+            .collect())
     }
 
     pub async fn search(&self, query: &str, path: &str) -> Result<String, AppError> {
-        self.ensure_initialized().await?;
-        let full_path = self.resolve_path(path)?;
-
-        if !full_path.exists() {
-            return Err(AppError::NotFound(format!("Path not found: {}", path)));
-        }
-
-        let output = Command::new("rg")
-            .args(["--json", "-i", "--follow", query])
-            .current_dir(&full_path)
-            .output()
+        let result = self
+            .sandbox_handle
+            .exec(ExecRequest {
+                command: vec![
+                    "bash".into(),
+                    "-c".into(),
+                    "rg --json -i --follow \"$1\" \"$2\"".into(),
+                    "_".into(),
+                    query.to_string(),
+                    sandbox_path(path),
+                ],
+                cwd: None,
+                env: BTreeMap::new(),
+                timeout: Some(Duration::from_secs(60)),
+                exec_id: None,
+            })
             .await
-            .map_err(|e| AppError::Internal(format!("Search failed: {}", e)))?;
+            .map_err(|e| AppError::Internal(format!("search: {}", e)))?;
 
-        if !output.status.success() && output.status.code() != Some(1) {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppError::Internal(format!("Search error: {}", stderr)));
+        if result.exit_code != 0 && result.exit_code != 1 {
+            return Err(AppError::Internal(format!(
+                "Search error: {}",
+                String::from_utf8_lossy(&result.stderr)
+            )));
         }
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        Ok(String::from_utf8_lossy(&result.stdout).to_string())
     }
 
-    fn resolve_path(&self, path: &str) -> Result<PathBuf, AppError> {
-        if path.contains("..") {
-            return Err(AppError::BadRequest(
-                "Path traversal not allowed".to_string(),
-            ));
-        }
-
-        let clean = path.trim_start_matches('/');
-        Ok(self.execution_root().join(clean))
-    }
-
-    pub fn resolve_path_public(&self, path: &str) -> Result<PathBuf, AppError> {
-        self.resolve_path(path)
-    }
-
-    fn clear_read_windows(&self, path: &str) {
+    fn unmark_read(&self, path: &str) {
         let tracked_path = Self::tracked_path(path);
-        if let Ok(mut read_windows) = self.read_windows.write() {
-            read_windows.remove(&tracked_path);
+        if let Ok(mut read_paths) = self.read_paths.write() {
+            read_paths.remove(&tracked_path);
         }
     }
 
-    fn record_read_window(
-        &self,
-        path: &str,
-        start_line: usize,
-        end_line: usize,
-        slice_hash: String,
-    ) {
+    fn mark_read(&self, path: &str) {
         let tracked_path = Self::tracked_path(path);
-        if let Ok(mut read_windows) = self.read_windows.write() {
-            let entry = read_windows.entry(tracked_path).or_default();
-            entry.push(super::ReadWindow {
-                start_line,
-                end_line,
-                slice_hash,
-            });
-            if entry.len() > 12 {
-                let overflow = entry.len() - 12;
-                entry.drain(0..overflow);
-            }
+        if let Ok(mut read_paths) = self.read_paths.write() {
+            read_paths.insert(tracked_path);
         }
-    }
-
-    fn has_covering_read_window(&self, path: &str, start_line: usize, end_line: usize) -> bool {
-        let tracked_path = Self::tracked_path(path);
-        self.read_windows
-            .read()
-            .ok()
-            .and_then(|read_windows| {
-                read_windows.get(&tracked_path).map(|windows| {
-                    windows.iter().any(|window| {
-                        window.start_line <= start_line && window.end_line >= end_line
-                    })
-                })
-            })
-            .unwrap_or(false)
-    }
-
-    fn has_covering_read_window_with_live_hash(
-        &self,
-        path: &str,
-        start_line: usize,
-        end_line: usize,
-        live_slice_hash: &str,
-        lines: &[String],
-    ) -> bool {
-        let tracked_path = Self::tracked_path(path);
-        self.read_windows
-            .read()
-            .ok()
-            .and_then(|read_windows| {
-                read_windows.get(&tracked_path).map(|windows| {
-                    windows.iter().any(|window| {
-                        if !(window.start_line <= start_line
-                            && window.end_line >= end_line
-                            && window.slice_hash == live_slice_hash)
-                        {
-                            return false;
-                        }
-
-                        let window_start = window.start_line.saturating_sub(1);
-                        let window_end = window.end_line.min(lines.len());
-                        if window_start >= window_end {
-                            return false;
-                        }
-
-                        let current_window_slice = lines
-                            .iter()
-                            .skip(window_start)
-                            .take(window_end.saturating_sub(window_start))
-                            .cloned()
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        Self::slice_hash(&current_window_slice) == live_slice_hash
-                    })
-                })
-            })
-            .unwrap_or(false)
     }
 
     pub(crate) fn format_numbered_line(line_number: usize, line: &str) -> String {
@@ -409,4 +286,8 @@ impl AgentFilesystem {
         }
         encoded
     }
+}
+
+fn sandbox_path(path: &str) -> String {
+    format!("/{}", path.trim_start_matches('/'))
 }

@@ -257,6 +257,7 @@ pub enum InternalToolType {
     ReadImage,
     ReadFile,
     WriteFile,
+    AppendFile,
     EditFile,
     ExecuteCommand,
     Sleep,
@@ -281,6 +282,7 @@ pub enum InternalToolType {
     TaskGraphCompleteNode,
     TaskGraphFailNode,
     TaskGraphReset,
+    AskUser,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

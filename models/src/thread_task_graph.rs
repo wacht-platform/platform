@@ -10,10 +10,7 @@ pub struct ThreadTaskGraph {
     pub deployment_id: i64,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub thread_id: i64,
-    #[serde(
-        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(with = "crate::utils::serde::i64_as_string_option", default)]
     pub board_item_id: Option<i64>,
     pub status: String,
     pub metadata: serde_json::Value,
@@ -27,24 +24,15 @@ pub struct ThreadTaskNode {
     pub id: i64,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub graph_id: i64,
-    #[serde(
-        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(with = "crate::utils::serde::i64_as_string_option", default)]
     pub board_item_id: Option<i64>,
     pub title: String,
     pub description: Option<String>,
     pub status: String,
     pub priority: i32,
-    #[serde(
-        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(with = "crate::utils::serde::i64_as_string_option", default)]
     pub owner_agent_id: Option<i64>,
-    #[serde(
-        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(with = "crate::utils::serde::i64_as_string_option", default)]
     pub assigned_thread_id: Option<i64>,
     pub retry_count: i32,
     pub max_retries: i32,
@@ -68,6 +56,15 @@ pub struct ThreadTaskEdge {
     pub to_node_id: i64,
     pub dependency_type: String,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreadTaskGraphSnapshot {
+    pub graph: ThreadTaskGraph,
+    pub nodes: Vec<ThreadTaskNode>,
+    pub edges: Vec<ThreadTaskEdge>,
+    #[serde(default)]
+    pub ready_node_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

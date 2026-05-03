@@ -1,6 +1,5 @@
 pub mod actor;
 pub mod actor_project;
-pub mod agent_execution_recovery;
 pub mod agent_session;
 pub mod agent_thread;
 pub mod ai_agent;
@@ -8,6 +7,7 @@ pub mod ai_knowledge_base;
 pub mod ai_tool;
 pub mod api_key;
 pub mod approval;
+pub mod ask_user;
 pub mod billing;
 pub mod billing_invoice;
 pub mod conversation;
@@ -72,13 +72,13 @@ mod workspace_permission;
 pub mod workspace_role;
 pub use actor::*;
 pub use actor_project::*;
-pub use agent_execution_recovery::*;
 pub use agent_session::*;
 pub use agent_thread::*;
 pub use ai_agent::*;
 pub use ai_knowledge_base::*;
 pub use ai_tool::*;
 pub use approval::*;
+pub use ask_user::*;
 pub use billing::*;
 pub use conversation::*;
 pub use deployment::*;
@@ -121,7 +121,8 @@ pub use thread_agent_assignment::*;
 pub use thread_event::ThreadEvent;
 pub use thread_runtime::*;
 pub use thread_task_graph::{
-    ThreadTaskEdge, ThreadTaskEvent, ThreadTaskGraph, ThreadTaskGraphSummary, ThreadTaskNode,
+    ThreadTaskEdge, ThreadTaskEvent, ThreadTaskGraph, ThreadTaskGraphSnapshot,
+    ThreadTaskGraphSummary, ThreadTaskNode,
 };
 pub use user::*;
 pub use user_authenticator::*;

@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod agent_executor;
 pub mod ai_knowledge_base;
+pub mod ask_user;
 pub mod api_key;
 pub mod b2b;
 pub mod context_orchestrator;
@@ -25,6 +26,7 @@ pub mod websocket_messages;
 
 pub use agent::*;
 pub use ai_knowledge_base::*;
+pub use ask_user::*;
 pub use api_key::*;
 pub use b2b::*;
 pub use context_search::*;

@@ -1,10 +1,7 @@
 use common::{
     HasDbRouter, HasEncryptionProvider, HasIdProvider, HasNatsJetStreamProvider, error::AppError,
 };
-use dto::json::{
-    AgentExecutionRequest, AgentExecutionType, NatsTaskMessage, ThreadScheduleRequest,
-};
-use models::{FileData, ImageData, ThreadEvent};
+use models::{FileData, ImageData};
 
 use crate::WriteToDeploymentStorageCommand;
 
@@ -179,196 +176,8 @@ impl UploadFilesToS3Command {
     }
 }
 
-/// Command to publish an agent execution request to NATS
-/// The worker will pick this up and execute the agent
-pub struct PublishAgentExecutionCommand {
-    request: AgentExecutionRequest,
-}
-
-pub struct PublishThreadScheduleCommand {
-    request: ThreadScheduleRequest,
-}
-
 pub struct AdvanceThreadExecutionTokenCommand {
     thread_id: i64,
-}
-
-impl PublishAgentExecutionCommand {
-    pub fn new(request: AgentExecutionRequest) -> Self {
-        Self { request }
-    }
-
-    pub fn from_thread_event(
-        thread_event: &ThreadEvent,
-        agent_id: Option<i64>,
-    ) -> Result<Self, AppError> {
-        match thread_event.event_type.as_str() {
-            "user_message_received" => {
-                let conversation_id = thread_event
-                    .conversation_payload()
-                    .map(|payload| payload.conversation_id)
-                    .ok_or_else(|| {
-                        AppError::BadRequest(
-                            "user_message_received event is missing conversation_id".to_string(),
-                        )
-                    })?;
-
-                Ok(Self::new_message(
-                    thread_event.deployment_id,
-                    thread_event.thread_id,
-                    Some(thread_event.id),
-                    agent_id,
-                    conversation_id,
-                ))
-            }
-            "approval_response_received" => {
-                let payload = thread_event
-                    .approval_response_received_payload()
-                    .ok_or_else(|| {
-                        AppError::BadRequest(
-                            "approval_response_received event has invalid payload".to_string(),
-                        )
-                    })?;
-                let request_message_id = payload.request_message_id.to_string();
-                let approvals = payload
-                    .approvals
-                    .into_iter()
-                    .map(|approval| dto::json::deployment::ToolApprovalSelection {
-                        tool_name: approval.tool_name,
-                        mode: approval.mode,
-                    })
-                    .collect();
-
-                Ok(Self::approval_response(
-                    thread_event.deployment_id,
-                    thread_event.thread_id,
-                    Some(thread_event.id),
-                    agent_id,
-                    request_message_id,
-                    approvals,
-                ))
-            }
-            "task_routing" | "assignment_execution" => Ok(Self::thread_event(
-                thread_event.deployment_id,
-                thread_event.thread_id,
-                thread_event.id,
-                agent_id,
-            )),
-            other => Err(AppError::BadRequest(format!(
-                "Unsupported thread event type for execution publish: {}",
-                other
-            ))),
-        }
-    }
-
-    pub fn new_message(
-        deployment_id: i64,
-        thread_id: i64,
-        thread_event_id: Option<i64>,
-        agent_id: Option<i64>,
-        conversation_id: i64,
-    ) -> Self {
-        Self {
-            request: AgentExecutionRequest {
-                deployment_id: deployment_id.to_string(),
-                thread_id: thread_id.to_string(),
-                thread_event_id: thread_event_id.map(|id| id.to_string()),
-                agent_id: agent_id.map(|id| id.to_string()),
-                execution_type: AgentExecutionType::NewMessage {
-                    conversation_id: conversation_id.to_string(),
-                },
-            },
-        }
-    }
-
-    pub fn approval_response(
-        deployment_id: i64,
-        thread_id: i64,
-        thread_event_id: Option<i64>,
-        agent_id: Option<i64>,
-        request_message_id: String,
-        approvals: Vec<dto::json::deployment::ToolApprovalSelection>,
-    ) -> Self {
-        Self {
-            request: AgentExecutionRequest {
-                deployment_id: deployment_id.to_string(),
-                thread_id: thread_id.to_string(),
-                thread_event_id: thread_event_id.map(|id| id.to_string()),
-                agent_id: agent_id.map(|id| id.to_string()),
-                execution_type: AgentExecutionType::ApprovalResponse {
-                    request_message_id,
-                    approvals,
-                },
-            },
-        }
-    }
-
-    pub fn thread_event(
-        deployment_id: i64,
-        thread_id: i64,
-        thread_event_id: i64,
-        agent_id: Option<i64>,
-    ) -> Self {
-        Self {
-            request: AgentExecutionRequest {
-                deployment_id: deployment_id.to_string(),
-                thread_id: thread_id.to_string(),
-                thread_event_id: Some(thread_event_id.to_string()),
-                agent_id: agent_id.map(|id| id.to_string()),
-                execution_type: AgentExecutionType::ThreadEvent {
-                    event_id: thread_event_id.to_string(),
-                },
-            },
-        }
-    }
-}
-
-impl PublishThreadScheduleCommand {
-    pub fn new(deployment_id: i64, thread_id: i64) -> Self {
-        Self {
-            request: ThreadScheduleRequest {
-                deployment_id: deployment_id.to_string(),
-                thread_id: thread_id.to_string(),
-            },
-        }
-    }
-
-    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
-    where
-        D: HasNatsJetStreamProvider + HasIdProvider + ?Sized,
-    {
-        let task_id = deps
-            .id_provider()
-            .next_id()
-            .map_err(|e| AppError::Internal(format!("Failed to generate task id: {}", e)))?
-            as i64;
-        let jetstream = deps.nats_jetstream_provider();
-        let task = NatsTaskMessage {
-            task_id: task_id.to_string(),
-            task_type: "agent.thread_schedule".to_string(),
-            payload: serde_json::to_value(&self.request).map_err(|e| {
-                AppError::Internal(format!(
-                    "Failed to serialize thread schedule request: {}",
-                    e
-                ))
-            })?,
-        };
-
-        let payload = serde_json::to_vec(&task)
-            .map_err(|e| AppError::Internal(format!("Failed to serialize task message: {}", e)))?;
-
-        jetstream
-            .publish("worker.tasks.agent.thread_schedule", payload.into())
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {}", e)))?;
-
-        tracing::info!(
-            "Published thread schedule request for thread {}",
-            self.request.thread_id
-        );
-
-        Ok(())
-    }
 }
 
 impl AdvanceThreadExecutionTokenCommand {
@@ -380,81 +189,49 @@ impl AdvanceThreadExecutionTokenCommand {
     where
         D: HasNatsJetStreamProvider + HasIdProvider + ?Sized,
     {
-        let execution_token =
-            deps.id_provider().next_id().map_err(|e| {
-                AppError::Internal(format!("Failed to generate execution token: {}", e))
-            })? as i64;
-
-        let jetstream = deps.nats_jetstream_provider();
-        let kv = match jetstream.get_key_value("agent_execution_kv").await {
-            Ok(store) => store,
-            Err(_) => jetstream
-                .create_key_value(async_nats::jetstream::kv::Config {
-                    bucket: "agent_execution_kv".to_string(),
-                    ..Default::default()
-                })
-                .await
-                .map_err(|e| {
-                    AppError::Internal(format!(
-                        "Failed to initialize execution token KV bucket: {}",
-                        e
-                    ))
-                })?,
-        };
-
-        let token = execution_token.to_string();
-        kv.put(self.thread_id.to_string(), token.clone().into())
-            .await
-            .map_err(|e| {
-                AppError::Internal(format!(
-                    "Failed to advance execution token for thread {}: {}",
-                    self.thread_id, e
-                ))
-            })?;
-
+        let token = deps
+            .id_provider()
+            .next_id()
+            .map_err(|e| AppError::Internal(format!("Failed to generate execution token: {}", e)))?
+            .to_string();
+        write_execution_watch_key(
+            deps.nats_jetstream_provider(),
+            &self.thread_id.to_string(),
+            &token,
+        )
+        .await?;
         Ok(token)
     }
 }
 
-impl PublishAgentExecutionCommand {
-    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
-    where
-        D: HasNatsJetStreamProvider + HasIdProvider + ?Sized,
-    {
-        let task_id = deps
-            .id_provider()
-            .next_id()
-            .map_err(|e| AppError::Internal(format!("Failed to generate task id: {}", e)))?
-            as i64;
-        let jetstream = deps.nats_jetstream_provider();
-        let task = NatsTaskMessage {
-            task_id: task_id.to_string(),
-            task_type: "agent.execution_request".to_string(),
-            payload: serde_json::to_value(&self.request).map_err(|e| {
-                AppError::Internal(format!("Failed to serialize execution request: {}", e))
-            })?,
-        };
-
-        let payload = serde_json::to_vec(&task)
-            .map_err(|e| AppError::Internal(format!("Failed to serialize task message: {}", e)))?;
-
-        jetstream
-            .publish("worker.tasks.agent.execution_request", payload.into())
+pub async fn write_execution_watch_key(
+    jetstream: &async_nats::jetstream::Context,
+    key: &str,
+    token: &str,
+) -> Result<(), AppError> {
+    let kv = match jetstream.get_key_value("agent_execution_kv").await {
+        Ok(store) => store,
+        Err(_) => jetstream
+            .create_key_value(async_nats::jetstream::kv::Config {
+                bucket: "agent_execution_kv".to_string(),
+                ..Default::default()
+            })
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {}", e)))?;
-
-        let agent_identifier = self
-            .request
-            .agent_id
-            .clone()
-            .unwrap_or_else(|| "unknown".to_string());
-
-        tracing::info!(
-            "Published agent execution request for thread {} (agent: {})",
-            self.request.thread_id,
-            agent_identifier
-        );
-
-        Ok(())
-    }
+            .map_err(|e| {
+                AppError::Internal(format!(
+                    "Failed to initialize execution token KV bucket: {}",
+                    e
+                ))
+            })?,
+    };
+    kv.put(key.to_string(), token.as_bytes().to_vec().into())
+        .await
+        .map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to set execution watch key {}: {}",
+                key, e
+            ))
+        })?;
+    Ok(())
 }
+

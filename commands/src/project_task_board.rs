@@ -1,78 +1,135 @@
 use crate::{
-    DispatchThreadEventCommand, EnqueueThreadEventCommand,
     assignment_event::{
-        WriteAssignmentEventConversation, build_assignment_execution_summary,
-        build_task_routing_summary, fetch_assignment_siblings,
+        build_assignment_execution_summary, build_task_routing_summary, fetch_assignment_siblings,
     },
+    event_log::{self, InsertEventLogCommand},
 };
 use chrono::Utc;
 use common::{
-    HasDbRouter, HasIdProvider, HasNatsJetStreamProvider, ReadConsistency, error::AppError,
+    HasDbRouter, HasIdProvider, HasNatsJetStreamProvider, HasNatsProvider, ReadConsistency,
+    error::AppError,
 };
-use models::AssignmentEventKind;
 use models::{
     ProjectTaskBoard, ProjectTaskBoardItem, ProjectTaskBoardItemAssignment,
-    ProjectTaskBoardItemAssignmentEventDetails, ProjectTaskBoardItemEvent,
     ProjectTaskBoardItemRelation,
 };
 use queries::{GetProjectTaskBoardItemByIdQuery, ListProjectTaskBoardItemAssignmentsQuery};
 use sqlx::Row;
 
-fn assignment_details(
-    assignment: &ProjectTaskBoardItemAssignment,
-    note: Option<String>,
-) -> serde_json::Value {
-    serde_json::to_value(ProjectTaskBoardItemAssignmentEventDetails {
-        assignment_id: assignment.id,
-        board_item_id: assignment.board_item_id,
-        thread_id: assignment.thread_id,
-        assignment_role: assignment.assignment_role.clone(),
-        assignment_order: assignment.assignment_order,
-        status: assignment.status.clone(),
-        result_status: assignment.result_status.clone(),
-        result_summary: assignment.result_summary.clone(),
-        result_payload: assignment.result_payload.clone(),
-        note,
-        instructions: assignment.instructions.clone(),
-        metadata: assignment.typed_metadata(),
-    })
-    .unwrap_or_else(|_| serde_json::Value::Null)
-}
-
-fn assignment_thread_event_payload(
-    assignment: &ProjectTaskBoardItemAssignment,
-) -> serde_json::Value {
-    serde_json::json!({
-        "assignment_id": assignment.id.to_string(),
-    })
-}
-
 fn board_item_status_is_terminal(status: &str) -> bool {
     matches!(status, "completed" | "cancelled")
 }
 
-async fn create_assignment_board_item_event_with_deps<D>(
-    deps: &D,
-    assignment: &ProjectTaskBoardItemAssignment,
-    event_type: &str,
-    summary: &str,
-    note: Option<String>,
-) -> Result<ProjectTaskBoardItemEvent, AppError>
-where
-    D: HasDbRouter + HasIdProvider + ?Sized,
-{
-    CreateProjectTaskBoardItemEventCommand {
-        id: deps.id_provider().next_id()? as i64,
-        board_item_id: assignment.board_item_id,
-        thread_id: Some(assignment.thread_id),
-        execution_run_id: None,
-        event_type: event_type.to_string(),
-        summary: summary.to_string(),
-        body_markdown: None,
-        details: assignment_details(assignment, note),
+pub struct ResolveBoardItemCommentsCommand {
+    pub board_item_id: i64,
+    pub comment_ids: Vec<i64>,
+    pub resolved_by_thread_id: i64,
+    pub resolution_summary: String,
+}
+
+impl ResolveBoardItemCommentsCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query!(
+            r#"
+            UPDATE project_task_board_item_comments
+            SET resolved_at = NOW(),
+                resolved_by_thread_id = $3,
+                resolution_summary = $4,
+                updated_at = NOW()
+            WHERE board_item_id = $1
+              AND id = ANY($2)
+              AND archived_at IS NULL
+              AND resolved_at IS NULL
+            "#,
+            self.board_item_id,
+            &self.comment_ids,
+            self.resolved_by_thread_id,
+            self.resolution_summary,
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
     }
-    .execute_with_db(deps.writer_pool())
-    .await
+}
+
+pub struct SetBoardItemPendingQuestionCommand {
+    pub board_item_id: i64,
+    pub pending_question: Option<models::PendingQuestion>,
+}
+
+impl SetBoardItemPendingQuestionCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let value = self
+            .pending_question
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|e| {
+                AppError::Internal(format!("failed to serialize pending_question: {e}"))
+            })?;
+        sqlx::query!(
+            r#"
+            UPDATE project_task_board_items
+            SET pending_question = $2,
+                status = CASE
+                    WHEN $2::jsonb IS NOT NULL
+                         AND status NOT IN ('completed', 'cancelled')
+                        THEN 'needs_clarification'
+                    WHEN $2::jsonb IS NULL
+                         AND status = 'needs_clarification'
+                        THEN 'in_progress'
+                    ELSE status
+                END,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+            self.board_item_id,
+            value,
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+}
+
+pub struct SetBoardItemPendingApprovalCommand {
+    pub board_item_id: i64,
+    pub pending_approval: Option<models::ToolApprovalRequestState>,
+}
+
+impl SetBoardItemPendingApprovalCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let value = self
+            .pending_approval
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|e| {
+                AppError::Internal(format!("failed to serialize pending_approval: {e}"))
+            })?;
+        sqlx::query!(
+            r#"
+            UPDATE project_task_board_items
+            SET pending_approval = $2,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+            self.board_item_id,
+            value,
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
 }
 
 pub(crate) async fn enqueue_assignment_execution_event_with_deps<D>(
@@ -80,14 +137,10 @@ pub(crate) async fn enqueue_assignment_execution_event_with_deps<D>(
     assignment: &ProjectTaskBoardItemAssignment,
 ) -> Result<(), AppError>
 where
-    D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + ?Sized,
+    D: HasDbRouter + HasIdProvider + HasNatsProvider + ?Sized,
 {
     let thread = sqlx::query!(
-        r#"
-        SELECT deployment_id, project_id, actor_id, status
-        FROM agent_threads
-        WHERE id = $1 AND archived_at IS NULL
-        "#,
+        r#"SELECT deployment_id FROM agent_threads WHERE id = $1 AND archived_at IS NULL"#,
         assignment.thread_id
     )
     .fetch_optional(deps.reader_pool(ReadConsistency::Strong))
@@ -100,46 +153,52 @@ where
     let board_item = queries::GetProjectTaskBoardItemByIdQuery::new(assignment.board_item_id)
         .execute_with_db(deps.reader_pool(ReadConsistency::Strong))
         .await?;
-    let conversation_id = if let Some(board_item) = board_item.as_ref() {
+    let summary = if let Some(board_item) = board_item.as_ref() {
         let siblings = fetch_assignment_siblings(deps, assignment.board_item_id).await?;
-        let total = siblings.len();
         let prior = siblings
             .iter()
-            .filter(|a| a.assignment_order < assignment.assignment_order)
-            .max_by_key(|a| a.assignment_order);
-        let summary = build_assignment_execution_summary(assignment, board_item, total, prior);
-        Some(
-            WriteAssignmentEventConversation {
-                thread_id: assignment.thread_id,
-                board_item_id: assignment.board_item_id,
-                kind: AssignmentEventKind::AssignmentExecution,
-                assignment_id: Some(assignment.id),
-                summary,
-                payload: Some(assignment_thread_event_payload(assignment)),
-            }
-            .execute_with_deps(deps)
-            .await?,
-        )
+            .filter(|a| a.id < assignment.id)
+            .max_by_key(|a| a.id);
+        Some(build_assignment_execution_summary(
+            assignment,
+            board_item,
+            siblings.len(),
+            prior,
+        ))
     } else {
         None
     };
 
-    let mut enqueue = EnqueueThreadEventCommand::new(
-        deps.id_provider().next_id()? as i64,
-        thread.deployment_id,
-        assignment.thread_id,
-        models::thread_event::event_type::ASSIGNMENT_EXECUTION.to_string(),
-    )
-    .with_board_item_id(assignment.board_item_id)
-    .with_priority(20)
-    .with_payload(assignment_thread_event_payload(assignment));
-    if let Some(conversation_id) = conversation_id {
-        enqueue = enqueue.with_conversation_id(conversation_id);
-    }
+    let event_id = deps.id_provider().next_id()? as i64;
+    let payload = serde_json::json!({
+        "event_log_id": event_id.to_string(),
+        "deployment_id": thread.deployment_id.to_string(),
+        "thread_id": assignment.thread_id.to_string(),
+        "assignment_id": assignment.id.to_string(),
+        "board_item_id": assignment.board_item_id.to_string(),
+        "kind": "assignment_execution",
+        "summary": summary,
+    });
+    let idempotency_key = format!(
+        "assignment_execution_{}_{}",
+        assignment.id, assignment.state_version
+    );
 
-    DispatchThreadEventCommand::new(enqueue)
-        .execute_with_deps(deps)
-        .await?;
+    InsertEventLogCommand::new(
+        event_id,
+        thread.deployment_id,
+        event_log::aggregate_type::ASSIGNMENT,
+        assignment.id,
+        "assignment_execution",
+        idempotency_key,
+    )
+    .with_payload(payload)
+    .with_priority(20)
+    .with_publish_subject(event_log::EVENT_LOG_WORK_SUBJECT)
+    .execute(deps.writer_pool())
+    .await?;
+
+    event_log::nudge_dispatcher(deps.nats_provider()).await;
 
     Ok(())
 }
@@ -149,17 +208,16 @@ pub(crate) async fn enqueue_board_item_to_coordinator_with_deps<D>(
     board_item: &ProjectTaskBoardItem,
     note: Option<String>,
     caused_by_thread_id: Option<i64>,
+    routing_reason: &'static str,
 ) -> Result<(), AppError>
 where
-    D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + ?Sized,
+    D: HasDbRouter + HasIdProvider + HasNatsProvider + ?Sized,
 {
     let coordinator = sqlx::query!(
         r#"
         SELECT
             p.coordinator_thread_id,
-            t.deployment_id,
-            t.project_id,
-            t.status
+            t.deployment_id
         FROM project_task_boards b
         INNER JOIN actor_projects p
             ON p.id = b.project_id
@@ -184,69 +242,27 @@ where
         return Ok(());
     };
 
-    CreateProjectTaskBoardItemEventCommand {
-        id: deps.id_provider().next_id()? as i64,
-        board_item_id: board_item.id,
-        thread_id: Some(coordinator_thread_id),
-        execution_run_id: None,
-        event_type: "task_returned_to_coordinator".to_string(),
-        summary: "Task returned to coordinator for rerouting".to_string(),
-        body_markdown: None,
-        details: serde_json::json!({
-            "board_item_id": board_item.id.to_string(),
-            "task_key": board_item.task_key,
-            "status": board_item.status,
-            "note": note,
-        }),
-    }
-    .execute_with_db(deps.writer_pool())
-    .await?;
-
-    let payload = models::thread_event::TaskRoutingEventPayload {
-        board_item_id: board_item.id,
-    };
-
     let siblings = fetch_assignment_siblings(deps, board_item.id).await?;
     let summary = build_task_routing_summary(board_item, siblings.len());
-    let conversation_id = WriteAssignmentEventConversation {
-        thread_id: coordinator_thread_id,
-        board_item_id: board_item.id,
-        kind: AssignmentEventKind::TaskRouting,
-        assignment_id: None,
+    let event_id = deps.id_provider().next_id()? as i64;
+    let idempotency_key =
+        format!("task_routing_{}_{}", board_item.id, board_item.state_version);
+
+    crate::InsertTaskRoutingEvent {
+        event_log_id: event_id,
+        deployment_id: coordinator.deployment_id,
+        coordinator_thread_id,
+        board_item,
+        idempotency_key,
         summary,
-        payload: Some(serde_json::to_value(&payload).map_err(|err| {
-            AppError::Internal(format!(
-                "Failed to serialize coordinator routing payload: {}",
-                err
-            ))
-        })?),
+        note,
+        caused_by_event_id: caused_by_thread_id,
+        routing_reason,
     }
-    .execute_with_deps(deps)
+    .execute(deps.writer_pool())
     .await?;
 
-    let mut enqueue = EnqueueThreadEventCommand::new(
-        deps.id_provider().next_id()? as i64,
-        coordinator.deployment_id,
-        coordinator_thread_id,
-        models::thread_event::event_type::TASK_ROUTING.to_string(),
-    )
-    .with_board_item_id(board_item.id)
-    .with_priority(15)
-    .with_payload(serde_json::to_value(payload).map_err(|err| {
-        AppError::Internal(format!(
-            "Failed to serialize coordinator routing payload: {}",
-            err
-        ))
-    })?)
-    .with_conversation_id(conversation_id);
-
-    if let Some(caused_by_thread_id) = caused_by_thread_id {
-        enqueue = enqueue.with_caused_by_thread_id(caused_by_thread_id);
-    }
-
-    DispatchThreadEventCommand::new(enqueue)
-        .execute_with_deps(deps)
-        .await?;
+    event_log::nudge_dispatcher(deps.nats_provider()).await;
 
     Ok(())
 }
@@ -256,7 +272,7 @@ async fn maybe_ready_parent_after_child_completion_with_deps<D>(
     child_item: &ProjectTaskBoardItem,
 ) -> Result<Option<ProjectTaskBoardItem>, AppError>
 where
-    D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + ?Sized,
+    D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + HasNatsProvider + ?Sized,
 {
     if child_item.status != "completed" {
         return Ok(None);
@@ -318,10 +334,6 @@ where
         return Ok(None);
     }
 
-    let child_task_keys = child_rows
-        .iter()
-        .map(|row| row.get::<String, _>("task_key"))
-        .collect::<Vec<_>>();
     let now = Utc::now();
     let parent_item = sqlx::query_as::<_, ProjectTaskBoardItem>(
         r#"
@@ -329,29 +341,14 @@ where
         SET status = 'pending', updated_at = $2
         WHERE id = $1
         RETURNING
-            id, board_id, task_key, title, description, status, priority,
-            assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at
+            id, board_id, task_key, title, description, status,
+            assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval
         "#,
     )
     .bind(parent_item.id)
     .bind(now)
     .fetch_one(&mut *tx)
-    .await?;
-
-    CreateProjectTaskBoardItemEventCommand {
-        id: deps.id_provider().next_id()? as i64,
-        board_item_id: parent_item.id,
-        thread_id: child_item.assigned_thread_id,
-        execution_run_id: None,
-        event_type: "child_tasks_completed".to_string(),
-        summary: "All child tasks completed".to_string(),
-        body_markdown: None,
-        details: serde_json::json!({
-            "task_key": parent_item.task_key,
-            "child_task_keys": child_task_keys,
-        }),
-    }
-    .execute_with_db(&mut *tx)
     .await?;
 
     tx.commit().await?;
@@ -455,7 +452,6 @@ pub struct CreateProjectTaskBoardItemCommand {
     pub title: String,
     pub description: Option<String>,
     pub status: String,
-    pub priority: String,
     pub assigned_thread_id: Option<i64>,
     pub metadata: serde_json::Value,
 }
@@ -470,21 +466,24 @@ impl CreateProjectTaskBoardItemCommand {
         let item = sqlx::query_as::<_, ProjectTaskBoardItem>(
             r#"
             INSERT INTO project_task_board_items (
-                id, board_id, task_key, title, description, status, priority,
-                assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at
+                id, board_id, task_key, title, description, status,
+                assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7,
-                $8, $9,
+                $1, $2, $3, $4, $5, $6,
+                $7, $8,
                 CASE
-                    WHEN $6::text = 'completed' THEN $10::timestamptz
+                    WHEN $6::text = 'completed' THEN $9::timestamptz
                     ELSE NULL::timestamptz
                 END,
                 NULL,
-                $10, $10
+                $9, $9, 0,
+                NULL, NULL, NULL, NULL, NULL
             )
             RETURNING
-                id, board_id, task_key, title, description, status, priority,
-                assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at
+                id, board_id, task_key, title, description, status,
+                assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval
             "#,
         )
         .bind(self.id)
@@ -493,7 +492,6 @@ impl CreateProjectTaskBoardItemCommand {
         .bind(self.title)
         .bind(self.description)
         .bind(self.status)
-        .bind(self.priority)
         .bind(self.assigned_thread_id)
         .bind(self.metadata)
         .bind(now)
@@ -534,8 +532,9 @@ impl CreateProjectTaskBoardItemRelationCommand {
         let parent = sqlx::query_as::<_, ProjectTaskBoardItem>(
             r#"
             SELECT
-                id, board_id, task_key, title, description, status, priority,
-                assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at
+                id, board_id, task_key, title, description, status,
+                assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval
             FROM project_task_board_items
             WHERE id = $1 AND archived_at IS NULL
             LIMIT 1
@@ -549,8 +548,9 @@ impl CreateProjectTaskBoardItemRelationCommand {
         let child = sqlx::query_as::<_, ProjectTaskBoardItem>(
             r#"
             SELECT
-                id, board_id, task_key, title, description, status, priority,
-                assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at
+                id, board_id, task_key, title, description, status,
+                assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval
             FROM project_task_board_items
             WHERE id = $1 AND archived_at IS NULL
             LIMIT 1
@@ -677,54 +677,16 @@ pub struct UpdateProjectTaskBoardItemCommand {
     pub board_id: i64,
     pub task_key: String,
     pub status: Option<String>,
-    pub priority: Option<String>,
     pub metadata: serde_json::Value,
 }
 
 impl UpdateProjectTaskBoardItemCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<ProjectTaskBoardItem, AppError>
     where
-        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + ?Sized,
+        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + HasNatsProvider + ?Sized,
     {
         let mut tx = deps.writer_pool().begin().await?;
-
-        let requested_status = self.status.clone();
-        let requested_priority = self.priority.clone();
-        let requested_metadata = self.metadata.clone();
-
         let item = self.execute_with_db(&mut *tx).await?;
-
-        let (event_type, summary) = match requested_status.as_deref() {
-            Some("completed") => ("task_completed", "Task completed"),
-            Some("blocked") => ("task_blocked", "Task blocked"),
-            Some("failed") => ("task_failed", "Task failed"),
-            Some("in_progress") => ("task_in_progress", "Task moved in progress"),
-            _ => ("task_updated", "Task updated"),
-        };
-
-        let mut details = serde_json::Map::new();
-        details.insert("task_key".to_string(), serde_json::json!(item.task_key));
-        if let Some(ref status) = requested_status {
-            details.insert("status".to_string(), serde_json::json!(status));
-        }
-        if let Some(ref priority) = requested_priority {
-            details.insert("priority".to_string(), serde_json::json!(priority));
-        }
-        details.insert("metadata".to_string(), requested_metadata);
-
-        CreateProjectTaskBoardItemEventCommand {
-            id: deps.id_provider().next_id()? as i64,
-            board_item_id: item.id,
-            thread_id: item.assigned_thread_id,
-            execution_run_id: None,
-            event_type: event_type.to_string(),
-            summary: summary.to_string(),
-            body_markdown: None,
-            details: serde_json::Value::Object(details),
-        }
-        .execute_with_db(&mut *tx)
-        .await?;
-
         tx.commit().await?;
 
         let _ = maybe_ready_parent_after_child_completion_with_deps(deps, &item).await?;
@@ -744,24 +706,23 @@ impl UpdateProjectTaskBoardItemCommand {
             UPDATE project_task_board_items
             SET
                 status = COALESCE($3, status),
-                priority = COALESCE($4, priority),
-                metadata = $5,
+                metadata = $4,
                 completed_at = CASE
-                    WHEN COALESCE($3, status) = 'completed' THEN COALESCE(completed_at, $6)
+                    WHEN COALESCE($3, status) = 'completed' THEN COALESCE(completed_at, $5)
                     WHEN $3 IS NOT NULL THEN NULL
                     ELSE completed_at
                 END,
-                updated_at = $6
+                updated_at = $5
             WHERE board_id = $1 AND task_key = $2 AND archived_at IS NULL
             RETURNING
-                id, board_id, task_key, title, description, status, priority,
-                assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at
+                id, board_id, task_key, title, description, status,
+                assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval
             "#,
         )
         .bind(self.board_id)
         .bind(&task_key)
         .bind(self.status)
-        .bind(self.priority)
         .bind(self.metadata)
         .bind(now)
         .fetch_optional(executor)
@@ -776,53 +737,10 @@ impl UpdateProjectTaskBoardItemCommand {
     }
 }
 
-pub struct CreateProjectTaskBoardItemEventCommand {
-    pub id: i64,
-    pub board_item_id: i64,
-    pub thread_id: Option<i64>,
-    pub execution_run_id: Option<i64>,
-    pub event_type: String,
-    pub summary: String,
-    pub body_markdown: Option<String>,
-    pub details: serde_json::Value,
-}
-
 pub struct ReconcileProjectTaskBoardItemCommand {
     pub board_item_id: i64,
     pub note: Option<String>,
     pub caused_by_thread_id: Option<i64>,
-}
-
-impl CreateProjectTaskBoardItemEventCommand {
-    pub async fn execute_with_db<'e, E>(
-        self,
-        executor: E,
-    ) -> Result<ProjectTaskBoardItemEvent, AppError>
-    where
-        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-    {
-        let event = sqlx::query_as!(
-            ProjectTaskBoardItemEvent,
-            r#"
-            INSERT INTO project_task_board_item_events (
-                id, board_item_id, thread_id, execution_run_id, event_type, summary, body_markdown, details, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-            RETURNING id, board_item_id, thread_id, execution_run_id, event_type, summary, body_markdown, details, created_at
-            "#,
-            self.id,
-            self.board_item_id,
-            self.thread_id,
-            self.execution_run_id,
-            self.event_type,
-            self.summary,
-            self.body_markdown,
-            self.details,
-        )
-        .fetch_one(executor)
-        .await?;
-
-        Ok(event)
-    }
 }
 
 impl ReconcileProjectTaskBoardItemCommand {
@@ -846,7 +764,7 @@ impl ReconcileProjectTaskBoardItemCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + ?Sized,
+        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + HasNatsProvider + ?Sized,
     {
         let Some(board_item) = GetProjectTaskBoardItemByIdQuery::new(self.board_item_id)
             .execute_with_db(deps.reader_pool(ReadConsistency::Strong))
@@ -875,7 +793,7 @@ impl ReconcileProjectTaskBoardItemCommand {
             .filter(|assignment| {
                 assignment.status == models::project_task_board::assignment_status::AVAILABLE
             })
-            .min_by_key(|assignment| assignment.assignment_order)
+            .min_by_key(|assignment| assignment.id)
         {
             enqueue_assignment_execution_event_with_deps(deps, assignment).await?;
             return Ok(());
@@ -886,12 +804,12 @@ impl ReconcileProjectTaskBoardItemCommand {
             .filter(|assignment| {
                 assignment.status == models::project_task_board::assignment_status::PENDING
             })
-            .min_by_key(|assignment| assignment.assignment_order)
+            .min_by_key(|assignment| assignment.id)
         {
             let activation_note = self.note.clone().unwrap_or_else(|| {
                 format!(
-                    "Scheduler activated assignment order {}",
-                    next_assignment.assignment_order
+                    "Scheduler activated assignment {}",
+                    next_assignment.id
                 )
             });
 
@@ -899,18 +817,9 @@ impl ReconcileProjectTaskBoardItemCommand {
                 next_assignment.id,
                 models::project_task_board::assignment_status::AVAILABLE.to_string(),
             )
-            .with_note(activation_note.clone())
+            .with_note(activation_note)
             .without_reconcile()
-            .execute_with_db(deps.writer_pool())
-            .await?;
-
-            create_assignment_board_item_event_with_deps(
-                deps,
-                &activated,
-                "assignment_available",
-                "Task assignment is now available",
-                Some(activation_note),
-            )
+            .apply_with_deps(deps)
             .await?;
 
             enqueue_assignment_execution_event_with_deps(deps, &activated).await?;
@@ -924,6 +833,7 @@ impl ReconcileProjectTaskBoardItemCommand {
                 Some("No active assignment available; returned task to coordinator".to_string())
             }),
             self.caused_by_thread_id,
+            models::thread_event::routing_reason::ASSIGNMENT_COMPLETED,
         )
         .await?;
 
@@ -936,7 +846,6 @@ pub struct CreateProjectTaskBoardItemAssignmentCommand {
     pub board_item_id: i64,
     pub thread_id: i64,
     pub assignment_role: String,
-    pub assignment_order: i32,
     pub status: String,
     pub instructions: Option<String>,
     pub metadata: serde_json::Value,
@@ -948,71 +857,33 @@ impl CreateProjectTaskBoardItemAssignmentCommand {
         deps: &D,
     ) -> Result<ProjectTaskBoardItemAssignment, AppError>
     where
-        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + ?Sized,
-    {
-        let assignment = self.execute_with_db(deps.writer_pool()).await?;
-
-        create_assignment_board_item_event_with_deps(
-            deps,
-            &assignment,
-            "assignment_created",
-            "Task assignment created",
-            None,
-        )
-        .await?;
-
-        if assignment.status == models::project_task_board::assignment_status::AVAILABLE {
-            create_assignment_board_item_event_with_deps(
-                deps,
-                &assignment,
-                "assignment_available",
-                "Task assignment is now available",
-                None,
-            )
-            .await?;
-        }
-
-        ReconcileProjectTaskBoardItemCommand::new(assignment.board_item_id)
-            .with_note("Task assignment created; scheduler reevaluated routing".to_string())
-            .execute_with_deps(deps)
-            .await?;
-
-        Ok(assignment)
-    }
-
-    pub async fn execute_with_db<'a, A>(
-        self,
-        acquirer: A,
-    ) -> Result<ProjectTaskBoardItemAssignment, AppError>
-    where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + HasNatsProvider + ?Sized,
     {
         let now = Utc::now();
-        let mut tx = acquirer.begin().await?;
+        let mut tx = deps.writer_pool().begin().await?;
         let assignment = sqlx::query_as!(
             ProjectTaskBoardItemAssignment,
             r#"
             INSERT INTO project_task_board_item_assignments (
-                id, board_item_id, thread_id, assignment_role, assignment_order, status,
+                id, board_item_id, thread_id, assignment_role, status,
                 instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
                 updated_at
             ) VALUES (
-                $1, $2, $3, $4, $5, $6,
-                $7, $8, NULL, NULL,
-                NULL, NULL, NULL, NULL, NULL, $9, $9
+                $1, $2, $3, $4, $5,
+                $6, $7, NULL, NULL,
+                NULL, NULL, NULL, NULL, NULL, $8, $8
             )
             RETURNING
-                id, board_item_id, thread_id, assignment_role, assignment_order, status,
+                id, board_item_id, thread_id, assignment_role, status,
                 instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
-                updated_at
+                updated_at, state_version
             "#,
             self.id,
             self.board_item_id,
             self.thread_id,
             self.assignment_role,
-            self.assignment_order,
             self.status,
             self.instructions,
             self.metadata,
@@ -1042,6 +913,12 @@ impl CreateProjectTaskBoardItemAssignmentCommand {
         }
 
         tx.commit().await?;
+
+        ReconcileProjectTaskBoardItemCommand::new(assignment.board_item_id)
+            .with_note("Task assignment created; scheduler reevaluated routing".to_string())
+            .execute_with_deps(deps)
+            .await?;
+
         Ok(assignment)
     }
 }
@@ -1061,51 +938,19 @@ impl UpdateProjectTaskBoardItemAssignmentCommand {
         deps: &D,
     ) -> Result<ProjectTaskBoardItemAssignment, AppError>
     where
-        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + ?Sized,
+        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + HasNatsProvider + ?Sized,
     {
-        let assignment = self.execute_with_db(deps.writer_pool()).await?;
-
-        create_assignment_board_item_event_with_deps(
-            deps,
-            &assignment,
-            "assignment_updated",
-            "Task assignment updated",
-            None,
-        )
-        .await?;
-
-        if assignment.status == models::project_task_board::assignment_status::AVAILABLE {
-            create_assignment_board_item_event_with_deps(
-                deps,
-                &assignment,
-                "assignment_available",
-                "Task assignment is now available",
-                None,
-            )
-            .await?;
-        }
-
-        Ok(assignment)
-    }
-
-    pub async fn execute_with_db<'a, A>(
-        self,
-        acquirer: A,
-    ) -> Result<ProjectTaskBoardItemAssignment, AppError>
-    where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let mut tx = acquirer.begin().await?;
+        let mut tx = deps.writer_pool().begin().await?;
         let now = Utc::now();
 
         let current = sqlx::query_as!(
             ProjectTaskBoardItemAssignment,
             r#"
             SELECT
-                id, board_item_id, thread_id, assignment_role, assignment_order, status,
+                id, board_item_id, thread_id, assignment_role, status,
                 instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
-                updated_at
+                updated_at, state_version
             FROM project_task_board_item_assignments
             WHERE id = $1
             FOR UPDATE
@@ -1148,10 +993,10 @@ impl UpdateProjectTaskBoardItemAssignmentCommand {
                 updated_at = $7
             WHERE id = $1
             RETURNING
-                id, board_item_id, thread_id, assignment_role, assignment_order, status,
+                id, board_item_id, thread_id, assignment_role, status,
                 instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
-                updated_at
+                updated_at, state_version
             "#,
             self.assignment_id,
             self.thread_id,
@@ -1198,6 +1043,7 @@ impl UpdateProjectTaskBoardItemAssignmentCommand {
             .execute(&mut *tx)
             .await?;
         }
+
 
         tx.commit().await?;
         Ok(assignment)
@@ -1254,49 +1100,14 @@ impl UpdateProjectTaskBoardItemAssignmentStateCommand {
         deps: &D,
     ) -> Result<ProjectTaskBoardItemAssignment, AppError>
     where
-        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + ?Sized,
+        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + HasNatsProvider + ?Sized,
     {
         let suppress_reconcile = self.suppress_reconcile;
-        let note = self.note.clone();
-        let assignment = self.execute_with_db(deps.writer_pool()).await?;
-
-        let (event_type, summary) = match assignment.status.as_str() {
-            models::project_task_board::assignment_status::AVAILABLE => {
-                ("assignment_available", "Task assignment is now available")
-            }
-            models::project_task_board::assignment_status::CLAIMED => {
-                ("assignment_claimed", "Task assignment was claimed")
-            }
-            models::project_task_board::assignment_status::IN_PROGRESS => (
-                "assignment_in_progress",
-                "Task assignment moved in progress",
-            ),
-            models::project_task_board::assignment_status::COMPLETED => {
-                ("assignment_completed", "Task assignment completed")
-            }
-            models::project_task_board::assignment_status::REJECTED => {
-                ("assignment_rejected", "Task assignment was rejected")
-            }
-            models::project_task_board::assignment_status::BLOCKED => {
-                ("assignment_blocked", "Task assignment is blocked")
-            }
-            models::project_task_board::assignment_status::CANCELLED => {
-                ("assignment_cancelled", "Task assignment was cancelled")
-            }
-            _ => ("assignment_updated", "Task assignment updated"),
-        };
-
-        create_assignment_board_item_event_with_deps(
-            deps,
-            &assignment,
-            event_type,
-            summary,
-            note.clone(),
-        )
-        .await?;
+        let custom_note = self.note.clone();
+        let assignment = self.apply_with_deps(deps).await?;
 
         if !suppress_reconcile {
-            let reconcile_note = note.unwrap_or_else(|| {
+            let reconcile_note = custom_note.unwrap_or_else(|| {
                 format!(
                     "Assignment {} moved to {}; scheduler reevaluated routing",
                     assignment.id, assignment.status
@@ -1312,14 +1123,18 @@ impl UpdateProjectTaskBoardItemAssignmentStateCommand {
         Ok(assignment)
     }
 
-    pub async fn execute_with_db<'a, A>(
+    /// State mutation in a single tx. Does NOT trigger reconcile.
+    /// `execute_with_deps` is the full path (apply + maybe reconcile);
+    /// `ReconcileProjectTaskBoardItemCommand` calls `apply_with_deps`
+    /// directly to avoid re-entering itself.
+    pub(crate) async fn apply_with_deps<D>(
         self,
-        acquirer: A,
+        deps: &D,
     ) -> Result<ProjectTaskBoardItemAssignment, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + ?Sized,
     {
-        let mut tx = acquirer.begin().await?;
+        let mut tx = deps.writer_pool().begin().await?;
         let now = Utc::now();
         let result_status = self.result_status.clone();
         let result_summary = self.result_summary.clone();
@@ -1360,10 +1175,10 @@ impl UpdateProjectTaskBoardItemAssignmentStateCommand {
                 updated_at = $6
             WHERE id = $1
             RETURNING
-                id, board_item_id, thread_id, assignment_role, assignment_order, status,
+                id, board_item_id, thread_id, assignment_role, status,
                 instructions, metadata, result_status, result_summary,
                 result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
-                updated_at
+                updated_at, state_version
             "#,
             self.assignment_id,
             self.status,

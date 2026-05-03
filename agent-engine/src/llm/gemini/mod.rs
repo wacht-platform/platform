@@ -9,7 +9,8 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 use crate::llm::{
-    GeneratedToolCall, NativeToolDefinition, SemanticLlmRequest, ToolCallGenerationOutput,
+    GeneratedToolCall, NativeToolDefinition, PromptCacheRequest, SemanticLlmRequest,
+    ToolCallGenerationOutput,
 };
 
 pub use types::{
@@ -242,9 +243,18 @@ impl GeminiClient {
         &self,
         prompt: SemanticLlmRequest,
         tools: Vec<NativeToolDefinition>,
+        cache: Option<PromptCacheRequest>,
     ) -> Result<ToolCallGenerationOutput, AppError> {
         let url = format!("{}/{}:generateContent", GEMINI_API_BASE_URL, self.model);
         let request_body = self.build_tool_call_request_body(prompt, tools)?;
+
+        let cache_request: Option<ExplicitCacheRequest> = cache.map(Into::into);
+        let prepared = self
+            .prepare_generate_request_body(request_body, cache_request.as_ref())
+            .await;
+        let request_body = prepared.request_body;
+        let cache_plan = prepared.cache_plan;
+
         let parsed = self
             .execute_generate_content_request(&url, &request_body)
             .await?;
@@ -277,10 +287,23 @@ impl GeminiClient {
             ));
         }
 
+        let cache_state = if let (Some(cache_request), Some(cache_plan)) =
+            (cache_request.as_ref(), cache_plan.as_ref())
+        {
+            if cache_request.reuse_only {
+                None
+            } else {
+                self.refresh_explicit_cache(cache_request, cache_plan).await?
+            }
+        } else {
+            None
+        };
+
         Ok(ToolCallGenerationOutput {
             calls,
             content_text,
             usage_metadata: parsed.usage_metadata,
+            cache_state,
         })
     }
 

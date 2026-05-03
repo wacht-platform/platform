@@ -1,9 +1,9 @@
-pub mod admission;
 pub mod executor;
 pub mod filesystem;
 mod json_schema;
 pub mod llm;
 pub mod runtime;
+pub mod sandbox;
 pub mod tools;
 
 pub use executor::{AgentExecutor, ResumeContext};
@@ -12,6 +12,7 @@ pub use llm::{
     StructuredGenerationRequest,
 };
 pub use runtime::{AgentHandler, ExecutionRequest, KnowledgeOrchestrator, ThreadExecutionContext};
+pub use sandbox::{init_shared_sandbox_runtime, shared_sandbox_runtime};
 pub use tools::ToolExecutor;
 
 use dto::json::StreamEvent;

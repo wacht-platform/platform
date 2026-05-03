@@ -161,6 +161,69 @@ impl WriteToDeploymentStorageCommand {
     }
 }
 
+pub struct ReadFromDeploymentStorageCommand {
+    pub deployment_id: i64,
+    pub key: String,
+    tail_bytes: Option<u64>,
+}
+
+impl ReadFromDeploymentStorageCommand {
+    pub fn new(deployment_id: i64, key: String) -> Self {
+        Self {
+            deployment_id,
+            key,
+            tail_bytes: None,
+        }
+    }
+
+    pub fn with_tail_bytes(mut self, n: u64) -> Self {
+        self.tail_bytes = Some(n);
+        self
+    }
+
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Option<Vec<u8>>, AppError>
+    where
+        D: HasDbRouter + HasEncryptionProvider + ?Sized,
+    {
+        let storage = ResolveDeploymentStorageCommand::new(self.deployment_id)
+            .execute_with_deps(deps)
+            .await?;
+        let resolved_key = storage.object_key(&self.key);
+
+        let mut request = storage
+            .client()
+            .get_object()
+            .bucket(storage.bucket())
+            .key(&resolved_key);
+        if let Some(n) = self.tail_bytes {
+            request = request.range(format!("bytes=-{n}"));
+        }
+        let response = request.send().await;
+
+        let output = match response {
+            Ok(output) => output,
+            Err(err) => {
+                if let Some(service_err) = err.as_service_error() {
+                    if service_err.is_no_such_key() {
+                        return Ok(None);
+                    }
+                    return Err(AppError::S3(service_err.to_string()));
+                }
+                return Err(AppError::S3(err.to_string()));
+            }
+        };
+
+        let bytes = output
+            .body
+            .collect()
+            .await
+            .map_err(|e| AppError::S3(e.to_string()))?
+            .into_bytes()
+            .to_vec();
+        Ok(Some(bytes))
+    }
+}
+
 pub struct DeleteFromDeploymentStorageCommand {
     pub deployment_id: i64,
     pub key: String,

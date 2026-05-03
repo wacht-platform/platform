@@ -228,8 +228,9 @@ impl OpenRouterClient {
         &self,
         prompt: SemanticLlmRequest,
         tools: Vec<NativeToolDefinition>,
+        cache: Option<PromptCacheRequest>,
     ) -> Result<ToolCallGenerationOutput, AppError> {
-        let request_body = self.build_tool_call_request_body(prompt, tools)?;
+        let request_body = self.build_tool_call_request_body(prompt, tools, cache)?;
         let parsed = self.execute_request(request_body).await?;
         let message = &parsed
             .choices
@@ -273,6 +274,7 @@ impl OpenRouterClient {
             calls,
             content_text,
             usage_metadata: parsed.usage.map(Self::map_usage_metadata),
+            cache_state: None,
         })
     }
 
@@ -378,6 +380,7 @@ impl OpenRouterClient {
         &self,
         prompt: SemanticLlmRequest,
         tools: Vec<NativeToolDefinition>,
+        cache: Option<PromptCacheRequest>,
     ) -> Result<Value, AppError> {
         let mut messages = Vec::with_capacity(prompt.messages.len() + 1);
         messages.push(self.system_message(&prompt.system_prompt));
@@ -387,6 +390,10 @@ impl OpenRouterClient {
                 .into_iter()
                 .map(|message| self.semantic_message_to_openrouter(message)),
         );
+
+        if let Some(cache_request) = cache.as_ref() {
+            self.apply_cache_controls(&mut messages, cache_request);
+        }
 
         let tool_values = tools
             .into_iter()
@@ -566,27 +573,41 @@ impl OpenRouterClient {
             return;
         }
 
+        Self::stamp_message_cache_control(&mut messages[0]);
+
         let cacheable_count = messages
             .len()
             .saturating_sub(cache_request.live_tail_count.min(messages.len()));
-        if cacheable_count == 0 {
+        if cacheable_count <= 1 {
             return;
         }
 
-        let Some(last_cacheable_message) = messages.get_mut(cacheable_count - 1) else {
+        if let Some(last_cacheable_message) = messages.get_mut(cacheable_count - 1) {
+            Self::stamp_message_cache_control(last_cacheable_message);
+        }
+    }
+
+    fn stamp_message_cache_control(message: &mut Value) {
+        let Some(message_obj) = message.as_object_mut() else {
             return;
         };
-        let Some(content) = last_cacheable_message
-            .get_mut("content")
-            .and_then(|value| value.as_array_mut())
-        else {
-            return;
+        let content_value = match message_obj.remove("content") {
+            Some(value) => value,
+            None => return,
         };
-        if content.is_empty() {
+        let mut content_array = match content_value {
+            Value::Array(array) => array,
+            Value::String(text) => vec![json!({"type": "text", "text": text})],
+            other => {
+                message_obj.insert("content".to_string(), other);
+                return;
+            }
+        };
+        if content_array.is_empty() {
+            message_obj.insert("content".to_string(), Value::Array(content_array));
             return;
         }
-
-        let target_index = content
+        let target_index = content_array
             .iter()
             .rposition(|block| {
                 block
@@ -595,13 +616,11 @@ impl OpenRouterClient {
                     .map(|value| value == "text")
                     .unwrap_or(false)
             })
-            .or_else(|| content.len().checked_sub(1));
-
-        if let Some(last_cacheable_block) = target_index.and_then(|index| content.get_mut(index)) {
-            last_cacheable_block["cache_control"] = json!({
-                "type": "ephemeral"
-            });
+            .unwrap_or(content_array.len() - 1);
+        if let Some(target_block) = content_array.get_mut(target_index) {
+            target_block["cache_control"] = json!({"type": "ephemeral"});
         }
+        message_obj.insert("content".to_string(), Value::Array(content_array));
     }
 
     fn supports_explicit_cache_controls(model: &str) -> bool {

@@ -2,7 +2,8 @@ use super::ToolExecutor;
 use crate::filesystem::{shell::ShellExecutor, AgentFilesystem};
 use common::error::AppError;
 use dto::json::agent_executor::{
-    EditFileParams, ExecuteCommandParams, ReadFileParams, ReadImageParams, WriteFileParams,
+    AppendFileParams, EditFileParams, ExecuteCommandParams, ReadFileParams, ReadImageParams,
+    WriteFileParams,
 };
 use models::AiTool;
 use serde_json::Value;
@@ -67,7 +68,27 @@ impl ToolExecutor {
         params: WriteFileParams,
     ) -> Result<Value, AppError> {
         let result = filesystem
-            .write_file(&params.path, &params.content, params.append)
+            .write_file(&params.path, &params.content, false)
+            .await?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "tool": tool.name,
+            "path": params.path,
+            "lines_written": result.lines_written,
+            "total_lines": result.total_lines,
+            "partial": result.partial
+        }))
+    }
+
+    pub(super) async fn execute_append_file(
+        &self,
+        tool: &AiTool,
+        filesystem: &AgentFilesystem,
+        params: AppendFileParams,
+    ) -> Result<Value, AppError> {
+        let result = filesystem
+            .write_file(&params.path, &params.content, true)
             .await?;
 
         Ok(serde_json::json!({
@@ -111,11 +132,9 @@ impl ToolExecutor {
         let result = filesystem
             .edit_file(
                 &params.path,
-                &params.new_content,
-                params.live_slice_hash.as_deref(),
-                params.dangerously_skip_slice_comparison,
-                params.start_line,
-                params.end_line,
+                &params.old_string,
+                &params.new_string,
+                params.replace_all,
             )
             .await?;
 
@@ -123,14 +142,8 @@ impl ToolExecutor {
             "success": true,
             "tool": tool.name,
             "path": params.path,
-            "start_line": params.start_line,
-            "end_line": params.end_line,
-            "live_slice_hash": params.live_slice_hash,
-            "dangerously_skip_slice_comparison": params.dangerously_skip_slice_comparison,
-            "replaced_content": result.replaced_content,
-            "lines_written": result.lines_written,
+            "replacements": result.replacements,
             "total_lines": result.total_lines,
-            "partial": result.partial
         }))
     }
 
@@ -138,29 +151,12 @@ impl ToolExecutor {
         &self,
         tool: &AiTool,
         shell: &ShellExecutor,
-        filesystem: &AgentFilesystem,
         params: ExecuteCommandParams,
     ) -> Result<Value, AppError> {
-        filesystem.ensure_initialized().await?;
         let output = shell.execute(&params.command).await?;
 
-        if output.exit_code != 0 {
-            let detail = if !output.stderr.trim().is_empty() {
-                output.stderr.trim()
-            } else if !output.stdout.trim().is_empty() {
-                output.stdout.trim()
-            } else {
-                "Command produced no output"
-            };
-            let detail = detail.lines().take(20).collect::<Vec<_>>().join("\n");
-            return Err(AppError::Internal(format!(
-                "Command exited with code {}: {}",
-                output.exit_code, detail
-            )));
-        }
-
         Ok(serde_json::json!({
-            "success": true,
+            "success": output.exit_code == 0,
             "tool": tool.name,
             "command": params.command,
             "stdout": output.stdout,

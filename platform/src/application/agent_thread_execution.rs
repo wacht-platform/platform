@@ -1,9 +1,8 @@
 use commands::agent_execution::UploadFilesToS3Command;
 use commands::{
     AdvanceThreadExecutionTokenCommand, CreateConversationCommand,
-    CreateProjectTaskBoardItemEventCommand, DispatchThreadEventCommand, DispatchThreadEventResult,
-    EnqueueThreadEventCommand, EnsurePulseUsageAllowedForDeploymentCommand,
-    ThreadEventWakeDisposition, UpdateAgentThreadStateCommand,
+    EnsurePulseUsageAllowedForDeploymentCommand, UpdateAgentThreadStateCommand,
+    event_log::{self, EnqueueThreadWorkEvent},
 };
 use common::ReadConsistency;
 use common::error::AppError;
@@ -70,69 +69,67 @@ fn parse_pending_approval_request(
     ))
 }
 
-async fn enqueue_thread_event(
+async fn enqueue_thread_work(
     app_state: &AppState,
     thread_state: &models::AgentThreadState,
     thread_id: i64,
-    event_type: &str,
     priority: i32,
-    payload: serde_json::Value,
-    conversation_id: Option<i64>,
     agent_id: Option<i64>,
-) -> Result<DispatchThreadEventResult, AppError> {
-    let mut enqueue = EnqueueThreadEventCommand::new(
-        app_state.sf.next_id()? as i64,
-        thread_state.deployment_id,
-        thread_id,
-        event_type.to_string(),
-    )
-    .with_priority(priority)
-    .with_payload(payload);
-    if let Some(conversation_id) = conversation_id {
-        enqueue = enqueue.with_conversation_id(conversation_id);
-    }
-    let command = DispatchThreadEventCommand::new(enqueue);
-    let command = if let Some(agent_id) = agent_id {
-        command.with_agent_id(agent_id)
-    } else {
-        command
-    };
-
-    let event = command
-        .execute_with_deps(&deps::from_app(app_state).db().nats().id())
-        .await?;
-
-    if let Some(board_item_id) = event.event.board_item_id {
-        let summary = match event_type {
-            "user_message_received" => "User message received",
-            "user_input_received" => "User input received",
-            "approval_response_received" => "Approval response received",
-            _ => "Thread event received",
+    execution_type: dto::json::AgentExecutionType,
+) -> Result<i64, AppError> {
+    let event_log_id = app_state.sf.next_id()? as i64;
+    let (event_type, conversation_id, approval_request_message_id): (&str, Option<i64>, Option<&str>) =
+        match &execution_type {
+            dto::json::AgentExecutionType::NewMessage { conversation_id } => (
+                models::thread_event::event_type::USER_MESSAGE_RECEIVED,
+                conversation_id.parse::<i64>().ok(),
+                None,
+            ),
+            dto::json::AgentExecutionType::ApprovalResponse {
+                request_message_id, ..
+            } => (
+                models::thread_event::event_type::APPROVAL_RESPONSE_RECEIVED,
+                None,
+                Some(request_message_id.as_str()),
+            ),
         };
 
-        let mut details = serde_json::json!({
-            "event_type": event_type,
-            "thread_id": thread_id,
-        });
-        if let Some(conversation_id) = conversation_id {
-            details["conversation_id"] = serde_json::json!(conversation_id);
-        }
+    let request = dto::json::AgentExecutionRequest {
+        deployment_id: thread_state.deployment_id.to_string(),
+        thread_id: thread_id.to_string(),
+        agent_id: agent_id.map(|id| id.to_string()),
+        execution_type,
+    };
 
-        CreateProjectTaskBoardItemEventCommand {
-            id: app_state.sf.next_id()? as i64,
-            board_item_id,
-            thread_id: Some(thread_id),
-            execution_run_id: None,
-            event_type: event_type.to_string(),
-            summary: summary.to_string(),
-            body_markdown: None,
-            details,
-        }
-        .execute_with_db(app_state.db_router.writer())
-        .await?;
+    let execution_payload = serde_json::to_value(&request).map_err(|err| {
+        AppError::Internal(format!("Failed to serialize agent execution request: {err}"))
+    })?;
+
+    let idempotency_key = if let Some(cid) = conversation_id {
+        format!("{event_type}_{thread_id}_{cid}")
+    } else if let Some(rmid) = approval_request_message_id {
+        format!("{event_type}_{thread_id}_{rmid}")
+    } else {
+        format!("{event_type}_{thread_id}_{event_log_id}")
+    };
+
+    EnqueueThreadWorkEvent {
+        event_log_id,
+        deployment_id: thread_state.deployment_id,
+        thread_id,
+        event_type: event_type.to_string(),
+        priority,
+        agent_id,
+        conversation_id,
+        idempotency_key,
+        execution_payload,
     }
+    .execute(app_state.db_router.writer())
+    .await?;
 
-    Ok(event)
+    event_log::nudge_dispatcher(&app_state.nats_client).await;
+
+    Ok(event_log_id)
 }
 
 async fn ensure_pulse_usage_if_needed(
@@ -215,6 +212,7 @@ pub async fn execute_agent_async(
                     .with_status(AgentThreadStatus::Interrupted);
                 if let Some(mut execution_state) = thread_state.execution_state.clone() {
                     execution_state.pending_approval_request = None;
+                    execution_state.pending_question = None;
                     update = update.with_execution_state(execution_state);
                 }
                 update
@@ -275,32 +273,22 @@ pub async fn execute_agent_async(
             .execute_with_db(app_state.db_router.writer())
             .await?;
 
-            let thread_event = enqueue_thread_event(
+            let event_log_id = enqueue_thread_work(
                 app_state,
                 &thread_state,
                 thread_id,
-                "user_message_received",
                 70,
-                serde_json::json!({
-                    "message_type": "user_message",
-                    "conversation_id": conversation_id,
-                }),
-                Some(conversation_id),
                 agent_id,
+                dto::json::AgentExecutionType::NewMessage {
+                    conversation_id: conversation_id.to_string(),
+                },
             )
             .await?;
 
-            if thread_event.wake_disposition == ThreadEventWakeDisposition::Published {
-                info!(
-                    "Published new_message execution for thread {} (conversation_id: {})",
-                    thread_id, conversation_id
-                );
-            } else {
-                info!(
-                    "Queued user_message event {} for busy thread {} (conversation_id: {})",
-                    thread_event.event.id, thread_id, conversation_id
-                );
-            }
+            info!(
+                event_log_id,
+                thread_id, conversation_id, "queued user_message_received"
+            );
 
             Ok(queued_execution_response(Some(conversation_id)))
         }
@@ -402,41 +390,23 @@ pub async fn execute_agent_async(
             .execute_with_db(app_state.db_router.writer())
             .await?;
 
-            let thread_event = enqueue_thread_event(
+            let event_log_id = enqueue_thread_work(
                 app_state,
                 &thread_state,
                 thread_id,
-                "approval_response_received",
                 10,
-                serde_json::to_value(models::thread_event::ApprovalResponseReceivedEventPayload {
-                    conversation_id,
-                    request_message_id,
-                    approvals: approval_response
-                        .approvals
-                        .iter()
-                        .cloned()
-                        .map(|approval| models::ToolApprovalDecision {
-                            tool_name: approval.tool_name,
-                            mode: approval.mode,
-                        })
-                        .collect(),
-                })?,
-                Some(conversation_id),
                 agent_id,
+                dto::json::AgentExecutionType::ApprovalResponse {
+                    request_message_id: request_message_id.to_string(),
+                    approvals: approval_response.approvals.clone(),
+                },
             )
             .await?;
 
-            if thread_event.wake_disposition == ThreadEventWakeDisposition::Published {
-                info!(
-                    "Published approval_response execution for thread {} (conversation_id: {})",
-                    thread_id, conversation_id
-                );
-            } else {
-                info!(
-                    "Queued approval_response event {} for busy thread {} (conversation_id: {})",
-                    thread_event.event.id, thread_id, conversation_id
-                );
-            }
+            info!(
+                event_log_id,
+                thread_id, conversation_id, "queued approval_response_received"
+            );
 
             Ok(queued_execution_response(Some(conversation_id)))
         }

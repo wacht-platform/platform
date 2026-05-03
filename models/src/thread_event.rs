@@ -1,10 +1,6 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
 
-use crate::ToolApprovalDecision;
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThreadEvent {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -18,54 +14,45 @@ pub struct ThreadEvent {
     )]
     pub board_item_id: Option<i64>,
     pub event_type: String,
-    pub status: String,
-    pub priority: i32,
     pub payload: serde_json::Value,
-    pub available_at: DateTime<Utc>,
-    pub claimed_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
-    pub failed_at: Option<DateTime<Utc>>,
-    #[serde(
-        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub caused_by_run_id: Option<i64>,
     #[serde(
         serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
         skip_serializing_if = "Option::is_none"
     )]
     pub caused_by_thread_id: Option<i64>,
-    #[serde(
-        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub conversation_id: Option<i64>,
-    pub retry_count: i32,
-    pub max_retries: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThreadConversationEventPayload {
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub conversation_id: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApprovalResponseReceivedEventPayload {
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub conversation_id: i64,
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub request_message_id: i64,
-    #[serde(default)]
-    pub approvals: Vec<ToolApprovalDecision>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskRoutingEventPayload {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub board_item_id: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_priority: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_fields: Vec<TaskRoutingFieldChange>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_assignment_result_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskRoutingFieldChange {
+    pub field: String,
+    pub from: String,
+    pub to: String,
+}
+
+pub mod routing_reason {
+    pub const TASK_CREATED: &str = "task_created";
+    pub const TASK_UPDATED: &str = "task_updated";
+    pub const ASSIGNMENT_PREEMPTED: &str = "assignment_preempted";
+    pub const ASSIGNMENT_COMPLETED: &str = "assignment_completed";
+    pub const TASK_CANCELLED: &str = "task_cancelled";
+    pub const USER_RESPONDED: &str = "user_responded";
+    pub const USER_FEEDBACK: &str = "user_feedback";
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,25 +62,8 @@ pub struct ThreadAssignmentEventPayload {
 }
 
 impl ThreadEvent {
-    pub fn conversation_payload(&self) -> Option<ThreadConversationEventPayload> {
-        match self.event_type.as_str() {
-            event_type::USER_MESSAGE_RECEIVED | event_type::USER_INPUT_RECEIVED => {
-                serde_json::from_value(self.payload.clone()).ok()
-            }
-            _ => None,
-        }
-    }
-
     pub fn assignment_execution_payload(&self) -> Option<ThreadAssignmentEventPayload> {
         (self.event_type == event_type::ASSIGNMENT_EXECUTION)
-            .then(|| serde_json::from_value(self.payload.clone()).ok())
-            .flatten()
-    }
-
-    pub fn approval_response_received_payload(
-        &self,
-    ) -> Option<ApprovalResponseReceivedEventPayload> {
-        (self.event_type == event_type::APPROVAL_RESPONSE_RECEIVED)
             .then(|| serde_json::from_value(self.payload.clone()).ok())
             .flatten()
     }
@@ -105,30 +75,8 @@ impl ThreadEvent {
     }
 }
 
-pub mod status {
-    pub const PENDING: &str = "pending";
-    pub const CLAIMED: &str = "claimed";
-    pub const COMPLETED: &str = "completed";
-    pub const CANCELLED: &str = "cancelled";
-    pub const FAILED: &str = "failed";
-}
-
-pub mod event_purpose {
-    use super::event_type;
-
-    pub fn is_user_facing(event_type: &str) -> bool {
-        matches!(
-            event_type,
-            event_type::USER_MESSAGE_RECEIVED
-                | event_type::USER_INPUT_RECEIVED
-                | event_type::APPROVAL_RESPONSE_RECEIVED
-        )
-    }
-}
-
 pub mod event_type {
     pub const USER_MESSAGE_RECEIVED: &str = "user_message_received";
-    pub const USER_INPUT_RECEIVED: &str = "user_input_received";
     pub const APPROVAL_RESPONSE_RECEIVED: &str = "approval_response_received";
     pub const TASK_ROUTING: &str = "task_routing";
     pub const ASSIGNMENT_EXECUTION: &str = "assignment_execution";

@@ -7,12 +7,14 @@ use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_otlp::{Protocol, WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::logs::SdkLoggerProvider;
+use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
 use tracing_subscriber::fmt;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 static LOGGER_PROVIDER: OnceLock<SdkLoggerProvider> = OnceLock::new();
 static TRACER_PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();
+static METER_PROVIDER: OnceLock<SdkMeterProvider> = OnceLock::new();
 
 fn otlp_endpoint() -> Option<String> {
     std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -48,7 +50,9 @@ fn otlp_headers() -> HashMap<String, String> {
 }
 
 pub fn init_telemetry(service_name: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"))
+        .add_directive("rmcp=off".parse()?);
 
     let fmt_layer = fmt::layer().with_target(true).with_thread_ids(true);
     let registry = tracing_subscriber::registry()
@@ -76,12 +80,24 @@ pub fn init_telemetry(service_name: &str) -> Result<(), Box<dyn std::error::Erro
         let log_exporter = opentelemetry_otlp::LogExporter::builder()
             .with_http()
             .with_endpoint(signal_endpoint(&endpoint, "/v1/logs"))
-            .with_headers(headers)
+            .with_headers(headers.clone())
             .with_protocol(Protocol::HttpBinary)
             .build()?;
 
         let logger_provider = SdkLoggerProvider::builder()
             .with_batch_exporter(log_exporter)
+            .with_resource(resource.clone())
+            .build();
+
+        let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
+            .with_http()
+            .with_endpoint(signal_endpoint(&endpoint, "/v1/metrics"))
+            .with_headers(headers)
+            .with_protocol(Protocol::HttpBinary)
+            .build()?;
+
+        let meter_provider = SdkMeterProvider::builder()
+            .with_periodic_exporter(metric_exporter)
             .with_resource(resource)
             .build();
 
@@ -89,8 +105,10 @@ pub fn init_telemetry(service_name: &str) -> Result<(), Box<dyn std::error::Erro
         let otel_log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
         global::set_tracer_provider(provider.clone());
+        global::set_meter_provider(meter_provider.clone());
         let _ = LOGGER_PROVIDER.set(logger_provider);
         let _ = TRACER_PROVIDER.set(provider);
+        let _ = METER_PROVIDER.set(meter_provider);
 
         registry
             .with(otel_log_layer)

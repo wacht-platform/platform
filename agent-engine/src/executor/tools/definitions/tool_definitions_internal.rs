@@ -22,13 +22,13 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "read_file",
-            "Read a text file and return numbered lines plus a slice_hash for an exact file slice. Use this before edit_file so the replacement range is grounded in the current file contents.",
+            "Read a text file and return its content. Required before any `edit_file` on the same path — the runtime tracks which files you've read this turn and rejects edits to files you haven't seen. The returned content is what you copy from when constructing `old_string` for an edit.",
             InternalToolType::ReadFile,
             vec![
                 SchemaField {
                     name: "path".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Path to read. Use this to inspect the exact file or line range you plan to edit. In conversation threads, `/project_workspace/` is available for project-scoped shared inspection such as `/project_workspace/tasks/<task_key>/...`.".to_string()),
+                    description: Some("Path to read.".to_string()),
                     required: true,
                     ..Default::default()
                 },
@@ -52,78 +52,76 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "write_file",
-            "Write text to a file. Prefer this for creating, overwriting, or appending artifacts, notes, reports, markdown, JSON, or any other multi-line content. Use `append: true` for simple end-of-file appends. Do not use execute_command with shell text-emission tricks, heredocs, or python -c for large text emission when write_file is available.",
+            "Create a new file or fully overwrite an existing one. Always overwrites — to add to an existing file without losing its contents use append_file, and to change a specific substring use edit_file. Prefer this over execute_command heredocs or python -c for emitting multi-line text.",
             InternalToolType::WriteFile,
             vec![
                 SchemaField {
                     name: "path".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Path to write. Use /workspace/ for conversation-thread files. `/project_workspace/` is read-only inspection context, not a write target. Use /task/ only when a project-task workspace is actually mounted for the current work.".to_string()),
+                    description: Some("Path to write. Writeable mounts are `/workspace/` (conversation threads), `/task/` (task threads), and `/scratch/` (ephemeral).".to_string()),
                     required: true,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "content".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Content to write".to_string()),
+                    description: Some("Full file contents. Replaces any existing file at this path.".to_string()),
+                    required: true,
+                    ..Default::default()
+                },
+            ],
+        ),
+        (
+            "append_file",
+            "Append text to the end of an existing file (or create it if missing). Use for journal entries, log lines, accumulating logs, or any other end-of-file additions. Do not use this to change existing content — use edit_file for that. Shell-based appends (`>>`) are acceptable for one-off lines from execute_command output, but prefer this tool for explicit multi-line content.",
+            InternalToolType::AppendFile,
+            vec![
+                SchemaField {
+                    name: "path".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Path to append to. Writeable mounts are `/workspace/`, `/task/`, and `/scratch/`. File is created if it does not exist.".to_string()),
                     required: true,
                     ..Default::default()
                 },
                 SchemaField {
-                    name: "append".to_string(),
-                    field_type: "BOOLEAN".to_string(),
-                    description: Some("Append content to the end of the file instead of overwriting it. Default: false.".to_string()),
-                    required: false,
+                    name: "content".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Content to append at end of file. Include a leading newline yourself if you need separation from the existing tail.".to_string()),
+                    required: true,
                     ..Default::default()
                 },
             ],
         ),
         (
             "edit_file",
-            "Edit an existing text file by replacing an explicit line range. Read the target range first with read_file, then provide the returned slice_hash as live_slice_hash for that same range. Runtime verifies the current slice before editing. Use this for targeted edits; use write_file for create, overwrite, or append flows.",
+            "Replace an exact substring in an existing file with new content. Anchor-based, not line-based: you provide the exact bytes to find (`old_string`) and the exact bytes to put in their place (`new_string`). \n\nRules: (1) You must have called `read_file` on the path at least once this turn — the runtime tracks that and rejects edits to files you haven't seen. (2) `old_string` must match exactly, including whitespace and newlines — copy from `read_file` output, don't paraphrase. (3) `old_string` must be unique in the file unless `replace_all=true` — if it matches multiple times, the tool errors with the count and tells you to add surrounding context. (4) `old_string` must not be empty and must differ from `new_string`. \n\nGood pattern: include 1-3 lines of surrounding context in `old_string` so the match is naturally unique. \n\nFor pure insertion (no existing content to replace), anchor on a nearby existing line: `old_string` = the line you want to insert next to, `new_string` = that line plus your new content. \n\nTo create a file or fully overwrite one, use `write_file`. To add to the end of a file, use `append_file`. Never use `execute_command` heredocs / `>` / `>>` / `sed` to edit files — those bypass the read-discipline and routinely produce divergent state.",
             InternalToolType::EditFile,
             vec![
                 SchemaField {
                     name: "path".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Existing file path to edit. Use /workspace/ for conversation-thread files. `/project_workspace/` is read-only inspection context, not an edit target. Use /task/ only when a project-task workspace is actually mounted for the current work.".to_string()),
+                    description: Some("Existing file path to edit. Must be on a writeable mount (`/workspace/`, `/task/`, or `/scratch/`). Must have been read with `read_file` at least once this turn.".to_string()),
                     required: true,
                     ..Default::default()
                 },
                 SchemaField {
-                    name: "new_content".to_string(),
+                    name: "old_string".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Replacement content for the specified line range.".to_string()),
+                    description: Some("Exact bytes to find in the file. Whitespace, indentation, and newlines must match the file exactly — copy from the `read_file` output. Must be unique in the file unless `replace_all=true`.".to_string()),
                     required: true,
                     ..Default::default()
                 },
                 SchemaField {
-                    name: "start_line".to_string(),
-                    field_type: "INTEGER".to_string(),
-                    description: Some("Replace from this line (1-indexed). The range must already be covered by a prior read_file call.".to_string()),
-                    minimum: Some(1.0),
-                    required: true,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "end_line".to_string(),
-                    field_type: "INTEGER".to_string(),
-                    description: Some("Replace up to this line (inclusive). The range must already be covered by a prior read_file call.".to_string()),
-                    minimum: Some(1.0),
-                    required: true,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "live_slice_hash".to_string(),
+                    name: "new_string".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("The slice_hash previously returned by read_file for this exact line range. Runtime verifies this before editing unless dangerously_skip_slice_comparison is true.".to_string()),
-                    required: false,
+                    description: Some("Replacement bytes. Use the empty string to delete `old_string`. Must differ from `old_string`.".to_string()),
+                    required: true,
                     ..Default::default()
                 },
                 SchemaField {
-                    name: "dangerously_skip_slice_comparison".to_string(),
+                    name: "replace_all".to_string(),
                     field_type: "BOOLEAN".to_string(),
-                    description: Some("Dangerous escape hatch. Set true only when fully confident the edit range is correct and it is acceptable to skip prior read-window and live_slice_hash verification, for example on a very small file. Default: false.".to_string()),
+                    description: Some("Replace every occurrence instead of requiring uniqueness. Use for renames or when the same exact substring legitimately appears multiple times. Default: false.".to_string()),
                     required: false,
                     ..Default::default()
                 },
@@ -131,7 +129,7 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "execute_command",
-            "Execute a shell command for inspection, filtering, discovery, or simple shell-native file operations. Do not use this to emit long markdown/JSON/text blobs when write_file is available. Non-zero exit codes are treated as tool errors. Allowed commands: cat, head, tail, grep, rg, find, ls, wc, mkdir, cp, mv, rm, sed, awk, sort, uniq, jq, cut, tr, diff, which, python, python3.",
+            "Run a shell command in the sandbox. Use for inspection, filtering, discovery, image/PDF tooling, scripting. Avoid emitting long markdown/JSON/text blobs through stdout when `write_file` is available. The result returns `exit_code`, `stdout`, and `stderr` as data — non-zero exits are not platform errors, they're a normal shell signal you should read and react to.",
             InternalToolType::ExecuteCommand,
             vec![SchemaField {
                 name: "command".to_string(),

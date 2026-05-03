@@ -202,8 +202,9 @@ impl OpenAiClient {
         &self,
         prompt: SemanticLlmRequest,
         tools: Vec<NativeToolDefinition>,
+        cache: Option<PromptCacheRequest>,
     ) -> Result<ToolCallGenerationOutput, AppError> {
-        let request_body = self.build_tool_call_request_body(prompt, tools);
+        let request_body = self.build_tool_call_request_body(prompt, tools, cache);
         let parsed = self.execute_request(request_body).await?;
         let message = &parsed
             .choices
@@ -247,6 +248,7 @@ impl OpenAiClient {
             calls,
             content_text,
             usage_metadata: parsed.usage.map(Self::map_usage_metadata),
+            cache_state: None,
         })
     }
 
@@ -324,6 +326,7 @@ impl OpenAiClient {
         &self,
         prompt: SemanticLlmRequest,
         tools: Vec<NativeToolDefinition>,
+        cache: Option<PromptCacheRequest>,
     ) -> Value {
         let mut messages = Vec::with_capacity(prompt.messages.len() + 1);
         messages.push(self.system_message(&prompt.system_prompt));
@@ -353,10 +356,14 @@ impl OpenAiClient {
         body.insert("model".to_string(), json!(self.model));
         body.insert("messages".to_string(), Value::Array(messages));
         body.insert("tools".to_string(), Value::Array(tool_values));
-        // AUTO mode: model may emit tool calls, text, or both. Text-only response is
-        // the terminal signal in the unified ReAct loop.
         body.insert("tool_choice".to_string(), json!("auto"));
         body.insert("stream".to_string(), json!(false));
+        if let Some(cache_request) = cache.as_ref() {
+            body.insert(
+                "prompt_cache_key".to_string(),
+                json!(cache_request.cache_key),
+            );
+        }
         if let Some(temperature) = prompt.temperature {
             body.insert("temperature".to_string(), json!(temperature));
         }

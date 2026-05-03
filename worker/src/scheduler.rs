@@ -78,33 +78,10 @@ impl JobScheduler {
             }
         });
 
-        let agent_execution_recovery_state = self.app_state.clone();
-        tokio::spawn(async move {
-            let mut interval = time::interval(Duration::from_secs(1800));
-            interval.tick().await;
-            loop {
-                interval.tick().await;
-                info!("Running agent execution recovery job...");
-
-                match jobs::agent_execution_recovery::recover_zombie_agent_executions(
-                    &agent_execution_recovery_state,
-                )
-                .await
-                {
-                    Ok(result) => {
-                        info!("Agent execution recovery completed: {}", result);
-                    }
-                    Err(e) => {
-                        error!("Agent execution recovery failed: {}", e);
-                    }
-                }
-            }
-        });
-
         let project_task_schedule_state = self.app_state.clone();
         tokio::spawn(async move {
-            let mut interval = time::interval(Duration::from_secs(1800));
-            interval.tick().await;
+            info!("Project task schedule dispatcher starting (interval = 300s, first run immediate)");
+            let mut interval = time::interval(Duration::from_secs(300));
             loop {
                 interval.tick().await;
                 info!("Running project task schedule dispatch job...");
@@ -119,29 +96,6 @@ impl JobScheduler {
                     }
                     Err(e) => {
                         error!("Project task schedule dispatch failed: {}", e);
-                    }
-                }
-            }
-        });
-
-        let due_thread_event_wake_state = self.app_state.clone();
-        tokio::spawn(async move {
-            let mut interval = time::interval(Duration::from_secs(1800));
-            interval.tick().await;
-            loop {
-                interval.tick().await;
-                info!("Running due thread event wake job...");
-
-                match jobs::due_thread_event_wake::wake_due_thread_events(
-                    &due_thread_event_wake_state,
-                )
-                .await
-                {
-                    Ok(result) => {
-                        info!("Due thread event wake completed: {}", result);
-                    }
-                    Err(e) => {
-                        error!("Due thread event wake failed: {}", e);
                     }
                 }
             }
@@ -181,6 +135,41 @@ impl JobScheduler {
                     }
                 }
                 tokio::time::sleep(Duration::from_secs(600)).await;
+            }
+        });
+
+        // Event-log dispatcher: publishes pending event_log rows to NATS.
+        // Wakes via NATS subject `agent.outbox.wake.>` + 30s safety poll.
+        let dispatcher_state = self.app_state.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Err(e) = jobs::event_dispatcher::run(dispatcher_state.clone()).await {
+                    error!(error = %e, "event dispatcher exited; restarting in 5s");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+            }
+        });
+
+        // Work-lease recovery cron: 60s sweep that releases expired leases
+        // and dead-letters events that exhausted their retry budget.
+        let lease_recovery_state = self.app_state.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Err(e) = jobs::work_lease_recovery::run(lease_recovery_state.clone()).await
+                {
+                    error!(error = %e, "work-lease recovery exited; restarting in 5s");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+            }
+        });
+
+        let stuck_state = self.app_state.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Err(e) = jobs::stuck_assignment_sweeper::run(stuck_state.clone()).await {
+                    error!(error = %e, "stuck-assignment sweeper exited; restarting in 5s");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
             }
         });
 

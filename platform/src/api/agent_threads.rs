@@ -15,8 +15,8 @@ use dto::json::deployment::{
 };
 use models::{
     Actor, ActorProject, AgentThread, AgentThreadState, ConversationRecord, ProjectTaskBoard,
-    ProjectTaskBoardItem, ProjectTaskBoardItemAssignment, ProjectTaskBoardItemEvent,
-    ProjectTaskBoardItemRelation, ThreadEvent, ThreadTaskEdge, ThreadTaskGraph,
+    ProjectTaskBoardItem, ProjectTaskBoardItemAssignment, ProjectTaskBoardItemRelation,
+    ThreadTaskEdge, ThreadTaskGraph,
     ThreadTaskGraphSummary, ThreadTaskNode,
 };
 use serde::{Deserialize, Serialize};
@@ -52,11 +52,6 @@ pub struct AppendBoardItemJournalRequest {
     pub details: Option<String>,
     pub body_markdown: Option<String>,
     pub attachments: Option<serde_json::Value>,
-}
-
-#[derive(Deserialize)]
-pub struct ThreadEventParams {
-    pub event_id: i64,
 }
 
 #[derive(Deserialize)]
@@ -562,20 +557,6 @@ pub async fn get_project_task_board_item_filesystem_file(
     Ok(content.into())
 }
 
-pub async fn list_project_task_board_item_events(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Path(params): Path<BoardItemParams>,
-) -> ApiResult<PaginatedResponse<ProjectTaskBoardItemEvent>> {
-    let events = agent_threads_app::list_project_task_board_item_events(
-        &app_state,
-        deployment_id,
-        params.item_id,
-    )
-    .await?;
-    Ok(PaginatedResponse::from(events).into())
-}
-
 pub async fn list_project_task_board_item_assignments(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -602,25 +583,6 @@ pub async fn list_project_task_board_item_relations(
     )
     .await?;
     Ok(PaginatedResponse::from(relations).into())
-}
-
-pub async fn append_project_task_board_item_journal(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Path(params): Path<BoardItemParams>,
-    Json(request): Json<AppendBoardItemJournalRequest>,
-) -> ApiResult<ProjectTaskBoardItemEvent> {
-    let event = agent_threads_app::append_project_task_board_item_journal_entry(
-        &app_state,
-        deployment_id,
-        params.item_id,
-        request.summary,
-        request.details,
-        request.body_markdown,
-        request.attachments,
-    )
-    .await?;
-    Ok(event.into())
 }
 
 pub async fn update_project_task_board_item(
@@ -681,28 +643,6 @@ pub async fn get_agent_thread_state(
         agent_threads_app::get_agent_thread_state(&app_state, deployment_id, params.thread_id)
             .await?;
     Ok(thread.into())
-}
-
-pub async fn list_pending_thread_events(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Path(params): Path<ThreadParams>,
-) -> ApiResult<PaginatedResponse<ThreadEvent>> {
-    let events =
-        agent_threads_app::list_pending_thread_events(&app_state, deployment_id, params.thread_id)
-            .await?;
-    Ok(PaginatedResponse::from(events).into())
-}
-
-pub async fn get_thread_event_by_id(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Path(params): Path<ThreadEventParams>,
-) -> ApiResult<ThreadEvent> {
-    let event =
-        agent_threads_app::get_thread_event_by_id(&app_state, deployment_id, params.event_id)
-            .await?;
-    Ok(event.into())
 }
 
 pub async fn list_assignments_for_thread(

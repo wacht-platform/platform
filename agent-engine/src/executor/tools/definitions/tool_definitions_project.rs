@@ -5,7 +5,7 @@ fn project_task_assignments_schema() -> SchemaField {
     SchemaField {
         name: "assignments".to_string(),
         field_type: "ARRAY".to_string(),
-        description: Some("Ordered assignment chain. Each item may include thread_id or a reusable-thread selector via responsibility/capability_tags, plus assignment_role (`executor`, `reviewer`, `specialist_reviewer`, `approver`, `observer`), assignment_order, status, and instructions. Ordering is 1-based within the submitted batch: use 1 for the first assignment in the batch, 2 for the next, and so on. Runtime appends the batch after existing assignment history for the task. When a stage completes successfully, the backend auto-activates the next pending stage if one exists.".to_string()),
+        description: Some("Ordered assignment chain. Each item may include thread_id or a reusable-thread selector via responsibility/capability_tags, plus assignment_role (`executor`, `reviewer`, `specialist_reviewer`, `approver`, `observer`), status, and instructions. List order defines the stage order: the first item is the active stage, later items run after it. The reconcile is idempotent — passing the same plan again is a no-op; only stages that differ from the existing active plan are mutated. When a stage completes successfully, the backend auto-activates the next pending stage if one exists.".to_string()),
         min_items: Some(1),
         items_schema: Some(Box::new(SchemaField {
             field_type: "OBJECT".to_string(),
@@ -43,14 +43,6 @@ fn project_task_assignments_schema() -> SchemaField {
                         "approver",
                         "observer",
                     ]),
-                    required: false,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "assignment_order".to_string(),
-                    field_type: "INTEGER".to_string(),
-                    description: Some("Optional explicit 1-based stage order for the assignment chain. Use 1 for the first active stage, 2 for the next stage, and so on. Omit when simple list order is already correct.".to_string()),
-                    minimum: Some(1.0),
                     required: false,
                     ..Default::default()
                 },

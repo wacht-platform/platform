@@ -98,7 +98,6 @@ pub struct CreateProjectTaskBoardItemRequest {
     pub title: String,
     pub description: Option<String>,
     pub status: Option<String>,
-    pub priority: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -106,7 +105,6 @@ pub struct UpdateProjectTaskBoardItemRequest {
     pub title: Option<String>,
     pub description: Option<String>,
     pub status: Option<String>,
-    pub priority: Option<String>,
 }
 
 #[derive(Deserialize)]

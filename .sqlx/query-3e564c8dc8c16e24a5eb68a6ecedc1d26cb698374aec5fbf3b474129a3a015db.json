@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE project_task_board_items\n            SET pending_approval = $2,\n                updated_at = NOW()\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3e564c8dc8c16e24a5eb68a6ecedc1d26cb698374aec5fbf3b474129a3a015db"
+}

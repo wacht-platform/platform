@@ -5,107 +5,122 @@ mod task_graph;
 pub(crate) use super::core;
 
 use super::core::AgentExecutor;
+use crate::runtime::thread_execution_context::ThreadExecutionContext;
 use commands::{
-    CreateProjectTaskBoardItemCommand, CreateProjectTaskBoardItemEventCommand,
+    CreateProjectTaskBoardItemCommand,
     CreateProjectTaskBoardItemRelationCommand, CreateProjectTaskScheduleCommand,
     EnsureProjectTaskBoardCommand, ReconcileProjectTaskBoardItemCommand,
     UpdateProjectTaskBoardItemCommand, UpdateProjectTaskScheduleCommand,
 };
 use common::error::AppError;
-use models::{ProjectTaskBoardItem, ProjectTaskBoardItemMetadata};
+use dto::json::ProjectTaskBoardPromptItem;
+use models::{ProjectTaskBoardItem, ProjectTaskBoardItemMetadata, ScheduleTemplatePayload};
 use queries::{
     GetProjectTaskBoardByProjectIdQuery, GetProjectTaskBoardItemByTaskKeyQuery,
-    GetProjectTaskScheduleByTemplateBoardItemIdQuery, ListProjectTaskBoardItemsQuery,
+    GetProjectTaskScheduleByTaskKeyQuery, ListProjectTaskBoardItemsQuery,
     ListProjectTaskBoardRelationsQuery,
 };
 use std::collections::HashMap;
+
+pub(crate) async fn lookup_or_create_project_task_board_id(
+    ctx: &ThreadExecutionContext,
+) -> Result<i64, AppError> {
+    let thread = ctx.get_thread().await?;
+    let existing =
+        GetProjectTaskBoardByProjectIdQuery::new(thread.project_id, thread.deployment_id)
+            .execute_with_db(ctx.app_state.db_router.writer())
+            .await?;
+
+    let board = match existing {
+        Some(board) => board,
+        None => {
+            EnsureProjectTaskBoardCommand::new(
+                ctx.app_state.sf.next_id()? as i64,
+                thread.deployment_id,
+                thread.actor_id,
+                thread.project_id,
+                format!("Project {} Task Board", thread.project_id),
+                "active".to_string(),
+            )
+            .execute_with_db(ctx.app_state.db_router.writer())
+            .await?
+        }
+    };
+
+    Ok(board.id)
+}
+
+pub(crate) async fn load_project_task_board_state(
+    ctx: &ThreadExecutionContext,
+) -> Result<(i64, Vec<ProjectTaskBoardPromptItem>), AppError> {
+    let board_id = lookup_or_create_project_task_board_id(ctx).await?;
+    let items = ListProjectTaskBoardItemsQuery::new(board_id)
+        .execute_with_db(ctx.app_state.db_router.writer())
+        .await?;
+    let relations = ListProjectTaskBoardRelationsQuery::new(board_id)
+        .execute_with_db(ctx.app_state.db_router.writer())
+        .await?;
+
+    let task_key_by_item_id: HashMap<i64, String> = items
+        .iter()
+        .map(|item| (item.id, item.task_key.clone()))
+        .collect();
+    let mut parent_task_key_by_child_id: HashMap<i64, String> = HashMap::new();
+    let mut child_task_keys_by_parent_id: HashMap<i64, Vec<String>> = HashMap::new();
+
+    for relation in relations {
+        if relation.relation_type != models::project_task_board::relation_type::CHILD_OF {
+            continue;
+        }
+        let Some(parent_task_key) = task_key_by_item_id
+            .get(&relation.parent_board_item_id)
+            .cloned()
+        else {
+            continue;
+        };
+        let Some(child_task_key) = task_key_by_item_id
+            .get(&relation.child_board_item_id)
+            .cloned()
+        else {
+            continue;
+        };
+        parent_task_key_by_child_id.insert(relation.child_board_item_id, parent_task_key);
+        child_task_keys_by_parent_id
+            .entry(relation.parent_board_item_id)
+            .or_default()
+            .push(child_task_key);
+    }
+
+    let prompt_items = items
+        .iter()
+        .map(|item| {
+            AgentExecutor::project_task_board_item_to_prompt_item_with_relations(
+                item,
+                parent_task_key_by_child_id.get(&item.id).cloned(),
+                child_task_keys_by_parent_id
+                    .remove(&item.id)
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+
+    Ok((board_id, prompt_items))
+}
 
 impl AgentExecutor {
     pub(super) async fn ensure_project_task_board_id(&mut self) -> Result<i64, AppError> {
         if let Some(board_id) = self.project_task_board_id {
             return Ok(board_id);
         }
-
-        let thread = self.ctx.get_thread().await?;
-        let existing =
-            GetProjectTaskBoardByProjectIdQuery::new(thread.project_id, thread.deployment_id)
-                .execute_with_db(self.ctx.app_state.db_router.writer())
-                .await?;
-
-        let board = match existing {
-            Some(board) => board,
-            None => {
-                EnsureProjectTaskBoardCommand::new(
-                    self.ctx.app_state.sf.next_id()? as i64,
-                    thread.deployment_id,
-                    thread.actor_id,
-                    thread.project_id,
-                    format!("Project {} Task Board", thread.project_id),
-                    "active".to_string(),
-                )
-                .execute_with_db(self.ctx.app_state.db_router.writer())
-                .await?
-            }
-        };
-
-        self.project_task_board_id = Some(board.id);
-        Ok(board.id)
+        let board_id = lookup_or_create_project_task_board_id(&self.ctx).await?;
+        self.project_task_board_id = Some(board_id);
+        Ok(board_id)
     }
 
     pub(super) async fn refresh_project_task_board_items(&mut self) -> Result<(), AppError> {
-        let board_id = self.ensure_project_task_board_id().await?;
-        let items = ListProjectTaskBoardItemsQuery::new(board_id)
-            .execute_with_db(self.ctx.app_state.db_router.writer())
-            .await?;
-        let relations = ListProjectTaskBoardRelationsQuery::new(board_id)
-            .execute_with_db(self.ctx.app_state.db_router.writer())
-            .await?;
-
-        let task_key_by_item_id: HashMap<i64, String> = items
-            .iter()
-            .map(|item| (item.id, item.task_key.clone()))
-            .collect();
-        let mut parent_task_key_by_child_id: HashMap<i64, String> = HashMap::new();
-        let mut child_task_keys_by_parent_id: HashMap<i64, Vec<String>> = HashMap::new();
-
-        for relation in relations {
-            if relation.relation_type != models::project_task_board::relation_type::CHILD_OF {
-                continue;
-            }
-
-            let Some(parent_task_key) = task_key_by_item_id
-                .get(&relation.parent_board_item_id)
-                .cloned()
-            else {
-                continue;
-            };
-            let Some(child_task_key) = task_key_by_item_id
-                .get(&relation.child_board_item_id)
-                .cloned()
-            else {
-                continue;
-            };
-
-            parent_task_key_by_child_id.insert(relation.child_board_item_id, parent_task_key);
-            child_task_keys_by_parent_id
-                .entry(relation.parent_board_item_id)
-                .or_default()
-                .push(child_task_key);
-        }
-
-        self.project_task_board_items = items
-            .iter()
-            .map(|item| {
-                Self::project_task_board_item_to_prompt_item_with_relations(
-                    item,
-                    parent_task_key_by_child_id.get(&item.id).cloned(),
-                    child_task_keys_by_parent_id
-                        .remove(&item.id)
-                        .unwrap_or_default(),
-                )
-            })
-            .collect();
-
+        let (board_id, items) = load_project_task_board_state(&self.ctx).await?;
+        self.project_task_board_id = Some(board_id);
+        self.project_task_board_items = items;
         Ok(())
     }
 
@@ -115,7 +130,6 @@ impl AgentExecutor {
         title: String,
         description: Option<String>,
         status: String,
-        priority: String,
         parent_task_key: Option<String>,
         metadata: ProjectTaskBoardItemMetadata,
         schedule: Option<(String, chrono::DateTime<chrono::Utc>, Option<i64>)>,
@@ -145,7 +159,6 @@ impl AgentExecutor {
             title,
             description,
             status,
-            priority,
             assigned_thread_id: None,
             metadata: serde_json::to_value(metadata)?,
         }
@@ -182,25 +195,7 @@ impl AgentExecutor {
                     board_id,
                     task_key: parent_board_item.task_key.clone(),
                     status: Some("waiting_for_children".to_string()),
-                    priority: None,
                     metadata: parent_board_item.metadata.clone(),
-                }
-                .execute_with_db(&mut *tx)
-                .await?;
-
-                CreateProjectTaskBoardItemEventCommand {
-                    id: self.ctx.app_state.sf.next_id()? as i64,
-                    board_item_id: parent_board_item.id,
-                    thread_id: Some(self.ctx.thread_id),
-                    execution_run_id: Some(self.ctx.execution_run_id),
-                    event_type: "waiting_for_children".to_string(),
-                    summary: "Task waiting for child tasks".to_string(),
-                    body_markdown: None,
-                    details: serde_json::json!({
-                        "task_key": parent_board_item.task_key,
-                        "child_task_key": item.task_key,
-                        "child_board_item_id": item.id,
-                    }),
                 }
                 .execute_with_db(&mut *tx)
                 .await?;
@@ -210,10 +205,13 @@ impl AgentExecutor {
         if let Some((schedule_kind, next_run_at, interval_seconds)) = schedule {
             CreateProjectTaskScheduleCommand {
                 id: self.ctx.app_state.sf.next_id()? as i64,
-                template_board_item_id: item.id,
+                board_id,
+                task_key: item.task_key.clone(),
+                template_payload: build_schedule_template_payload(&item),
                 schedule_kind,
                 interval_seconds,
                 next_run_at,
+                overlap_policy: None,
             }
             .execute_with_db(&mut *tx)
             .await?;
@@ -232,7 +230,6 @@ impl AgentExecutor {
         &mut self,
         task_key: String,
         status: Option<String>,
-        priority: Option<String>,
         metadata: ProjectTaskBoardItemMetadata,
         schedule: Option<(String, chrono::DateTime<chrono::Utc>, Option<i64>)>,
     ) -> Result<ProjectTaskBoardItem, AppError> {
@@ -241,31 +238,35 @@ impl AgentExecutor {
             board_id,
             task_key,
             status,
-            priority,
             metadata: serde_json::to_value(metadata)?,
         }
         .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
         .await?;
 
         if let Some((schedule_kind, next_run_at, interval_seconds)) = schedule {
-            let existing_schedule = GetProjectTaskScheduleByTemplateBoardItemIdQuery::new(item.id)
-                .execute_with_db(self.ctx.app_state.db_router.writer())
-                .await?;
+            let existing_schedule =
+                GetProjectTaskScheduleByTaskKeyQuery::new(board_id, item.task_key.clone())
+                    .execute_with_db(self.ctx.app_state.db_router.writer())
+                    .await?;
 
             if let Some(existing_schedule) = existing_schedule {
                 UpdateProjectTaskScheduleCommand::new(existing_schedule.id)
                     .with_status(models::project_task_schedule::status::ACTIVE.to_string())
                     .with_interval_seconds(interval_seconds)
                     .with_next_run_at(next_run_at)
+                    .with_template_payload(build_schedule_template_payload(&item))
                     .execute_with_db(self.ctx.app_state.db_router.writer())
                     .await?;
             } else {
                 CreateProjectTaskScheduleCommand {
                     id: self.ctx.app_state.sf.next_id()? as i64,
-                    template_board_item_id: item.id,
+                    board_id,
+                    task_key: item.task_key.clone(),
+                    template_payload: build_schedule_template_payload(&item),
                     schedule_kind,
                     interval_seconds,
                     next_run_at,
+                    overlap_policy: None,
                 }
                 .execute_with_db(self.ctx.app_state.db_router.writer())
                 .await?;
@@ -274,5 +275,13 @@ impl AgentExecutor {
 
         self.refresh_project_task_board_items().await?;
         Ok(item)
+    }
+}
+
+fn build_schedule_template_payload(item: &ProjectTaskBoardItem) -> ScheduleTemplatePayload {
+    ScheduleTemplatePayload {
+        title: item.title.clone(),
+        description: item.description.clone(),
+        metadata: item.typed_metadata(),
     }
 }

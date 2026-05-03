@@ -1,15 +1,16 @@
 use super::ToolExecutor;
-use crate::filesystem::{
-    sandbox::{SandboxExecutionOptions, SandboxRunner},
-    AgentFilesystem,
-};
+use crate::filesystem::AgentFilesystem;
+use crate::sandbox::ExecRequest;
+use base64::Engine;
 use common::error::AppError;
 use models::{AiTool, CodeRunnerRuntime, CodeRunnerToolConfiguration, SchemaField};
 use serde::Serialize;
 use serde_json::{Map, Value};
-use std::env;
-use std::path::{Path, PathBuf};
-use tokio::fs;
+use std::collections::BTreeMap;
+use std::time::Duration;
+
+const MAX_INLINE_CODE_BYTES: usize = 96 * 1024;
+const MAX_INLINE_INPUT_BYTES: usize = 96 * 1024;
 
 #[derive(Serialize)]
 pub(super) struct CodeRunnerToolResult {
@@ -25,72 +26,62 @@ impl ToolExecutor {
         tool: &AiTool,
         config: &CodeRunnerToolConfiguration,
         execution_params: &Value,
-        filesystem: &AgentFilesystem,
+        _filesystem: &AgentFilesystem,
     ) -> Result<CodeRunnerToolResult, AppError> {
         let input = collect_code_runner_input(config, execution_params)?;
-        let timeout_secs = config.timeout_seconds.unwrap_or(30) as u64;
+        let timeout = Duration::from_secs(config.timeout_seconds.unwrap_or(30) as u64);
 
-        let runner_root = filesystem.execution_root().join("code_runner");
-        fs::create_dir_all(&runner_root).await.map_err(|e| {
-            AppError::Internal(format!("Failed to prepare code runner root: {}", e))
-        })?;
-
-        let run_id = self.app_state().sf.next_id()?;
-        let script_path = runner_root.join(format!("code_runner_{}.py", run_id));
-        let input_path = runner_root.join(format!("code_runner_input_{}.json", run_id));
-        let output_path = runner_root.join(format!("code_runner_output_{}.json", run_id));
-        let wrapper_path = runner_root.join(format!("code_runner_wrapper_{}.py", run_id));
-
-        fs::write(&script_path, &config.code).await.map_err(|e| {
-            AppError::Internal(format!("Failed to write code runner script: {}", e))
-        })?;
-        fs::write(&input_path, serde_json::to_vec_pretty(&input)?)
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to write code runner input: {}", e)))?;
-        fs::write(&wrapper_path, PYTHON_CODE_RUNNER_WRAPPER)
-            .await
-            .map_err(|e| {
-                AppError::Internal(format!("Failed to write code runner wrapper: {}", e))
-            })?;
-
-        let sandbox = SandboxRunner::new(filesystem.execution_root());
-        let options = SandboxExecutionOptions {
-            allow_network: config.allow_network,
-            writable_workspace: true,
-            writable_scratch: false,
-            extra_read_only_paths: code_runner_runtime_read_paths(),
-            extra_env: self.code_runner_execution_env(config)?,
-        };
-        let wrapper_arg = code_runner_exec_arg(&sandbox, &wrapper_path);
-        let script_arg = code_runner_exec_arg(&sandbox, &script_path);
-        let input_arg = code_runner_exec_arg(&sandbox, &input_path);
-        let output_arg = code_runner_exec_arg(&sandbox, &output_path);
-        let python_path = code_runner_python_path();
-        let output = sandbox
-            .execute_program_with_options(
-                &python_path,
-                &[wrapper_arg, script_arg, input_arg, output_arg],
-                timeout_secs,
-                options,
-            )
-            .await?;
-
-        if output.exit_code != 0 {
-            return Err(AppError::Internal(format_code_runner_failure(
-                &tool.name,
-                output.exit_code,
-                &output.stderr,
-                &output.stdout,
+        if config.code.len() > MAX_INLINE_CODE_BYTES {
+            return Err(AppError::BadRequest(format!(
+                "Code runner '{}' source exceeds {} bytes",
+                tool.name, MAX_INLINE_CODE_BYTES
             )));
         }
 
-        let output_bytes = fs::read(&output_path).await.map_err(|e| {
-            AppError::Internal(format!(
-                "Code runner '{}' did not produce an output file: {}",
-                tool.name, e
-            ))
-        })?;
-        let parsed_output = parse_code_runner_output(&output_bytes, &tool.name)?;
+        let input_bytes = serde_json::to_vec(&input)?;
+        if input_bytes.len() > MAX_INLINE_INPUT_BYTES {
+            return Err(AppError::BadRequest(format!(
+                "Code runner '{}' input exceeds {} bytes",
+                tool.name, MAX_INLINE_INPUT_BYTES
+            )));
+        }
+
+        let input_b64 = base64::engine::general_purpose::STANDARD.encode(&input_bytes);
+        let user_code_b64 = base64::engine::general_purpose::STANDARD.encode(config.code.as_bytes());
+
+        let mut env: BTreeMap<String, String> = BTreeMap::new();
+        env.insert("WACHT_INPUT_B64".into(), input_b64);
+        env.insert("WACHT_USER_CODE_B64".into(), user_code_b64);
+        for (key, value) in self.code_runner_execution_env(config)? {
+            env.insert(key, value);
+        }
+
+        let handle = self.sandbox_handle()?;
+        let result = handle
+            .exec(ExecRequest {
+                command: vec![
+                    "python".into(),
+                    "-c".into(),
+                    PYTHON_CODE_RUNNER_WRAPPER.to_string(),
+                ],
+                cwd: Some("/workspace".into()),
+                env,
+                timeout: Some(timeout),
+                exec_id: None,
+            })
+            .await
+            .map_err(|err| AppError::Internal(format!("code runner exec: {err}")))?;
+
+        if result.exit_code != 0 {
+            return Err(AppError::Internal(format_code_runner_failure(
+                &tool.name,
+                result.exit_code,
+                &String::from_utf8_lossy(&result.stderr),
+                &String::from_utf8_lossy(&result.stdout),
+            )));
+        }
+
+        let parsed_output = parse_code_runner_output(&result.stdout, &tool.name)?;
         validate_code_runner_output(config, &parsed_output)?;
 
         Ok(CodeRunnerToolResult {
@@ -178,55 +169,6 @@ fn collect_code_runner_input(
     }
 
     Ok(Value::Object(input))
-}
-
-fn code_runner_exec_arg(sandbox: &SandboxRunner, path: &std::path::Path) -> String {
-    if sandbox.uses_virtual_alias_paths() {
-        format!(
-            "/app/code_runner/{}",
-            path.file_name().unwrap().to_string_lossy()
-        )
-    } else {
-        path.to_string_lossy().to_string()
-    }
-}
-
-fn code_runner_python_path() -> String {
-    if let Ok(path) = env::var("CODE_RUNNER_PYTHON_PATH") {
-        let trimmed = path.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
-    }
-
-    if cfg!(target_os = "macos") {
-        let platform_api_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("agent-engine crate should live under platform-api");
-        return platform_api_root
-            .join(".runtime/code_runner/venv/bin/python")
-            .to_string_lossy()
-            .to_string();
-    }
-
-    "/opt/wacht/code_runner/venv/bin/python".to_string()
-}
-
-fn code_runner_runtime_read_paths() -> Vec<PathBuf> {
-    let python_path = PathBuf::from(code_runner_python_path());
-    let mut paths = Vec::new();
-
-    if let Some(env_root) = code_runner_env_root(&python_path) {
-        paths.push(env_root);
-    }
-
-    paths
-}
-
-fn code_runner_env_root(python_path: &Path) -> Option<PathBuf> {
-    let bin_dir = python_path.parent()?;
-    let env_root = bin_dir.parent()?;
-    Some(env_root.to_path_buf())
 }
 
 fn parse_code_runner_output(output: &[u8], tool_name: &str) -> Result<Value, AppError> {
@@ -402,37 +344,21 @@ fn validate_schema_field_value(
 }
 
 const PYTHON_CODE_RUNNER_WRAPPER: &str = r#"import asyncio
+import base64
 import inspect
 import json
 import os
 import sys
 import traceback
-from pathlib import Path
-
 from types import SimpleNamespace
 
 
 class _UnavailableClient:
-    def __init__(self, provider: str):
+    def __init__(self, provider):
         self._provider = provider
 
     def __getattr__(self, name):
         raise RuntimeError(f"{self._provider} is not configured for this deployment")
-
-
-def _build_openai_client(api_key: str):
-    from openai import OpenAI
-    return OpenAI(api_key=api_key)
-
-
-def _build_anthropic_client(api_key: str):
-    import anthropic
-    return anthropic.Anthropic(api_key=api_key)
-
-
-def _build_gemini_client(api_key: str):
-    from google import genai
-    return genai.Client(api_key=api_key)
 
 
 def _build_clients():
@@ -440,19 +366,22 @@ def _build_clients():
 
     openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if openai_key:
-        namespace.openai = _build_openai_client(openai_key)
+        from openai import OpenAI
+        namespace.openai = OpenAI(api_key=openai_key)
     else:
         namespace.openai = _UnavailableClient("OpenAI")
 
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if anthropic_key:
-        namespace.anthropic = _build_anthropic_client(anthropic_key)
+        import anthropic
+        namespace.anthropic = anthropic.Anthropic(api_key=anthropic_key)
     else:
         namespace.anthropic = _UnavailableClient("Anthropic")
 
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if gemini_key:
-        namespace.gemini = _build_gemini_client(gemini_key)
+        from google import genai
+        namespace.gemini = genai.Client(api_key=gemini_key)
     else:
         namespace.gemini = _UnavailableClient("Gemini")
 
@@ -460,12 +389,14 @@ def _build_clients():
 
 
 def main():
-    if len(sys.argv) != 4:
-        raise RuntimeError("expected script path, input path, and output path")
+    user_code_b64 = os.environ.get("WACHT_USER_CODE_B64")
+    input_b64 = os.environ.get("WACHT_INPUT_B64")
+    if not user_code_b64 or input_b64 is None:
+        raise RuntimeError("missing WACHT_USER_CODE_B64 or WACHT_INPUT_B64")
 
-    script_path = Path(sys.argv[1])
-    input_path = Path(sys.argv[2])
-    output_path = Path(sys.argv[3])
+    user_code = base64.b64decode(user_code_b64).decode("utf-8")
+    payload = json.loads(base64.b64decode(input_b64).decode("utf-8"))
+
     client = _build_clients()
     namespace = {
         "client": client,
@@ -473,18 +404,17 @@ def main():
         "anthropic_client": client.anthropic,
         "gemini_client": client.gemini,
     }
-    code = script_path.read_text()
-    exec(compile(code, str(script_path), "exec"), namespace)
+    exec(compile(user_code, "<wacht-user-code>", "exec"), namespace)
 
     run_fn = namespace.get("run")
     if not callable(run_fn):
         raise RuntimeError("CodeRunner script must define a callable run(input) function")
 
-    payload = json.loads(input_path.read_text())
     result = run_fn(payload)
     if inspect.isawaitable(result):
         result = asyncio.run(result)
-    output_path.write_text(json.dumps(result))
+
+    sys.stdout.write(json.dumps(result))
 
 
 if __name__ == "__main__":

@@ -1,8 +1,9 @@
 use super::core::AgentExecutor;
 
 use crate::runtime::task_workspace::{
-    prepare_task_workspace_layout_at_path, TaskWorkspaceBriefInput, TASK_WORKSPACE_DIR,
-    TASK_WORKSPACE_JOURNAL_FILE, TASK_WORKSPACE_RUNBOOK_FILE, TASK_WORKSPACE_TASK_FILE,
+    compute_task_journal_hash, prepare_task_workspace, read_task_journal_tail,
+    TaskWorkspaceBriefInput, TASK_WORKSPACE_DIR, TASK_WORKSPACE_JOURNAL_FILE,
+    TASK_WORKSPACE_RUNBOOK_FILE, TASK_WORKSPACE_TASK_FILE,
 };
 
 use commands::UpdateAgentThreadStateCommand;
@@ -21,18 +22,16 @@ pub(crate) struct TaskWorkspaceContext {
 
 impl AgentExecutor {
     pub(crate) async fn task_journal_tail_snippet(&self) -> Result<Option<String>, AppError> {
-        let bytes = match self
-            .filesystem
-            .read_file_bytes(TASK_WORKSPACE_JOURNAL_FILE)
-            .await
-        {
-            Ok(bytes) => bytes,
-            Err(common::error::AppError::NotFound(_)) => return Ok(None),
-            Err(err) => return Err(err),
+        let Some(bytes) = read_task_journal_tail(&self.filesystem).await? else {
+            return Ok(None);
         };
 
         let content = String::from_utf8_lossy(&bytes);
-        let lines = content.lines().collect::<Vec<_>>();
+        let mut lines: Vec<&str> = content.lines().collect();
+        let truncated_head = bytes.len() as u64 >= 16 * 1024;
+        if truncated_head && !lines.is_empty() {
+            lines.remove(0);
+        }
         if lines.is_empty() {
             return Ok(None);
         }
@@ -44,13 +43,8 @@ impl AgentExecutor {
             return Ok(None);
         }
 
-        if start > 0 {
-            snippet = format!(
-                "[Showing last {} of {} journal lines]\n{}",
-                lines.len() - start,
-                lines.len(),
-                snippet
-            );
+        if start > 0 || truncated_head {
+            snippet = format!("[Showing tail of journal]\n{snippet}");
         }
 
         Ok(Some(snippet))
@@ -97,7 +91,7 @@ impl AgentExecutor {
     fn board_item_status_allows_coordinator_completion(status: &str) -> bool {
         matches!(
             status,
-            "needs_clarification" | "completed" | "blocked" | "waiting_for_children"
+            "needs_clarification" | "completed" | "cancelled" | "blocked" | "waiting_for_children"
         )
     }
 
@@ -154,8 +148,14 @@ impl AgentExecutor {
         let Some(start_hash) = self.task_journal_start_hash.as_ref() else {
             return Ok(true);
         };
-        let current_hash =
-            crate::runtime::task_workspace::compute_task_journal_hash(&self.filesystem).await?;
+        if self
+            .active_board_item_for_completion_guard()
+            .await?
+            .is_none()
+        {
+            return Ok(true);
+        }
+        let current_hash = compute_task_journal_hash(&self.filesystem).await?;
         Ok(&current_hash != start_hash)
     }
 
@@ -169,7 +169,7 @@ impl AgentExecutor {
                 ConversationContent::SystemDecision {
                     step: "terminal_stop_blocked_by_missing_task_brief".to_string(),
                     reasoning: format!(
-                        "Terminal stop was blocked because `/task/TASK.md` is missing or too thin for task {}. Do not end this task stage yet. First create or refresh `/task/TASK.md` with the real operative task brief by using `write_file` or `edit_file`, then continue or conclude.",
+                        "I tried to terminate this turn, but the runtime stopped me. `/task/TASK.md` for task {} is missing or too thin — there's no real operative brief on disk yet, so any executor I route to would be working blind. I should not end the turn here. I'll write a concrete brief to `/task/TASK.md` (title, context, numbered acceptance criteria, scope boundaries) using `write_file`, then continue routing or conclude.",
                         board_item.task_key
                     ),
                     confidence: 1.0,
@@ -197,7 +197,7 @@ impl AgentExecutor {
                 ConversationContent::SystemDecision {
                     step: "complete_blocked_by_incomplete_child_tasks".to_string(),
                     reasoning: format!(
-                        "Completion was blocked because parent task {} still has incomplete child tasks: {}. Do not complete the parent yet. Use `update_project_task` to set the parent task status to `waiting_for_children`, then continue orchestration until all child tasks are completed.",
+                        "I tried to mark parent task {} `completed`, but the runtime stopped me. These child tasks are still open: {}. Marking the parent done now would orphan unfinished work. I should not complete the parent yet. I'll call `update_project_task` to move the parent to `waiting_for_children` and let orchestration finish the children first; once they're all `completed` the parent will be ready to close.",
                         board_item.task_key,
                         child_task_keys.join(", ")
                     ),
@@ -212,10 +212,28 @@ impl AgentExecutor {
 
         let assigned_thread_id = board_item.assigned_thread_id;
         let is_coordinator = self.effective_is_coordinator_thread();
+        let active_assignments =
+            queries::ListProjectTaskBoardItemAssignmentsQuery::new(board_item.id)
+                .execute_with_db(
+                    self.ctx
+                        .app_state
+                        .db_router
+                        .reader(common::ReadConsistency::Strong),
+                )
+                .await?
+                .into_iter()
+                .filter(|a| {
+                    matches!(
+                        a.status.as_str(),
+                        "pending" | "available" | "claimed" | "in_progress",
+                    )
+                })
+                .collect::<Vec<_>>();
+        let has_active_assignment_elsewhere = active_assignments
+            .iter()
+            .any(|a| a.thread_id != self.ctx.thread_id);
         let completion_allowed = if is_coordinator {
-            assigned_thread_id
-                .map(|thread_id| thread_id != self.ctx.thread_id)
-                .unwrap_or(false)
+            has_active_assignment_elsewhere
                 || Self::board_item_status_allows_coordinator_completion(&board_item.status)
         } else {
             self.can_abort_current_assignment_execution()
@@ -227,35 +245,15 @@ impl AgentExecutor {
         }
 
         let reasoning = if is_coordinator {
-            match assigned_thread_id {
-                Some(thread_id) if thread_id == self.ctx.thread_id => format!(
-                    "Completion was blocked because the coordinator still owns board item {} and its status is `{}`. Do not stop yet. Either use `assign_project_task` to move ownership to the next worker/reviewer thread, or use `update_project_task` to move the task to an allowed coordinator-held state such as `needs_clarification`, `blocked`, or `waiting_for_children` before concluding.",
-                    board_item.task_key, board_item.status
-                ),
-                Some(thread_id) => format!(
-                    "Completion was blocked because board item {} is assigned to thread {} but did not satisfy the coordinator completion rule. Do not stop yet. Inspect the board state and correct it by reassignment with `assign_project_task` or by updating the task status with `update_project_task` before concluding.",
-                    board_item.task_key, thread_id
-                ),
-                None => format!(
-                    "Completion was blocked because board item {} is unassigned and its status is `{}`. Do not stop yet. Either assign the next stage with `assign_project_task`, or update the task to a terminal/holding status such as `needs_clarification`, `blocked`, or `waiting_for_children` with `update_project_task` before concluding.",
-                    board_item.task_key, board_item.status
-                ),
-            }
+            format!(
+                "I tried to terminate this turn, but the runtime stopped me. Task {} is in status `{}` and no active assignment is currently routed away from me — so terminating now would leave the task stalled with the coordinator (me) still owning it. I should not just stop. My options: (a) call `assign_project_task` to route the next stage to an executor/reviewer thread, or (b) call `update_project_task` to move the task to a holding state I'm allowed to terminate at — `needs_clarification`, `blocked`, `waiting_for_children`, or `completed`. I'll pick the one that matches what just happened in this conversation, then end the turn.",
+                board_item.task_key, board_item.status
+            )
         } else {
-            match assigned_thread_id {
-                Some(thread_id) if thread_id == self.ctx.thread_id => format!(
-                    "Completion was blocked because this non-coordinator thread still owns board item {} outside the runtime-managed assignment-execution completion path. Do not stop yet. If this is a normal assignment-execution run, let that path complete. Otherwise, continue the active work or hand control back before concluding.",
-                    board_item.task_key
-                ),
-                Some(thread_id) => format!(
-                    "Completion was blocked because board item {} is assigned to thread {} even though this thread no longer owns it. Do not stop yet. Refresh the board state and continue through the active assignee or coordinator path instead of concluding here.",
-                    board_item.task_key, thread_id
-                ),
-                None => format!(
-                    "Completion was blocked because board item {} is unassigned even though this thread no longer owns it. Do not stop yet. Return control to the coordinator flow so it can assign the next stage or update the task status explicitly.",
-                    board_item.task_key
-                ),
-            }
+            format!(
+                "I tried to terminate this turn, but the runtime stopped me. I'm not the coordinator and task {} still belongs to me — terminating without finishing the assignment would leave the task hanging. I should not just stop. If I'm in an assignment-execution run, I need to let it finish through the normal completion path (it will produce a `result_summary` and the coordinator will pick it up). Otherwise I should continue the work or hand control back instead of ending here.",
+                board_item.task_key
+            )
         };
 
         self.store_conversation(
@@ -349,11 +347,11 @@ impl AgentExecutor {
                 self.update_project_task_board_item(
                     board_item.task_key,
                     Some("blocked".to_string()),
-                    None,
                     ProjectTaskBoardItemMetadata {
                         kind: Some("project_task_aborted".to_string()),
                         tool_name: Some("abort".to_string()),
                         updated_at: Some(chrono::Utc::now().to_rfc3339()),
+                        ..Default::default()
                     },
                     None,
                 )
@@ -437,40 +435,31 @@ impl AgentExecutor {
             .unwrap_or_else(|| format!("thread-event-{}", thread_event.id))
     }
 
-    pub(crate) async fn ensure_task_workspace_for_key(
-        &mut self,
+    pub(crate) async fn prepare_task_workspace_for_key(
+        &self,
         task_key: &str,
         title: &str,
-        board_item_id: i64,
-    ) -> Result<TaskWorkspaceContext, AppError> {
+        is_recurring: bool,
+    ) -> Result<(TaskWorkspaceContext, String), AppError> {
         let safe_task_key = Self::sanitize_task_path_segment(task_key);
-        let persistent_task_path = self.filesystem.mount_task_workspace(&safe_task_key).await?;
-        let is_recurring = if board_item_id > 0 {
-            queries::GetProjectTaskScheduleByTemplateBoardItemIdQuery::new(board_item_id)
-                .execute_with_db(self.ctx.app_state.db_router.writer())
-                .await?
-                .is_some()
-        } else {
-            false
-        };
-        let prepared = prepare_task_workspace_layout_at_path(
-            &persistent_task_path,
+        let prepared = prepare_task_workspace(
+            &self.filesystem,
             &TaskWorkspaceBriefInput {
-                task_key,
+                task_key: &safe_task_key,
                 title,
                 is_recurring,
             },
         )
         .await?;
-        self.initialize_task_journal_start_hash(prepared.journal_hash.clone())
-            .await?;
-
-        Ok(TaskWorkspaceContext {
-            directory_path: TASK_WORKSPACE_DIR.to_string(),
-            task_file_path: TASK_WORKSPACE_TASK_FILE.to_string(),
-            journal_file_path: TASK_WORKSPACE_JOURNAL_FILE.to_string(),
-            runbook_file_path: is_recurring.then_some(TASK_WORKSPACE_RUNBOOK_FILE.to_string()),
-        })
+        Ok((
+            TaskWorkspaceContext {
+                directory_path: TASK_WORKSPACE_DIR.to_string(),
+                task_file_path: TASK_WORKSPACE_TASK_FILE.to_string(),
+                journal_file_path: TASK_WORKSPACE_JOURNAL_FILE.to_string(),
+                runbook_file_path: is_recurring.then_some(TASK_WORKSPACE_RUNBOOK_FILE.to_string()),
+            },
+            prepared.journal_hash,
+        ))
     }
 
     pub(crate) async fn initialize_task_journal_start_hash(

@@ -53,6 +53,8 @@ pub struct ToolCallGenerationOutput {
     #[serde(default)]
     pub content_text: Option<String>,
     pub usage_metadata: Option<UsageMetadata>,
+    #[serde(default)]
+    pub cache_state: Option<PromptCacheState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,8 +179,9 @@ impl ResolvedLlm {
         &self,
         prompt: SemanticLlmRequest,
         tools: Vec<NativeToolDefinition>,
+        cache: Option<PromptCacheRequest>,
     ) -> Result<ToolCallGenerationOutput, AppError> {
-        self.client.generate_tool_calls(prompt, tools).await
+        self.client.generate_tool_calls(prompt, tools, cache).await
     }
 
     pub async fn generate_text_from_prompt(
@@ -221,11 +224,12 @@ impl LlmClient {
         &self,
         prompt: SemanticLlmRequest,
         tools: Vec<NativeToolDefinition>,
+        cache: Option<PromptCacheRequest>,
     ) -> Result<ToolCallGenerationOutput, AppError> {
         match self {
-            Self::Gemini(client) => client.generate_tool_calls(prompt, tools).await,
-            Self::OpenAi(client) => client.generate_tool_calls(prompt, tools).await,
-            Self::OpenRouter(client) => client.generate_tool_calls(prompt, tools).await,
+            Self::Gemini(client) => client.generate_tool_calls(prompt, tools, cache).await,
+            Self::OpenAi(client) => client.generate_tool_calls(prompt, tools, cache).await,
+            Self::OpenRouter(client) => client.generate_tool_calls(prompt, tools, cache).await,
         }
     }
 

@@ -75,6 +75,8 @@ pub struct ThreadExecutionState {
     pub task_journal_start_hash: Option<String>,
     #[serde(default)]
     pub conversation_compaction_state: ConversationCompactionState,
+    #[serde(default)]
+    pub pending_question: Option<crate::PendingQuestion>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -89,6 +91,12 @@ pub struct PromptCacheState {
     #[serde(default)]
     pub cached_content_count: usize,
     pub expire_at: DateTime<Utc>,
+}
+
+impl PromptCacheState {
+    pub fn is_expired(&self, now: DateTime<Utc>) -> bool {
+        self.expire_at <= now + chrono::Duration::seconds(5)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

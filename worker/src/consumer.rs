@@ -10,7 +10,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::tasks::{
     agent, analytics, api_audit, api_key_role_permissions_sync, billing, conversation, document,
-    email, thread_schedule, token, vector_store, webhook, webhook_event, webhook_replay_batch,
+    email, token, vector_store, webhook, webhook_event, webhook_replay_batch,
 };
 
 const AGENT_EXECUTION_BUSY_RETRY_DELAY_SECONDS: u64 = 30;
@@ -73,10 +73,8 @@ enum WorkerTask {
     WebhookReplayBatch(Value),
     #[serde(rename = "document.process")]
     DocumentProcess(document::ProcessDocumentTask),
-    #[serde(rename = "agent.execution_request")]
-    AgentExecutionRequest(dto::json::AgentExecutionRequest),
-    #[serde(rename = "agent.thread_schedule")]
-    AgentThreadSchedule(dto::json::ThreadScheduleRequest),
+    #[serde(rename = "agent.event_log_work")]
+    AgentEventLogWork(serde_json::Value),
     #[serde(rename = "vector_store.maintain")]
     VectorStoreMaintain(vector_store::VectorStoreMaintenanceTask),
     #[serde(rename = "webhook.event")]
@@ -124,8 +122,7 @@ impl WorkerTask {
             Self::WebhookRetry(_) => "webhook.retry",
             Self::WebhookReplayBatch(_) => "webhook.replay_batch",
             Self::DocumentProcess(_) => "document.process",
-            Self::AgentExecutionRequest(_) => "agent.execution_request",
-            Self::AgentThreadSchedule(_) => "agent.thread_schedule",
+            Self::AgentEventLogWork(_) => "agent.event_log_work",
             Self::VectorStoreMaintain(_) => "vector_store.maintain",
             Self::WebhookEvent(_) => "webhook.event",
             Self::AnalyticsEvent(_) => "analytics.event",
@@ -370,8 +367,8 @@ impl NatsConsumer {
                     }
                 })?;
             }
-            WorkerTask::AgentExecutionRequest(request) => {
-                agent::process_agent_execution(&self.app_state, task_id, request)
+            WorkerTask::AgentEventLogWork(payload) => {
+                agent::process_event_log_work(&self.app_state, task_id, payload)
                     .await
                     .map_err(|e| match e {
                         agent::AgentExecutionError::ExecutionBusy { .. } => {
@@ -381,11 +378,6 @@ impl NatsConsumer {
                         }
                         other => TaskError::Permanent(other.to_string()),
                     })?;
-            }
-            WorkerTask::AgentThreadSchedule(request) => {
-                thread_schedule::process_thread_schedule(&self.app_state, request)
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
             }
             WorkerTask::VectorStoreMaintain(task) => {
                 let outcome = vector_store::maintain_vector_store_impl(
@@ -508,96 +500,6 @@ impl NatsConsumer {
                 task_message.task.task_type(),
                 task_message.task_id
             );
-        }
-
-        if let WorkerTask::AgentExecutionRequest(request) = task_message.task {
-            let thread_event_id = request
-                .thread_event_id
-                .as_deref()
-                .and_then(|value| value.parse::<i64>().ok());
-            match agent::prepare_agent_execution(&self.app_state, &task_message.task_id, request)
-                .await
-            {
-                Ok(agent::PreparedAgentExecutionOutcome::Noop(reason)) => {
-                    info!(
-                        "Task {} completed successfully: {}",
-                        task_message.task_id, reason
-                    );
-                    if let Err(e) = message.ack().await {
-                        error!("Failed to acknowledge task {}: {}", task_message.task_id, e);
-                    }
-                }
-                Ok(agent::PreparedAgentExecutionOutcome::Ready(execution)) => {
-                    if let Err(e) = message.ack().await {
-                        error!(
-                            "Failed to acknowledge task {} before execution: {}",
-                            task_message.task_id, e
-                        );
-                    }
-
-                    match execution.execute().await {
-                        Ok(result) => info!(
-                            "Task {} completed successfully: {}",
-                            task_message.task_id, result
-                        ),
-                        Err(error) => error!(
-                            "Task {} failed after early acknowledgment: {}",
-                            task_message.task_id, error
-                        ),
-                    }
-                }
-                Err(agent::AgentExecutionError::ExecutionBusy { .. }) => {
-                    info!(
-                        "Task {} will retry after {:?}",
-                        task_message.task_id,
-                        Duration::from_secs(AGENT_EXECUTION_BUSY_RETRY_DELAY_SECONDS)
-                    );
-                    if let Err(e) = message
-                        .ack_with(AckKind::Nak(Some(Duration::from_secs(
-                            AGENT_EXECUTION_BUSY_RETRY_DELAY_SECONDS,
-                        ))))
-                        .await
-                    {
-                        error!(
-                            "Failed to NAK with delay for task {}: {}",
-                            task_message.task_id, e
-                        );
-                    }
-                }
-                Err(other) => {
-                    error!(
-                        "Task {} permanently failed: {}",
-                        task_message.task_id, other
-                    );
-                    if other.is_unrecoverable() {
-                        if let Some(event_id) = thread_event_id {
-                            if let Err(e) = commands::UpdateThreadEventStateCommand::new(
-                                event_id,
-                                models::thread_event::status::FAILED.to_string(),
-                            )
-                            .mark_failed()
-                            .execute_with_db(self.app_state.db_router.writer())
-                            .await
-                            {
-                                error!(
-                                    task_id = %task_message.task_id,
-                                    event_id,
-                                    %e,
-                                    "Failed to mark thread event terminally failed",
-                                );
-                            }
-                        }
-                    }
-                    if let Err(e) = message.ack().await {
-                        error!(
-                            "Failed to acknowledge failed task {}: {}",
-                            task_message.task_id, e
-                        );
-                    }
-                }
-            }
-
-            return Ok(());
         }
 
         let is_webhook_task = Self::is_webhook_task(&task_message.task);

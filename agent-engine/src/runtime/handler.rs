@@ -1,4 +1,8 @@
+use std::sync::Arc;
+
+use crate::executor::core::AgentExecutorBuilder;
 use crate::runtime::thread_execution_context::DeploymentProviderKeys;
+use crate::sandbox::{SandboxHandle, SandboxRuntimeFactory, TaskSandboxSpec, ThreadSandboxSpec};
 use crate::{AgentExecutor, ResumeContext};
 use common::error::AppError;
 use common::state::AppState;
@@ -10,6 +14,7 @@ use models::ThreadEvent;
 
 pub struct AgentHandler {
     app_state: AppState,
+    sandbox_factory: Arc<SandboxRuntimeFactory>,
 }
 
 enum ExecutionMode {
@@ -101,16 +106,81 @@ pub struct ExecutionRequest {
     pub agent: AiAgentWithFeatures,
     pub conversation_id: Option<i64>,
     pub thread_id: i64,
-    pub thread_event_id: Option<i64>,
+    pub event_log_id: Option<i64>,
     pub execution_run_id: i64,
     pub execution_token: String,
+    pub watch_key: String,
     pub approval_response: Option<Vec<dto::json::deployment::ToolApprovalSelection>>,
     pub thread_event: Option<ThreadEvent>,
 }
 
 impl AgentHandler {
     pub fn new(app_state: AppState) -> Self {
-        Self { app_state }
+        let sandbox_factory = build_sandbox_factory(&app_state);
+        Self {
+            app_state,
+            sandbox_factory,
+        }
+    }
+
+    async fn resolve_sandbox_handle(
+        &self,
+        request: &ExecutionRequest,
+        thread_state: &models::AgentThreadState,
+        task_sandbox_key: Option<String>,
+    ) -> Result<Arc<dyn SandboxHandle>, AppError> {
+        let deployment_id = request.agent.deployment_id;
+        let runtime = self
+            .sandbox_factory
+            .for_deployment(&deployment_id.to_string());
+
+        if let Some(task_key) = task_sandbox_key {
+            let spec = TaskSandboxSpec {
+                deployment_id: deployment_id.to_string(),
+                project_id: thread_state.project_id.to_string(),
+                task_key,
+            };
+            let handle = runtime
+                .ensure_task_sandbox(spec)
+                .await
+                .map_err(|err| AppError::Internal(format!("ensure task sandbox: {err}")))?;
+            return Ok(Arc::from(handle));
+        }
+
+        let spec = ThreadSandboxSpec {
+            deployment_id: deployment_id.to_string(),
+            thread_id: request.thread_id.to_string(),
+            project_id: Some(thread_state.project_id.to_string()),
+            agent_id: Some(request.agent.id.to_string()),
+        };
+        let handle = runtime
+            .ensure_thread_sandbox(spec)
+            .await
+            .map_err(|err| AppError::Internal(format!("ensure thread sandbox: {err}")))?;
+        Ok(Arc::from(handle))
+    }
+
+    async fn resolve_task_key_for_event(
+        &self,
+        request: &ExecutionRequest,
+    ) -> Result<Option<String>, AppError> {
+        let Some(event) = request.thread_event.as_ref() else {
+            return Ok(None);
+        };
+        if !matches!(
+            event.event_type.as_str(),
+            models::thread_event::event_type::TASK_ROUTING
+                | models::thread_event::event_type::ASSIGNMENT_EXECUTION
+        ) {
+            return Ok(None);
+        }
+        let Some(board_item_id) = event.board_item_id else {
+            return Ok(None);
+        };
+        let item = queries::GetProjectTaskBoardItemByIdQuery::new(board_item_id)
+            .execute_with_db(self.app_state.db_router.writer())
+            .await?;
+        Ok(item.map(|i| i.task_key))
     }
 
     pub async fn execute_agent_streaming(&self, request: ExecutionRequest) -> Result<(), AppError> {
@@ -118,11 +188,18 @@ impl AgentHandler {
         let thread_key = request.thread_id.to_string();
         let deployment_id = request.agent.deployment_id;
 
-        let deployment_ai_settings = queries::GetDeploymentAiSettingsQuery::new(deployment_id)
-            .execute_with_db(self.app_state.db_router.writer())
-            .await
-            .ok()
-            .flatten();
+        let db = self.app_state.db_router.writer();
+        let settings_query = queries::GetDeploymentAiSettingsQuery::new(deployment_id);
+        let thread_query =
+            queries::GetAgentThreadStateQuery::new(request.thread_id, deployment_id);
+        let settings_fut = settings_query.execute_with_db(db);
+        let thread_fut = thread_query.execute_with_db(db);
+        let task_key_fut = self.resolve_task_key_for_event(&request);
+        let (settings_result, thread_result, task_key_result) =
+            tokio::join!(settings_fut, thread_fut, task_key_fut);
+        let deployment_ai_settings = settings_result.ok().flatten();
+        let thread_state = thread_result?;
+        let task_sandbox_key = task_key_result?;
 
         let provider_keys = DeploymentProviderKeys::from_settings(
             deployment_ai_settings.as_ref(),
@@ -130,21 +207,39 @@ impl AgentHandler {
         )?;
 
         let execution_context =
-            crate::runtime::thread_execution_context::ThreadExecutionContext::new(
+            crate::runtime::thread_execution_context::ThreadExecutionContext::new_with_thread(
                 self.app_state.clone(),
                 request.agent.clone(),
                 request.thread_id,
                 request.execution_run_id,
                 provider_keys,
+                Some(thread_state.clone()),
             );
 
         self.spawn_message_publisher(receiver, thread_key.clone(), execution_context.clone());
 
-        let thread_state = execution_context.get_thread().await?;
-
         let execution_context_for_notification = execution_context.clone();
 
-        let mut executor = AgentExecutor::new(execution_context, sender).await?;
+        let app_state_for_mark = self.app_state.clone();
+        let thread_id_for_mark = thread_state.id;
+        let mark_running_fut = async move {
+            commands::UpdateAgentThreadStateCommand::new(thread_id_for_mark, deployment_id)
+                .with_status(AgentThreadStatus::Running)
+                .execute_with_deps(
+                    &common::deps::from_app(&app_state_for_mark).db().nats().id(),
+                )
+                .await
+        };
+        let board_item_id = request
+            .thread_event
+            .as_ref()
+            .and_then(|event| event.board_item_id);
+        let (sandbox_handle, prepared, _mark) = tokio::try_join!(
+            self.resolve_sandbox_handle(&request, &thread_state, task_sandbox_key),
+            AgentExecutorBuilder::prepare(execution_context.clone(), board_item_id),
+            mark_running_fut,
+        )?;
+        let mut executor = AgentExecutorBuilder::finalize(prepared, sandbox_handle, sender)?;
 
         let execution_mode = match (
             request.conversation_id,
@@ -161,10 +256,9 @@ impl AgentHandler {
                 ));
             }
         };
-
         let execution_result = self
             .run_execution_mode(
-                &thread_key,
+                &request.watch_key,
                 &request.execution_token,
                 &mut executor,
                 execution_mode,
@@ -190,7 +284,7 @@ impl AgentHandler {
 
         if !request.execution_token.is_empty() {
             if let Err(e) = clear_execution_token_if_current(
-                &thread_key,
+                &request.watch_key,
                 &request.execution_token,
                 &self.app_state,
             )
@@ -218,7 +312,7 @@ impl AgentHandler {
 
     async fn run_execution_mode(
         &self,
-        thread_key: &str,
+        watch_key: &str,
         execution_token: &str,
         agent_executor: &mut AgentExecutor,
         execution_mode: ExecutionMode,
@@ -228,7 +322,7 @@ impl AgentHandler {
         match execution_mode {
             ExecutionMode::ApprovalResponse(approvals) => {
                 self.run_with_execution_watch(
-                    thread_key,
+                    watch_key,
                     execution_token,
                     thread_id,
                     deployment_id,
@@ -238,7 +332,7 @@ impl AgentHandler {
             }
             ExecutionMode::Conversation(conversation_id) => {
                 self.run_with_execution_watch(
-                    thread_key,
+                    watch_key,
                     execution_token,
                     thread_id,
                     deployment_id,
@@ -259,7 +353,7 @@ impl AgentHandler {
                 }
 
                 self.run_with_execution_watch(
-                    thread_key,
+                    watch_key,
                     execution_token,
                     thread_id,
                     deployment_id,
@@ -272,7 +366,7 @@ impl AgentHandler {
 
     async fn run_with_execution_watch<F>(
         &self,
-        thread_key: &str,
+        watch_key: &str,
         execution_token: &str,
         thread_id: i64,
         deployment_id: i64,
@@ -282,12 +376,11 @@ impl AgentHandler {
         F: std::future::Future<Output = Result<(), AppError>>,
     {
         if execution_token.is_empty() {
-            let _ = (thread_id, deployment_id);
             return execution_future.await;
         }
         tokio::pin!(execution_future);
         let mut token_watch =
-            watch_execution_token_changes(&self.app_state, thread_key, execution_token).await?;
+            watch_execution_token_changes(&self.app_state, watch_key, execution_token).await?;
 
         loop {
             tokio::select! {
@@ -304,12 +397,12 @@ impl AgentHandler {
                         }
                         Some(Err(error)) => {
                             return Err(AppError::Internal(format!(
-                                "Failed to watch execution token for thread {}: {}",
-                                thread_key, error
+                                "Failed to watch execution token for {}: {}",
+                                watch_key, error
                             )));
                         }
                         None => {
-                            if execution_token_superseded(&self.app_state, thread_key, execution_token).await? {
+                            if execution_token_superseded(&self.app_state, watch_key, execution_token).await? {
                                 mark_thread_interrupted(&self.app_state, thread_id, deployment_id).await;
                                 return Ok(());
                             }
@@ -339,8 +432,7 @@ impl AgentHandler {
             .await;
         self.finalize_execution_run(&context, request, deployment_id, execution_result)
             .await;
-        self.finalize_thread_event(request, execution_result).await;
-        self.schedule_follow_up_work(&context, deployment_id).await;
+        self.finalize_event_log_work(request, execution_result).await;
     }
 
     async fn finalize_assignment_outcome(
@@ -459,45 +551,29 @@ impl AgentHandler {
             .await;
     }
 
-    async fn finalize_thread_event(
+    async fn finalize_event_log_work(
         &self,
         request: &ExecutionRequest,
         execution_result: &Result<(), AppError>,
     ) {
-        let Some(thread_event_id) = request.thread_event_id else {
+        let Some(event_log_id) = request.event_log_id else {
             return;
         };
-
-        let terminal_status = match execution_result {
-            Ok(()) => models::thread_event::status::COMPLETED.to_string(),
-            Err(_) => models::thread_event::status::FAILED.to_string(),
-        };
-        let mut update_event =
-            commands::UpdateThreadEventStateCommand::new(thread_event_id, terminal_status)
-                .with_caused_by_run_id(request.execution_run_id);
-        update_event = if execution_result.is_ok() {
-            update_event.mark_completed()
+        if execution_result.is_ok() {
+            let _ = commands::event_log::mark_event_work_completed(
+                self.app_state.db_router.writer(),
+                event_log_id,
+                chrono::Utc::now(),
+            )
+            .await;
         } else {
-            update_event.mark_failed()
-        };
-        let _ = update_event
-            .execute_with_db(self.app_state.db_router.writer())
+            let _ = commands::event_log::mark_event_failed(
+                self.app_state.db_router.writer(),
+                event_log_id,
+                "execution failed",
+            )
             .await;
-    }
-
-    async fn schedule_follow_up_work(
-        &self,
-        context: &models::AgentThreadState,
-        deployment_id: i64,
-    ) {
-        if context.status == AgentThreadStatus::Running {
-            return;
         }
-
-        let publish_deps = common::deps::from_app(&self.app_state).nats().id();
-        let _ = commands::PublishThreadScheduleCommand::new(deployment_id, context.id)
-            .execute_with_deps(&publish_deps)
-            .await;
     }
 }
 
@@ -559,7 +635,7 @@ async fn publish_stream_event(
 
 async fn watch_execution_token_changes(
     app_state: &AppState,
-    thread_key: &str,
+    watch_key: &str,
     current_execution_token: &str,
 ) -> Result<async_nats::jetstream::kv::Watch, AppError> {
     let kv = app_state
@@ -568,23 +644,23 @@ async fn watch_execution_token_changes(
         .await
         .map_err(|error| {
             AppError::Internal(format!(
-                "Failed to access execution token KV bucket for thread {}: {}",
-                thread_key, error
+                "Failed to access execution token KV bucket for {}: {}",
+                watch_key, error
             ))
         })?;
 
-    let mut watch = kv.watch_with_history(thread_key).await.map_err(|error| {
+    let mut watch = kv.watch_with_history(watch_key).await.map_err(|error| {
         AppError::Internal(format!(
-            "Failed to create execution token watch for thread {}: {}",
-            thread_key, error
+            "Failed to create execution token watch for {}: {}",
+            watch_key, error
         ))
     })?;
 
     while let Some(entry) = watch.next().await {
         let entry = entry.map_err(|error| {
             AppError::Internal(format!(
-                "Failed to initialize execution token watch for thread {}: {}",
-                thread_key, error
+                "Failed to initialize execution token watch for {}: {}",
+                watch_key, error
             ))
         })?;
 
@@ -601,7 +677,7 @@ async fn watch_execution_token_changes(
 }
 
 async fn clear_execution_token_if_current(
-    thread_key: &str,
+    watch_key: &str,
     current_execution_token: &str,
     app_state: &AppState,
 ) -> Result<(), async_nats::Error> {
@@ -609,9 +685,9 @@ async fn clear_execution_token_if_current(
         .nats_jetstream
         .get_key_value("agent_execution_kv")
         .await?;
-    match kv.get(thread_key).await? {
+    match kv.get(watch_key).await? {
         Some(entry) if entry.as_ref() == current_execution_token.as_bytes() => {
-            kv.delete(thread_key).await?;
+            kv.delete(watch_key).await?;
         }
         _ => {}
     }
@@ -620,7 +696,7 @@ async fn clear_execution_token_if_current(
 
 async fn execution_token_superseded(
     app_state: &AppState,
-    thread_key: &str,
+    watch_key: &str,
     current_execution_token: &str,
 ) -> Result<bool, AppError> {
     let kv = match app_state
@@ -632,13 +708,13 @@ async fn execution_token_superseded(
         Err(_) => return Ok(false),
     };
 
-    let current = match kv.get(thread_key).await {
+    let current = match kv.get(watch_key).await {
         Ok(Some(entry)) => entry,
         Ok(None) => return Ok(false),
         Err(error) => {
             return Err(AppError::Internal(format!(
-                "Failed to read execution token for thread {}: {}",
-                thread_key, error
+                "Failed to read execution token for {}: {}",
+                watch_key, error
             )));
         }
     };
@@ -652,4 +728,8 @@ async fn mark_thread_interrupted(app_state: &AppState, thread_id: i64, deploymen
     let _ = interrupt_cmd
         .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
         .await;
+}
+
+fn build_sandbox_factory(_app_state: &AppState) -> Arc<SandboxRuntimeFactory> {
+    crate::sandbox::shared_sandbox_runtime()
 }

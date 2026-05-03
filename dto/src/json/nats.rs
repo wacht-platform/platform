@@ -90,9 +90,6 @@ pub enum AgentExecutionType {
         request_message_id: String,
         approvals: Vec<crate::json::deployment::ToolApprovalSelection>,
     },
-
-    #[serde(rename = "thread_event")]
-    ThreadEvent { event_id: String },
 }
 
 /// Request to execute an agent via NATS
@@ -101,15 +98,7 @@ pub struct AgentExecutionRequest {
     pub deployment_id: String,
     pub thread_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thread_event_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
     #[serde(flatten)]
     pub execution_type: AgentExecutionType,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThreadScheduleRequest {
-    pub deployment_id: String,
-    pub thread_id: String,
 }

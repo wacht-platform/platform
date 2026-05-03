@@ -19,6 +19,7 @@ pub struct ToolExecutor {
     ctx: std::sync::Arc<crate::runtime::thread_execution_context::ThreadExecutionContext>,
     channel: Option<tokio::sync::mpsc::Sender<StreamEvent>>,
     active_board_item_id: Option<i64>,
+    sandbox_handle: Option<std::sync::Arc<dyn crate::sandbox::SandboxHandle>>,
 }
 
 const DEFAULT_INLINE_OUTPUT_THRESHOLD_CHARS: usize = 60_000;
@@ -32,12 +33,29 @@ impl ToolExecutor {
             ctx,
             channel: None,
             active_board_item_id: None,
+            sandbox_handle: None,
         }
     }
 
     pub fn with_channel(mut self, channel: tokio::sync::mpsc::Sender<StreamEvent>) -> Self {
         self.channel = Some(channel);
         self
+    }
+
+    pub fn with_sandbox_handle(
+        mut self,
+        handle: std::sync::Arc<dyn crate::sandbox::SandboxHandle>,
+    ) -> Self {
+        self.sandbox_handle = Some(handle);
+        self
+    }
+
+    pub(crate) fn sandbox_handle(
+        &self,
+    ) -> Result<std::sync::Arc<dyn crate::sandbox::SandboxHandle>, AppError> {
+        self.sandbox_handle
+            .clone()
+            .ok_or_else(|| AppError::Internal("sandbox handle is not configured".into()))
     }
 
     pub fn set_active_board_item_id(&mut self, board_item_id: Option<i64>) {

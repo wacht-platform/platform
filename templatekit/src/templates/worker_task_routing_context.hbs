@@ -1,79 +1,59 @@
-A new independent project task requires coordinator routing.
+{{#if (eq routing_reason "task_created")}}New project task. Define the brief. Route.
+{{else if (eq routing_reason "task_updated")}}User updated this task. Prior routing decision (if any) is earlier in conversation. Re-evaluate brief and routing for the new spec.
+{{else if (eq routing_reason "assignment_preempted")}}User edited this task while an executor was running it. Executor was preempted; partial work is in `/task/JOURNAL.md` and conversation history. Re-evaluate brief and lane.
+{{else if (eq routing_reason "assignment_completed")}}Assignment on this task terminated `{{last_assignment_result_status}}`. Decide: accept (mark task `completed`), route to reviewer, reassign with follow-up, close.
+{{else if (eq routing_reason "task_cancelled")}}User cancelled this task. Append a closing note to `/task/JOURNAL.md`. Do not reassign.
+{{else if (eq routing_reason "user_responded")}}User answered a clarification I (or an executor) had asked. The latest user-voice clarification message in this conversation history holds the typed answers. Re-evaluate the brief and routing with the answer in hand; append a short note to `/task/JOURNAL.md` summarizing what was answered before continuing.
+{{else if (eq routing_reason "user_feedback")}}User left feedback on this task. The current executor (if any) was preempted; partial work is in `/task/JOURNAL.md`. Read the full feedback timeline below, decide whether to acknowledge, adjust the brief, re-route, or close. Append a short note to `/task/JOURNAL.md` capturing how you're acting on the latest feedback.
+{{else}}Routing event for this task.
+{{/if}}
 
 Task key: {{task_key}}
 Board item id: {{board_item_id}}
 Title: {{title}}
 Description: {{description}}
-Current status: {{status}}
-Priority: {{priority}}
+Status: {{status}}{{#if previous_status}} (was {{previous_status}}){{/if}}
 
-Canonical task workspace: {{workspace_dir}}
-Source-of-truth task brief: {{task_file}}
-Task history journal: {{journal_file}}
-{{#if runbook_file}}Recurring task runbook: {{runbook_file}}
+{{#if changed_fields}}Changed since last routing:
+{{#each changed_fields}}- {{field}}: {{from}} → {{to}}
+{{/each}}
+
+{{/if}}{{#if active_assignments}}Active assignments:
+{{#each active_assignments}}- #{{assignment_id}} {{assignment_role}} → thread {{thread_id}}: {{status}}{{#if result_status}} ({{result_status}}){{/if}}
+{{/each}}
+{{else}}No active assignments yet.
 {{/if}}
-
-Treat this as a distinct unit of work.
-
-The project task board item is the workflow source of truth.
-The task workspace folder is the filesystem source of truth for this task.
-
-The runtime created `/task/JOURNAL.md`.
-`/task/TASK.md` is agent-owned. Create it or refresh it with the real operative task brief before you finish the first substantive stage.
-Put new task-specific briefs, artifacts, and notes only under the task workspace folder.
-
-On every wake-up for coordinator task routing, read `/task/JOURNAL.md` first before planning, decomposing, rerouting, or concluding.
-If the journal is long, inspect the latest relevant portion first with `tail`, `sed -n`, or another targeted read, but do not skip the journal.
-
-{{#if runbook_file}}Because this task is recurring, read `{{runbook_file}}` after the journal.
-Keep it small and store only critical carry-forward facts such as key file paths, data locations, reusable commands, scripts, or non-obvious operational gotchas.
+{{#if parent_task_key}}Parent task (read-only): /project_workspace/tasks/{{parent_task_key}}/
+{{/if}}{{#if schedule_state_pretty}}Persistent state across runs:
+```json
+{{schedule_state_pretty}}
+```
 {{/if}}
-Update `/task/JOURNAL.md` with `write_file` before you finish a task stage.
-Do not rely on unrelated files elsewhere in `/workspace` unless they are explicitly linked to this task.
+Workspace: /task — Brief: /task/TASK.md — Journal: /task/JOURNAL.md
+Other tasks read-only at /project_workspace/tasks/<task_key>/.
 
-Prior assignments on this task appear as `[Task event]` entries earlier in the conversation history. Review them before making routing changes.
-
-Latest journal state:
+Latest journal:
 {{#if task_journal_tail}}
 ```markdown
 {{task_journal_tail}}
 ```
-{{else}}- none
+{{else}}- empty
 {{/if}}
 
-Recommended coordinator handling sequence:
-1. Read `/task/JOURNAL.md` first for latest state, prior routing decisions, and unresolved gaps.
-{{#if runbook_file}}2. Read `{{runbook_file}}` next for small durable facts from prior recurring runs.
-3. Read `/task/TASK.md` and confirm the real task brief and finish bar.
-4. Review prior assignment events in conversation history before making routing changes.
-5. Decide whether the task should:
-{{else}}2. Read `/task/TASK.md` and confirm the real task brief and finish bar.
-3. Review prior assignment events in conversation history before making routing changes.
-4. Decide whether the task should:
-{{/if}}
-   - stay with the current lane,
-   - be reassigned,
-   - be split into multiple lanes,
-   - be blocked pending clarification or dependency resolution,
-   - or be marked complete.
-{{#if runbook_file}}6. Route based on actual ownership boundaries, not vague role labels.
-7. Write the routing rationale durably into the journal so the next lane inherits a clear context.
-{{else}}5. Route based on actual ownership boundaries, not vague role labels.
-6. Write the routing rationale durably into the journal so the next lane inherits a clear context.
+{{#if prior_fires}}Recent prior fires of this schedule (read-only at /project_workspace/tasks/<task_key>/, newest first):
+{{#each prior_fires}}- {{task_key}} (fired {{fired_at}}, {{status}})
+{{/each}}Older fires also at /project_workspace/tasks/. Read them only if you need historical context.
+
+{{/if}}{{#if comment_timeline}}User feedback timeline (chronological, oldest first):
+{{#each comment_timeline}}- {{#if resolved}}[resolved]{{else}}[unresolved]{{/if}} (id={{id}}, {{created_at}}) {{body}}{{#if attachments}}
+  attachments: {{#each attachments}}{{path}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if resolution_summary}}
+  resolution: {{resolution_summary}}{{/if}}
+{{/each}}
+Address every `[unresolved]` entry this turn — either by acting on it (edit brief, re-route, write a journal note) AND calling `resolve_user_feedback` with the comment id(s) and a one-line resolution summary, or by explicitly calling `resolve_user_feedback` with a summary explaining why no action is needed. Don't terminate while `[unresolved]` items remain.
 {{/if}}
 
-When to split across multiple lanes:
-- Split when execution and review should be independent.
-- Split when the task requires clearly different skills, evidence standards, or tools.
-- Split when one person doing everything would make acceptance unreliable.
-- Do not split when the work is narrow enough for one lane to complete responsibly.
-- If you split, each lane should have a concrete ownership boundary and a clear output or review responsibility.
+Decide and act this turn. Route on actual ownership boundaries, not vague role labels. Append a one-line routing rationale to the journal before terminating.
 
-Interpret scope cues in the title and description literally. Broad wording like `everything`, `full`, `deep dive`, or repeated comma-separated facets implies broad coverage and should affect routing, decomposition, and review depth.
+Split a task when execution and review should be independent, when work needs different skills or evidence standards, when one lane doing everything would make acceptance unreliable. Don't split when narrow enough for one lane.
 
-Coordinator objective:
-- review and refine the task only if needed
-- route it into concrete execution and review work
-- update the project task board with real routing state
-- do not complete the task just because a brief exists
-- do not treat this coordinator run as the execution lane
+Scope cues in title/description are literal. Broad wording (`everything`, `full`, `deep dive`, repeated facets) implies broad coverage — affects routing, decomposition, review depth.

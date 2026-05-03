@@ -44,14 +44,8 @@ pub enum ConversationMessageType {
     ApprovalRequest,
     ApprovalResponse,
     ExecutionSummary,
-    AssignmentEvent,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum AssignmentEventKind {
-    TaskRouting,
-    AssignmentExecution,
+    ClarificationRequest,
+    ClarificationResponse,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,24 +96,19 @@ pub enum ConversationContent {
         user_message: String,
         agent_execution: String,
     },
-    AssignmentEvent {
-        kind: AssignmentEventKind,
+    ClarificationRequest {
+        questions: Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        context: Option<String>,
+    },
+    ClarificationResponse {
         #[serde(
             default,
             with = "crate::utils::serde::i64_as_string_option",
             skip_serializing_if = "Option::is_none"
         )]
-        assignment_id: Option<i64>,
-        #[serde(
-            default,
-            with = "crate::utils::serde::i64_as_string_option",
-            skip_serializing_if = "Option::is_none"
-        )]
-        thread_event_id: Option<i64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        summary: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        payload: Option<Value>,
+        request_message_id: Option<i64>,
+        answers: Value,
     },
 }
 
@@ -187,7 +176,8 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
             "approval_request" => ConversationMessageType::ApprovalRequest,
             "approval_response" => ConversationMessageType::ApprovalResponse,
             "execution_summary" => ConversationMessageType::ExecutionSummary,
-            "assignment_event" => ConversationMessageType::AssignmentEvent,
+            "clarification_request" => ConversationMessageType::ClarificationRequest,
+            "clarification_response" => ConversationMessageType::ClarificationResponse,
             _ => {
                 return Err(sqlx::Error::ColumnDecode {
                     index: "message_type".to_string(),

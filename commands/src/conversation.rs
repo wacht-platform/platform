@@ -176,7 +176,8 @@ impl CreateConversationCommand {
             ConversationMessageType::ApprovalRequest => "approval_request",
             ConversationMessageType::ApprovalResponse => "approval_response",
             ConversationMessageType::ExecutionSummary => "execution_summary",
-            ConversationMessageType::AssignmentEvent => "assignment_event",
+            ConversationMessageType::ClarificationRequest => "clarification_request",
+            ConversationMessageType::ClarificationResponse => "clarification_response",
         };
 
         let record = sqlx::query_as::<_, ConversationRecord>(

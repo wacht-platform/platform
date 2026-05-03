@@ -51,7 +51,8 @@ fn parse_conversation_message_type(value: &str) -> Result<ConversationMessageTyp
         "approval_request" => Ok(ConversationMessageType::ApprovalRequest),
         "approval_response" => Ok(ConversationMessageType::ApprovalResponse),
         "execution_summary" => Ok(ConversationMessageType::ExecutionSummary),
-        "assignment_event" => Ok(ConversationMessageType::AssignmentEvent),
+        "clarification_request" => Ok(ConversationMessageType::ClarificationRequest),
+        "clarification_response" => Ok(ConversationMessageType::ClarificationResponse),
         other => Err(AppError::Internal(format!(
             "Unknown conversation message_type '{}'",
             other

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE project_task_board_items\n            SET\n                title = COALESCE($3, title),\n                description = COALESCE($4, description),\n                updated_at = NOW()\n            WHERE id = $1 AND board_id = $2 AND archived_at IS NULL\n            RETURNING id, board_id, task_key, title, description, status,\n                      assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,\n                      schedule_id, scheduled_for, fired_at, pending_question\n            ",
+  "query": "\n        UPDATE project_task_board_items\n        SET\n            archived_at = CASE WHEN $3 THEN NOW() ELSE NULL END,\n            updated_at = NOW()\n        WHERE id = $1 AND board_id = $2\n        RETURNING id, board_id, task_key, title, description, status,\n                  assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,\n                  schedule_id, scheduled_for, fired_at, pending_question, pending_approval\n        ",
   "describe": {
     "columns": [
       {
@@ -87,14 +87,18 @@
         "ordinal": 16,
         "name": "pending_question",
         "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 17,
+        "name": "pending_approval",
+        "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
         "Int8",
         "Int8",
-        "Text",
-        "Text"
+        "Bool"
       ]
     },
     "nullable": [
@@ -114,8 +118,9 @@
       true,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "52442fad8521e5bff6712842245f502990d6e1da61181bd31b2ce032c5759c5b"
+  "hash": "d5ecbf9401e3ddabb5fd4fe766b58787e7bc474471dd22580a9c9a465ad5a626"
 }

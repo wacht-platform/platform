@@ -29,7 +29,6 @@ pub struct ProjectTaskBoardItem {
     pub title: String,
     pub description: Option<String>,
     pub status: String,
-    pub priority: String,
     #[serde(
         serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
         skip_serializing_if = "Option::is_none"
@@ -40,6 +39,47 @@ pub struct ProjectTaskBoardItem {
     pub archived_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub state_version: i64,
+    #[serde(
+        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub schedule_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheduled_for: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fired_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_question: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_approval: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ProjectTaskBoardItemComment {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub board_item_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub actor_id: i64,
+    pub body: String,
+    pub metadata: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub archived_at: Option<DateTime<Utc>>,
+    pub resolved_at: Option<DateTime<Utc>>,
+    #[serde(
+        default,
+        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub resolved_by_thread_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -57,13 +97,6 @@ pub struct ProjectTaskBoardItemRelation {
     pub created_at: DateTime<Utc>,
 }
 
-pub mod task_priority {
-    pub const URGENT: &str = "urgent";
-    pub const HIGH: &str = "high";
-    pub const NEUTRAL: &str = "neutral";
-    pub const LOW: &str = "low";
-}
-
 pub mod relation_type {
     pub const CHILD_OF: &str = "child_of";
 }
@@ -72,35 +105,17 @@ impl ProjectTaskBoardItem {
     pub fn typed_metadata(&self) -> ProjectTaskBoardItemMetadata {
         serde_json::from_value(self.metadata.clone()).unwrap_or_default()
     }
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct ProjectTaskBoardItemEvent {
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub id: i64,
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub board_item_id: i64,
-    #[serde(
-        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub thread_id: Option<i64>,
-    #[serde(
-        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub execution_run_id: Option<i64>,
-    pub event_type: String,
-    pub summary: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub body_markdown: Option<String>,
-    pub details: serde_json::Value,
-    pub created_at: DateTime<Utc>,
-}
+    pub fn typed_pending_question(&self) -> Option<crate::PendingQuestion> {
+        self.pending_question
+            .as_ref()
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
+    }
 
-impl ProjectTaskBoardItemEvent {
-    pub fn assignment_event_details(&self) -> Option<ProjectTaskBoardItemAssignmentEventDetails> {
-        serde_json::from_value(self.details.clone()).ok()
+    pub fn typed_pending_approval(&self) -> Option<crate::ToolApprovalRequestState> {
+        self.pending_approval
+            .as_ref()
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
     }
 }
 
@@ -113,7 +128,6 @@ pub struct ProjectTaskBoardItemAssignment {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub thread_id: i64,
     pub assignment_role: String,
-    pub assignment_order: i32,
     pub status: String,
     pub instructions: Option<String>,
     pub metadata: serde_json::Value,
@@ -126,6 +140,8 @@ pub struct ProjectTaskBoardItemAssignment {
     pub rejected_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub state_version: i64,
 }
 
 impl ProjectTaskBoardItemAssignment {
@@ -142,6 +158,18 @@ pub struct ProjectTaskBoardItemMetadata {
     pub tool_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule_carryover: Option<ScheduleCarryover>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduleCarryover {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub schedule_id: i64,
+    pub state_snapshot: serde_json::Value,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub state_version: i64,
+    pub scheduled_for: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -159,7 +187,6 @@ pub struct ProjectTaskBoardItemAssignmentEventDetails {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub thread_id: i64,
     pub assignment_role: String,
-    pub assignment_order: i32,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_status: Option<String>,
@@ -190,8 +217,6 @@ pub struct ProjectTaskBoardAssignmentSpec {
     pub target: ProjectTaskBoardAssignmentTarget,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assignment_role: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub assignment_order: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

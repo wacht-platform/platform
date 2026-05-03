@@ -1,6 +1,7 @@
 use super::agent_executor::{
     LocalKnowledgeSearchType, MemorySearchApproach, MemorySource, SearchDepth,
 };
+use super::ask_user::AskUserParams;
 use super::memory::MemoryCategory;
 use models::{FlexibleI64, InternalToolType, ProjectTaskBoardAssignmentSpec};
 use serde::{Deserialize, Serialize};
@@ -53,20 +54,21 @@ pub struct ReadFileParams {
 pub struct WriteFileParams {
     pub path: String,
     pub content: String,
-    #[serde(default)]
-    pub append: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct AppendFileParams {
+    pub path: String,
+    pub content: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct EditFileParams {
     pub path: String,
-    pub start_line: usize,
-    pub end_line: usize,
-    pub new_content: String,
+    pub old_string: String,
+    pub new_string: String,
     #[serde(default)]
-    pub live_slice_hash: Option<String>,
-    #[serde(default)]
-    pub dangerously_skip_slice_comparison: bool,
+    pub replace_all: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -213,8 +215,6 @@ pub struct CreateProjectTaskParams {
     #[serde(default)]
     pub status: Option<String>,
     #[serde(default)]
-    pub priority: Option<String>,
-    #[serde(default)]
     pub parent_task_key: Option<String>,
     #[serde(default)]
     pub schedule: Option<ProjectTaskScheduleParams>,
@@ -225,8 +225,6 @@ pub struct UpdateProjectTaskParams {
     pub task_key: String,
     #[serde(default)]
     pub status: Option<String>,
-    #[serde(default)]
-    pub priority: Option<String>,
     #[serde(default)]
     pub schedule: Option<ProjectTaskScheduleParams>,
 }
@@ -355,6 +353,9 @@ pub enum ToolCallRequest {
     WriteFile {
         params: WriteFileParams,
     },
+    AppendFile {
+        params: AppendFileParams,
+    },
     EditFile {
         params: EditFileParams,
     },
@@ -418,6 +419,9 @@ pub enum ToolCallRequest {
     TaskGraphReset {
         params: TaskGraphResetParams,
     },
+    AskUser {
+        params: AskUserParams,
+    },
     External(ExternalToolCall),
 }
 
@@ -429,6 +433,7 @@ impl ToolCallRequest {
             Self::ReadImage { .. } => "read_image",
             Self::ReadFile { .. } => "read_file",
             Self::WriteFile { .. } => "write_file",
+            Self::AppendFile { .. } => "append_file",
             Self::EditFile { .. } => "edit_file",
             Self::ExecuteCommand { .. } => "execute_command",
             Self::Sleep { .. } => "sleep",
@@ -450,6 +455,7 @@ impl ToolCallRequest {
             Self::TaskGraphCompleteNode { .. } => "task_graph_complete_node",
             Self::TaskGraphFailNode { .. } => "task_graph_fail_node",
             Self::TaskGraphReset { .. } => "task_graph_reset",
+            Self::AskUser { .. } => "ask_user",
             Self::External(call) => call.tool_name.as_str(),
         }
     }
@@ -461,6 +467,7 @@ impl ToolCallRequest {
             Self::ReadImage { .. } => Some(InternalToolType::ReadImage),
             Self::ReadFile { .. } => Some(InternalToolType::ReadFile),
             Self::WriteFile { .. } => Some(InternalToolType::WriteFile),
+            Self::AppendFile { .. } => Some(InternalToolType::AppendFile),
             Self::EditFile { .. } => Some(InternalToolType::EditFile),
             Self::ExecuteCommand { .. } => Some(InternalToolType::ExecuteCommand),
             Self::Sleep { .. } => Some(InternalToolType::Sleep),
@@ -482,6 +489,7 @@ impl ToolCallRequest {
             Self::TaskGraphCompleteNode { .. } => Some(InternalToolType::TaskGraphCompleteNode),
             Self::TaskGraphFailNode { .. } => Some(InternalToolType::TaskGraphFailNode),
             Self::TaskGraphReset { .. } => Some(InternalToolType::TaskGraphReset),
+            Self::AskUser { .. } => Some(InternalToolType::AskUser),
             Self::External(_) => None,
         }
     }
@@ -493,6 +501,7 @@ impl ToolCallRequest {
             Self::ReadImage { params, .. } => serde_json::to_value(params),
             Self::ReadFile { params, .. } => serde_json::to_value(params),
             Self::WriteFile { params, .. } => serde_json::to_value(params),
+            Self::AppendFile { params, .. } => serde_json::to_value(params),
             Self::EditFile { params, .. } => serde_json::to_value(params),
             Self::ExecuteCommand { params, .. } => serde_json::to_value(params),
             Self::Sleep { params, .. } => serde_json::to_value(params),
@@ -514,6 +523,7 @@ impl ToolCallRequest {
             Self::TaskGraphCompleteNode { params, .. } => serde_json::to_value(params),
             Self::TaskGraphFailNode { params, .. } => serde_json::to_value(params),
             Self::TaskGraphReset { params, .. } => serde_json::to_value(params),
+            Self::AskUser { params, .. } => serde_json::to_value(params),
             Self::External(call) => Ok(call.input.clone()),
         }
     }

@@ -265,6 +265,9 @@ impl AgentExecutor {
                 models::InternalToolType::WriteFile => Ok(ToolCallRequest::WriteFile {
                     params: Self::parse_tool_params("write_file", normalized_input)?,
                 }),
+                models::InternalToolType::AppendFile => Ok(ToolCallRequest::AppendFile {
+                    params: Self::parse_tool_params("append_file", normalized_input)?,
+                }),
                 models::InternalToolType::EditFile => Ok(ToolCallRequest::EditFile {
                     params: Self::parse_tool_params("edit_file", normalized_input)?,
                 }),
@@ -354,6 +357,9 @@ impl AgentExecutor {
                 }
                 models::InternalToolType::TaskGraphReset => Ok(ToolCallRequest::TaskGraphReset {
                     params: Self::parse_tool_params("task_graph_reset", normalized_input)?,
+                }),
+                models::InternalToolType::AskUser => Ok(ToolCallRequest::AskUser {
+                    params: Self::parse_tool_params("ask_user", normalized_input)?,
                 }),
                 models::InternalToolType::AppendTaskJournal => Err(AppError::BadRequest(
                     "append_task_journal is not exposed in the runtime".to_string(),

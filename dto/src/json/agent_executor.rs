@@ -7,6 +7,17 @@ pub struct AbortDirective {
     pub reason: String,
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ResolveUserFeedbackParams {
+    pub comment_ids: Vec<String>,
+    pub resolution: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct NotifyUserParams {
+    pub message: String,
+}
+
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum AbortOutcome {

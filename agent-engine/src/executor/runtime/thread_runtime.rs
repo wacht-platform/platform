@@ -1,5 +1,6 @@
 use super::core::{AgentExecutor, ResumeContext};
 
+use crate::executor::context::memory_context::load_immediate_context;
 use crate::llm::{LlmRole, ResolvedLlm, UsageMetadata};
 
 use commands::UpdateAgentThreadStateCommand;
@@ -8,15 +9,20 @@ use dto::json::agent_executor::ApprovalRequestData;
 use dto::json::agent_executor::ConverseRequest;
 use dto::json::StreamEvent;
 use models::{
-    AgentThreadStatus, ConversationContent, ConversationMessageType, RequestedToolApproval,
-    RequestedToolApprovalState, ThreadExecutionState, ToolApprovalMode, ToolApprovalRequestState,
+    AgentThreadStatus, ConversationContent, ConversationMessageType, PromptCacheState,
+    RequestedToolApproval, RequestedToolApprovalState, ThreadExecutionState, ToolApprovalMode,
+    ToolApprovalRequestState,
 };
+use redis::AsyncCommands;
 use std::collections::HashSet;
 
 impl AgentExecutor {
-    async fn cleanup_filesystem(&mut self) {
-        if let Err(e) = self.filesystem.cleanup().await {
-            let _ = e;
+    async fn take_or_load_immediate_context(
+        &mut self,
+    ) -> Result<models::ImmediateContext, AppError> {
+        match self.preloaded_immediate_context.take() {
+            Some(c) => Ok(c),
+            None => load_immediate_context(&self.ctx, self.current_board_item_id()).await,
         }
     }
 
@@ -41,24 +47,44 @@ impl AgentExecutor {
         &mut self,
         trigger_conversation: &models::ConversationRecord,
     ) -> Result<(), AppError> {
-        if let Err(error) = self
+        let compact_ran = match self
             .compact_history_before_execution_if_needed(trigger_conversation)
             .await
         {
-            self.apply_thread_status(
-                UpdateAgentThreadStateCommand::new(
-                    self.ctx.thread_id,
-                    self.ctx.agent.deployment_id,
-                ),
-                AgentThreadStatus::Idle,
-            )
-            .with_execution_state(self.build_execution_state_snapshot(None))
-            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
-            .await?;
-            return Err(error);
-        }
+            Ok(ran) => ran,
+            Err(error) => {
+                self.apply_thread_status(
+                    UpdateAgentThreadStateCommand::new(
+                        self.ctx.thread_id,
+                        self.ctx.agent.deployment_id,
+                    ),
+                    AgentThreadStatus::Idle,
+                )
+                .with_execution_state(self.build_execution_state_snapshot(None))
+                .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
+                .await?;
+                return Err(error);
+            }
+        };
 
-        let context = self.get_immediate_context().await?;
+        if compact_ran {
+            self.preloaded_immediate_context = None;
+        }
+        let (context, caches) = if self.preloaded_immediate_context.is_some() {
+            let context = self.take_or_load_immediate_context().await?;
+            let caches = self.fetch_all_prompt_caches().await?;
+            (context, caches)
+        } else {
+            tokio::try_join!(
+                load_immediate_context(&self.ctx, self.current_board_item_id()),
+                self.fetch_all_prompt_caches(),
+            )?
+        };
+        let (thread_mode, task_graph, board_context, tool_context) = caches;
+        self.thread_mode_cache = Some(thread_mode);
+        self.task_graph_snapshot = Some(task_graph);
+        self.board_context_cache = Some(board_context);
+        self.tool_context_cache = Some(tool_context);
         self.conversations = context.conversations;
         if !self
             .conversations
@@ -77,7 +103,6 @@ impl AgentExecutor {
         resume_context: ResumeContext,
     ) -> Result<(), AppError> {
         let result = self.resume_execution_inner(resume_context).await;
-        self.cleanup_filesystem().await;
         result
     }
 
@@ -85,11 +110,7 @@ impl AgentExecutor {
         &mut self,
         resume_context: ResumeContext,
     ) -> Result<(), AppError> {
-        let thread_id = self.ctx.thread_id;
-        let deployment_id = self.ctx.agent.deployment_id;
-        let app_state = self.ctx.app_state.clone();
-
-        let immediate_context = self.get_immediate_context().await?;
+        let immediate_context = self.take_or_load_immediate_context().await?;
         self.conversations = immediate_context.conversations;
         self.memories = immediate_context.memories;
 
@@ -99,7 +120,6 @@ impl AgentExecutor {
             }
         }
 
-        let _ = (thread_id, deployment_id, app_state);
         self.mark_thread_running(Some(self.build_execution_state_snapshot(None)))
             .await?;
 
@@ -116,17 +136,29 @@ impl AgentExecutor {
 
     pub async fn run(&mut self, request: ConverseRequest) -> Result<(), AppError> {
         let result = self.run_inner(request).await;
-        self.cleanup_filesystem().await;
         result
     }
 
     async fn run_inner(&mut self, request: ConverseRequest) -> Result<(), AppError> {
-        let conversation = queries::GetConversationByIdQuery::new(request.conversation_id)
-            .execute_with_db(self.ctx.app_state.db_router.writer())
-            .await?;
+        let preloaded_trigger = self.preloaded_immediate_context.as_ref().and_then(|ctx| {
+            ctx.conversations
+                .iter()
+                .find(|c| c.id == request.conversation_id)
+                .cloned()
+        });
+        let conversation = match preloaded_trigger {
+            Some(c) => c,
+            None => {
+                queries::GetConversationByIdQuery::new(request.conversation_id)
+                    .execute_with_db(self.ctx.app_state.db_router.writer())
+                    .await?
+            }
+        };
 
         let user_message = match &conversation.content {
             models::ConversationContent::UserMessage { message, .. } => message.clone(),
+            models::ConversationContent::ClarificationResponse { .. }
+            | models::ConversationContent::ApprovalResponse { .. } => String::new(),
             _ => {
                 return Err(AppError::BadRequest(
                     "Conversation must be a user message".to_string(),
@@ -135,8 +167,6 @@ impl AgentExecutor {
         };
 
         self.user_request = user_message;
-
-        self.mark_thread_running(None).await?;
 
         let _ = self
             .channel
@@ -154,15 +184,6 @@ impl AgentExecutor {
         &mut self,
         thread_event: models::ThreadEvent,
     ) -> Result<(), AppError> {
-        let result = self.run_thread_event_inner(thread_event).await;
-        self.cleanup_filesystem().await;
-        result
-    }
-
-    async fn run_thread_event_inner(
-        &mut self,
-        thread_event: models::ThreadEvent,
-    ) -> Result<(), AppError> {
         self.active_thread_event = Some(thread_event.clone());
         self.tool_executor
             .set_active_board_item_id(thread_event.board_item_id);
@@ -176,8 +197,6 @@ impl AgentExecutor {
             models::ConversationContent::UserMessage { message, .. } => message.clone(),
             _ => thread_event_message,
         };
-
-        self.mark_thread_running(None).await?;
 
         self.load_context_for_execution_trigger(&conversation)
             .await?;
@@ -222,7 +241,77 @@ impl AgentExecutor {
             assignment_outcome_override: None,
             task_journal_start_hash: self.task_journal_start_hash.clone(),
             conversation_compaction_state: self.conversation_compaction_state.clone(),
+            pending_question: self.pending_question.clone(),
         }
+    }
+
+    fn prompt_cache_redis_key(&self, cache_key: &str) -> String {
+        format!("agent:prompt_cache:{}:{cache_key}", self.ctx.thread_id)
+    }
+
+    pub(crate) async fn build_prompt_cache_request(
+        &self,
+    ) -> Option<crate::llm::PromptCacheRequest> {
+        let (cache_key, live_tail_count) = if let Some(event) = self.active_thread_event.as_ref() {
+            if let Some(payload) = event.assignment_execution_payload() {
+                (format!("executor_assignment_{}", payload.assignment_id), 4)
+            } else if let Some(board_item_id) = event.board_item_id {
+                (format!("coordinator_board_{board_item_id}"), 2)
+            } else {
+                ("thread_default".to_string(), 2)
+            }
+        } else if self.is_conversation_thread {
+            ("conversation".to_string(), 2)
+        } else {
+            return None;
+        };
+
+        let prior_state = self.read_prompt_cache_state(&cache_key).await;
+        Some(crate::llm::PromptCacheRequest {
+            cache_key,
+            ttl_secs: 300,
+            live_tail_count,
+            prior_state,
+            reuse_only: false,
+        })
+    }
+
+    async fn read_prompt_cache_state(&self, cache_key: &str) -> Option<PromptCacheState> {
+        let mut conn = self
+            .ctx
+            .app_state
+            .redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .ok()?;
+        let raw: String = conn
+            .get(self.prompt_cache_redis_key(cache_key))
+            .await
+            .ok()?;
+        let state: PromptCacheState = serde_json::from_str(&raw).ok()?;
+        if state.is_expired(chrono::Utc::now()) {
+            return None;
+        }
+        Some(state)
+    }
+
+    pub(crate) async fn write_prompt_cache_state(&self, state: &PromptCacheState) {
+        let Ok(json) = serde_json::to_string(state) else {
+            return;
+        };
+        let Ok(mut conn) = self
+            .ctx
+            .app_state
+            .redis_client
+            .get_multiplexed_async_connection()
+            .await
+        else {
+            return;
+        };
+        let ttl = (state.expire_at - chrono::Utc::now()).num_seconds().max(1) as u64;
+        let _: Result<(), _> = conn
+            .set_ex(self.prompt_cache_redis_key(&state.cache_key), json, ttl)
+            .await;
     }
 
     pub(crate) fn record_llm_usage_for_compaction(&mut self, usage: Option<&UsageMetadata>) {
@@ -308,6 +397,15 @@ impl AgentExecutor {
             tools: requested_tools,
         };
 
+        if let Some(board_item_id) = self.current_board_item_id() {
+            commands::SetBoardItemPendingApprovalCommand {
+                board_item_id,
+                pending_approval: Some(pending_approval_request.clone()),
+            }
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await?;
+        }
+
         self.apply_thread_status(
             UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
                 .with_execution_state(
@@ -360,6 +458,15 @@ impl AgentExecutor {
             if matches!(approval.mode, ToolApprovalMode::AllowAlways) {
                 self.approved_always_tool_ids.insert(tool.id);
             }
+        }
+
+        if let Some(board_item_id) = self.current_board_item_id() {
+            commands::SetBoardItemPendingApprovalCommand {
+                board_item_id,
+                pending_approval: None,
+            }
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await?;
         }
 
         Ok(())

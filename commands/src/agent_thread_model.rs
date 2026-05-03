@@ -235,7 +235,7 @@ impl CreateAgentThreadCommand {
                       title, thread_purpose as "thread_kind!", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as "thread_visibility!",
                       thread_purpose, responsibility,
                       reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,
-                      execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at
+                      execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at, state_version
             "#,
             self.id,
             self.deployment_id,
@@ -354,7 +354,7 @@ impl UpdateAgentThreadCommand {
                       title, thread_purpose as "thread_kind!", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as "thread_visibility!",
                       thread_purpose, responsibility,
                       reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,
-                      execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at
+                      execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at, state_version
             "#,
             self.thread_id,
             self.deployment_id,

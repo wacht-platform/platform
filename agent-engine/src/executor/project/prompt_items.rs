@@ -1,7 +1,7 @@
 use super::core::AgentExecutor;
 use dto::json::{
-    ProjectTaskBoardAssignmentPromptItem, ProjectTaskBoardItemEventPromptItem,
-    ProjectTaskBoardPromptItem, ThreadEventPromptItem, ThreadEventPromptPayload,
+    ProjectTaskBoardAssignmentPromptItem, ProjectTaskBoardPromptItem, ThreadEventPromptItem,
+    ThreadEventPromptPayload,
 };
 use models::{ProjectTaskBoardItem, ThreadEvent};
 
@@ -22,7 +22,6 @@ impl AgentExecutor {
             title: item.title.clone(),
             description: item.description.clone(),
             status: item.status.clone(),
-            priority: item.priority.clone(),
             assigned_thread_id: item.assigned_thread_id,
             parent_task_key,
             child_task_keys,
@@ -42,7 +41,6 @@ impl AgentExecutor {
             board_item_id: assignment.board_item_id,
             thread_id: assignment.thread_id,
             assignment_role: assignment.assignment_role.clone(),
-            assignment_order: assignment.assignment_order,
             status: assignment.status.clone(),
             note: None,
             instructions: assignment.instructions.clone(),
@@ -52,37 +50,8 @@ impl AgentExecutor {
         }
     }
 
-    pub(crate) fn board_item_event_prompt_item(
-        event: models::ProjectTaskBoardItemEvent,
-    ) -> ProjectTaskBoardItemEventPromptItem {
-        let assignment_details = event.assignment_event_details();
-        let raw_details_json = if assignment_details.is_none()
-            && !event.details.is_null()
-            && event.details != serde_json::json!({})
-        {
-            serde_json::to_string(&event.details).ok()
-        } else {
-            None
-        };
-
-        ProjectTaskBoardItemEventPromptItem {
-            event_type: event.event_type,
-            summary: event.summary,
-            body_markdown: event.body_markdown,
-            thread_id: event.thread_id,
-            execution_run_id: event.execution_run_id,
-            raw_details_json,
-            assignment_details,
-            created_at: event.created_at.to_rfc3339(),
-        }
-    }
-
     pub(crate) fn thread_event_prompt_item(event: &ThreadEvent) -> ThreadEventPromptItem {
-        let payload = if let Some(payload) = event.conversation_payload() {
-            ThreadEventPromptPayload::Conversation { payload }
-        } else if let Some(payload) = event.approval_response_received_payload() {
-            ThreadEventPromptPayload::ApprovalResponseReceived { payload }
-        } else if let Some(payload) = event.task_routing_payload() {
+        let payload = if let Some(payload) = event.task_routing_payload() {
             ThreadEventPromptPayload::TaskRouting { payload }
         } else {
             ThreadEventPromptPayload::Raw {

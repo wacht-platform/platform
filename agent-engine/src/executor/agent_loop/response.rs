@@ -12,11 +12,54 @@ impl AgentExecutor {
             return fallback.to_string();
         }
 
-        if Self::looks_like_internal_reasoning_dump(cleaned) {
+        if Self::looks_like_internal_reasoning_dump(cleaned)
+            || Self::looks_like_hallucinated_tool_render(cleaned)
+        {
             return fallback.to_string();
         }
 
         cleaned.to_string()
+    }
+
+    pub(super) fn looks_like_hallucinated_tool_render(text: &str) -> bool {
+        let pseudo_call_markers = [
+            "+ execute_command:",
+            "+ read_file:",
+            "+ write_file:",
+            "+ edit_file:",
+            "+ note:",
+            "+ task_graph_add_node:",
+            "+ task_graph_complete_node:",
+            "+ load_memory:",
+            "+ save_memory:",
+            "+ search_knowledgebase:",
+            "+ web_search:",
+            "+ url_content:",
+            "[note:",
+            "[Note:",
+            "Action: ",
+            "Action Input:",
+        ];
+        let pseudo_count: usize = pseudo_call_markers
+            .iter()
+            .map(|m| text.matches(m).count())
+            .sum();
+        let separator_lines = text
+            .lines()
+            .filter(|l| l.trim() == "---")
+            .count();
+        if pseudo_count >= 2 && separator_lines >= 2 {
+            return true;
+        }
+        let mut block_counts: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        for chunk in text.split("\n\n") {
+            let trimmed = chunk.trim();
+            if trimmed.len() >= 60 {
+                *block_counts.entry(trimmed).or_insert(0) += 1;
+            }
+        }
+        block_counts.values().any(|c| *c >= 3)
     }
 
     pub(super) fn looks_like_internal_reasoning_dump(text: &str) -> bool {

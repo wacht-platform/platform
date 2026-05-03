@@ -129,13 +129,31 @@ impl ThreadExecutionContext {
         execution_run_id: i64,
         provider_keys: DeploymentProviderKeys,
     ) -> Arc<Self> {
+        Self::new_with_thread(
+            app_state,
+            agent,
+            thread_id,
+            execution_run_id,
+            provider_keys,
+            None,
+        )
+    }
+
+    pub fn new_with_thread(
+        app_state: AppState,
+        agent: AiAgentWithFeatures,
+        thread_id: i64,
+        execution_run_id: i64,
+        provider_keys: DeploymentProviderKeys,
+        cached_thread: Option<AgentThreadState>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             app_state,
             agent,
             thread_id,
             execution_run_id,
             provider_keys,
-            cached_thread: RwLock::new(None),
+            cached_thread: RwLock::new(cached_thread),
             cached_kb_connection: RwLock::new(None),
             cached_kb_table: RwLock::new(None),
             cached_memory_table: RwLock::new(None),
@@ -144,13 +162,18 @@ impl ThreadExecutionContext {
 
     /// Create a new ThreadExecutionContext with a replaced agent.
     pub fn with_agent(self: &Arc<Self>, agent: AiAgentWithFeatures) -> Arc<Self> {
+        let carried_thread = self
+            .cached_thread
+            .try_read()
+            .ok()
+            .and_then(|guard| guard.clone());
         Arc::new(Self {
             app_state: self.app_state.clone(),
             agent,
             thread_id: self.thread_id,
             execution_run_id: self.execution_run_id,
             provider_keys: self.provider_keys.clone(),
-            cached_thread: RwLock::new(None),
+            cached_thread: RwLock::new(carried_thread),
             cached_kb_connection: RwLock::new(None),
             cached_kb_table: RwLock::new(None),
             cached_memory_table: RwLock::new(None),

@@ -190,10 +190,6 @@ pub(super) fn ai_routes() -> Router<AppState> {
             get(api::agent_threads::get_project_task_board_item_by_id),
         )
         .route(
-            "/ai/actor-projects/{project_id}/board/items/{item_id}/events",
-            get(api::agent_threads::list_project_task_board_item_events),
-        )
-        .route(
             "/ai/actor-projects/{project_id}/board/items/{item_id}/assignments",
             get(api::agent_threads::list_project_task_board_item_assignments),
         )
@@ -204,10 +200,6 @@ pub(super) fn ai_routes() -> Router<AppState> {
         .route(
             "/ai/actor-projects/{project_id}/board/items/{item_id}/filesystem/file",
             get(api::agent_threads::get_project_task_board_item_filesystem_file),
-        )
-        .route(
-            "/ai/actor-projects/{project_id}/board/items/{item_id}/journal",
-            post(api::agent_threads::append_project_task_board_item_journal),
         )
         .route(
             "/ai/actor-projects/{project_id}/board/items/{item_id}/update",
@@ -245,10 +237,6 @@ pub(super) fn ai_routes() -> Router<AppState> {
         .route(
             "/ai/actor-project-threads/{thread_id}/unarchive",
             post(api::agent_threads::unarchive_agent_thread),
-        )
-        .route(
-            "/ai/actor-project-threads/{thread_id}/events",
-            get(api::agent_threads::list_pending_thread_events),
         )
         .route(
             "/ai/actor-project-threads/{thread_id}/assignments",

@@ -11,8 +11,9 @@ pub struct GetProjectTaskScheduleByIdQuery {
     pub schedule_id: i64,
 }
 
-pub struct GetProjectTaskScheduleByTemplateBoardItemIdQuery {
-    pub template_board_item_id: i64,
+pub struct GetProjectTaskScheduleByTaskKeyQuery {
+    pub board_id: i64,
+    pub task_key: String,
 }
 
 impl ListDueProjectTaskScheduleIdsQuery {
@@ -59,8 +60,9 @@ impl GetProjectTaskScheduleByIdQuery {
             ProjectTaskSchedule,
             r#"
             SELECT
-                id, template_board_item_id, status, schedule_kind, interval_seconds,
-                next_run_at, last_enqueued_at, created_at, updated_at
+                id, board_id, task_key, template_payload, state, state_version,
+                status, schedule_kind, interval_seconds, next_run_at, last_fired_at,
+                overlap_policy, created_at, updated_at
             FROM project_task_schedules
             WHERE id = $1
             "#,
@@ -73,10 +75,11 @@ impl GetProjectTaskScheduleByIdQuery {
     }
 }
 
-impl GetProjectTaskScheduleByTemplateBoardItemIdQuery {
-    pub fn new(template_board_item_id: i64) -> Self {
+impl GetProjectTaskScheduleByTaskKeyQuery {
+    pub fn new(board_id: i64, task_key: impl Into<String>) -> Self {
         Self {
-            template_board_item_id,
+            board_id,
+            task_key: task_key.into(),
         }
     }
 
@@ -91,13 +94,16 @@ impl GetProjectTaskScheduleByTemplateBoardItemIdQuery {
             ProjectTaskSchedule,
             r#"
             SELECT
-                id, template_board_item_id, status, schedule_kind, interval_seconds,
-                next_run_at, last_enqueued_at, created_at, updated_at
+                id, board_id, task_key, template_payload, state, state_version,
+                status, schedule_kind, interval_seconds, next_run_at, last_fired_at,
+                overlap_policy, created_at, updated_at
             FROM project_task_schedules
-            WHERE template_board_item_id = $1
+            WHERE board_id = $1
+              AND task_key = $2
             LIMIT 1
             "#,
-            self.template_board_item_id,
+            self.board_id,
+            self.task_key,
         )
         .fetch_optional(executor)
         .await?;

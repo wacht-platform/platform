@@ -66,6 +66,12 @@ impl ToolExecutor {
         .execute_with_deps(self.app_state())
         .await?;
 
+        crate::executor::context::memory_context::invalidate_startup_memory_cache(
+            self.app_state(),
+            self.thread_id(),
+        )
+        .await;
+
         Ok(serde_json::json!({
             "success": true,
             "tool": tool.name,
@@ -103,6 +109,12 @@ impl ToolExecutor {
         }
         .execute_with_deps(self.app_state())
         .await?;
+
+        crate::executor::context::memory_context::invalidate_startup_memory_cache(
+            self.app_state(),
+            self.thread_id(),
+        )
+        .await;
 
         Ok(serde_json::json!({
             "success": true,

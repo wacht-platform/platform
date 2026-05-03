@@ -1,13 +1,8 @@
 use agent_engine::{AgentHandler, ExecutionRequest};
-use commands::CreateExecutionRunCommand;
 use commands::{ApprovalGrantRequest, GrantApprovalGrantsForThreadCommand};
 use common::state::AppState;
-use dto::json::{AgentExecutionRequest, AgentExecutionType};
-use models::{AgentThreadStatus, AiAgentWithFeatures, ThreadEvent};
-use queries::{
-    GetAgentThreadStateQuery, GetAiAgentByIdWithFeatures, GetConversationByIdQuery,
-    GetProjectTaskBoardItemAssignmentByIdQuery, GetProjectTaskBoardItemByIdQuery,
-};
+use models::{AgentThreadStatus, ThreadEvent};
+use queries::{GetAgentThreadStateQuery, GetAiAgentByIdWithFeatures, GetConversationByIdQuery};
 use redis::Script;
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -44,10 +39,6 @@ impl AgentExecutionError {
     pub fn unrecoverable<E: Into<anyhow::Error>>(error: E) -> Self {
         Self::Unrecoverable(error.into())
     }
-
-    pub fn is_unrecoverable(&self) -> bool {
-        matches!(self, Self::Unrecoverable(_))
-    }
 }
 
 impl std::fmt::Display for AgentExecutionError {
@@ -82,370 +73,6 @@ impl From<redis::RedisError> for AgentExecutionError {
     }
 }
 
-#[derive(Debug, Clone)]
-enum AgentResolutionStrategy {
-    AgentId(i64),
-}
-
-impl AgentResolutionStrategy {
-    fn display_label(&self) -> String {
-        match self {
-            Self::AgentId(agent_id) => agent_id.to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-enum AgentExecutionKind {
-    NewMessage {
-        conversation_id: i64,
-    },
-    ApprovalResponse {
-        request_message_id: String,
-        approvals: Vec<dto::json::deployment::ToolApprovalSelection>,
-    },
-    ThreadEvent {
-        event_id: i64,
-    },
-}
-
-#[derive(Debug, Clone)]
-struct AgentExecutionEnvelope {
-    deployment_id: i64,
-    thread_id: i64,
-    thread_event_id: Option<i64>,
-    execution_token: String,
-    agent_resolution: AgentResolutionStrategy,
-    execution_kind: AgentExecutionKind,
-}
-
-impl TryFrom<AgentExecutionRequest> for AgentExecutionEnvelope {
-    type Error = AgentExecutionError;
-
-    fn try_from(request: AgentExecutionRequest) -> Result<Self, Self::Error> {
-        let deployment_id = parse_string_id("deployment_id", &request.deployment_id)
-            .map_err(AgentExecutionError::unrecoverable)?;
-        let thread_id = parse_string_id("thread_id", &request.thread_id)
-            .map_err(AgentExecutionError::unrecoverable)?;
-        let thread_event_id = request
-            .thread_event_id
-            .as_ref()
-            .map(|value| parse_string_id("thread_event_id", value))
-            .transpose()
-            .map_err(AgentExecutionError::unrecoverable)?;
-
-        let agent_resolution = match request.agent_id {
-            Some(agent_id) => AgentResolutionStrategy::AgentId(
-                parse_string_id("agent_id", &agent_id)
-                    .map_err(AgentExecutionError::unrecoverable)?,
-            ),
-            None => {
-                return Err(AgentExecutionError::unrecoverable(anyhow::anyhow!(
-                    "agent_id must be provided"
-                )));
-            }
-        };
-
-        let execution_kind = match request.execution_type {
-            AgentExecutionType::NewMessage { conversation_id } => AgentExecutionKind::NewMessage {
-                conversation_id: parse_string_id("conversation_id", &conversation_id)
-                    .map_err(AgentExecutionError::unrecoverable)?,
-            },
-            AgentExecutionType::ApprovalResponse {
-                request_message_id,
-                approvals,
-            } => AgentExecutionKind::ApprovalResponse {
-                request_message_id,
-                approvals,
-            },
-            AgentExecutionType::ThreadEvent { event_id } => AgentExecutionKind::ThreadEvent {
-                event_id: parse_string_id("event_id", &event_id)
-                    .map_err(AgentExecutionError::unrecoverable)?,
-            },
-        };
-
-        Ok(Self {
-            deployment_id,
-            thread_id,
-            thread_event_id,
-            execution_token: String::new(),
-            agent_resolution,
-            execution_kind,
-        })
-    }
-}
-
-fn parse_string_id(field_name: &str, raw_value: &str) -> Result<i64, anyhow::Error> {
-    raw_value
-        .parse::<i64>()
-        .map_err(|error| anyhow::anyhow!("Invalid {} '{}': {}", field_name, raw_value, error))
-}
-
-async fn build_conversation_execution_request(
-    thread_id: i64,
-    thread_event_id: Option<i64>,
-    execution_run_id: i64,
-    conversation_id: i64,
-    agent: AiAgentWithFeatures,
-    execution_token: String,
-) -> ExecutionRequest {
-    ExecutionRequest {
-        agent,
-        conversation_id: Some(conversation_id),
-        thread_id,
-        thread_event_id,
-        execution_run_id,
-        execution_token,
-        approval_response: None,
-        thread_event: None,
-    }
-}
-
-async fn load_thread_event_for_execution(
-    app_state: &AppState,
-    event_id: i64,
-    thread_id: i64,
-    deployment_id: i64,
-) -> Result<ThreadEvent, AgentExecutionError> {
-    let thread_event = queries::GetThreadEventByIdQuery::new(event_id)
-        .execute_with_db(
-            app_state
-                .db_router
-                .reader(common::db_router::ReadConsistency::Strong),
-        )
-        .await
-        .map_err(|e| {
-            AgentExecutionError::Other(anyhow::anyhow!(
-                "Failed to load thread event {}: {}",
-                event_id,
-                e
-            ))
-        })?
-        .ok_or_else(|| {
-            AgentExecutionError::unrecoverable(anyhow::anyhow!(
-                "Thread event {} not found",
-                event_id
-            ))
-        })?;
-
-    if thread_event.thread_id != thread_id {
-        return Err(AgentExecutionError::unrecoverable(anyhow::anyhow!(
-            "Thread event {} does not belong to thread {}",
-            event_id,
-            thread_id
-        )));
-    }
-
-    if thread_event.deployment_id != deployment_id {
-        return Err(AgentExecutionError::unrecoverable(anyhow::anyhow!(
-            "Thread event {} does not belong to deployment {}",
-            event_id,
-            deployment_id
-        )));
-    }
-
-    Ok(thread_event)
-}
-
-async fn stale_thread_event_reason(
-    app_state: &AppState,
-    thread_event: &ThreadEvent,
-) -> Result<Option<String>, AgentExecutionError> {
-    match thread_event.event_type.as_str() {
-        models::thread_event::event_type::TASK_ROUTING => {
-            let Some(board_item_id) = thread_event.board_item_id else {
-                return Ok(Some(format!(
-                    "{} event is missing board_item_id",
-                    thread_event.event_type
-                )));
-            };
-            let board_item = GetProjectTaskBoardItemByIdQuery::new(board_item_id)
-                .execute_with_db(
-                    app_state
-                        .db_router
-                        .reader(common::db_router::ReadConsistency::Strong),
-                )
-                .await
-                .map_err(|e| {
-                    AgentExecutionError::Other(anyhow::anyhow!(
-                        "Failed to load board item {} for thread event {}: {}",
-                        board_item_id,
-                        thread_event.id,
-                        e
-                    ))
-                })?;
-
-            if board_item.is_none() {
-                return Ok(Some(format!(
-                    "board item {} no longer exists",
-                    board_item_id
-                )));
-            }
-
-            Ok(None)
-        }
-        models::thread_event::event_type::ASSIGNMENT_EXECUTION => {
-            let Some(board_item_id) = thread_event.board_item_id else {
-                return Ok(Some(format!(
-                    "{} event is missing board_item_id",
-                    thread_event.event_type
-                )));
-            };
-            let Some(board_item) = GetProjectTaskBoardItemByIdQuery::new(board_item_id)
-                .execute_with_db(
-                    app_state
-                        .db_router
-                        .reader(common::db_router::ReadConsistency::Strong),
-                )
-                .await
-                .map_err(|e| {
-                    AgentExecutionError::Other(anyhow::anyhow!(
-                        "Failed to load board item {} for thread event {}: {}",
-                        board_item_id,
-                        thread_event.id,
-                        e
-                    ))
-                })?
-            else {
-                return Ok(Some(format!(
-                    "board item {} no longer exists",
-                    board_item_id
-                )));
-            };
-
-            let Some(payload) = thread_event.assignment_execution_payload() else {
-                return Ok(Some(format!(
-                    "{} event payload is invalid",
-                    thread_event.event_type
-                )));
-            };
-
-            let Some(assignment) =
-                GetProjectTaskBoardItemAssignmentByIdQuery::new(payload.assignment_id)
-                    .execute_with_db(
-                        app_state
-                            .db_router
-                            .reader(common::db_router::ReadConsistency::Strong),
-                    )
-                    .await
-                    .map_err(|e| {
-                        AgentExecutionError::Other(anyhow::anyhow!(
-                            "Failed to load assignment {} for thread event {}: {}",
-                            payload.assignment_id,
-                            thread_event.id,
-                            e
-                        ))
-                    })?
-            else {
-                return Ok(Some(format!(
-                    "assignment {} no longer exists",
-                    payload.assignment_id
-                )));
-            };
-
-            if assignment.board_item_id != board_item.id {
-                return Ok(Some(format!(
-                    "assignment {} belongs to board item {}, not {}",
-                    assignment.id, assignment.board_item_id, board_item.id
-                )));
-            }
-
-            if assignment.thread_id != thread_event.thread_id {
-                return Ok(Some(format!(
-                    "assignment {} targets thread {}, not event thread {}",
-                    assignment.id, assignment.thread_id, thread_event.thread_id
-                )));
-            }
-
-            if !matches!(
-                assignment.status.as_str(),
-                models::project_task_board::assignment_status::AVAILABLE
-                    | models::project_task_board::assignment_status::CLAIMED
-                    | models::project_task_board::assignment_status::IN_PROGRESS
-            ) {
-                return Ok(Some(format!(
-                    "assignment {} is no longer executable (status={})",
-                    assignment.id, assignment.status
-                )));
-            }
-
-            Ok(None)
-        }
-        _ => Ok(None),
-    }
-}
-
-async fn reject_stale_thread_event(
-    app_state: &AppState,
-    thread_event: &ThreadEvent,
-    reason: &str,
-) -> Result<(), AgentExecutionError> {
-    tracing::warn!(
-        event_id = thread_event.id,
-        thread_id = thread_event.thread_id,
-        board_item_id = thread_event.board_item_id,
-        event_type = %thread_event.event_type,
-        reason = %reason,
-        "Rejecting stale thread event before execution"
-    );
-
-    commands::UpdateThreadEventStateCommand::new(
-        thread_event.id,
-        models::thread_event::status::FAILED.to_string(),
-    )
-    .mark_failed()
-    .execute_with_db(app_state.db_router.writer())
-    .await
-    .map_err(|e| {
-        AgentExecutionError::Other(anyhow::anyhow!(
-            "Failed to mark stale thread event {} as failed: {}",
-            thread_event.id,
-            e
-        ))
-    })?;
-
-    Ok(())
-}
-
-async fn load_live_thread_event_for_execution(
-    app_state: &AppState,
-    event_id: i64,
-    thread_id: i64,
-    deployment_id: i64,
-) -> Result<Result<ThreadEvent, String>, AgentExecutionError> {
-    let thread_event =
-        load_thread_event_for_execution(app_state, event_id, thread_id, deployment_id).await?;
-
-    if let Some(reason) = stale_thread_event_reason(app_state, &thread_event).await? {
-        reject_stale_thread_event(app_state, &thread_event, &reason).await?;
-        return Ok(Err(reason));
-    }
-
-    Ok(Ok(thread_event))
-}
-
-async fn load_agent_for_execution(
-    app_state: &AppState,
-    _deployment_id: i64,
-    resolution: &AgentResolutionStrategy,
-) -> Result<AiAgentWithFeatures, AgentExecutionError> {
-    match resolution {
-        AgentResolutionStrategy::AgentId(agent_id) => GetAiAgentByIdWithFeatures::new(*agent_id)
-            .execute_with_db(
-                app_state
-                    .db_router
-                    .reader(common::db_router::ReadConsistency::Strong),
-            )
-            .await
-            .map_err(|e| {
-                AgentExecutionError::Other(anyhow::anyhow!(
-                    "Failed to get agent by ID {}: {}",
-                    agent_id,
-                    e
-                ))
-            }),
-    }
-}
 
 async fn persist_tool_approval_response_grants(
     app_state: &AppState,
@@ -565,269 +192,6 @@ async fn persist_tool_approval_response_grants(
         })?;
 
     Ok(())
-}
-
-pub async fn process_agent_execution(
-    app_state: &AppState,
-    task_id: &str,
-    request: AgentExecutionRequest,
-) -> Result<String, AgentExecutionError> {
-    tracing::info!(
-        task_id,
-        thread_id = %request.thread_id,
-        deployment_id = %request.deployment_id,
-        "agent task: received"
-    );
-    match prepare_agent_execution(app_state, task_id, request).await {
-        Ok(PreparedAgentExecutionOutcome::Noop(message)) => {
-            tracing::info!(task_id, %message, "agent task: noop");
-            Ok(message)
-        }
-        Ok(PreparedAgentExecutionOutcome::Ready(execution)) => {
-            let thread_id = execution.thread_id;
-            tracing::info!(task_id, thread_id, "agent task: prepared, executing");
-            let started = std::time::Instant::now();
-            let result = execution.execute().await;
-            tracing::info!(
-                task_id,
-                thread_id,
-                elapsed_ms = started.elapsed().as_millis() as u64,
-                ok = result.is_ok(),
-                "agent task: execution finished"
-            );
-            result
-        }
-        Err(e) => {
-            tracing::warn!(task_id, "agent task: prepare failed: {}", e);
-            Err(e)
-        }
-    }
-}
-
-pub enum PreparedAgentExecutionOutcome {
-    Noop(String),
-    Ready(PreparedAgentExecution),
-}
-
-pub struct PreparedAgentExecution {
-    app_state: AppState,
-    agent_identifier: String,
-    thread_id: i64,
-    execution_request: ExecutionRequest,
-    concurrency_guard: DeploymentExecutionGuard,
-}
-
-impl PreparedAgentExecution {
-    pub async fn execute(self) -> Result<String, AgentExecutionError> {
-        let result = AgentHandler::new(self.app_state.clone())
-            .execute_agent_streaming(self.execution_request)
-            .await;
-
-        drop(self.concurrency_guard);
-
-        result.map_err(|e| {
-            AgentExecutionError::Other(anyhow::anyhow!("Agent execution failed: {}", e))
-        })?;
-
-        Ok(format!(
-            "Agent '{}' execution completed for thread {}",
-            self.agent_identifier, self.thread_id
-        ))
-    }
-}
-
-pub async fn prepare_agent_execution(
-    app_state: &AppState,
-    task_id: &str,
-    request: AgentExecutionRequest,
-) -> Result<PreparedAgentExecutionOutcome, AgentExecutionError> {
-    let mut execution_envelope = AgentExecutionEnvelope::try_from(request)?;
-    let _ = task_id;
-
-    let concurrency_guard =
-        acquire_deployment_execution_slot(app_state, execution_envelope.deployment_id).await?;
-
-    let thread = queries::GetAgentThreadByIdQuery::new(
-        execution_envelope.thread_id,
-        execution_envelope.deployment_id,
-    )
-    .execute_with_db(app_state.db_router.writer())
-    .await
-    .map_err(|e| {
-        AgentExecutionError::Other(anyhow::anyhow!(
-            "Failed to load thread {}: {}",
-            execution_envelope.thread_id,
-            e
-        ))
-    })?
-    .ok_or_else(|| {
-        AgentExecutionError::unrecoverable(anyhow::anyhow!(
-            "Thread {} not found",
-            execution_envelope.thread_id
-        ))
-    })?;
-
-    if thread.thread_purpose == models::agent_thread::purpose::CONVERSATION {
-        let token = commands::AdvanceThreadExecutionTokenCommand::new(execution_envelope.thread_id)
-            .execute_with_deps(&common::deps::from_app(app_state).nats().id())
-            .await
-            .map_err(|e| {
-                AgentExecutionError::Other(anyhow::anyhow!(
-                    "Failed to advance execution token for thread {}: {}",
-                    execution_envelope.thread_id,
-                    e
-                ))
-            })?;
-        tracing::info!(
-            thread_id = execution_envelope.thread_id,
-            deployment_id = execution_envelope.deployment_id,
-            token_len = token.len(),
-            "agent task: advanced execution token"
-        );
-        execution_envelope.execution_token = token;
-    }
-
-    let deployment_id = execution_envelope.deployment_id;
-    let thread_id = execution_envelope.thread_id;
-    let execution_kind = execution_envelope.execution_kind;
-    let thread_event = match &execution_kind {
-        AgentExecutionKind::ThreadEvent { event_id } => match load_live_thread_event_for_execution(
-            app_state,
-            *event_id,
-            thread_id,
-            deployment_id,
-        )
-        .await?
-        {
-            Ok(thread_event) => Some(thread_event),
-            Err(reason) => {
-                return Ok(PreparedAgentExecutionOutcome::Noop(format!(
-                    "Stale thread event {} rejected for thread {}: {}",
-                    event_id, thread_id, reason
-                )));
-            }
-        },
-        _ => None,
-    };
-    let agent_identifier = execution_envelope.agent_resolution.display_label();
-
-    let agent = load_agent_for_execution(
-        app_state,
-        execution_envelope.deployment_id,
-        &execution_envelope.agent_resolution,
-    )
-    .await?;
-    let execution_run_id = app_state.sf.next_id().map_err(|e| {
-        AgentExecutionError::Other(anyhow::anyhow!(
-            "Failed to generate execution run id: {}",
-            e
-        ))
-    })? as i64;
-
-    let create_run_command = CreateExecutionRunCommand::new(
-        execution_run_id,
-        deployment_id,
-        thread_id,
-        "running".to_string(),
-    )
-    .with_agent_id(agent.id);
-    create_run_command
-        .execute_with_db(app_state.db_router.writer())
-        .await
-        .map_err(|e| {
-            AgentExecutionError::Other(anyhow::anyhow!(
-                "Failed to create execution run for thread {}: {}",
-                thread_id,
-                e
-            ))
-        })?;
-
-    if let Some(thread_event_id) = execution_envelope.thread_event_id {
-        commands::UpdateThreadEventStateCommand::new(
-            thread_event_id,
-            models::thread_event::status::CLAIMED.to_string(),
-        )
-        .with_caused_by_run_id(execution_run_id)
-        .mark_claimed()
-        .execute_with_db(app_state.db_router.writer())
-        .await
-        .map_err(|e| {
-            AgentExecutionError::Other(anyhow::anyhow!(
-                "Failed to claim thread event {} for thread {}: {}",
-                thread_event_id,
-                thread_id,
-                e
-            ))
-        })?;
-    }
-
-    let execution_request = match execution_kind {
-        AgentExecutionKind::NewMessage { conversation_id } => {
-            build_conversation_execution_request(
-                thread_id,
-                execution_envelope.thread_event_id,
-                execution_run_id,
-                conversation_id,
-                agent,
-                execution_envelope.execution_token.clone(),
-            )
-            .await
-        }
-        AgentExecutionKind::ApprovalResponse {
-            request_message_id,
-            approvals,
-        } => {
-            persist_tool_approval_response_grants(
-                app_state,
-                deployment_id,
-                thread_id,
-                &request_message_id,
-                &approvals,
-            )
-            .await?;
-
-            ExecutionRequest {
-                agent,
-                conversation_id: None,
-                thread_id,
-                thread_event_id: execution_envelope.thread_event_id,
-                execution_run_id,
-                execution_token: execution_envelope.execution_token.clone(),
-                approval_response: Some(approvals),
-                thread_event: None,
-            }
-        }
-        AgentExecutionKind::ThreadEvent { event_id } => {
-            let thread_event = thread_event.ok_or_else(|| {
-                AgentExecutionError::Other(anyhow::anyhow!(
-                    "Preloaded thread event {} missing for thread {}",
-                    event_id,
-                    thread_id
-                ))
-            })?;
-
-            ExecutionRequest {
-                agent,
-                conversation_id: None,
-                thread_id,
-                thread_event_id: execution_envelope.thread_event_id.or(Some(event_id)),
-                execution_run_id,
-                execution_token: execution_envelope.execution_token.clone(),
-                approval_response: None,
-                thread_event: Some(thread_event),
-            }
-        }
-    };
-
-    Ok(PreparedAgentExecutionOutcome::Ready(
-        PreparedAgentExecution {
-            app_state: app_state.clone(),
-            agent_identifier,
-            thread_id,
-            execution_request,
-            concurrency_guard,
-        },
-    ))
 }
 
 struct DeploymentExecutionGuard {
@@ -1008,4 +372,347 @@ fn time_jitter_ms(max_jitter_ms: u64) -> u64 {
 
 fn should_log_wait_attempt(attempt: u32) -> bool {
     attempt <= 3 || attempt % 10 == 0
+}
+
+const EVENT_LOG_HEARTBEAT_SECONDS: u64 = 120;
+
+pub async fn process_event_log_work(
+    app_state: &AppState,
+    task_id: &str,
+    payload: serde_json::Value,
+) -> Result<String, AgentExecutionError> {
+    let event_log_id = parse_payload_i64(&payload, "event_log_id")?;
+    let deployment_id = parse_payload_i64(&payload, "deployment_id")?;
+    let thread_id = parse_payload_i64(&payload, "thread_id")?;
+    let kind = payload
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            AgentExecutionError::unrecoverable(anyhow::anyhow!("missing event_log kind"))
+        })?
+        .to_string();
+
+    let worker_id = format!("worker-{}-{}", std::process::id(), task_id);
+    let claimed = commands::event_log::claim_work_lease(
+        app_state.db_router.writer(),
+        event_log_id,
+        &worker_id,
+        commands::event_log::DEFAULT_LEASE_SECONDS,
+    )
+    .await
+    .map_err(|e| AgentExecutionError::Other(anyhow::anyhow!("claim work_lease: {e}")))?;
+
+    if !claimed {
+        tracing::info!(event_log_id, "event_log already leased; skipping");
+        return Ok(format!("event_log {event_log_id}: already leased"));
+    }
+
+    let (heartbeat_handle, heartbeat_stop) = spawn_event_log_heartbeat(
+        app_state.clone(),
+        event_log_id,
+        worker_id.clone(),
+    );
+
+    let outcome = run_event_log_work(
+        app_state.clone(),
+        event_log_id,
+        deployment_id,
+        thread_id,
+        &kind,
+        payload,
+    )
+    .await;
+
+    let _ = heartbeat_stop.send(());
+    let _ = heartbeat_handle.await;
+
+    match &outcome {
+        Ok(_) => {
+            let _ = commands::event_log::release_work_lease(
+                app_state.db_router.writer(),
+                event_log_id,
+            )
+            .await;
+        }
+        Err(e) => {
+            tracing::warn!(event_log_id, error = %e, "event_log work failed; releasing lease for retry");
+            let _ = commands::event_log::release_work_lease(
+                app_state.db_router.writer(),
+                event_log_id,
+            )
+            .await;
+        }
+    }
+
+    outcome
+}
+
+async fn run_event_log_work(
+    app_state: AppState,
+    event_log_id: i64,
+    deployment_id: i64,
+    thread_id: i64,
+    kind: &str,
+    payload: serde_json::Value,
+) -> Result<String, AgentExecutionError> {
+    let concurrency_guard = acquire_deployment_execution_slot(&app_state, deployment_id).await?;
+
+    let thread = queries::GetAgentThreadByIdQuery::new(thread_id, deployment_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await
+        .map_err(|e| AgentExecutionError::Other(anyhow::anyhow!("load thread: {e}")))?
+        .ok_or_else(|| {
+            AgentExecutionError::unrecoverable(anyhow::anyhow!(
+                "thread {thread_id} not found in deployment {deployment_id}"
+            ))
+        })?;
+
+    let agent_id_override = payload
+        .get("agent_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<i64>().ok());
+    let agent_id = match agent_id_override {
+        Some(id) => id,
+        None => resolve_agent_id_for_thread(&app_state, thread_id).await?,
+    };
+    let agent = GetAiAgentByIdWithFeatures::new(agent_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await
+        .map_err(|e| AgentExecutionError::Other(anyhow::anyhow!("load agent: {e}")))?;
+
+    let execution_run_id = app_state
+        .sf
+        .next_id()
+        .map_err(|e| AgentExecutionError::Other(anyhow::anyhow!("snowflake: {e}")))?
+        as i64;
+
+    commands::CreateExecutionRunCommand::new(
+        execution_run_id,
+        deployment_id,
+        thread_id,
+        "running".to_string(),
+    )
+    .with_agent_id(agent.id)
+    .execute_with_db(app_state.db_router.writer())
+    .await
+    .map_err(|e| AgentExecutionError::Other(anyhow::anyhow!("create execution_run: {e}")))?;
+
+    let (execution_token, watch_key) =
+        if thread.thread_purpose == models::agent_thread::purpose::CONVERSATION {
+            let token = commands::AdvanceThreadExecutionTokenCommand::new(thread_id)
+                .execute_with_deps(&common::deps::from_app(&app_state).nats().id())
+                .await
+                .map_err(|e| {
+                    AgentExecutionError::Other(anyhow::anyhow!("advance execution token: {e}"))
+                })?;
+            (token, thread_id.to_string())
+        } else {
+            let key = format!("event_log_{event_log_id}");
+            let token = event_log_id.to_string();
+            commands::write_execution_watch_key(&app_state.nats_jetstream, &key, &token)
+                .await
+                .map_err(|e| {
+                    AgentExecutionError::Other(anyhow::anyhow!("write execution watch key: {e}"))
+                })?;
+            (token, key)
+        };
+
+    let request = match kind {
+        "task_routing" | "assignment_execution" => {
+            let board_item_id = payload
+                .get("board_item_id")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<i64>().ok());
+            let synthetic_payload = if kind == "task_routing" {
+                let bid = board_item_id.ok_or_else(|| {
+                    AgentExecutionError::unrecoverable(anyhow::anyhow!(
+                        "task_routing missing board_item_id"
+                    ))
+                })?;
+                let mut p = payload.clone();
+                if let Some(obj) = p.as_object_mut() {
+                    obj.insert(
+                        "board_item_id".to_string(),
+                        serde_json::Value::String(bid.to_string()),
+                    );
+                }
+                p
+            } else {
+                let aid = parse_payload_i64(&payload, "assignment_id")?;
+                serde_json::json!({ "assignment_id": aid.to_string() })
+            };
+
+            let synthetic_event = ThreadEvent {
+                id: event_log_id,
+                deployment_id,
+                thread_id,
+                board_item_id,
+                event_type: kind.to_string(),
+                payload: synthetic_payload,
+                caused_by_thread_id: None,
+            };
+
+            ExecutionRequest {
+                agent,
+                conversation_id: None,
+                thread_id,
+                event_log_id: Some(event_log_id),
+                execution_run_id,
+                execution_token: execution_token.clone(),
+                watch_key: watch_key.clone(),
+                approval_response: None,
+                thread_event: Some(synthetic_event),
+            }
+        }
+        "user_message_received" => {
+            let conversation_id = parse_payload_i64(&payload, "conversation_id")?;
+            ExecutionRequest {
+                agent,
+                conversation_id: Some(conversation_id),
+                thread_id,
+                event_log_id: Some(event_log_id),
+                execution_run_id,
+                execution_token: execution_token.clone(),
+                watch_key: watch_key.clone(),
+                approval_response: None,
+                thread_event: None,
+            }
+        }
+        "approval_response_received" => {
+            let exec_request: dto::json::AgentExecutionRequest = payload
+                .get("execution_payload")
+                .cloned()
+                .ok_or_else(|| {
+                    AgentExecutionError::unrecoverable(anyhow::anyhow!(
+                        "approval_response_received missing execution_payload"
+                    ))
+                })
+                .and_then(|v| {
+                    serde_json::from_value(v).map_err(|e| {
+                        AgentExecutionError::unrecoverable(anyhow::anyhow!(
+                            "invalid execution_payload: {e}"
+                        ))
+                    })
+                })?;
+            let (request_message_id, approvals) = match exec_request.execution_type {
+                dto::json::AgentExecutionType::ApprovalResponse {
+                    request_message_id,
+                    approvals,
+                } => (request_message_id, approvals),
+                other => {
+                    return Err(AgentExecutionError::unrecoverable(anyhow::anyhow!(
+                        "approval_response_received expected ApprovalResponse, got {other:?}"
+                    )));
+                }
+            };
+            persist_tool_approval_response_grants(
+                &app_state,
+                deployment_id,
+                thread_id,
+                &request_message_id,
+                &approvals,
+            )
+            .await?;
+            ExecutionRequest {
+                agent,
+                conversation_id: None,
+                thread_id,
+                event_log_id: Some(event_log_id),
+                execution_run_id,
+                execution_token: execution_token.clone(),
+                watch_key: watch_key.clone(),
+                approval_response: Some(approvals),
+                thread_event: None,
+            }
+        }
+        other => {
+            return Err(AgentExecutionError::unrecoverable(anyhow::anyhow!(
+                "unknown event_log kind: {other}"
+            )));
+        }
+    };
+
+    let result = AgentHandler::new(app_state.clone())
+        .execute_agent_streaming(request)
+        .await;
+
+    drop(concurrency_guard);
+
+    match result {
+        Ok(_) => Ok(format!("event_log {event_log_id} ({kind}) completed")),
+        Err(e) => Err(AgentExecutionError::Other(anyhow::anyhow!(
+            "agent execution failed for event_log {event_log_id}: {e}"
+        ))),
+    }
+}
+
+
+async fn resolve_agent_id_for_thread(
+    app_state: &AppState,
+    thread_id: i64,
+) -> Result<i64, AgentExecutionError> {
+    let assignment = queries::GetThreadAgentAssignmentQuery::new(thread_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await
+        .map_err(|e| {
+            AgentExecutionError::Other(anyhow::anyhow!("load thread_agent_assignment: {e}"))
+        })?;
+
+    assignment.map(|a| a.agent_id).ok_or_else(|| {
+        AgentExecutionError::unrecoverable(anyhow::anyhow!(
+            "no agent assigned to thread {thread_id}"
+        ))
+    })
+}
+
+fn parse_payload_i64(payload: &serde_json::Value, field: &str) -> Result<i64, AgentExecutionError> {
+    payload
+        .get(field)
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<i64>().ok())
+        .ok_or_else(|| {
+            AgentExecutionError::unrecoverable(anyhow::anyhow!(
+                "missing or invalid event_log payload field: {field}"
+            ))
+        })
+}
+
+fn spawn_event_log_heartbeat(
+    app_state: AppState,
+    event_log_id: i64,
+    worker_id: String,
+) -> (
+    tokio::task::JoinHandle<()>,
+    tokio::sync::oneshot::Sender<()>,
+) {
+    let (tx, mut rx) = tokio::sync::oneshot::channel::<()>();
+    let handle = tokio::spawn(async move {
+        let mut tick = interval(Duration::from_secs(EVENT_LOG_HEARTBEAT_SECONDS));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                _ = &mut rx => return,
+                _ = tick.tick() => {
+                    let result = commands::event_log::heartbeat_work_lease(
+                        app_state.db_router.writer(),
+                        event_log_id,
+                        &worker_id,
+                        commands::event_log::DEFAULT_LEASE_SECONDS,
+                    )
+                    .await;
+                    match result {
+                        Ok(false) => {
+                            tracing::warn!(event_log_id, "lease lost during heartbeat");
+                            return;
+                        }
+                        Err(e) => {
+                            tracing::warn!(event_log_id, error = %e, "heartbeat failed");
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    });
+    (handle, tx)
 }

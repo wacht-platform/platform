@@ -30,6 +30,8 @@ pub struct AgentThread {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub archived_at: Option<DateTime<Utc>>,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub state_version: i64,
 }
 
 pub mod visibility {

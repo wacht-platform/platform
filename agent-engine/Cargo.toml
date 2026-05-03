@@ -39,3 +39,5 @@ sha2 = "0.10"
 libc = "0.2"
 shellish_parse = "2.2"
 lancedb = { version = "0.27.2", features = ["aws"] }
+thiserror = "1.0"
+wacht-sandbox-client = { git = "https://github.com/wacht-platform/sandbox-client", branch = "main" }

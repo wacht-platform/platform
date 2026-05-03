@@ -15,21 +15,6 @@ fn create_project_task_resolved_status(params: &CreateProjectTaskParams) -> Stri
         .unwrap_or_else(|| "pending".to_string())
 }
 
-fn create_project_task_resolved_priority(params: &CreateProjectTaskParams) -> String {
-    match params.priority.as_deref() {
-        Some(models::project_task_board::task_priority::URGENT) => {
-            models::project_task_board::task_priority::URGENT.to_string()
-        }
-        Some(models::project_task_board::task_priority::HIGH) => {
-            models::project_task_board::task_priority::HIGH.to_string()
-        }
-        Some(models::project_task_board::task_priority::LOW) => {
-            models::project_task_board::task_priority::LOW.to_string()
-        }
-        _ => models::project_task_board::task_priority::NEUTRAL.to_string(),
-    }
-}
-
 fn create_project_task_resolved_parent_task_key(
     params: &CreateProjectTaskParams,
 ) -> Option<String> {
@@ -46,11 +31,12 @@ fn create_project_task_metadata() -> ProjectTaskBoardItemMetadata {
         kind: Some("project_task_created".to_string()),
         tool_name: Some("create_project_task".to_string()),
         updated_at: Some(chrono::Utc::now().to_rfc3339()),
+        ..Default::default()
     }
 }
 
 fn update_project_task_has_meaningful_mutation(params: &UpdateProjectTaskParams) -> bool {
-    params.status.is_some() || params.priority.is_some() || params.schedule.is_some()
+    params.status.is_some() || params.schedule.is_some()
 }
 
 fn validate_schedule_params(
@@ -105,27 +91,12 @@ fn normalize_schedule_params(schedule: &ProjectTaskScheduleParams) -> ProjectTas
     }
 }
 
-fn update_project_task_resolved_priority(params: &UpdateProjectTaskParams) -> Option<String> {
-    match params.priority.as_deref() {
-        Some(models::project_task_board::task_priority::URGENT) => {
-            Some(models::project_task_board::task_priority::URGENT.to_string())
-        }
-        Some(models::project_task_board::task_priority::HIGH) => {
-            Some(models::project_task_board::task_priority::HIGH.to_string())
-        }
-        Some(models::project_task_board::task_priority::LOW) => {
-            Some(models::project_task_board::task_priority::LOW.to_string())
-        }
-        Some(_) => Some(models::project_task_board::task_priority::NEUTRAL.to_string()),
-        None => None,
-    }
-}
-
 fn update_project_task_metadata() -> ProjectTaskBoardItemMetadata {
     ProjectTaskBoardItemMetadata {
         kind: Some("project_task_updated".to_string()),
         tool_name: Some("update_project_task".to_string()),
         updated_at: Some(chrono::Utc::now().to_rfc3339()),
+        ..Default::default()
     }
 }
 
@@ -151,7 +122,6 @@ impl AgentExecutor {
         let parent_task_key = create_project_task_resolved_parent_task_key(&params);
         let description = params.description.clone();
         let status = create_project_task_resolved_status(&params);
-        let priority = create_project_task_resolved_priority(&params);
         let metadata = create_project_task_metadata();
         let schedule = params
             .schedule
@@ -167,7 +137,6 @@ impl AgentExecutor {
                 title,
                 description,
                 status,
-                priority,
                 parent_task_key.clone(),
                 metadata,
                 schedule,
@@ -211,7 +180,6 @@ impl AgentExecutor {
             .update_project_task_board_item(
                 task_key.clone(),
                 params.status.clone(),
-                update_project_task_resolved_priority(&params),
                 update_project_task_metadata(),
                 params
                     .schedule

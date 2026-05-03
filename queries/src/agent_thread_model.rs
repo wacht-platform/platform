@@ -293,7 +293,7 @@ impl GetAgentThreadByIdQuery {
                    title, thread_purpose as "thread_kind!", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as "thread_visibility!",
                    thread_purpose, responsibility,
                    reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,
-                   execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at
+                   execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at, state_version
             FROM agent_threads
             WHERE id = $1 AND deployment_id = $2
             "#,
@@ -339,7 +339,7 @@ impl ListAgentThreadsQuery {
                        title, thread_purpose as "thread_kind!", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as "thread_visibility!",
                        thread_purpose, responsibility,
                        reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,
-                       execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at
+                       execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at, state_version
                 FROM agent_threads
                 WHERE deployment_id = $1 AND project_id = $2
                 ORDER BY updated_at DESC
@@ -357,7 +357,7 @@ impl ListAgentThreadsQuery {
                        title, thread_purpose as "thread_kind!", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as "thread_visibility!",
                        thread_purpose, responsibility,
                        reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,
-                       execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at
+                       execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at, state_version
                 FROM agent_threads
                 WHERE deployment_id = $1 AND project_id = $2 AND archived_at IS NULL
                 ORDER BY updated_at DESC
@@ -405,7 +405,7 @@ impl ListAssignableAgentThreadsQuery {
                        title, thread_purpose as "thread_kind!", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as "thread_visibility!",
                        thread_purpose, responsibility,
                        reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,
-                       execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at
+                       execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at, state_version
                 FROM agent_threads
                 WHERE deployment_id = $1
                   AND project_id = $2
@@ -426,7 +426,7 @@ impl ListAssignableAgentThreadsQuery {
                        title, thread_purpose as "thread_kind!", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as "thread_visibility!",
                        thread_purpose, responsibility,
                        reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,
-                       execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at
+                       execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at, state_version
                 FROM agent_threads
                 WHERE deployment_id = $1
                   AND project_id = $2

@@ -1,10 +1,7 @@
 use models::{
     AiKnowledgeBase, AiTool, AiToolConfiguration, ProjectTaskBoardAssignmentTarget,
     ProjectTaskBoardItemAssignmentEventDetails, ProjectTaskBoardItemMetadata, SchemaField,
-    thread_event::{
-        ApprovalResponseReceivedEventPayload, TaskRoutingEventPayload,
-        ThreadConversationEventPayload,
-    },
+    thread_event::TaskRoutingEventPayload,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -157,8 +154,6 @@ pub struct AgentLoopTaskContext {
     pub active_board_item_assignments: Vec<ProjectTaskBoardAssignmentPromptItem>,
     #[serde(default)]
     pub recent_assignment_history: Vec<ProjectTaskBoardAssignmentPromptItem>,
-    #[serde(default)]
-    pub active_board_item_events: Vec<ProjectTaskBoardItemEventPromptItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub task_journal_tail: Option<String>,
     #[serde(default)]
@@ -411,12 +406,6 @@ pub struct ThreadEventPromptItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ThreadEventPromptPayload {
-    Conversation {
-        payload: ThreadConversationEventPayload,
-    },
-    ApprovalResponseReceived {
-        payload: ApprovalResponseReceivedEventPayload,
-    },
     TaskRouting {
         payload: TaskRoutingEventPayload,
     },
@@ -442,7 +431,6 @@ pub struct ProjectTaskBoardPromptItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub status: String,
-    pub priority: String,
     #[serde(
         default,
         with = "models::utils::serde::i64_as_string_option",
@@ -470,7 +458,6 @@ pub struct ProjectTaskBoardAssignmentPromptItem {
     #[serde(with = "models::utils::serde::i64_as_string")]
     pub thread_id: i64,
     pub assignment_role: String,
-    pub assignment_order: i32,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -482,31 +469,6 @@ pub struct ProjectTaskBoardAssignmentPromptItem {
     pub result_status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_summary: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProjectTaskBoardItemEventPromptItem {
-    pub event_type: String,
-    pub summary: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub body_markdown: Option<String>,
-    #[serde(
-        default,
-        with = "models::utils::serde::i64_as_string_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub thread_id: Option<i64>,
-    #[serde(
-        default,
-        with = "models::utils::serde::i64_as_string_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub execution_run_id: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub raw_details_json: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub assignment_details: Option<ProjectTaskBoardItemAssignmentEventDetails>,
-    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

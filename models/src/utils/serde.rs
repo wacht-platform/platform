@@ -36,11 +36,13 @@ pub mod i64_as_string_option {
     where
         D: Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        if s.parse::<i64>().is_ok() {
-            Ok(Some(s.parse::<i64>().unwrap()))
-        } else {
-            Ok(None)
+        let opt = Option::<String>::deserialize(deserializer)?;
+        match opt {
+            Some(s) => s
+                .parse::<i64>()
+                .map(Some)
+                .map_err(serde::de::Error::custom),
+            None => Ok(None),
         }
     }
 }

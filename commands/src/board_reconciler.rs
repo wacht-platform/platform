@@ -1,5 +1,7 @@
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
-use common::{HasDbRouter, HasIdProvider, HasNatsJetStreamProvider, error::AppError};
+use common::{
+    HasDbRouter, HasIdProvider, HasNatsJetStreamProvider, HasNatsProvider, error::AppError,
+};
 use models::{ProjectTaskBoardItem, ProjectTaskBoardItemAssignment};
 
 use crate::project_task_board::{
@@ -37,7 +39,7 @@ impl ReconcileStaleBoardItemsCommand {
         deps: &D,
     ) -> Result<ReconcileStaleBoardItemsSummary, AppError>
     where
-        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + ?Sized,
+        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + HasNatsProvider + ?Sized,
     {
         let stale_before = Utc::now() - self.stale_threshold;
         let mut summary = ReconcileStaleBoardItemsSummary::default();
@@ -69,6 +71,7 @@ impl ReconcileStaleBoardItemsCommand {
                         &item,
                         Some("Reconciler: board item has not progressed".to_string()),
                         None,
+                        models::thread_event::routing_reason::ASSIGNMENT_COMPLETED,
                     )
                     .await
                     {
@@ -120,9 +123,10 @@ where
             FOR UPDATE SKIP LOCKED
         )
         RETURNING
-            id, board_id, task_key, title, description, status, priority,
+            id, board_id, task_key, title, description, status,
             assigned_thread_id, metadata, completed_at, archived_at,
-            created_at, updated_at
+            created_at, updated_at, state_version,
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval
         "#,
         stale_before,
     )
@@ -138,14 +142,14 @@ where
         ProjectTaskBoardItemAssignment,
         r#"
         SELECT
-            id, board_item_id, thread_id, assignment_role, assignment_order, status,
+            id, board_item_id, thread_id, assignment_role, status,
             instructions, metadata, result_status, result_summary,
             result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
-            updated_at
+            updated_at, state_version
         FROM project_task_board_item_assignments
         WHERE board_item_id = $1
           AND status IN ('pending', 'available', 'claimed', 'in_progress')
-        ORDER BY assignment_order ASC, id ASC
+        ORDER BY id ASC
         LIMIT 1
         "#,
         board_item.id,

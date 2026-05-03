@@ -1,7 +1,6 @@
 use commands::{
     CreateActorCommand, CreateActorProjectCommand, CreateAgentThreadCommand,
-    CreateProjectTaskBoardItemCommand, CreateProjectTaskBoardItemEventCommand,
-    DispatchThreadEventCommand, EnqueueThreadEventCommand, UpdateProjectTaskBoardItemCommand,
+    CreateProjectTaskBoardItemCommand, UpdateProjectTaskBoardItemCommand,
     UpsertThreadAgentAssignmentCommand,
 };
 use common::ReadConsistency;
@@ -13,18 +12,16 @@ use dto::json::deployment::{
 };
 use models::{
     Actor, ActorProject, AgentThread, AgentThreadState, ConversationRecord, ProjectTaskBoard,
-    ProjectTaskBoardItem, ProjectTaskBoardItemAssignment, ProjectTaskBoardItemEvent,
-    ProjectTaskBoardItemRelation, ThreadEvent, ThreadTaskEdge, ThreadTaskGraph,
-    ThreadTaskGraphSummary, ThreadTaskNode,
+    ProjectTaskBoardItem, ProjectTaskBoardItemAssignment, ProjectTaskBoardItemRelation,
+    ThreadTaskEdge, ThreadTaskGraph, ThreadTaskGraphSummary, ThreadTaskNode,
 };
 use queries::{
     GetActorByIdQuery, GetActorProjectByIdQuery, GetAgentThreadByIdQuery, GetAgentThreadStateQuery,
     GetLatestThreadTaskGraphQuery, GetMcpServerByIdQuery, GetMcpServersQuery,
     GetProjectTaskBoardByIdQuery, GetProjectTaskBoardByProjectIdQuery,
-    GetProjectTaskBoardItemByIdQuery, GetThreadEventByIdQuery, GetThreadTaskGraphByIdQuery,
+    GetProjectTaskBoardItemByIdQuery, GetThreadTaskGraphByIdQuery,
     GetThreadTaskGraphSummaryQuery, ListActorProjectsQuery, ListActorsQuery, ListAgentThreadsQuery,
-    ListAssignmentsForThreadQuery, ListPendingThreadEventsQuery,
-    ListProjectTaskBoardItemAssignmentsQuery, ListProjectTaskBoardItemEventsQuery,
+    ListAssignmentsForThreadQuery, ListProjectTaskBoardItemAssignmentsQuery,
     ListProjectTaskBoardItemRelationsQuery, ListProjectTaskBoardItemsQuery,
     ListThreadTaskEdgesQuery, ListThreadTaskNodesQuery,
 };
@@ -333,7 +330,8 @@ fn parse_conversation_message_type(
         "approval_request" => Ok(models::ConversationMessageType::ApprovalRequest),
         "approval_response" => Ok(models::ConversationMessageType::ApprovalResponse),
         "execution_summary" => Ok(models::ConversationMessageType::ExecutionSummary),
-        "assignment_event" => Ok(models::ConversationMessageType::AssignmentEvent),
+        "clarification_request" => Ok(models::ConversationMessageType::ClarificationRequest),
+        "clarification_response" => Ok(models::ConversationMessageType::ClarificationResponse),
         other => Err(AppError::Internal(format!(
             "Unknown conversation message_type '{}'",
             other
@@ -729,7 +727,7 @@ pub async fn search_actor_project_threads(
                title, thread_purpose as "thread_kind!", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as "thread_visibility!",
                thread_purpose, responsibility,
                reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,
-               execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at
+               execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at, state_version
         FROM agent_threads
         WHERE deployment_id = $1
           AND actor_id = $2
@@ -912,7 +910,7 @@ pub async fn set_agent_thread_archived(
                   title, thread_purpose as "thread_kind!", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as "thread_visibility!",
                   thread_purpose, responsibility,
                   reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,
-                  execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at
+                  execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at, state_version
         "#,
         thread_id,
         deployment_id,
@@ -1349,8 +1347,9 @@ pub async fn create_project_task_board_item(
     let item_id = app_state.sf.next_id()? as i64;
     let task_key = format!("TASK-{}", item_id);
     let status = request.status.unwrap_or_else(|| "pending".to_string());
-    let priority = request.priority.unwrap_or_else(|| "neutral".to_string());
     let assigned_thread_id = project.coordinator_thread_id;
+
+    let mut tx = app_state.db_router.writer().begin().await?;
 
     let item = CreateProjectTaskBoardItemCommand {
         id: item_id,
@@ -1359,66 +1358,35 @@ pub async fn create_project_task_board_item(
         title: request.title.trim().to_string(),
         description: request.description,
         status,
-        priority,
         assigned_thread_id,
         metadata: serde_json::json!({}),
     }
-    .execute_with_db(app_state.db_router.writer())
+    .execute_with_db(&mut *tx)
     .await?;
 
-    CreateProjectTaskBoardItemEventCommand {
-        id: app_state.sf.next_id()? as i64,
-        board_item_id: item.id,
-        thread_id: item.assigned_thread_id,
-        execution_run_id: None,
-        event_type: "task_created".to_string(),
-        summary: "Task created".to_string(),
-        body_markdown: None,
-        details: serde_json::json!({
-            "board_id": item.board_id,
-            "task_key": item.task_key,
-            "status": item.status,
-            "assigned_thread_id": item.assigned_thread_id,
-            "priority": item.priority,
-        }),
-    }
-    .execute_with_db(app_state.db_router.writer())
-    .await?;
-
-    if let Some(coordinator_thread_id) = project.coordinator_thread_id {
-        let payload = models::thread_event::TaskRoutingEventPayload {
-            board_item_id: item.id,
-        };
-        let summary = commands::build_task_routing_summary(&item, 0);
-        let conversation_id = commands::WriteAssignmentEventConversation {
-            thread_id: coordinator_thread_id,
-            board_item_id: item.id,
-            kind: models::AssignmentEventKind::TaskRouting,
-            assignment_id: None,
-            summary,
-            payload: Some(serde_json::to_value(&payload).map_err(|err| {
-                AppError::Internal(format!("Failed to serialize task routing payload: {}", err))
-            })?),
+    let routed = if let Some(coordinator_thread_id) = project.coordinator_thread_id {
+        commands::InsertTaskRoutingEvent {
+            event_log_id: app_state.sf.next_id()? as i64,
+            deployment_id,
+            coordinator_thread_id,
+            board_item: &item,
+            idempotency_key: format!("task_routing_{}_{}", item.id, item.state_version),
+            summary: commands::build_task_routing_summary(&item, 0),
+            note: None,
+            caused_by_event_id: None,
+            routing_reason: models::thread_event::routing_reason::TASK_CREATED,
         }
-        .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
+        .execute(&mut *tx)
         .await?;
+        true
+    } else {
+        false
+    };
 
-        DispatchThreadEventCommand::new(
-            EnqueueThreadEventCommand::new(
-                app_state.sf.next_id()? as i64,
-                deployment_id,
-                coordinator_thread_id,
-                models::thread_event::event_type::TASK_ROUTING.to_string(),
-            )
-            .with_board_item_id(item.id)
-            .with_priority(30)
-            .with_payload(serde_json::to_value(payload).map_err(|err| {
-                AppError::Internal(format!("Failed to serialize task routing payload: {}", err))
-            })?)
-            .with_conversation_id(conversation_id),
-        )
-        .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
-        .await?;
+    tx.commit().await?;
+
+    if routed {
+        commands::event_log::nudge_dispatcher(&app_state.nats_client).await;
     }
 
     Ok(item)
@@ -1445,17 +1413,6 @@ pub async fn get_project_task_board_item_by_id(
     }
 }
 
-pub async fn list_project_task_board_item_events(
-    app_state: &AppState,
-    deployment_id: i64,
-    item_id: i64,
-) -> Result<Vec<ProjectTaskBoardItemEvent>, AppError> {
-    get_project_task_board_item_by_id(app_state, deployment_id, item_id).await?;
-    ListProjectTaskBoardItemEventsQuery::new(item_id)
-        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
-        .await
-}
-
 pub async fn list_project_task_board_item_assignments(
     app_state: &AppState,
     deployment_id: i64,
@@ -1476,113 +1433,6 @@ pub async fn list_project_task_board_item_relations(
     ListProjectTaskBoardItemRelationsQuery::new(item_id)
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
-}
-
-pub async fn append_project_task_board_item_journal_entry(
-    app_state: &AppState,
-    deployment_id: i64,
-    item_id: i64,
-    summary: String,
-    details: Option<String>,
-    body_markdown: Option<String>,
-    attachments: Option<serde_json::Value>,
-) -> Result<ProjectTaskBoardItemEvent, AppError> {
-    let item = get_project_task_board_item_by_id(app_state, deployment_id, item_id).await?;
-    let summary = summary.trim().to_string();
-    if summary.is_empty() {
-        return Err(AppError::BadRequest(
-            "summary must not be empty".to_string(),
-        ));
-    }
-
-    let body_markdown = body_markdown
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| value.to_string())
-        .or_else(|| {
-            details
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(|value| value.to_string())
-        });
-
-    let attachments = attachments
-        .filter(|value| !value.is_null())
-        .unwrap_or_else(|| serde_json::json!([]));
-
-    let event = CreateProjectTaskBoardItemEventCommand {
-        id: app_state.sf.next_id()? as i64,
-        board_item_id: item.id,
-        thread_id: None,
-        execution_run_id: None,
-        event_type: "task_journal_entry".to_string(),
-        summary,
-        body_markdown: body_markdown.clone(),
-        details: serde_json::json!({
-            "task_key": item.task_key,
-            "details": body_markdown,
-            "attachments": attachments,
-        }),
-    }
-    .execute_with_db(app_state.db_router.writer())
-    .await?;
-
-    if matches!(item.status.as_str(), "blocked" | "needs_clarification") {
-        let board = GetProjectTaskBoardByIdQuery::new(item.board_id, deployment_id)
-            .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
-            .await?
-            .ok_or_else(|| AppError::NotFound("Project task board not found".to_string()))?;
-        let project = GetActorProjectByIdQuery::new(board.project_id, deployment_id)
-            .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
-            .await?
-            .ok_or_else(|| AppError::NotFound("Project not found".to_string()))?;
-
-        if let Some(coordinator_thread_id) = project.coordinator_thread_id {
-            let payload = models::thread_event::TaskRoutingEventPayload {
-                board_item_id: item.id,
-            };
-            let summary = commands::build_task_routing_summary(&item, 0);
-            let conversation_id = commands::WriteAssignmentEventConversation {
-                thread_id: coordinator_thread_id,
-                board_item_id: item.id,
-                kind: models::AssignmentEventKind::TaskRouting,
-                assignment_id: None,
-                summary,
-                payload: Some(serde_json::to_value(&payload).map_err(|err| {
-                    AppError::Internal(format!(
-                        "Failed to serialize coordinator reroute payload: {}",
-                        err
-                    ))
-                })?),
-            }
-            .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
-            .await?;
-
-            DispatchThreadEventCommand::new(
-                EnqueueThreadEventCommand::new(
-                    app_state.sf.next_id()? as i64,
-                    deployment_id,
-                    coordinator_thread_id,
-                    models::thread_event::event_type::TASK_ROUTING.to_string(),
-                )
-                .with_board_item_id(item.id)
-                .with_priority(15)
-                .with_payload(serde_json::to_value(payload).map_err(|err| {
-                    AppError::Internal(format!(
-                        "Failed to serialize coordinator reroute payload: {}",
-                        err
-                    ))
-                })?)
-                .with_conversation_id(conversation_id),
-            )
-            .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
-            .await?;
-        }
-    }
-
-    Ok(event)
 }
 
 pub async fn update_project_task_board_item(
@@ -1616,8 +1466,9 @@ pub async fn update_project_task_board_item(
                 description = COALESCE($4, description),
                 updated_at = NOW()
             WHERE id = $1 AND board_id = $2 AND archived_at IS NULL
-            RETURNING id, board_id, task_key, title, description, status, priority,
-                      assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at
+            RETURNING id, board_id, task_key, title, description, status,
+                      assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
+                      schedule_id, scheduled_for, fired_at, pending_question, pending_approval
             "#,
             item.id,
             board.id,
@@ -1627,7 +1478,7 @@ pub async fn update_project_task_board_item(
         .fetch_one(app_state.db_router.writer())
         .await?;
 
-        if request.status.is_none() && request.priority.is_none() {
+        if request.status.is_none() {
             return Ok(updated);
         }
     }
@@ -1636,7 +1487,6 @@ pub async fn update_project_task_board_item(
         board_id: board.id,
         task_key: item.task_key,
         status: request.status,
-        priority: request.priority,
         metadata: item.metadata,
     }
     .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
@@ -1666,8 +1516,9 @@ pub async fn set_project_task_board_item_archived(
             archived_at = CASE WHEN $3 THEN NOW() ELSE NULL END,
             updated_at = NOW()
         WHERE id = $1 AND board_id = $2
-        RETURNING id, board_id, task_key, title, description, status, priority,
-                  assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at
+        RETURNING id, board_id, task_key, title, description, status,
+                  assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
+                  schedule_id, scheduled_for, fired_at, pending_question, pending_approval
         "#,
         item_id,
         board.id,
@@ -1764,34 +1615,6 @@ pub async fn get_agent_thread_state(
     GetAgentThreadStateQuery::new(thread_id, deployment_id)
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
-}
-
-pub async fn list_pending_thread_events(
-    app_state: &AppState,
-    deployment_id: i64,
-    thread_id: i64,
-) -> Result<Vec<ThreadEvent>, AppError> {
-    get_agent_thread_by_id(app_state, deployment_id, thread_id).await?;
-    ListPendingThreadEventsQuery::new(thread_id)
-        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
-        .await
-}
-
-pub async fn get_thread_event_by_id(
-    app_state: &AppState,
-    deployment_id: i64,
-    event_id: i64,
-) -> Result<ThreadEvent, AppError> {
-    let event = GetThreadEventByIdQuery::new(event_id)
-        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
-        .await?
-        .ok_or_else(|| AppError::NotFound("Thread event not found".to_string()))?;
-
-    if event.deployment_id != deployment_id {
-        return Err(AppError::NotFound("Thread event not found".to_string()));
-    }
-
-    Ok(event)
 }
 
 pub async fn list_assignments_for_thread(

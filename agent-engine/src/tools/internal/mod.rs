@@ -32,13 +32,16 @@ impl ToolExecutor {
                 self.execute_write_file(tool, filesystem, params.clone())
                     .await
             }
+            ToolCallRequest::AppendFile { params, .. } => {
+                self.execute_append_file(tool, filesystem, params.clone())
+                    .await
+            }
             ToolCallRequest::EditFile { params, .. } => {
                 self.execute_edit_file(tool, filesystem, params.clone())
                     .await
             }
             ToolCallRequest::ExecuteCommand { params, .. } => {
-                self.execute_command(tool, shell, filesystem, params.clone())
-                    .await
+                self.execute_command(tool, shell, params.clone()).await
             }
             ToolCallRequest::WebSearch { params, .. } => {
                 self.execute_web_search_tool(tool, params.clone()).await
@@ -95,6 +98,7 @@ impl ToolExecutor {
             | ToolCallRequest::CreateProjectTask { .. }
             | ToolCallRequest::UpdateProjectTask { .. }
             | ToolCallRequest::AssignProjectTask { .. }
+            | ToolCallRequest::AskUser { .. }
             | ToolCallRequest::External(_) => Err(AppError::BadRequest(
                 "Unsupported request kind for internal tool execution".to_string(),
             )),

@@ -9,6 +9,8 @@ static PROMPTS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
         concat!(
             include_str!("prompts/shared_operating_style.md"),
             "\n\n",
+            include_str!("prompts/sandbox_environment.md"),
+            "\n\n",
             include_str!("prompts/memory_discipline.md"),
             "\n\n",
             include_str!("prompts/conversation_agent_system.md"),
@@ -19,6 +21,8 @@ static PROMPTS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
         concat!(
             include_str!("prompts/shared_operating_style.md"),
             "\n\n",
+            include_str!("prompts/sandbox_environment.md"),
+            "\n\n",
             include_str!("prompts/coordinator_system.md"),
         ),
     );
@@ -26,6 +30,8 @@ static PROMPTS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
         "service_execution_system",
         concat!(
             include_str!("prompts/shared_operating_style.md"),
+            "\n\n",
+            include_str!("prompts/sandbox_environment.md"),
             "\n\n",
             include_str!("prompts/memory_discipline.md"),
             "\n\n",
@@ -36,6 +42,8 @@ static PROMPTS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
         "reviewer_system",
         concat!(
             include_str!("prompts/shared_operating_style.md"),
+            "\n\n",
+            include_str!("prompts/sandbox_environment.md"),
             "\n\n",
             include_str!("prompts/memory_discipline.md"),
             "\n\n",

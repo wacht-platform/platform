@@ -13,10 +13,10 @@ use templatekit::{AgentTemplates, render_prompt_text, render_template_only};
 use queries::GetProjectTaskBoardItemAssignmentByIdQuery;
 const STEER_VISIBILITY_NUDGE_WINDOW: usize = 4;
 
-struct ThreadModeContext {
-    exec_context: models::AgentThreadState,
-    is_coordinator_thread: bool,
-    allows_user_interaction: bool,
+pub(crate) struct ThreadModeContext {
+    pub(crate) exec_context: models::AgentThreadState,
+    pub(crate) is_coordinator_thread: bool,
+    pub(crate) allows_user_interaction: bool,
 }
 
 struct ConversationPromptContext {
@@ -24,26 +24,25 @@ struct ConversationPromptContext {
     current_request_entry: LlmHistoryEntry,
 }
 
-struct BoardPromptContext {
-    active_assignment: Option<dto::json::ProjectTaskBoardAssignmentPromptItem>,
-    active_board_item: Option<dto::json::ProjectTaskBoardPromptItem>,
-    active_board_item_assignments: Vec<dto::json::ProjectTaskBoardAssignmentPromptItem>,
-    recent_assignment_history: Vec<dto::json::ProjectTaskBoardAssignmentPromptItem>,
-    active_board_item_events: Vec<dto::json::ProjectTaskBoardItemEventPromptItem>,
-    task_journal_tail: Option<String>,
-    thread_assignment_queue: Vec<dto::json::ProjectTaskBoardAssignmentPromptItem>,
-    scoped_project_task_board_items: Vec<dto::json::ProjectTaskBoardPromptItem>,
+pub(crate) struct BoardPromptContext {
+    pub(crate) active_assignment: Option<dto::json::ProjectTaskBoardAssignmentPromptItem>,
+    pub(crate) active_board_item: Option<dto::json::ProjectTaskBoardPromptItem>,
+    pub(crate) active_board_item_assignments: Vec<dto::json::ProjectTaskBoardAssignmentPromptItem>,
+    pub(crate) recent_assignment_history: Vec<dto::json::ProjectTaskBoardAssignmentPromptItem>,
+    pub(crate) task_journal_tail: Option<String>,
+    pub(crate) thread_assignment_queue: Vec<dto::json::ProjectTaskBoardAssignmentPromptItem>,
+    pub(crate) scoped_project_task_board_items: Vec<dto::json::ProjectTaskBoardPromptItem>,
 }
 
-struct ToolPromptContext {
-    tool_prompt_items: Vec<ToolPromptItem>,
-    knowledge_base_prompt_items: Vec<KnowledgeBasePromptItem>,
-    system_skill_prompt_items: Vec<SkillPromptItem>,
-    agent_skill_prompt_items: Vec<SkillPromptItem>,
-    available_sub_agents: Vec<dto::json::SubAgentPromptInfo>,
-    discoverable_external_tool_names: Vec<String>,
-    loaded_external_tool_names: Vec<String>,
-    connected_external_integrations: Vec<String>,
+pub(crate) struct ToolPromptContext {
+    pub(crate) tool_prompt_items: Vec<ToolPromptItem>,
+    pub(crate) knowledge_base_prompt_items: Vec<KnowledgeBasePromptItem>,
+    pub(crate) system_skill_prompt_items: Vec<SkillPromptItem>,
+    pub(crate) agent_skill_prompt_items: Vec<SkillPromptItem>,
+    pub(crate) available_sub_agents: Vec<dto::json::SubAgentPromptInfo>,
+    pub(crate) discoverable_external_tool_names: Vec<String>,
+    pub(crate) loaded_external_tool_names: Vec<String>,
+    pub(crate) connected_external_integrations: Vec<String>,
 }
 
 impl AgentExecutor {
@@ -55,7 +54,8 @@ impl AgentExecutor {
         let mut recent_visible_messages = Vec::new();
         for conv in self.conversations.iter().rev() {
             match conv.message_type {
-                models::ConversationMessageType::UserMessage => {
+                models::ConversationMessageType::UserMessage
+                | models::ConversationMessageType::ClarificationResponse => {
                     if recent_visible_messages.is_empty() {
                         return None;
                     }
@@ -64,6 +64,7 @@ impl AgentExecutor {
                 models::ConversationMessageType::Steer
                 | models::ConversationMessageType::ApprovalRequest
                 | models::ConversationMessageType::ApprovalResponse
+                | models::ConversationMessageType::ClarificationRequest
                 | models::ConversationMessageType::ExecutionSummary => {
                     recent_visible_messages.push(conv);
                     if recent_visible_messages.len() >= STEER_VISIBILITY_NUDGE_WINDOW {
@@ -91,19 +92,57 @@ impl AgentExecutor {
         )
     }
 
+    pub(crate) async fn fetch_all_prompt_caches(
+        &self,
+    ) -> Result<
+        (
+            ThreadModeContext,
+            models::ThreadTaskGraphSnapshot,
+            BoardPromptContext,
+            ToolPromptContext,
+        ),
+        AppError,
+    > {
+        let thread_mode = self.load_thread_mode_context().await?;
+        let is_coordinator = thread_mode.is_coordinator_thread;
+
+        let (task_graph, board_context, tool_context) = tokio::try_join!(
+            self.fetch_task_graph_snapshot(),
+            self.load_board_prompt_context(is_coordinator),
+            self.load_tool_prompt_context(is_coordinator),
+        )?;
+
+        Ok((thread_mode, task_graph, board_context, tool_context))
+    }
+
     pub(crate) async fn build_agent_loop_context_json(
         &mut self,
     ) -> Result<serde_json::Value, AppError> {
-        let thread_mode = self.load_thread_mode_context().await?;
+        let thread_mode = match self.thread_mode_cache.take() {
+            Some(v) => v,
+            None => self.load_thread_mode_context().await?,
+        };
+        let is_coordinator = thread_mode.is_coordinator_thread;
+
         let task_graph = self.ensure_task_graph_snapshot().await?;
         let task_graph_view = Self::render_task_graph_view(&task_graph);
-        let board_context = self
-            .load_board_prompt_context(thread_mode.is_coordinator_thread)
-            .await?;
-        let conversation_context = self.build_conversation_prompt_context().await;
-        let tool_context = self
-            .load_tool_prompt_context(thread_mode.is_coordinator_thread)
-            .await?;
+
+        let (board_context, conversation_context, tool_context) = match (
+            self.board_context_cache.take(),
+            self.tool_context_cache.take(),
+        ) {
+            (Some(board), Some(tool)) => {
+                let conv = self.build_conversation_prompt_context().await;
+                (board, conv, tool)
+            }
+            _ => tokio::try_join!(
+                self.load_board_prompt_context(is_coordinator),
+                async {
+                    Ok::<_, AppError>(self.build_conversation_prompt_context().await)
+                },
+                self.load_tool_prompt_context(is_coordinator),
+            )?,
+        };
         let context = AgentLoopContext {
             runtime: AgentLoopRuntimeContext {
                 current_datetime_utc: chrono::Utc::now()
@@ -147,10 +186,9 @@ impl AgentExecutor {
                 active_assignment: board_context.active_assignment,
                 active_board_item_assignments: board_context.active_board_item_assignments,
                 recent_assignment_history: board_context.recent_assignment_history,
-                active_board_item_events: board_context.active_board_item_events,
                 task_journal_tail: board_context.task_journal_tail,
                 thread_assignment_queue: board_context.thread_assignment_queue,
-                task_graph_view: Some(task_graph_view),
+                task_graph_view,
             },
         };
 
@@ -172,7 +210,8 @@ impl AgentExecutor {
             live_context_message: None,
         };
 
-        let prompt_context_value = serde_json::to_value(&prompt_context)?;
+        let mut prompt_context_value = serde_json::to_value(&prompt_context)?;
+        Self::annotate_live_task_context_flag(&mut prompt_context_value);
 
         let live_context_message = render_template_only(
             AgentTemplates::AGENT_LOOP_LIVE_CONTEXT,
@@ -257,6 +296,37 @@ impl AgentExecutor {
         ))
     }
 
+    fn annotate_live_task_context_flag(value: &mut serde_json::Value) {
+        let triggering_event_present = value
+            .get("conversation")
+            .and_then(|v| v.get("triggering_event"))
+            .map(|v| !v.is_null())
+            .unwrap_or(false);
+
+        let task = match value.get_mut("task").and_then(|v| v.as_object_mut()) {
+            Some(t) => t,
+            None => return,
+        };
+
+        let has_field = |key: &str| match task.get(key) {
+            None | Some(serde_json::Value::Null) => false,
+            Some(serde_json::Value::Array(a)) => !a.is_empty(),
+            Some(serde_json::Value::String(s)) => !s.is_empty(),
+            Some(serde_json::Value::Object(o)) => !o.is_empty(),
+            Some(_) => true,
+        };
+
+        let has_any = triggering_event_present
+            || has_field("active_assignment")
+            || has_field("active_board_item")
+            || has_field("active_board_item_assignments")
+            || has_field("recent_assignment_history")
+            || has_field("task_journal_tail")
+            || has_field("thread_assignment_queue");
+
+        task.insert("has_live_context".to_string(), serde_json::Value::Bool(has_any));
+    }
+
     async fn load_thread_mode_context(&self) -> Result<ThreadModeContext, AppError> {
         let exec_context = self.ctx.get_thread().await?;
         let is_conversation_thread =
@@ -318,10 +388,7 @@ impl AgentExecutor {
             .await;
         let recent_assignment_history =
             Self::recent_assignment_history(&active_board_item_assignments);
-        let active_board_item_events = self
-            .load_active_board_item_events(active_board_item_id)
-            .await;
-        let task_journal_tail = if active_board_item_id.is_some() {
+        let task_journal_tail = if active_board_item.is_some() {
             self.task_journal_tail_snippet().await?
         } else {
             None
@@ -335,7 +402,6 @@ impl AgentExecutor {
             active_board_item,
             active_board_item_assignments,
             recent_assignment_history,
-            active_board_item_events,
             task_journal_tail,
         })
     }
@@ -345,6 +411,7 @@ impl AgentExecutor {
         is_coordinator_thread: bool,
     ) -> Result<ToolPromptContext, AppError> {
         let available_tools = self.available_tools_for_mode().await;
+
         let discoverable_external_tool_names = self
             .ctx
             .agent
@@ -377,16 +444,18 @@ impl AgentExecutor {
             .map(KnowledgeBasePromptItem::from_knowledge_base)
             .collect::<Vec<_>>();
         let (system_skill_prompt_items, agent_skill_prompt_items) =
-            self.filesystem.list_skill_prompt_items().await?;
+            (Vec::new(), Vec::new());
 
         let connected_external_integrations = self.load_connected_external_integrations().await;
 
+        let available_sub_agents = if is_coordinator_thread {
+            self.load_available_sub_agents().await
+        } else {
+            Vec::new()
+        };
+
         Ok(ToolPromptContext {
-            available_sub_agents: if is_coordinator_thread {
-                self.load_available_sub_agents().await
-            } else {
-                Vec::new()
-            },
+            available_sub_agents,
             tool_prompt_items,
             knowledge_base_prompt_items,
             system_skill_prompt_items,
@@ -525,24 +594,6 @@ impl AgentExecutor {
             .unwrap_or_default()
             .into_iter()
             .map(|assignment| Self::assignment_prompt_item_from_row(&assignment))
-            .collect()
-    }
-
-    async fn load_active_board_item_events(
-        &self,
-        active_board_item_id: Option<i64>,
-    ) -> Vec<dto::json::ProjectTaskBoardItemEventPromptItem> {
-        let Some(item_id) = active_board_item_id else {
-            return Vec::new();
-        };
-
-        queries::ListProjectTaskBoardItemEventsQuery::new(item_id)
-            .execute_with_db(self.ctx.app_state.db_router.writer())
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .take(10)
-            .map(Self::board_item_event_prompt_item)
             .collect()
     }
 

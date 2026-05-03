@@ -12,6 +12,12 @@ use models::{ConversationContent, ConversationMessageType, ConversationRecord};
 use queries::GetCompactionWindowConversationsQuery;
 use serde_json::{json, Value};
 
+enum ClarificationOutcome<'a> {
+    Answered(&'a [models::QuestionAnswer]),
+    Expired,
+    Pending,
+}
+
 impl AgentExecutor {
     pub(crate) fn llm_history_entry_text(entry: &LlmHistoryEntry) -> String {
         let body = if !entry.parts.is_empty() {
@@ -84,6 +90,41 @@ impl AgentExecutor {
             .await;
 
         Ok(())
+    }
+
+    /// In-memory-only conversation entry used for runtime steering guards.
+    /// Pushed onto `self.conversations` so the LLM history rendering picks it up
+    /// for the remainder of this execution, but never written to Postgres or
+    /// streamed to clients. Evaporates when the executor is dropped.
+    pub(crate) fn store_transient_steer(&mut self, step: &str, reasoning: String) {
+        let id = match self.ctx.app_state.sf.next_id() {
+            Ok(v) => v as i64,
+            Err(_) => 0,
+        };
+        let now = chrono::Utc::now();
+        let conversation = ConversationRecord {
+            id,
+            thread_id: Some(self.ctx.thread_id),
+            board_item_id: self.current_board_item_id(),
+            execution_run_id: Some(self.ctx.execution_run_id),
+            timestamp: now,
+            content: ConversationContent::SystemDecision {
+                step: step.to_string(),
+                reasoning: reasoning.clone(),
+                confidence: 1.0,
+            },
+            message_type: ConversationMessageType::SystemDecision,
+            created_at: now,
+            updated_at: now,
+            metadata: None,
+        };
+        tracing::info!(
+            thread_id = self.ctx.thread_id,
+            execution_run_id = self.ctx.execution_run_id,
+            step = step,
+            "transient steer fired"
+        );
+        self.conversations.push(conversation);
     }
 
     pub(crate) async fn create_conversation(
@@ -203,11 +244,31 @@ impl AgentExecutor {
                 !matches!(conv.message_type, ConversationMessageType::ExecutionSummary)
             }))
             .collect::<Vec<_>>();
+
+        let mut response_for_request: std::collections::HashMap<i64, &ConversationRecord> =
+            std::collections::HashMap::new();
+        let mut skip_conversation_ids: std::collections::HashSet<i64> =
+            std::collections::HashSet::new();
+        for conv in &ordered_conversations {
+            if let ConversationContent::ClarificationResponse {
+                request_message_id: Some(req_id),
+                ..
+            } = &conv.content
+            {
+                response_for_request.insert(*req_id, *conv);
+            }
+        }
+
         let mut i = 0;
 
         while i < ordered_conversations.len() {
             let conv = ordered_conversations[i];
             let timestamp = Some(conv.created_at.to_rfc3339());
+
+            if skip_conversation_ids.contains(&conv.id) {
+                i += 1;
+                continue;
+            }
 
             match conv.message_type {
                 ConversationMessageType::ExecutionSummary => {
@@ -267,15 +328,11 @@ impl AgentExecutor {
 
                 ConversationMessageType::Steer => {
                     if let ConversationContent::Steer {
-                        message, attachments, ..
+                        message,
+                        attachments,
+                        ..
                     } = &conv.content
                     {
-                        // Render the message verbatim under role="model". Do NOT wrap it in a
-                        // narrative like `I sent this message to the user: "..."` — the model
-                        // imitates that structure in its own subsequent replies. Timestamps
-                        // are also intentionally omitted from model turns; gap markers between
-                        // entries provide any needed temporal context without making timestamps
-                        // look like an output format the model should copy.
                         let mut text = message.trim().to_string();
                         if let Some(att_list) = attachments {
                             if !att_list.is_empty() {
@@ -287,12 +344,7 @@ impl AgentExecutor {
                                 text.push_str(&format!("\n[attachments: {paths}]"));
                             }
                         }
-                        history.push(LlmHistoryEntry::with_content(
-                            "model",
-                            "steer",
-                            None,
-                            text,
-                        ));
+                        history.push(LlmHistoryEntry::with_content("model", "steer", None, text));
                     }
                     i += 1;
                 }
@@ -308,7 +360,6 @@ impl AgentExecutor {
                     {
                         let mut inline_parts: Vec<LlmHistoryPart> = Vec::new();
 
-                        // Special case: read_image embeds image bytes as inline data for vision.
                         if tool_name == "read_image" {
                             let path = output
                                 .as_ref()
@@ -332,31 +383,13 @@ impl AgentExecutor {
                             }
                         }
 
-                        let input_text = Self::format_input_for_history(input);
-                        let narrative = match status.as_str() {
-                            "success" => {
-                                let output_text = output
-                                    .as_ref()
-                                    .map(|v| Self::format_output_for_history(tool_name, v))
-                                    .unwrap_or_else(|| "(no output)".to_string());
-                                format!(
-                                    "Tool `{tool_name}` ran successfully.\nInput: {input_text}\nOutput:\n{output_text}"
-                                )
-                            }
-                            "error" => {
-                                let error_text =
-                                    error.as_deref().unwrap_or("(no error detail provided)");
-                                format!(
-                                    "Tool `{tool_name}` failed.\nInput: {input_text}\nError: {error_text}"
-                                )
-                            }
-                            "pending" => {
-                                format!("Tool `{tool_name}` is pending (awaiting approval or async completion).\nInput: {input_text}")
-                            }
-                            other => {
-                                format!("Tool `{tool_name}` returned status `{other}`.\nInput: {input_text}")
-                            }
-                        };
+                        let narrative = Self::render_tool_event(
+                            tool_name,
+                            status.as_str(),
+                            input,
+                            output.as_ref(),
+                            error.as_deref(),
+                        );
 
                         let mut parts = vec![LlmHistoryPart::text(narrative)];
                         parts.extend(inline_parts);
@@ -397,13 +430,8 @@ impl AgentExecutor {
                         text.push_str(
                             "\n[Waiting for the user to approve or deny before continuing.]",
                         );
-                        // Model-role — omit timestamp prefix (see steer comment above).
-                        let mut entry = LlmHistoryEntry::with_content(
-                            "model",
-                            "approval_request",
-                            None,
-                            text,
-                        );
+                        let mut entry =
+                            LlmHistoryEntry::with_content("model", "approval_request", None, text);
                         entry.metadata = conv.metadata.clone();
                         history.push(entry);
                     }
@@ -432,27 +460,194 @@ impl AgentExecutor {
                     i += 1;
                 }
 
-                ConversationMessageType::AssignmentEvent => {
-                    if let ConversationContent::AssignmentEvent { summary, .. } = &conv.content {
-                        let text = summary
-                            .as_deref()
-                            .unwrap_or("Assignment event (no summary)")
-                            .to_string();
+                ConversationMessageType::ClarificationRequest => {
+                    if let ConversationContent::ClarificationRequest { questions, context } =
+                        &conv.content
+                    {
+                        let parsed_questions: Vec<models::Question> =
+                            serde_json::from_value(questions.clone()).unwrap_or_default();
+
+                        let response = response_for_request.get(&conv.id);
+                        let parsed_answers: Vec<models::QuestionAnswer> = response
+                            .and_then(|resp| {
+                                if let ConversationContent::ClarificationResponse {
+                                    answers, ..
+                                } = &resp.content
+                                {
+                                    serde_json::from_value(answers.clone()).ok()
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or_default();
+
+                        let outcome = if let Some(resp) = response {
+                            skip_conversation_ids.insert(resp.id);
+                            ClarificationOutcome::Answered(&parsed_answers)
+                        } else if ordered_conversations[i + 1..]
+                            .iter()
+                            .any(|c| {
+                                matches!(c.message_type, ConversationMessageType::UserMessage)
+                            })
+                        {
+                            ClarificationOutcome::Expired
+                        } else {
+                            ClarificationOutcome::Pending
+                        };
+
+                        let text = Self::format_clarification_entry(
+                            &parsed_questions,
+                            context.as_deref(),
+                            outcome,
+                        );
                         let mut entry = LlmHistoryEntry::with_content(
                             "user",
-                            "assignment_event",
+                            "clarification",
                             timestamp.clone(),
-                            format!("[Task event]\n{text}"),
+                            text,
                         );
                         entry.metadata = conv.metadata.clone();
                         history.push(entry);
                     }
                     i += 1;
                 }
+
+                ConversationMessageType::ClarificationResponse => {
+                    i += 1;
+                }
+
             }
         }
 
         history
+    }
+
+    fn format_clarification_entry(
+        questions: &[models::Question],
+        context: Option<&str>,
+        outcome: ClarificationOutcome,
+    ) -> String {
+        let mut out = String::new();
+        out.push_str("You asked me the following question(s):");
+        for q in questions {
+            out.push_str("\n- ");
+            out.push_str(q.text.trim());
+            let expected = Self::describe_answer_kind(&q.answer_kind);
+            out.push_str(&format!("\n  (expected: {expected})"));
+        }
+        if let Some(ctx) = context.map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            out.push_str(&format!("\nContext you gave me: {ctx}"));
+        }
+
+        match outcome {
+            ClarificationOutcome::Answered(answers) => {
+                out.push_str("\n\nMy answers:");
+                for q in questions {
+                    let answer_text = answers
+                        .iter()
+                        .find(|a| a.question_id == q.id)
+                        .map(|a| Self::describe_answer_value(&a.value))
+                        .unwrap_or_else(|| "(no answer recorded)".to_string());
+                    out.push_str(&format!("\n- {}: {}", q.text.trim(), answer_text));
+                }
+            }
+            ClarificationOutcome::Expired => {
+                out.push_str(
+                    "\n\nI didn't answer that directly — I sent you a follow-up message instead, so treat this question as expired. Use my later message as my actual intent.",
+                );
+            }
+            ClarificationOutcome::Pending => {
+                out.push_str(
+                    "\n\nI haven't answered yet. Wait for my response; don't ask again — one pending set at a time.",
+                );
+            }
+        }
+
+        out
+    }
+
+    fn describe_answer_kind(kind: &models::AnswerKind) -> String {
+        match kind {
+            models::AnswerKind::FreeText { placeholder, max_length } => {
+                let mut s = String::from("free text");
+                if let Some(p) = placeholder.as_deref().filter(|s| !s.is_empty()) {
+                    s.push_str(&format!(" — hint: {p}"));
+                }
+                if let Some(m) = max_length {
+                    s.push_str(&format!(" (max {m} chars)"));
+                }
+                s
+            }
+            models::AnswerKind::SingleChoice { choices, allow_other } => {
+                let labels = choices
+                    .iter()
+                    .map(|c| c.label.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if *allow_other {
+                    format!("one of [{labels}] or a free-text 'other' value")
+                } else {
+                    format!("one of [{labels}]")
+                }
+            }
+            models::AnswerKind::MultiChoice { choices, min_selected, max_selected } => {
+                let labels = choices
+                    .iter()
+                    .map(|c| c.label.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let bounds = match (min_selected, max_selected) {
+                    (Some(min), Some(max)) => format!(", pick {min}-{max}"),
+                    (Some(min), None) => format!(", at least {min}"),
+                    (None, Some(max)) => format!(", at most {max}"),
+                    (None, None) => String::new(),
+                };
+                format!("any of [{labels}]{bounds}")
+            }
+            models::AnswerKind::YesNo => String::from("yes / no"),
+            models::AnswerKind::Number { min, max, unit } => {
+                let mut s = String::from("a number");
+                match (min, max) {
+                    (Some(min), Some(max)) => s.push_str(&format!(" between {min} and {max}")),
+                    (Some(min), None) => s.push_str(&format!(" ≥ {min}")),
+                    (None, Some(max)) => s.push_str(&format!(" ≤ {max}")),
+                    (None, None) => {}
+                }
+                if let Some(u) = unit.as_deref().filter(|s| !s.is_empty()) {
+                    s.push_str(&format!(" {u}"));
+                }
+                s
+            }
+            models::AnswerKind::Date { min_date, max_date } => {
+                let mut s = String::from("a date (yyyy-mm-dd)");
+                match (min_date, max_date) {
+                    (Some(a), Some(b)) => s.push_str(&format!(" between {a} and {b}")),
+                    (Some(a), None) => s.push_str(&format!(" on or after {a}")),
+                    (None, Some(b)) => s.push_str(&format!(" on or before {b}")),
+                    (None, None) => {}
+                }
+                s
+            }
+            models::AnswerKind::Confirm { confirm_label, cancel_label } => {
+                format!("confirm ({confirm_label}) or cancel ({cancel_label})")
+            }
+        }
+    }
+
+    fn describe_answer_value(value: &models::AnswerValue) -> String {
+        match value {
+            models::AnswerValue::FreeText { value } => value.clone(),
+            models::AnswerValue::SingleChoice { value } => value.clone(),
+            models::AnswerValue::MultiChoice { values } => values.join(", "),
+            models::AnswerValue::YesNo { value } => {
+                if *value { "yes".into() } else { "no".into() }
+            }
+            models::AnswerValue::Number { value } => value.to_string(),
+            models::AnswerValue::Date { value } => value.clone(),
+            models::AnswerValue::Confirm { accepted } => {
+                if *accepted { "confirmed".into() } else { "cancelled".into() }
+            }
+        }
     }
 
     fn system_decision_history_entry(&self, conv: &ConversationRecord) -> Option<LlmHistoryEntry> {
@@ -474,8 +669,6 @@ impl AgentExecutor {
             Self::format_agent_decision_narrative(step, reasoning)
         };
 
-        // Model-role entry — skip timestamp prefix so the model doesn't treat
-        // `[2026-...T...] ` as part of its own output format.
         let mut entry = LlmHistoryEntry::with_content("model", "system_decision", None, text);
         entry.metadata = conv.metadata.clone();
         Some(entry)
@@ -483,22 +676,356 @@ impl AgentExecutor {
 
     fn format_agent_decision_narrative(step: &str, reasoning: &str) -> String {
         match step {
-            "note" => format!("[Note]\n{reasoning}"),
-            "note_loop_guard" => format!("[System — note guard]\n{reasoning}"),
-            "tool_call_loop_guard" => format!("[System — tool-call loop guard]\n{reasoning}"),
-            "empty_response_guard" => format!("[System — empty response]\n{reasoning}"),
+            "note" => format!("{reasoning}"),
+            "note_loop_guard" => format!("{reasoning}"),
+            "tool_call_loop_guard" => format!("{reasoning}"),
+            "empty_response_guard" => format!("{reasoning}"),
             "complete_blocked_by_task_graph" => {
-                format!("[System — task graph still has unfinished work]\n{reasoning}")
+                format!("{reasoning}")
             }
-            other => format!("[System — {other}]\n{reasoning}"),
+            _other => format!("{reasoning}"),
         }
     }
 
-    // Full output — no truncation. The decision LLM needs every byte to reason correctly.
-    // Context overflow is handled by the conversation compaction path, not here.
+    /// Render one tool-result conversation row as natural prose for LLM history.
+    /// Past actions read as a developer's terminal session — verb + arg + observation —
+    /// not as `Tool X ran successfully\nInput: {...}\nOutput:` blocks.
+    fn render_tool_event(
+        tool_name: &str,
+        status: &str,
+        input: &Value,
+        output: Option<&Value>,
+        error: Option<&str>,
+    ) -> String {
+        let action = Self::describe_tool_action(tool_name, input);
+        match status {
+            "success" => {
+                let body = output
+                    .map(|v| Self::format_output_for_history(tool_name, v))
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty() && s != "(empty)");
+                match body {
+                    Some(body) => format!(
+                        "You ran the tool: {action}\n\nIt produced:\n{body}"
+                    ),
+                    None => format!(
+                        "You ran the tool: {action}\n\nIt produced no output."
+                    ),
+                }
+            }
+            "error" => {
+                let detail = error.unwrap_or("(no detail)");
+                format!(
+                    "You ran the tool: {action}\n\nIt failed with: {detail}\n\nIf this result matters for the task, retry with different inputs or take a different approach. Do not pretend it succeeded or invent the output you wished it returned.",
+                )
+            }
+            "pending" => {
+                format!(
+                    "You called the tool: {action}\n\nIt's waiting for my approval and hasn't run yet. Don't act as if it produced output until you see it execute.",
+                )
+            }
+            other => {
+                format!(
+                    "You ran the tool: {action}\n\nIt returned status `{other}`. Treat the result as inconclusive — verify before relying on it.",
+                )
+            }
+        }
+    }
+
+    /// Map (tool_name, input) → a natural-prose action phrase.
+    /// Known internal tools get hand-tuned verb+arg forms.
+    /// Unknown / custom / MCP tools fall back to `Called <name>(<compact-args>)`.
+    fn describe_tool_action(tool_name: &str, input: &Value) -> String {
+        let str_field = |key: &str| -> &str {
+            input.get(key).and_then(|v| v.as_str()).unwrap_or_default()
+        };
+        let u64_field = |key: &str| -> Option<u64> { input.get(key).and_then(|v| v.as_u64()) };
+
+        match tool_name {
+            "read_file" => {
+                let path = str_field("path");
+                match (u64_field("start_line"), u64_field("end_line")) {
+                    (Some(s), Some(e)) => format!("Read {path} lines {s}..{e}"),
+                    (Some(s), None) => format!("Read {path} from line {s}"),
+                    _ => format!("Read {path}"),
+                }
+            }
+            "write_file" => {
+                let path = str_field("path");
+                if input
+                    .get("append")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    format!("Appended to {path}")
+                } else {
+                    format!("Wrote {path}")
+                }
+            }
+            "edit_file" => {
+                let path = str_field("path");
+                let s = u64_field("start_line").unwrap_or(0);
+                let e = u64_field("end_line").unwrap_or(0);
+                format!("Edited {path} lines {s}..{e}")
+            }
+            "execute_command" => {
+                let cmd = Self::truncate_str(str_field("command"), 300);
+                format!("Ran `{cmd}`")
+            }
+            "web_search" => {
+                let obj = str_field("objective");
+                if !obj.is_empty() {
+                    format!("Searched web for {obj}")
+                } else if let Some(qs) = input.get("search_queries").and_then(|v| v.as_array()) {
+                    let joined = qs
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    if joined.is_empty() {
+                        "Searched web".to_string()
+                    } else {
+                        format!("Searched web: {joined}")
+                    }
+                } else {
+                    "Searched web".to_string()
+                }
+            }
+            "url_content" => {
+                let urls = input.get("urls").and_then(|v| v.as_array());
+                match urls {
+                    Some(arr) if !arr.is_empty() => {
+                        let first = arr.first().and_then(|v| v.as_str()).unwrap_or("");
+                        let rest = arr.len().saturating_sub(1);
+                        if rest == 0 {
+                            format!("Fetched {first}")
+                        } else {
+                            format!("Fetched {first} (+{rest} more)")
+                        }
+                    }
+                    _ => "Fetched URL".to_string(),
+                }
+            }
+            "search_knowledgebase" => {
+                let q = str_field("query");
+                if q.is_empty() {
+                    "Searched knowledge base".to_string()
+                } else {
+                    format!("Searched knowledge base for \"{q}\"")
+                }
+            }
+            "load_memory" => {
+                let q = str_field("query");
+                if q.is_empty() {
+                    "Loaded memory".to_string()
+                } else {
+                    format!("Loaded memory for \"{q}\"")
+                }
+            }
+            "save_memory" => {
+                let category = str_field("category");
+                let scope = str_field("scope");
+                match (category.is_empty(), scope.is_empty()) {
+                    (false, false) => format!("Saved memory ({category}, {scope})"),
+                    (false, true) => format!("Saved memory ({category})"),
+                    _ => "Saved memory".to_string(),
+                }
+            }
+            "update_memory" => {
+                let id = str_field("memory_id");
+                if id.is_empty() {
+                    "Updated memory".to_string()
+                } else {
+                    format!("Updated memory {id}")
+                }
+            }
+            "read_image" => {
+                let path = str_field("path");
+                if path.is_empty() {
+                    "Inspected image".to_string()
+                } else {
+                    format!("Inspected image {path}")
+                }
+            }
+            "list_threads" => "Listed threads".to_string(),
+            "create_thread" => {
+                let title = str_field("title");
+                if title.is_empty() {
+                    "Created thread".to_string()
+                } else {
+                    format!("Created thread \"{title}\"")
+                }
+            }
+            "update_thread" => {
+                let id = str_field("thread_id");
+                if id.is_empty() {
+                    "Updated thread".to_string()
+                } else {
+                    format!("Updated thread {id}")
+                }
+            }
+            "create_project_task" => {
+                let title = str_field("title");
+                if title.is_empty() {
+                    "Created project task".to_string()
+                } else {
+                    format!("Created project task \"{title}\"")
+                }
+            }
+            "update_project_task" => {
+                let key = str_field("task_key");
+                let status = str_field("status");
+                match (key.is_empty(), status.is_empty()) {
+                    (false, false) => format!("Updated project task {key} (status={status})"),
+                    (false, true) => format!("Updated project task {key}"),
+                    (true, false) => format!("Updated project task (status={status})"),
+                    _ => "Updated project task".to_string(),
+                }
+            }
+            "assign_project_task" => {
+                let key = str_field("task_key");
+                if key.is_empty() {
+                    "Assigned project task".to_string()
+                } else {
+                    format!("Assigned project task {key}")
+                }
+            }
+            "task_graph_add_node" => {
+                let title = str_field("title");
+                if title.is_empty() {
+                    "Added task graph node".to_string()
+                } else {
+                    format!("Added task graph node \"{title}\"")
+                }
+            }
+            "task_graph_add_dependency" => {
+                let from = str_field("from_node_id");
+                let to = str_field("to_node_id");
+                format!("Added task graph dependency {from} → {to}")
+            }
+            "task_graph_mark_in_progress" => {
+                format!(
+                    "Marked task graph node {} in progress",
+                    str_field("node_id")
+                )
+            }
+            "task_graph_complete_node" => {
+                format!("Completed task graph node {}", str_field("node_id"))
+            }
+            "task_graph_fail_node" => {
+                format!("Failed task graph node {}", str_field("node_id"))
+            }
+            "task_graph_reset" => {
+                let reason = str_field("reason");
+                if reason.is_empty() {
+                    "Reset task graph".to_string()
+                } else {
+                    format!("Reset task graph: {reason}")
+                }
+            }
+            "search_tools" => {
+                let queries = input.get("queries").and_then(|v| v.as_array());
+                let apps = input.get("apps").and_then(|v| v.as_array());
+                if let Some(arr) = queries.filter(|a| !a.is_empty()) {
+                    let q = arr
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("Searched tools: {q}")
+                } else if let Some(arr) = apps.filter(|a| !a.is_empty()) {
+                    let names = arr
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("Browsed tools for apps: {names}")
+                } else {
+                    "Searched tools".to_string()
+                }
+            }
+            "load_tools" => {
+                let names = input.get("tool_names").and_then(|v| v.as_array());
+                match names {
+                    Some(arr) if !arr.is_empty() => {
+                        let joined = arr
+                            .iter()
+                            .filter_map(|v| v.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!("Loaded tools: {joined}")
+                    }
+                    _ => "Loaded tools".to_string(),
+                }
+            }
+            "sleep" => {
+                let ms = u64_field("duration_ms").unwrap_or(0);
+                format!("Slept {ms}ms")
+            }
+            "abort_task" => {
+                let directive = str_field("directive");
+                if directive.is_empty() {
+                    "Aborted task".to_string()
+                } else {
+                    format!("Aborted task ({directive})")
+                }
+            }
+            "note" => "Noted".to_string(),
+            _ => {
+                let summary = Self::compact_input_summary(input);
+                if summary.is_empty() {
+                    format!("Called {tool_name}")
+                } else {
+                    format!("Called {tool_name}({summary})")
+                }
+            }
+        }
+    }
+
+    /// Compact one-line summary of a tool input for unknown/custom tools.
+    /// Renders as `key=val, key=val` for objects (first 3 fields), capped to ~80 chars.
+    fn compact_input_summary(input: &Value) -> String {
+        const MAX_TOTAL: usize = 200;
+        const MAX_VAL: usize = 80;
+        match input {
+            Value::Object(map) => {
+                let pairs: Vec<String> = map
+                    .iter()
+                    .take(3)
+                    .map(|(k, v)| {
+                        let val_str = match v {
+                            Value::String(s) => format!("\"{}\"", Self::truncate_str(s, MAX_VAL)),
+                            Value::Number(n) => n.to_string(),
+                            Value::Bool(b) => b.to_string(),
+                            Value::Null => "null".to_string(),
+                            Value::Array(a) => format!("[{} items]", a.len()),
+                            Value::Object(_) => "{...}".to_string(),
+                        };
+                        format!("{k}={val_str}")
+                    })
+                    .collect();
+                let mut joined = pairs.join(", ");
+                if map.len() > 3 {
+                    joined.push_str(", ...");
+                }
+                Self::truncate_str(&joined, MAX_TOTAL).to_string()
+            }
+            Value::Null => String::new(),
+            Value::String(s) => format!("\"{}\"", Self::truncate_str(s, MAX_TOTAL)),
+            other => Self::truncate_str(&other.to_string(), MAX_TOTAL).to_string(),
+        }
+    }
+
+    fn truncate_str(s: &str, max: usize) -> String {
+        let count = s.chars().count();
+        if count <= max {
+            return s.to_string();
+        }
+        let truncated: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{truncated}…")
+    }
+
     fn format_output_for_history(tool_name: &str, value: &Value) -> String {
-        // read_file stores raw content in the DB; number lines only for the
-        // LLM view so the conversation record stays clean.
         if tool_name == "read_file" {
             if let Some(obj) = value.as_object() {
                 let content = obj.get("content").and_then(|v| v.as_str());
@@ -516,10 +1043,7 @@ impl AgentExecutor {
                         .collect::<Vec<_>>()
                         .join("\n");
                     let mut preview = obj.clone();
-                    preview.insert(
-                        "content".to_string(),
-                        Value::String(numbered),
-                    );
+                    preview.insert("content".to_string(), Value::String(numbered));
                     return serde_json::to_string_pretty(&Value::Object(preview))
                         .unwrap_or_else(|_| value.to_string());
                 }
@@ -533,23 +1057,6 @@ impl AgentExecutor {
         }
     }
 
-    // Input is just an echo of what was sent — cap it to avoid wasting context on verbose params.
-    fn format_input_for_history(value: &Value) -> String {
-        const MAX: usize = 800;
-        let raw = match value {
-            Value::String(s) => s.clone(),
-            Value::Null => "(empty)".to_string(),
-            _ => serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string()),
-        };
-        let char_count = raw.chars().count();
-        if char_count > MAX {
-            let truncated: String = raw.chars().take(MAX).collect();
-            format!("{}… [truncated — {} chars total]", truncated, char_count)
-        } else {
-            raw
-        }
-    }
-
     pub(crate) fn map_conversation_type_to_role(
         &self,
         msg_type: &ConversationMessageType,
@@ -557,6 +1064,7 @@ impl AgentExecutor {
         match msg_type {
             ConversationMessageType::UserMessage
             | ConversationMessageType::ApprovalResponse
+            | ConversationMessageType::ClarificationResponse
             | ConversationMessageType::ToolResult => "user",
             _ => "model",
         }
@@ -790,19 +1298,17 @@ Output plain text only — no JSON, no code fences, no surrounding prose."#,
             ConversationContent::ExecutionSummary {
                 agent_execution, ..
             } => format!("SUMMARY {}", agent_execution),
-            ConversationContent::AssignmentEvent {
-                kind,
-                assignment_id,
-                summary,
-                ..
-            } => format!(
-                "ASSIGNMENT_EVENT kind={:?} assignment_id={} summary={}",
-                kind,
-                assignment_id
-                    .map(|id| id.to_string())
-                    .unwrap_or_else(|| "-".to_string()),
-                summary.as_deref().unwrap_or("")
+            ConversationContent::ClarificationRequest { questions, context } => format!(
+                "CLARIFICATION_REQUEST questions={} context={}",
+                compact_json_preview(questions, 4000),
+                context.as_deref().unwrap_or("")
             ),
+            ConversationContent::ClarificationResponse { answers, .. } => {
+                format!(
+                    "CLARIFICATION_RESPONSE answers={}",
+                    compact_json_preview(answers, 4000)
+                )
+            }
         }
     }
 }
@@ -861,6 +1367,7 @@ fn conversation_message_type_label(message_type: &ConversationMessageType) -> &'
         ConversationMessageType::ApprovalRequest => "approval_request",
         ConversationMessageType::ApprovalResponse => "approval_response",
         ConversationMessageType::ExecutionSummary => "execution_summary",
-        ConversationMessageType::AssignmentEvent => "assignment_event",
+        ConversationMessageType::ClarificationRequest => "clarification_request",
+        ConversationMessageType::ClarificationResponse => "clarification_response",
     }
 }

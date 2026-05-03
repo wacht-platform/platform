@@ -83,11 +83,13 @@ dependencies = [
  "shellish_parse",
  "strsim",
  "templatekit",
+ "thiserror 1.0.69",
  "tiktoken-rs 0.5.9",
  "tokio",
  "tokio-stream",
  "tracing",
  "urlencoding",
+ "wacht-sandbox-client",
 ]
 
 [[package]]
@@ -5091,7 +5093,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -6464,6 +6466,7 @@ dependencies = [
  "futures",
  "infer",
  "models",
+ "opentelemetry",
  "queries",
  "redis",
  "reqwest",
@@ -7769,6 +7772,16 @@ dependencies = [
  "js-sys",
  "serde",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "serde_bytes"
+version = "0.11.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5d440709e79d88e51ac01c4b72fc6cb7314017bb7da9eeff678aa94c10e3ea8"
+dependencies = [
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -9522,6 +9535,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "wacht-sandbox-client"
+version = "0.1.0"
+source = "git+https://github.com/wacht-platform/sandbox-client?branch=main#5f73369fd5b71d1ab1233336cd9c71aa634a7fe6"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "futures",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "walkdir"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9791,7 +9820,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.1",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

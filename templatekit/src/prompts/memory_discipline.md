@@ -1,127 +1,119 @@
 # Memory discipline
 
-You have `save_memory` / `load_memory`. Memory is for durable facts and procedures that matter beyond the current task — not for progress, not for notes.
+`save_memory` / `load_memory`. Memory = durable facts and procedures beyond current task. Not progress. Not notes.
 
 ## Two categories
 
-Pick one when saving:
-
-- **`semantic`** — a fact. What is true. Invariants, definitions, constraints, decisions with reason.
-- **`procedural`** — a how-to. A validated sequence of steps worth reusing.
+- `semantic` — fact. Invariants, definitions, constraints, decisions with reason.
+- `procedural` — how-to. Validated reusable sequence.
 
 No other category.
 
 ## Three scopes
 
-Pick one when saving. Scope controls who can recall the memory.
+- `actor` — visible to every task this user runs. User preferences, personal style.
+- `project` — visible within one project. Project conventions, decisions, constraints.
+- `thread` — visible within one task lane. Outlives compaction but not other tasks.
 
-- **`actor`** — visible to every task this user/actor ever runs. Use for user preferences, personal style rules.
-- **`project`** — visible within one project. Use for project conventions, decisions, constraints.
-- **`thread`** — visible within one task lane. Use when a fact outlives compaction but doesn't matter outside this task.
-
-Default to `project`. `actor` is rare (real personal preferences). `thread` is short-lived but more durable than conversation.
+Default `project`. `actor` rare. `thread` short-lived but more durable than conversation.
 
 ## When to save
 
 Three triggers:
 
-1. **Surprise** — reality differed from your model. Future-you would make the same mistake without this note. → `semantic`.
-2. **Decision with reason** — a user correction to honor, or a validated "we chose X because Y". → `semantic`.
-3. **Validated procedure** — a multi-step sequence that worked, non-obvious, worth reusing. → `procedural`.
+1. **Surprise** — reality differed from model. Future-you would repeat the mistake. → `semantic`.
+2. **Decision with reason** — user correction or validated "we chose X because Y". → `semantic`.
+3. **Validated procedure** — non-obvious multi-step sequence worth reuse. → `procedural`.
 
 Do NOT save:
-- Anything re-readable from code, docs, or `git log`.
+- Re-readable from code, docs, `git log`.
 - Ephemeral progress ("working on X") — journal's job.
-- Observations that might be true — verify first, save if confirmed.
-- Restatements of the task brief or acceptance criteria.
+- Observations not yet verified.
+- Restatements of task brief or acceptance criteria.
 
 ## When to load
 
-- At task start, before making non-trivial decisions: `load_memory` with **specific** query terms tied to the task.
-- Before any decision where a prior ruling might apply.
+- Task start, before non-trivial decisions. Specific terms tied to task.
+- Before any decision where prior ruling might apply.
 
-Specific query wins. `load_memory("oauth refresh token rotation")` beats `load_memory("auth")`.
+Specific query wins. "oauth refresh token rotation" beats "auth".
 
 ## Entry format
 
-Three parts, in order:
+Three parts in order:
 
-1. **The fact or procedure** — one line, independently readable outside this thread.
-2. **`Why:`** — the reason. Prior incident, explicit user statement, or validated outcome.
-3. **`How to apply:`** — the trigger that should make you recall it.
+1. Fact or procedure — one line, readable outside this thread.
+2. `Why:` — reason. Prior incident, user statement, validated outcome.
+3. `How to apply:` — trigger that recalls it.
 
-- Good (semantic, project):
-  ```
-  OAuth refresh tokens must be rotated on every use; reuse is treated as theft.
-  Why: legal flagged reuse as non-compliant with spec 2025-11.
-  How to apply: any code path that stores or re-reads refresh_token.
-  ```
-- Good (procedural, project):
-  ```
-  To apply a schema migration safely: run `cargo sqlx prepare` locally, commit the cache, then deploy.
-  Why: skipping the prepare step ships stale query metadata and breaks the worker.
-  How to apply: any PR that changes SQL in commands/ or queries/.
-  ```
-- Bad: "Don't reuse OAuth tokens." (no why, no trigger)
+Good (semantic, project):
+```
+OAuth refresh tokens must rotate every use; reuse is theft.
+Why: legal flagged reuse non-compliant with spec 2025-11.
+How to apply: any code path storing or re-reading refresh_token.
+```
+Good (procedural, project):
+```
+Apply schema migration safely: run `cargo sqlx prepare`, commit cache, deploy.
+Why: skipping prepare ships stale query metadata, breaks worker.
+How to apply: any PR changing SQL in commands/ or queries/.
+```
+Bad: "Don't reuse OAuth tokens." (no why, no trigger)
 
-Entries must make sense in a week, read by a different execution. No references to "this thread", "the current task", "we just discussed".
+Entries readable in a week by different execution. No "this thread", "current task", "we just discussed".
 
 ## Category + scope quick table
 
 | Saving… | Category | Scope |
-|---------|----------|-------|
-| A surprise about the system or project | `semantic` | `project` |
-| A decision made in this project with reason | `semantic` | `project` |
-| A hidden constraint (spec, legal, stakeholder) | `semantic` | `project` |
-| A personal preference of the user | `semantic` | `actor` |
+|---|---|---|
+| Surprise about system or project | `semantic` | `project` |
+| Decision in this project with reason | `semantic` | `project` |
+| Hidden constraint (spec, legal, stakeholder) | `semantic` | `project` |
+| User personal preference | `semantic` | `actor` |
 | "How we do X in this project" (validated) | `procedural` | `project` |
-| A validated recipe that outlives this task but not this project | `procedural` | `project` |
-| A fact that matters across tasks on this same lane | `semantic` | `thread` |
+| Validated recipe outliving task but not project | `procedural` | `project` |
+| Fact across tasks on same lane | `semantic` | `thread` |
 
-## Building the chain of thought
+## Chain of thought
 
-A distilled rule is not enough on its own. When you save a non-trivial memory, also capture the scenario around it — so a future execution can reconstruct *why* the rule applies, not just *that* it does.
+Distilled rule alone is not enough. Capture scenario around it. Future execution must reconstruct *why* the rule applies, not just *that* it does.
 
-`save_memory` accepts three additional optional fields beyond `content`:
+`save_memory` accepts three optional fields beyond `content`:
 
-- **`observation`** — the narrative that led to the insight. The "scenario". One paragraph: what you were doing, what you saw, what surprised you, what confirmed the rule.
-- **`signals`** — short cue phrases (3–6 words each). What would tell a future execution "this memory applies to what I'm doing right now"?
-- **`related`** — memory IDs of neighbors in the reasoning chain. When this memory fires, these are worth considering too.
+- `observation` — narrative leading to insight. One paragraph: what doing, what saw, what surprised, what confirmed.
+- `signals` — short cue phrases (3-6 words). Tells future execution "this memory applies now".
+- `related` — memory IDs of neighbors in reasoning chain. When this memory fires, these worth considering.
 
-Populate `observation` + `signals` for anything non-trivial. A one-line rule without a scenario is fine for common facts; anything born of debugging, incident, or negotiation deserves the full shape.
+Populate `observation` + `signals` for non-trivial. One-line rule fine for common facts. Debugging, incident, negotiation: full shape required.
 
-- Good (full shape):
-  ```
-  content:
-    OAuth refresh tokens must be rotated on every use.
-    Why: legal flagged reuse as non-compliant with spec 2025-11.
-    How to apply: any code path that stores or re-reads refresh_token.
+Good (full shape):
+```
+content:
+  OAuth refresh tokens must rotate every use.
+  Why: legal flagged reuse non-compliant with spec 2025-11.
+  How to apply: any code path storing or re-reading refresh_token.
 
-  observation:
-    During the 2025-11 audit, the token refresh endpoint returned the same
-    refresh_token after rotation. Legal reviewed under the new spec and
-    classified reuse as theft-equivalent. Fix was generating a new
-    refresh_token every rotation; verified via compliance e2e test.
+observation:
+  2025-11 audit, refresh endpoint returned same refresh_token after
+  rotation. Legal classified reuse theft-equivalent. Fix: generate new
+  refresh_token every rotation; verified via compliance e2e test.
 
-  signals: ["oauth audit", "token rotation flow", "refresh token reuse"]
-  related: ["<id of session storage memory>", "<id of legal spec memory>"]
-  ```
+signals: ["oauth audit", "token rotation flow", "refresh token reuse"]
+related: ["<id of session storage memory>", "<id of legal spec memory>"]
+```
 
-## Loading — follow the chain until clues saturate
+## Loading — follow chain until saturate
 
-A single `load_memory` hit is often not enough. Teach yourself to follow the chain:
+Single hit often not enough. Follow chain:
 
-1. **First query** — `load_memory` with specific terms tied to the current task.
-2. For each hit: read `content` + `signals` — do the signals match your situation?
-3. **If signals match** — read `observation`. This is where assumptions die: the narrative tells you *when* the rule applies and *when it doesn't*.
-4. **If `related` is non-empty and the current decision is non-trivial** — load those memories too. Follow the chain one hop at a time.
-5. **Stop when clues saturate** — new loads return the same memories, or add no new context. State explicitly in a `note` that you're stopping and why ("signals across three memories all point to the same constraint; no further loading needed").
+1. First query: specific terms tied to task.
+2. Each hit: read `content` + `signals`. Signals match situation?
+3. Signals match → read `observation`. Tells when rule applies AND when not.
+4. `related` non-empty AND decision non-trivial → load those too. One hop at a time.
+5. Stop saturated. New loads return same memories or add no context. State explicitly in note.
 
-The goal is: before you act on a recalled rule, you should know the *scenario* that produced it well enough not to misapply it. No assumption is acceptable when the observation was there to be read.
+Goal: before acting on recalled rule, know the scenario well enough not to misapply.
 
-- Good: `load_memory("oauth refresh token") → 1 hit, signals match, read observation, follow 2 related IDs, saturated after 4 memories. Proceeding with full context.`
-- Bad: `load_memory("auth") → got something, applying blindly.`
+## User says "remember this" or "forget that"
 
-## If the user says "remember this" or "forget that"
-
-Save or remove immediately. Do not batch. Do not ask — use the table.
+Save or remove immediately. No batch. No ask. Use the table.
