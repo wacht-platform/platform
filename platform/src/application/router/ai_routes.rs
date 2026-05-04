@@ -214,6 +214,23 @@ pub(super) fn ai_routes() -> Router<AppState> {
             post(api::agent_threads::unarchive_project_task_board_item),
         )
         .route(
+            "/ai/actor-projects/{project_id}/board/items/{item_id}/cancel",
+            post(api::agent_threads::cancel_project_task_board_item),
+        )
+        .route(
+            "/ai/actor-projects/{project_id}/board/items/{item_id}/answer",
+            post(api::agent_threads::answer_project_task_board_item_question),
+        )
+        .route(
+            "/ai/actor-projects/{project_id}/board/items/{item_id}/approval",
+            post(api::agent_threads::approve_project_task_board_item_tool),
+        )
+        .route(
+            "/ai/actor-projects/{project_id}/board/items/{item_id}/comments",
+            get(api::agent_threads::list_project_task_board_item_comments)
+                .post(api::agent_threads::create_project_task_board_item_comment),
+        )
+        .route(
             "/ai/actor-projects/{project_id}/threads",
             get(api::agent_threads::list_agent_threads)
                 .post(api::agent_threads::create_agent_thread),

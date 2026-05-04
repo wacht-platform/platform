@@ -1,5 +1,6 @@
 use crate::application::{
     agent_threads as agent_threads_app,
+    board_item_actions as board_actions_app,
     response::{ApiResult, PaginatedResponse},
 };
 use crate::middleware::RequireDeployment;
@@ -632,6 +633,87 @@ pub async fn unarchive_project_task_board_item(
     )
     .await?;
     Ok(item.into())
+}
+
+pub async fn cancel_project_task_board_item(
+    State(app_state): State<AppState>,
+    RequireDeployment(_deployment_id): RequireDeployment,
+    Path((project_id, item_id)): Path<(i64, i64)>,
+) -> ApiResult<ProjectTaskBoardItem> {
+    let item = board_actions_app::cancel_project_task_board_item(&app_state, project_id, item_id)
+        .await?;
+    Ok(item.into())
+}
+
+pub async fn answer_project_task_board_item_question(
+    State(app_state): State<AppState>,
+    RequireDeployment(_deployment_id): RequireDeployment,
+    Path((project_id, item_id)): Path<(i64, i64)>,
+    Json(submission): Json<dto::json::ask_user::AnswerSubmission>,
+) -> ApiResult<ProjectTaskBoardItem> {
+    let item = board_actions_app::answer_project_task_board_item_question(
+        &app_state,
+        project_id,
+        item_id,
+        submission,
+    )
+    .await?;
+    Ok(item.into())
+}
+
+pub async fn approve_project_task_board_item_tool(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path((project_id, item_id)): Path<(i64, i64)>,
+    Json(submission): Json<board_actions_app::ApprovalSubmission>,
+) -> ApiResult<ProjectTaskBoardItem> {
+    let item = board_actions_app::approve_project_task_board_item_tool(
+        &app_state,
+        deployment_id,
+        project_id,
+        item_id,
+        submission,
+    )
+    .await?;
+    Ok(item.into())
+}
+
+#[derive(Deserialize)]
+pub struct CommentParams {
+    pub actor_id: i64,
+}
+
+pub async fn list_project_task_board_item_comments(
+    State(app_state): State<AppState>,
+    RequireDeployment(_deployment_id): RequireDeployment,
+    Path((project_id, item_id)): Path<(i64, i64)>,
+) -> ApiResult<PaginatedResponse<models::ProjectTaskBoardItemComment>> {
+    let comments = board_actions_app::list_project_task_board_item_comments(
+        &app_state,
+        project_id,
+        item_id,
+    )
+    .await?;
+    Ok(PaginatedResponse::from(comments).into())
+}
+
+pub async fn create_project_task_board_item_comment(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path((project_id, item_id)): Path<(i64, i64)>,
+    Query(params): Query<CommentParams>,
+    Json(request): Json<board_actions_app::CreateCommentRequest>,
+) -> ApiResult<models::ProjectTaskBoardItemComment> {
+    let comment = board_actions_app::create_project_task_board_item_comment(
+        &app_state,
+        deployment_id,
+        params.actor_id,
+        project_id,
+        item_id,
+        request.body,
+    )
+    .await?;
+    Ok(comment.into())
 }
 
 pub async fn get_agent_thread_state(

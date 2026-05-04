@@ -10,7 +10,7 @@ pub(crate) fn task_graph_tools() -> Vec<(
         ("task_graph_add_node", "Add a node to the execution task graph.", InternalToolType::TaskGraphAddNode, task_graph_add_node_schema()),
         ("task_graph_add_dependency", "Add a dependency edge between two graph nodes (from_node -> to_node).", InternalToolType::TaskGraphAddDependency, task_graph_add_dependency_schema()),
         ("task_graph_mark_in_progress", "Mark a graph node in progress when you begin actively working on it.", InternalToolType::TaskGraphMarkInProgress, task_graph_mark_in_progress_schema()),
-        ("task_graph_complete_node", "Mark a graph node completed.", InternalToolType::TaskGraphCompleteNode, task_graph_complete_node_schema()),
+        ("task_graph_complete_node", "Mark a graph node completed. `node_id` MUST be a `created_node_id` returned by an earlier `task_graph_add_node` call in this run's history. Never invent or guess (`0`, `1`, names, etc.) — the runtime rejects unknown IDs. If no node has been created in this run, do NOT call this tool.", InternalToolType::TaskGraphCompleteNode, task_graph_complete_node_schema()),
         ("task_graph_fail_node", "Mark a graph node failed (auto-retries if budget remains).", InternalToolType::TaskGraphFailNode, task_graph_fail_node_schema()),
         ("task_graph_reset", "Abandon the current task graph and start fresh. Cancels all pending and in-progress nodes; the next task_graph_add_node auto-creates a new graph. Use when the user course-corrects and the existing plan is no longer valid.", InternalToolType::TaskGraphReset, task_graph_reset_schema()),
     ]

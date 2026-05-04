@@ -45,7 +45,7 @@ pub struct AgentExecutor {
     pub(crate) consecutive_note_count: usize,
     pub(crate) last_tool_call_signature: Option<String>,
     pub(crate) repeated_tool_call_count: usize,
-    pub(crate) terminal_text_nudge_pending: bool,
+    pub(crate) terminal_review_continue_count: usize,
     pub(crate) preloaded_immediate_context: Option<ImmediateContext>,
 }
 
@@ -325,7 +325,7 @@ impl AgentExecutorBuilder {
             consecutive_note_count: 0,
             last_tool_call_signature: None,
             repeated_tool_call_count: 0,
-            terminal_text_nudge_pending: false,
+            terminal_review_continue_count: 0,
             preloaded_immediate_context: Some(immediate_context),
         })
     }

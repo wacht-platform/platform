@@ -18,6 +18,7 @@ pub mod b2b_membership;
 pub mod b2b_query;
 pub mod billing;
 pub mod billing_webhook;
+pub mod board_item_actions;
 pub mod composio;
 pub mod connection;
 pub mod enterprise_sso;

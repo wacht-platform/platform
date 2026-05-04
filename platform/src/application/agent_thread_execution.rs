@@ -78,7 +78,7 @@ async fn enqueue_thread_work(
     execution_type: dto::json::AgentExecutionType,
 ) -> Result<i64, AppError> {
     let event_log_id = app_state.sf.next_id()? as i64;
-    let (event_type, conversation_id, approval_request_message_id): (&str, Option<i64>, Option<&str>) =
+    let (event_type, conversation_id, approval_request_message_id): (&str, Option<i64>, Option<String>) =
         match &execution_type {
             dto::json::AgentExecutionType::NewMessage { conversation_id } => (
                 models::thread_event::event_type::USER_MESSAGE_RECEIVED,
@@ -90,7 +90,7 @@ async fn enqueue_thread_work(
             } => (
                 models::thread_event::event_type::APPROVAL_RESPONSE_RECEIVED,
                 None,
-                Some(request_message_id.as_str()),
+                Some(request_message_id.clone()),
             ),
         };
 
@@ -107,7 +107,7 @@ async fn enqueue_thread_work(
 
     let idempotency_key = if let Some(cid) = conversation_id {
         format!("{event_type}_{thread_id}_{cid}")
-    } else if let Some(rmid) = approval_request_message_id {
+    } else if let Some(rmid) = approval_request_message_id.as_deref() {
         format!("{event_type}_{thread_id}_{rmid}")
     } else {
         format!("{event_type}_{thread_id}_{event_log_id}")

@@ -1,6 +1,7 @@
 mod meta_tools;
 pub(crate) mod prompt;
 mod response;
+mod terminal_review;
 mod tool_schema;
 pub(crate) use super::core;
 
@@ -533,7 +534,7 @@ impl AgentExecutor {
         {
             self.store_transient_steer(
                 "ask_user_blocked_by_pending_question",
-                "I tried to call ask_user, but there is already an active pending question on this thread/task. I must wait for the user to answer the existing question before asking a new one.".to_string(),
+                "ask_user blocked: active pending question already on this thread/task. Wait for user answer before asking new.".to_string(),
             );
             return Ok(true);
         }
@@ -740,8 +741,8 @@ impl AgentExecutor {
     async fn run_unified_iteration(&mut self) -> Result<bool, AppError> {
         use crate::llm::NativeToolDefinition;
         use meta_tools::{
-            abort_tool, ask_user_tool, complete_tool, note_tool, notify_user_tool,
-            resolve_user_feedback_tool, update_schedule_state_tool,
+            abort_tool, ask_user_tool, note_tool, notify_user_tool, resolve_user_feedback_tool,
+            update_schedule_state_tool,
         };
         use dto::json::agent_executor::{AbortDirective, AbortOutcome};
 
@@ -760,9 +761,6 @@ impl AgentExecutor {
             .collect();
         native_tools.push(note_tool());
         native_tools.push(ask_user_tool());
-        if self.terminal_text_nudge_pending {
-            native_tools.push(complete_tool());
-        }
         if self.is_conversation_thread {
             native_tools.push(notify_user_tool());
         }
@@ -816,12 +814,6 @@ impl AgentExecutor {
             .filter(|c| c.tool_name == "notify_user")
             .cloned()
             .collect();
-        let complete_calls: Vec<_> = output
-            .calls
-            .iter()
-            .filter(|c| c.tool_name == "complete")
-            .cloned()
-            .collect();
         let non_note_calls: Vec<_> = output
             .calls
             .iter()
@@ -831,21 +823,12 @@ impl AgentExecutor {
                     && c.tool_name != "ask_user"
                     && c.tool_name != "resolve_user_feedback"
                     && c.tool_name != "notify_user"
-                    && c.tool_name != "complete"
             })
             .cloned()
             .collect();
 
-        let has_substantive_call = output
-            .calls
-            .iter()
-            .any(|c| c.tool_name != "note" && c.tool_name != "complete");
-        if has_substantive_call {
-            self.terminal_text_nudge_pending = false;
-        }
-
-        if let Some(call) = complete_calls.first() {
-            return self.handle_complete_call(call, output.content_text.as_deref()).await;
+        if output.calls.iter().any(|c| c.tool_name != "note") {
+            self.terminal_review_continue_count = 0;
         }
 
         for call in &schedule_state_calls {
@@ -903,7 +886,7 @@ impl AgentExecutor {
                 self.store_transient_steer(
                     "note_loop_guard",
                     format!(
-                        "I've taken {count} notes in a row without making any actual progress — I'm stalling, not thinking. Notes are for anchoring a decision before I act, not a substitute for acting. Next turn I have two productive options: pick the tool that executes the next concrete step, or send the user a final text reply if the work is genuinely done. No more notes until I've moved the work forward."
+                        "{count} notes in a row, no progress. Stalling. Notes anchor decisions, not substitute action. Next turn: pick tool that executes next concrete step, or send final text reply if done. No more notes until work moves."
                     ),
                 );
             }
@@ -938,7 +921,7 @@ impl AgentExecutor {
             }
             self.store_transient_steer(
                 "empty_response_guard",
-                "My last turn produced nothing — no tool call, no text. That leaves the work unfinished and the user hanging. I need to converge this turn: if the task is done, send a final text reply to the user that wraps it up. If a concrete step is still required, pick the right tool and call it. Either way, end the indecision now — no more empty turns.".to_string(),
+                "Last turn: nothing — no tool, no text. User left hanging. Converge now: done → final text reply; step left → pick tool and call it. No more empty turns.".to_string(),
             );
             return Ok(true);
         }
@@ -1032,7 +1015,7 @@ impl AgentExecutor {
             self.store_transient_steer(
                 "tool_call_loop_guard",
                 format!(
-                    "I've called the same tool(s) with the same arguments {count} turns in a row — that's a loop, the outcome isn't going to change by repeating it. The prior tool result already has the answer I need, or it's telling me this approach won't work. I should re-read it, then either change the inputs / pick a different tool / take a different angle, or — if I'm genuinely stuck — reply to the user explaining what I tried and what I need to proceed. The one thing I will not do is fire the identical call again."
+                    "Same tool(s), same args, {count} turns in a row. Loop. Repeat won't change outcome. Prior result has the answer or says approach won't work — re-read it. Then: change inputs, pick different tool, different angle. Stuck → reply to user with what was tried and what's needed. Identical call again is the one thing forbidden."
                 ),
             );
             if self.repeated_tool_call_count >= 4 {
@@ -1082,14 +1065,14 @@ impl AgentExecutor {
     async fn handle_terminal_text_response(&mut self, text: String) -> Result<bool, AppError> {
         if self.active_task_graph_has_unfinished_nodes() {
             let escape_hint = if self.is_conversation_thread {
-                " If I want to hand control back to the user mid-plan without abandoning it (e.g. asking which path to take next), `notify_user` ends the turn cleanly with a status message — the graph stays as-is and resumes when the user replies."
+                " To hand control to user mid-plan without abandoning it: `notify_user` ends turn cleanly; graph stays, resumes on user reply."
             } else {
                 ""
             };
             self.store_transient_steer(
                 "complete_blocked_by_task_graph",
                 format!(
-                    "I tried to wrap up by emitting text only — no tool calls — but the task graph I started still has open nodes. The runtime will keep re-running me until I converge: I can't silently leave a half-executed plan behind. Next turn I either pick the next ready node and run it, or call `task_graph_reset` to abandon the plan cleanly. Then I can finish.{escape_hint}"
+                    "Tried to wrap up text-only but task graph still has open nodes. Runtime re-runs me until convergence; no silent half-executed plan. Next turn: run the next ready node, or `task_graph_reset` to abandon cleanly. Then finish.{escape_hint}"
                 ),
             );
             return Ok(true);
@@ -1098,7 +1081,7 @@ impl AgentExecutor {
         if self.is_service_mode_execution() && !self.service_mode_journal_was_updated().await? {
             self.store_transient_steer(
                 "complete_blocked_by_journal_guard",
-                "I tried to wrap up by emitting text only — no tool calls — but `/task/JOURNAL.md` is still empty for this run. The runtime will keep re-running me until I record progress; the coordinator reads the journal to know what I did. Next turn I append a short concrete entry (what I did, what I found, what's left), then finish.".to_string(),
+                "Tried to wrap up text-only but `/task/JOURNAL.md` still empty this run. Runtime re-runs me until progress recorded; coordinator reads journal. Next turn: append short concrete entry (did/found/left), then finish.".to_string(),
             );
             return Ok(true);
         }
@@ -1110,26 +1093,72 @@ impl AgentExecutor {
         let safe_message =
             Self::sanitize_user_facing_message(&text, "Completed the requested work.");
 
-        if !self.terminal_text_nudge_pending {
-            self.store_conversation(
-                ConversationContent::Steer {
-                    message: safe_message,
-                    further_actions_required: true,
-                    reasoning: "Text-only turn — runtime will ask me to confirm before terminating.".to_string(),
-                    attachments: None,
-                },
-                ConversationMessageType::Steer,
-            )
-            .await?;
-            self.store_transient_steer(
-                "terminal_text_nudge",
-                "My last turn produced text with no tool calls, which the runtime treats as a tentative wrap-up. Before it ends, I get one more pass: re-read my history and decide. If the work is genuinely finished and the text I just sent is the right final answer, I call `complete` with NO additional text — my prior text is already the user-facing answer, any prose alongside `complete` will be duplicated to the user. Just `complete` alone is enough; the runtime ends the turn quietly. Otherwise I keep going — common reasons I might have stopped early: I forgot a step, narrated a tool call as text instead of emitting it, hit a recoverable tool error I should retry or work around, missed something the user asked for, or stopped mid-plan. If any of that applies, I emit the right tool calls now (no `complete`). If I again emit text with no tool calls and no `complete`, the runtime force-terminates with my latest text as the delivery — so this is the round to either confirm (silent `complete`) or correct (emit tool calls).".to_string(),
+        const MAX_REVIEW_CONTINUES: usize = 2;
+        if self.terminal_review_continue_count < MAX_REVIEW_CONTINUES {
+            let decision = match self.review_terminal_state(&safe_message).await {
+                Ok(d) => d,
+                Err(error) => {
+                    tracing::warn!(
+                        thread_id = self.ctx.thread_id,
+                        execution_run_id = self.ctx.execution_run_id,
+                        ?error,
+                        "terminal review failed; defaulting to complete"
+                    );
+                    terminal_review::TerminalReviewDecision {
+                        decision: terminal_review::TerminalReviewChoice::Complete,
+                        hint: None,
+                    }
+                }
+            };
+            tracing::info!(
+                thread_id = self.ctx.thread_id,
+                execution_run_id = self.ctx.execution_run_id,
+                decision = ?decision.decision,
+                hint = decision.hint.as_deref().unwrap_or(""),
+                "terminal review decision"
             );
-            self.terminal_text_nudge_pending = true;
-            return Ok(true);
+
+            if matches!(
+                decision.decision,
+                terminal_review::TerminalReviewChoice::Continue
+            ) {
+                self.terminal_review_continue_count += 1;
+                self.store_conversation(
+                    ConversationContent::Steer {
+                        message: safe_message,
+                        further_actions_required: true,
+                        reasoning: "Text-only turn — reviewer chose continue.".to_string(),
+                        attachments: None,
+                    },
+                    ConversationMessageType::Steer,
+                )
+                .await?;
+                let hint = decision
+                    .hint
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("concrete unaddressed signal in recent history");
+                self.store_transient_steer(
+                    "terminal_review_continue",
+                    format!(
+                        "Internal context for next turn only: {hint}.\n\
+                         \n\
+                         Act on it directly — emit the tool call(s) that address it, or terminate cleanly if you cannot.\n\
+                         \n\
+                         Forbidden in your output:\n\
+                         - Restating, quoting, or referring to this hint or any \"reviewer\".\n\
+                         - Saying things like \"I noticed…\", \"there's an unaddressed…\", \"let me address…\".\n\
+                         - Apologizing or acknowledging.\n\
+                         \n\
+                         The user never sees this message. Just do the work or stop."
+                    ),
+                );
+                return Ok(true);
+            }
         }
 
-        self.terminal_text_nudge_pending = false;
+        self.terminal_review_continue_count = 0;
         self.store_conversation(
             ConversationContent::Steer {
                 message: safe_message,
@@ -1140,41 +1169,6 @@ impl AgentExecutor {
             ConversationMessageType::Steer,
         )
         .await?;
-
-        UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
-            .with_execution_state(self.build_execution_state_snapshot(None))
-            .with_status(AgentThreadStatus::Idle)
-            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
-            .await?;
-
-        Ok(false)
-    }
-
-    async fn handle_complete_call(
-        &mut self,
-        call: &crate::llm::GeneratedToolCall,
-        _content_text: Option<&str>,
-    ) -> Result<bool, AppError> {
-        #[derive(serde::Deserialize, Default)]
-        struct CompleteArgs {
-            #[serde(default)]
-            result_summary: Option<String>,
-        }
-        let args: CompleteArgs = serde_json::from_value(call.arguments.clone()).unwrap_or_default();
-        let summary = args
-            .result_summary
-            .as_ref()
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("");
-        tracing::info!(
-            thread_id = self.ctx.thread_id,
-            execution_run_id = self.ctx.execution_run_id,
-            result_summary = summary,
-            "complete tool acknowledged terminal text response"
-        );
-
-        self.terminal_text_nudge_pending = false;
 
         UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
             .with_execution_state(self.build_execution_state_snapshot(None))

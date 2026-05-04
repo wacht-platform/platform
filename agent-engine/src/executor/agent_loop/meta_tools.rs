@@ -205,23 +205,6 @@ pub fn resolve_user_feedback_tool() -> NativeToolDefinition {
     }
 }
 
-pub fn complete_tool() -> NativeToolDefinition {
-    NativeToolDefinition {
-        name: "complete".to_string(),
-        description: "Confirm work is done; ends the turn cleanly. ONLY in response to a `terminal_text_nudge`. Emit NO text alongside — the prior turn's text is already the user-facing answer; extra prose here gets duplicated. Don't call on normal turns. Optional `result_summary`: one-line audit note (not shown to the user)."
-            .to_string(),
-        input_schema: json!({
-            "type": "object",
-            "properties": {
-                "result_summary": {
-                    "type": "string",
-                    "description": "Optional one-line audit note. Not shown to the user."
-                }
-            }
-        }),
-    }
-}
-
 pub fn abort_tool() -> NativeToolDefinition {
     NativeToolDefinition {
         name: "abort_task".to_string(),
