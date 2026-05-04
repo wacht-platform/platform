@@ -6,7 +6,7 @@ use redis::AsyncCommands;
 use redis::Script;
 use serde_json::Value;
 use tokio::time::sleep;
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 
 use crate::tasks::webhook_replay::replay_webhook_delivery;
 
@@ -82,12 +82,6 @@ pub async fn handle_webhook_replay_batch(app_state: &AppState, payload: Value) -
 
             let effective_end_date = persisted_end.or(end_date).unwrap_or_else(chrono::Utc::now);
 
-            if end_date.is_none() {
-                info!(
-                    "Replay by_date_range missing end_date; defaulting to current UTC: {}",
-                    effective_end_date.to_rfc3339()
-                );
-            }
             let ids = app_state
                 .clickhouse_service
                 .get_deliveries_for_replay(
@@ -162,12 +156,10 @@ pub async fn handle_webhook_replay_batch(app_state: &AppState, payload: Value) -
         .invoke_async(&mut redis_conn)
         .await?;
     if init_result == 0 {
-        info!("Replay task {} is already cancelled before start", task_id);
         return Ok("Replay batch cancelled".to_string());
     }
 
     if delivery_ids.is_empty() {
-        info!("No deliveries found to replay");
         let completion_script = Script::new(
             r#"
             local key = KEYS[1]
@@ -214,46 +206,18 @@ pub async fn handle_webhook_replay_batch(app_state: &AppState, payload: Value) -
         None => 0,
     };
 
-    if start_index > 0 {
-        info!(
-            "Resuming replay task {} from index {} (after delivery_id={})",
-            task_id,
-            start_index,
-            last_delivery_id.unwrap_or_default()
-        );
-    }
-
-    info!(
-        "Found {} deliveries to replay for deployment {}",
-        delivery_ids.len(),
-        deployment_id
-    );
-
     let mut was_cancelled = false;
 
     // Process each delivery with local retry; one failed ID should not halt the batch.
-    for (idx, delivery_id) in delivery_ids.iter().enumerate().skip(start_index) {
+    for delivery_id in delivery_ids.iter().skip(start_index) {
         let current_status: Option<String> = redis_conn.hget(&snapshot_key, "status").await.ok();
         let cancelled_flag: Option<String> = redis_conn.hget(&snapshot_key, "cancelled").await.ok();
         if matches!(current_status.as_deref(), Some("cancelled"))
             || matches!(cancelled_flag.as_deref(), Some("1"))
         {
-            info!(
-                "Replay task {} cancelled at delivery {}/{}",
-                task_id,
-                idx + 1,
-                delivery_ids.len()
-            );
             was_cancelled = true;
             break;
         }
-
-        info!(
-            "Replay progress: {}/{} (delivery_id={})",
-            idx + 1,
-            delivery_ids.len(),
-            delivery_id
-        );
 
         let mut replayed = false;
         let mut last_error = String::new();
@@ -262,11 +226,7 @@ pub async fn handle_webhook_replay_batch(app_state: &AppState, payload: Value) -
             let result = replay_webhook_delivery(app_state, *delivery_id, deployment_id).await;
 
             match result {
-                Ok(new_id) => {
-                    info!(
-                        "Successfully replayed delivery {} as new delivery {}",
-                        delivery_id, new_id
-                    );
+                Ok(_new_id) => {
                     replayed = true;
                     break;
                 }

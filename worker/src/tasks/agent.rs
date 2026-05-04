@@ -202,7 +202,6 @@ struct DeploymentExecutionGuard {
 
 impl Drop for DeploymentExecutionGuard {
     fn drop(&mut self) {
-        tracing::info!(key = %self.key, "agent task: releasing execution slot");
         if let Some(stop_tx) = self.heartbeat_stop.take() {
             let _ = stop_tx.send(());
         }
@@ -403,7 +402,6 @@ pub async fn process_event_log_work(
     .map_err(|e| AgentExecutionError::Other(anyhow::anyhow!("claim work_lease: {e}")))?;
 
     if !claimed {
-        tracing::info!(event_log_id, "event_log already leased; skipping");
         return Ok(format!("event_log {event_log_id}: already leased"));
     }
 

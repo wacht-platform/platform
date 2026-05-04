@@ -347,7 +347,11 @@ impl AgentExecutor {
     }
 
     async fn build_conversation_prompt_context(&self) -> ConversationPromptContext {
-        let mut conversation_history = self.get_conversation_history_for_llm().await;
+        let mut conversation_history = if self.current_board_item_id().is_some() {
+            self.get_task_history_for_llm().await
+        } else {
+            self.get_conversation_history_for_llm().await
+        };
         let current_request_entry = conversation_history.pop().unwrap_or_else(|| {
             LlmHistoryEntry::with_parts(
                 "user",

@@ -9537,7 +9537,7 @@ dependencies = [
 [[package]]
 name = "wacht-sandbox-client"
 version = "0.1.0"
-source = "git+https://github.com/wacht-platform/sandbox-client?branch=main#3bcce734eac64a79e922df8e55c4e93c06547b34"
+source = "git+https://github.com/wacht-platform/sandbox-client?branch=main#6a9fc13670666638fa48ecea07ba555462c4e97e"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -9547,7 +9547,6 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
- "tracing",
 ]
 
 [[package]]

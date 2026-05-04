@@ -194,6 +194,28 @@ impl AgentExecutor {
             .collect())
     }
 
+    async fn unresolved_feedback_ids(&self) -> Result<Vec<i64>, AppError> {
+        let Some(board_item_id) = self.current_board_item_id() else {
+            return Ok(Vec::new());
+        };
+        if board_item_id <= 0 {
+            return Ok(Vec::new());
+        }
+        let comments = ListProjectTaskBoardItemCommentsQuery::new(board_item_id)
+            .execute_with_db(
+                self.ctx
+                    .app_state
+                    .db_router
+                    .reader(common::ReadConsistency::Strong),
+            )
+            .await?;
+        Ok(comments
+            .into_iter()
+            .filter(|c| c.resolved_at.is_none())
+            .map(|c| c.id)
+            .collect())
+    }
+
     pub(super) fn can_abort_current_assignment_execution(&self) -> bool {
         self.active_thread_event
             .as_ref()
@@ -746,6 +768,24 @@ impl AgentExecutor {
         };
         use dto::json::agent_executor::{AbortDirective, AbortOutcome};
 
+        if let Err(exhausted) = self.budget.check() {
+            tracing::warn!(thread_id = self.ctx.thread_id, "budget exhausted: {}", exhausted.reason());
+            if self.can_abort_current_assignment_execution() {
+                let reason = format!(
+                    "Run preempted by budget cap: {}. Coordinator should decide whether to extend, retry with a tighter brief, or mark the task `failed`.",
+                    exhausted.reason()
+                );
+                self.abort_current_assignment_execution(&AbortDirective {
+                    reason,
+                    outcome: AbortOutcome::Blocked,
+                })
+                .await?;
+            } else {
+                self.finish_without_summary().await?;
+            }
+            return Ok(false);
+        }
+
         let context_json = self.build_agent_loop_context_json().await?;
         let prompt_context: dto::json::AgentLoopPromptEnvelope =
             serde_json::from_value(context_json.clone()).map_err(|e| {
@@ -779,6 +819,9 @@ impl AgentExecutor {
         let output = llm
             .generate_tool_calls(request, native_tools, cache_request)
             .await?;
+        let raw_output_snapshot = serde_json::to_string(&output).unwrap_or_default();
+        self.budget.tick_llm();
+        self.budget.tick_tools(output.calls.len());
         self.record_llm_usage_for_compaction(output.usage_metadata.as_ref());
         if let Some(cache_state) = output.cache_state.as_ref() {
             self.write_prompt_cache_state(cache_state).await;
@@ -912,6 +955,9 @@ impl AgentExecutor {
         }
 
         if non_note_calls.is_empty() {
+            if !resolve_calls.is_empty() || !schedule_state_calls.is_empty() {
+                return Ok(true);
+            }
             if let Some(text) = output
                 .content_text
                 .map(|t| t.trim().to_string())
@@ -919,6 +965,12 @@ impl AgentExecutor {
             {
                 return self.handle_terminal_text_response(text).await;
             }
+            tracing::warn!(
+                thread_id = self.ctx.thread_id,
+                execution_run_id = self.ctx.execution_run_id,
+                raw_output = %raw_output_snapshot,
+                "empty_response_guard: LLM returned no tool calls and no text",
+            );
             self.store_transient_steer(
                 "empty_response_guard",
                 "Last turn: nothing — no tool, no text. User left hanging. Converge now: done → final text reply; step left → pick tool and call it. No more empty turns.".to_string(),
@@ -1031,12 +1083,16 @@ impl AgentExecutor {
         let mut parts: Vec<String> = requests
             .iter()
             .map(|r| {
+                let name = r.tool_name();
+                if matches!(name, "search_tools" | "load_tools") {
+                    return format!("{name}:*");
+                }
                 let args = r
                     .input_value()
                     .ok()
                     .map(|v| serde_json::to_string(&v).unwrap_or_default())
                     .unwrap_or_default();
-                format!("{}:{}", r.tool_name(), args)
+                format!("{name}:{args}")
             })
             .collect();
         parts.sort();
@@ -1082,6 +1138,22 @@ impl AgentExecutor {
             self.store_transient_steer(
                 "complete_blocked_by_journal_guard",
                 "Tried to wrap up text-only but `/task/JOURNAL.md` still empty this run. Runtime re-runs me until progress recorded; coordinator reads journal. Next turn: append short concrete entry (did/found/left), then finish.".to_string(),
+            );
+            return Ok(true);
+        }
+
+        let unresolved_ids = self.unresolved_feedback_ids().await?;
+        if !unresolved_ids.is_empty() {
+            let ids_csv = unresolved_ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.store_transient_steer(
+                "complete_blocked_by_unresolved_feedback",
+                format!(
+                    "Tried to wrap up text-only but feedback comment(s) {ids_csv} still [unresolved]. Each must be closed via `resolve_user_feedback` (one call per id, with a one-line summary). If you already acted on it, call the tool now. If no action is needed, call it with the explanation. No more text until every id is resolved."
+                ),
             );
             return Ok(true);
         }

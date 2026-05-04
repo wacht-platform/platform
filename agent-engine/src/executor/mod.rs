@@ -1,4 +1,5 @@
 pub(crate) mod agent_loop;
+pub(crate) mod budget;
 pub(crate) mod context;
 pub(crate) mod core;
 pub(crate) mod project;

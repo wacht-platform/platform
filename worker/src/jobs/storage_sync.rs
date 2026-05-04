@@ -2,29 +2,20 @@ use anyhow::Result;
 use commands::MarkStorageAsCleanCommand;
 use common::{DodoClient, state::AppState};
 use queries::{GetDeploymentProviderSubscriptionQuery, GetDirtyStorageDeploymentsQuery};
-use tracing::{error, info, warn};
+use tracing::error;
 
 pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
-    info!("[STORAGE SYNC] Starting storage sync to Dodo");
-
     let dirty_deployments = GetDirtyStorageDeploymentsQuery
         .execute_with_db(app_state.db_router.writer())
         .await?;
 
     if dirty_deployments.is_empty() {
-        info!("[STORAGE SYNC] No dirty deployments to sync");
         return Ok("No dirty deployments".to_string());
     }
 
-    info!(
-        "[STORAGE SYNC] Found {} dirty deployments",
-        dirty_deployments.len()
-    );
-
     let dodo_client = match DodoClient::new() {
         Ok(client) => client,
-        Err(e) => {
-            warn!("[STORAGE SYNC] Dodo not configured: {}. Skipping sync.", e);
+        Err(_) => {
             return Ok("Dodo not configured".to_string());
         }
     };
@@ -41,16 +32,10 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
             .await
         {
             Ok(Some(info)) => info,
-            Ok(None) => {
-                warn!(
-                    "[STORAGE SYNC] Deployment {} has no subscription, skipping",
-                    deployment_id
-                );
-                continue;
-            }
+            Ok(None) => continue,
             Err(e) => {
                 error!(
-                    "[STORAGE SYNC] Failed to get subscription for deployment {}: {}",
+                    "[STORAGE SYNC] failed to get subscription for deployment {}: {}",
                     deployment_id, e
                 );
                 continue;
@@ -58,10 +43,6 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
         };
 
         if subscription_info.plan_name == "starter" {
-            info!(
-                "[STORAGE SYNC] Deployment {} is on starter plan, skipping",
-                deployment_id
-            );
             continue;
         }
 
@@ -81,11 +62,6 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
             .await
         {
             Ok(_) => {
-                info!(
-                    "[STORAGE SYNC] ✅ Synced storage for deployment {}: {} KB ({} bytes)",
-                    deployment_id, storage_kb, total_bytes
-                );
-
                 MarkStorageAsCleanCommand { deployment_id }
                     .execute_with_db(app_state.db_router.writer())
                     .await?;
@@ -94,17 +70,12 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
             }
             Err(e) => {
                 error!(
-                    "[STORAGE SYNC] ❌ Failed to sync storage for deployment {}: {}",
+                    "[STORAGE SYNC] failed to sync storage for deployment {}: {}",
                     deployment_id, e
                 );
             }
         }
     }
-
-    info!(
-        "[STORAGE SYNC] ✅ Completed sync of {} deployments",
-        synced_count
-    );
 
     Ok(format!("Synced {} deployments", synced_count))
 }

@@ -1,7 +1,6 @@
 use anyhow::Result;
 use common::state::AppState;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessDocumentTask {
@@ -18,11 +17,6 @@ pub async fn process_document_impl(
 ) -> Result<String> {
     use commands::ProcessDocumentCommand;
     let command_deps = common::deps::from_app(app_state).db().enc().nats();
-
-    info!(
-        "Processing document {} in knowledge base {} for deployment {}",
-        document_id, knowledge_base_id, deployment_id
-    );
 
     let command = ProcessDocumentCommand::new(deployment_id, knowledge_base_id, document_id);
 

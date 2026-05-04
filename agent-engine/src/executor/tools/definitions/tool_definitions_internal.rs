@@ -73,7 +73,7 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "append_file",
-            "Append text to the end of an existing file (or create it if missing). Use for journal entries, log lines, accumulating logs, or any other end-of-file additions. Do not use this to change existing content — use edit_file for that. Shell-based appends (`>>`) are acceptable for one-off lines from execute_command output, but prefer this tool for explicit multi-line content.",
+            "Append text to the end of an existing file (or create it if missing). Use for journal entries, log lines, accumulating logs, or any other end-of-file additions. The runtime guarantees newline separation: a newline is inserted between the existing tail and your content if needed, and a trailing newline is added so the next append also starts fresh — you do NOT need to add leading or trailing newlines yourself. Do not use this to change existing content — use edit_file for that. Never use shell `>>` to append to tracked files (journal, artifacts) — those bypass the runtime's read-discipline and newline guarantee; use this tool.",
             InternalToolType::AppendFile,
             vec![
                 SchemaField {
@@ -86,7 +86,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "content".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Content to append at end of file. Include a leading newline yourself if you need separation from the existing tail.".to_string()),
+                    description: Some("Content to append at end of file. Newline separation from the existing tail and a trailing newline are inserted automatically — pass just the line(s) you want added.".to_string()),
                     required: true,
                     ..Default::default()
                 },
@@ -378,7 +378,7 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "search_tools",
-            "Discover external tools across connected apps. Two modes: \"search\" (default) ranks tools by your natural-language `queries`; \"browse\" lists tools for specific `apps`. Returns matching tool names plus input schemas. When you know the service (e.g. gmail) but the keyword search returned an incomplete set, call browse with `apps: [\"<slug>\"]` to enumerate the full toolkit — keyword search may rank some tools out of the top-N. Browse + scoped apps returns up to 100 tools per service by default, so it's the canonical way to confirm whether a tool exists for a given service before concluding it doesn't.",
+            "Discover external (virtual) tools across connected apps. Two modes: \"search\" (default) ranks tools by your natural-language `queries`; \"browse\" lists tools for specific `apps`. Returns matching tool names + input schemas. When you know the service (e.g. gmail) but keyword search returned an incomplete set, call browse with `apps: [\"<slug>\"]` to enumerate the full toolkit — browse + scoped apps returns up to 100 tools per service.\n\nFLOW (do not deviate): (1) call search_tools ONCE per discovery need; (2) pick the tool you need from the result — `recommended_tool_names` lists the top picks; (3) call `load_tools` with that exact name; (4) call the tool directly like any other tool. Loaded tools persist for the session.\n\nDO NOT: call search_tools again with similar/overlapping queries to \"find more\" — the second call returns the same catalog and wastes a turn. Pick a tool from the first result. DO NOT shell out (`which X`, `pip show`, `pip install`, `composio --help`, `mcp …`) to discover or install these — they are virtual tools provided by the runtime, not OS-installed binaries. They cannot be installed and have no CLI.",
             InternalToolType::SearchTools,
             vec![
                 SchemaField {
@@ -418,7 +418,7 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "load_tools",
-            "Load one or more external tools by exact tool name. At most 10 external tools stay loaded; when exceeded, the oldest loaded tools are evicted automatically.",
+            "Load one or more external (virtual) tools by exact tool name so they become directly callable. Pass exact names from a prior `search_tools` result. After loading, invoke the tool the same way you call any internal tool — there is no separate \"composio\" or \"mcp\" runtime to install. Up to 30 external tools stay loaded at once; when exceeded, the oldest are evicted automatically.",
             InternalToolType::LoadTools,
             vec![SchemaField {
                 name: "tool_names".to_string(),

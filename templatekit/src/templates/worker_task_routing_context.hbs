@@ -32,14 +32,6 @@ Status: {{status}}{{#if previous_status}} (was {{previous_status}}){{/if}}
 Workspace: /task — Brief: /task/TASK.md — Journal: /task/JOURNAL.md
 Other tasks read-only at /project_workspace/tasks/<task_key>/.
 
-Latest journal:
-{{#if task_journal_tail}}
-```markdown
-{{task_journal_tail}}
-```
-{{else}}- empty
-{{/if}}
-
 {{#if prior_fires}}Recent prior fires of this schedule (read-only at /project_workspace/tasks/<task_key>/, newest first):
 {{#each prior_fires}}- {{task_key}} (fired {{fired_at}}, {{status}})
 {{/each}}Older fires also at /project_workspace/tasks/. Read them only if you need historical context.
@@ -57,3 +49,5 @@ Decide and act this turn. Route on actual ownership boundaries, not vague role l
 Split a task when execution and review should be independent, when work needs different skills or evidence standards, when one lane doing everything would make acceptance unreliable. Don't split when narrow enough for one lane.
 
 Scope cues in title/description are literal. Broad wording (`everything`, `full`, `deep dive`, repeated facets) implies broad coverage — affects routing, decomposition, review depth.
+
+Earlier history below is a chronological task timeline: untagged entries are yours; `[thread #<id> "<title>" (<purpose>)] …` are other threads' messages; `[Task event] task_routing …` are runtime routing events; `[Compressed prior history] …` are compaction summaries. Your current-execution tool calls show full input + output; past-execution tool calls (yours from prior runs, and other threads') show input only with `[output not preserved in timeline view — re-run if needed]`. `read_file /task/JOURNAL.md` for the on-disk durable record.

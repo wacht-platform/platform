@@ -40,4 +40,25 @@ impl MemoryRecord {
 pub struct ImmediateContext {
     pub memories: Vec<MemoryRecord>,
     pub conversations: Vec<ConversationRecord>,
+    #[serde(default)]
+    pub routing_events: Vec<TaskRoutingEvent>,
+    #[serde(default)]
+    pub task_thread_meta: Vec<TaskThreadMeta>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskRoutingEvent {
+    pub id: i64,
+    pub coordinator_thread_id: Option<i64>,
+    pub routing_reason: Option<String>,
+    pub summary: Option<String>,
+    pub note: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskThreadMeta {
+    pub thread_id: i64,
+    pub title: String,
+    pub thread_purpose: String,
 }

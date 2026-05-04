@@ -214,6 +214,33 @@ pub fn update_project_task_schema() -> Vec<SchemaField> {
             ]),
             ..Default::default()
         },
+        SchemaField {
+            name: "result_summary".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some(
+                "Required when status is `completed`, `failed`, `blocked`, `rejected`, or `needs_clarification`. \
+                 At least 30 characters. Describe what was produced (for completed) or why the task is in this \
+                 state (for failed/blocked/rejected/needs_clarification) so the next reader doesn't need to walk \
+                 the journal."
+                    .to_string(),
+            ),
+            required: false,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "artifacts".to_string(),
+            field_type: "ARRAY".to_string(),
+            items_type: Some("STRING".to_string()),
+            description: Some(
+                "Required when status is `completed`. Paths to deliverables produced by the task, typically \
+                 under `/task/artifacts/`. Each path must exist in the task sandbox at the moment of this call \
+                 — declared-but-missing paths are rejected. Omit for non-completed transitions."
+                    .to_string(),
+            ),
+            min_items: Some(1),
+            required: false,
+            ..Default::default()
+        },
     ]
 }
 

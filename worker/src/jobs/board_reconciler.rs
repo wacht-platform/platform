@@ -2,7 +2,6 @@ use anyhow::Result;
 use chrono::Duration as ChronoDuration;
 use commands::ReconcileStaleBoardItemsCommand;
 use common::state::AppState;
-use tracing::info;
 
 pub const STALE_BOARD_ITEM_AFTER_HOURS: i64 = 1;
 pub const MAX_BOARD_ITEMS_PER_TICK: i64 = 50;
@@ -52,13 +51,6 @@ pub async fn reconcile_stale_board_items(app_state: &AppState) -> Result<String>
 
     let deps = common::deps::from_app(app_state).db().nats().id();
     let summary = command.execute_with_deps(&deps).await?;
-
-    info!(
-        rerouted_to_assignment = summary.rerouted_to_assignment,
-        rerouted_to_coordinator = summary.rerouted_to_coordinator,
-        skipped = summary.skipped,
-        "Board reconciler tick completed"
-    );
 
     Ok(format!(
         "Board reconciler: rerouted {} (assignment={}, coordinator={}), skipped {}",

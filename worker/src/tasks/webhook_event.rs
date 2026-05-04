@@ -8,7 +8,6 @@ use queries::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tracing::info;
 
 use crate::consumer::TaskError;
 
@@ -24,11 +23,6 @@ pub async fn trigger_webhook_event(
     task: WebhookEventTask,
     app_state: &AppState,
 ) -> Result<String, TaskError> {
-    info!(
-        "Processing webhook event '{}' for deployment {}",
-        task.event_type, task.deployment_id
-    );
-
     let enriched_payload =
         enrich_webhook_payload(task.event_payload.clone(), task.deployment_id, app_state).await?;
 
@@ -69,8 +63,6 @@ async fn enrich_webhook_payload(
     let (Some(entity_id), Some(entity_type)) = (entity_id, entity_type) else {
         return Ok(payload);
     };
-
-    info!("Enriching payload for {}:{}", entity_type, entity_id);
 
     match entity_type {
         "user" => enrich_user_payload(entity_id, payload, deployment_id, app_state).await,

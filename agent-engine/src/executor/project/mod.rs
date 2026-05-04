@@ -1,5 +1,6 @@
 mod assignments;
 mod prompt_items;
+pub(crate) mod status_machine;
 mod task_commands;
 mod task_graph;
 pub(crate) use super::core;

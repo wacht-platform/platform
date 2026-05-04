@@ -1,45 +1,49 @@
-{{#if (eq assignment_reason "first_pickup")}}New assignment from the coordinator.
-{{else if (eq assignment_reason "after_preempt")}}Reassigned after a user edit interrupted your previous run on this task. `/task/TASK.md` reflects the current spec — re-read it. Trust the brief over memory of the prior run.
-{{else if (eq assignment_reason "after_review")}}Reassigned after a reviewer rejected the previous version. The reviewer's reasoning is in your conversation history and `/task/JOURNAL.md`. Address it.
-{{else if (eq assignment_reason "follow_up")}}Follow-up assignment on a task you previously worked on. Pick up from current state per `/task/TASK.md` and the journal.
-{{else}}Assignment for this task.
+# Assignment #{{assignment_id}}
+
+{{#if (eq assignment_reason "first_pickup")}}New assignment from the coordinator.{{else if (eq assignment_reason "after_preempt")}}Reassigned after a user edit interrupted your previous run. `/task/TASK.md` reflects the current spec — re-read it. Trust the brief over memory of the prior run.{{else if (eq assignment_reason "after_review")}}Reassigned after a reviewer rejected the previous version. The reviewer's reasoning is in the task timeline below and in `/task/JOURNAL.md`. Address it.{{else if (eq assignment_reason "follow_up")}}Follow-up on a task you previously worked on. Pick up from current state per `/task/TASK.md` and the journal.{{else}}Assignment for this task.{{/if}}
+
+## Task
+
+- **Key:** `{{task_key}}`
+- **Title:** {{title}}
+- **Status:** `{{status}}`
+- **Description:** {{description}}
+
+## Your slice
+
+- **Role:** `{{assignment_role}}`{{#if assignment_count}} ({{assignment_count}} active on this task){{/if}}
+- **Instructions:** {{instructions}}
+{{#if handoff_file_path}}- **Handoff from prior lane:** `{{handoff_file_path}}`
+{{/if}}- **After you finish:** {{#if has_reviewer_after}}a reviewer reads your output and decides accept/reject.{{else}}the coordinator reads your `result_summary` and decides next steps.{{/if}}
+
+## Workspace
+
+- Active task: `/task/` — brief `/task/TASK.md`, journal `/task/JOURNAL.md`, deliverables under `/task/artifacts/`.
+{{#if parent_task_key}}- Parent task (read-only): `/project_workspace/tasks/{{parent_task_key}}/`
+{{/if}}- Other tasks (read-only): `/project_workspace/tasks/<task_key>/`
+{{#if runbook_file}}- Runbook (recurring): `{{runbook_file}}`
+{{/if}}{{#if schedule_state_version}}- Persistent schedule state from prior runs is available (version `{{schedule_state_version}}`{{#if schedule_scheduled_for}}, scheduled_for `{{schedule_scheduled_for}}`{{/if}}); return a `schedule_state_patch` object in `result_payload` to update it.
 {{/if}}
+{{#if prior_fires}}## Prior fires of this schedule
 
-Task key: {{task_key}}
-Title: {{title}}
-Description: {{description}}
-Status: {{status}}
+Newest first, read-only at `/project_workspace/tasks/<task_key>/`:
+{{#each prior_fires}}- `{{task_key}}` — fired {{fired_at}}, status `{{status}}`
+{{/each}}
+{{/if}}{{#if comment_timeline}}## User feedback
 
-Assignment {{assignment_id}} — role {{assignment_role}}{{#if assignment_count}} ({{assignment_count}} active on this task){{/if}}.
-Instructions: {{instructions}}
-{{#if handoff_file_path}}Handoff from prior lane: {{handoff_file_path}}
-{{/if}}
-After you finish: {{#if has_reviewer_after}}a reviewer reads your output and decides accept/reject{{else}}the coordinator reads your `result_summary` and decides next steps{{/if}}.
-
-Workspace: /task — Brief: /task/TASK.md (read first) — Journal: /task/JOURNAL.md (append progress)
-{{#if runbook_file}}Runbook (recurring task): {{runbook_file}}
-{{/if}}{{#if parent_task_key}}Parent task (read-only): /project_workspace/tasks/{{parent_task_key}}/
-{{/if}}{{#if schedule_state_pretty}}Persistent state across runs:
-```json
-{{schedule_state_pretty}}
-```
-Return `schedule_state_patch` (object) in result_payload to update.
-{{/if}}Other tasks read-only at /project_workspace/tasks/<task_key>/.
-
-{{#if task_journal_tail}}Latest journal:
-```markdown
-{{task_journal_tail}}
-```
-{{/if}}
-{{#if prior_fires}}Recent prior fires of this schedule (read-only at /project_workspace/tasks/<task_key>/, newest first):
-{{#each prior_fires}}- {{task_key}} (fired {{fired_at}}, {{status}})
-{{/each}}Older fires also at /project_workspace/tasks/. Read them only if you need historical context.
-
-{{/if}}{{#if comment_timeline}}User feedback timeline (chronological, oldest first):
-{{#each comment_timeline}}- {{#if resolved}}[resolved]{{else}}[unresolved]{{/if}} (id={{id}}, {{created_at}}) {{body}}{{#if attachments}}
-  attachments: {{#each attachments}}{{path}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if resolution_summary}}
+{{#each comment_timeline}}- **{{#if resolved}}[resolved]{{else}}[unresolved]{{/if}}** id `{{id}}` ({{created_at}}) — {{body}}{{#if attachments}}
+  attachments: {{#each attachments}}`{{path}}`{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if resolution_summary}}
   resolution: {{resolution_summary}}{{/if}}
 {{/each}}
-For any `[unresolved]` entry, either incorporate it into your work this turn AND call `resolve_user_feedback` with the comment id(s) and a short resolution summary, or call `resolve_user_feedback` explaining why no action is needed.
-{{/if}}
-Prior assignments on this task appear as `[Task event]` entries earlier in your conversation history.
+For each `[unresolved]` entry: incorporate it into your work this turn **and** call `resolve_user_feedback` with the comment id(s) and a short resolution summary; or call `resolve_user_feedback` explaining why no action is needed. Don't terminate while any `[unresolved]` remains.
+
+{{/if}}## Reading the task timeline
+
+Earlier history below is a single chronological timeline across every thread that's worked this task.
+
+- **Untagged** entries are yours.
+- `[thread #<id> "<title>" (<purpose>)] …` — another thread on this task. You did NOT do these.
+- `[Task event] task_routing …` — runtime routing event.
+- `[Compressed prior history] …` — a compaction summary; treat as archival.
+
+Your current-execution tool calls keep full input + output. Past executions (yours and other threads') show input only, tagged `[output not preserved in timeline view — re-run this tool yourself if you need the content]`. `/task/JOURNAL.md` and `/task/artifacts/` are the durable record.

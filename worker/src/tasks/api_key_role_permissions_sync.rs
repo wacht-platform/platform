@@ -11,7 +11,6 @@ use queries::api_key::{
     SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery,
 };
 use redis::AsyncCommands;
-use tracing::info;
 
 const BATCH_SIZE: usize = 500;
 const CHECKPOINT_TTL_SECS: u64 = 6 * 60 * 60;
@@ -128,10 +127,6 @@ pub async fn sync_org_role(
 
     clear_checkpoint(app_state, &checkpoint).await?;
 
-    info!(
-        "Synced org role {} -> {} keys",
-        payload.role_id, total_updated
-    );
     Ok(format!("Updated {} keys", total_updated))
 }
 
@@ -170,9 +165,5 @@ pub async fn sync_workspace_role(
 
     clear_checkpoint(app_state, &checkpoint).await?;
 
-    info!(
-        "Synced workspace role {} -> {} keys",
-        payload.role_id, total_updated
-    );
     Ok(format!("Updated {} keys", total_updated))
 }

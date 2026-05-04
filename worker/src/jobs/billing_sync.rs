@@ -5,7 +5,7 @@ use commands::billing::{CompleteBillingSyncRunCommand, CreateBillingSyncRunComma
 use common::{DodoClient, ReadConsistency, state::AppState};
 use queries::billing::{GetDeploymentProviderSubscriptionQuery, ProviderSubscriptionInfo};
 use redis::AsyncCommands as _;
-use tracing::{error, info, warn};
+use tracing::error;
 
 struct MetricConfig {
     event_name: &'static str,
@@ -54,14 +54,10 @@ fn get_metric_config(metric: &str) -> MetricConfig {
 }
 
 pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<String> {
-    info!("[BILLING SYNC] Starting Redis → PostgreSQL + Dodo sync");
-
     let mut redis = app_state
         .redis_client
         .get_multiplexed_async_connection()
         .await?;
-
-    info!("[BILLING SYNC] Starting sync for current billing cycles");
 
     let sync_run_id = CreateBillingSyncRunCommand::new(0)
         .execute_with_db(app_state.db_router.writer())
@@ -80,26 +76,17 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
         .await?;
 
     if dirty.is_empty() {
-        info!("[BILLING SYNC] No dirty deployments to sync");
         CompleteBillingSyncRunCommand::new(sync_run_id, 0, 0)
             .execute_with_db(app_state.db_router.writer())
             .await?;
         return Ok("No dirty deployments".to_string());
     }
 
-    info!("[BILLING SYNC] Found {} dirty deployments", dirty.len());
-
     let mut total_units_synced = 0i64;
 
     let dodo_client = match DodoClient::new() {
         Ok(client) => Some(client),
-        Err(e) => {
-            warn!(
-                "[BILLING SYNC] Dodo not configured: {}. Syncing to PostgreSQL only.",
-                e
-            );
-            None
-        }
+        Err(_) => None,
     };
 
     for (deployment_id, _event_count) in &dirty {
@@ -114,14 +101,10 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
         {
             Ok(units) => {
                 total_units_synced += units;
-                info!(
-                    "[BILLING SYNC] ✅ Synced deployment {} ({} units)",
-                    deployment_id, units
-                );
             }
             Err(e) => {
                 error!(
-                    "[BILLING SYNC] ❌ Failed to sync deployment {}: {}",
+                    "[BILLING SYNC] failed to sync deployment {}: {}",
                     deployment_id, e
                 );
             }
@@ -131,12 +114,6 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
     CompleteBillingSyncRunCommand::new(sync_run_id, total_units_synced, dirty.len() as i32)
         .execute_with_db(app_state.db_router.writer())
         .await?;
-
-    info!(
-        "[BILLING SYNC] ✅ Completed sync of {} deployments ({} total units)",
-        dirty.len(),
-        total_units_synced
-    );
 
     Ok(format!(
         "Synced {} deployments ({} units)",
@@ -345,15 +322,10 @@ async fn sync_to_dodo_with_data(
             )
             .await
         {
-            Ok(_) => {
-                info!(
-                    "[DODO] ✅ Synced {}={} for deployment {}",
-                    config.event_name, current_value, deployment_id
-                );
-            }
+            Ok(_) => {}
             Err(e) => {
                 error!(
-                    "[DODO] ❌ Failed to sync {} for deployment {}: {}",
+                    "[DODO] failed to sync {} for deployment {}: {}",
                     config.event_name, deployment_id, e
                 );
             }

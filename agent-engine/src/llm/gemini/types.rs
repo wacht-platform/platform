@@ -24,7 +24,9 @@ pub struct Candidate {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CandidateContent {
+    #[serde(default)]
     pub parts: Vec<CandidatePart>,
+    #[serde(default)]
     pub role: String,
 }
 
@@ -62,7 +64,7 @@ pub struct UsageMetadata {
     pub prompt_token_count: u32,
     #[serde(rename = "cachedContentTokenCount", default)]
     pub cached_content_token_count: Option<u32>,
-    #[serde(rename = "candidatesTokenCount")]
+    #[serde(rename = "candidatesTokenCount", default)]
     pub candidates_token_count: u32,
     #[serde(rename = "totalTokenCount")]
     pub total_token_count: u32,

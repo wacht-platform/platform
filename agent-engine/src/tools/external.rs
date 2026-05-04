@@ -253,15 +253,6 @@ pub async fn search_external_tools(
         return Ok(Vec::new());
     }
 
-    tracing::info!(
-        deployment_id,
-        actor_id,
-        connected_apps = ?connected,
-        mode = ?options.mode,
-        query = ?query,
-        "composio search: querying Composio API"
-    );
-
     let limit = options.limit.clamp(1, 200);
     let limit_str = limit.to_string();
     let mode = options.mode;
@@ -312,11 +303,9 @@ pub async fn search_external_tools(
 
     let batches = futures::future::join_all(per_toolkit_fetches).await;
 
-    let mut raw_count = 0usize;
     let mut candidates: Vec<ExternalToolCandidate> = Vec::new();
     for result in batches {
         let (toolkit, items) = result?;
-        raw_count += items.len();
         for t in items {
             let Some(slug) = t.slug else { continue };
             candidates.push(ExternalToolCandidate {
@@ -332,28 +321,6 @@ pub async fn search_external_tools(
                 input_schema: t.input_parameters,
             });
         }
-    }
-
-    if candidates.is_empty() {
-        tracing::warn!(
-            deployment_id,
-            actor_id,
-            query = ?query_owned,
-            mode = ?mode,
-            raw_count,
-            connected_apps = ?connected,
-            "composio search: API returned no matches"
-        );
-    } else {
-        tracing::info!(
-            deployment_id,
-            actor_id,
-            query = ?query_owned,
-            mode = ?mode,
-            raw_count,
-            kept = candidates.len(),
-            "composio search: candidates resolved"
-        );
     }
 
     Ok(candidates)

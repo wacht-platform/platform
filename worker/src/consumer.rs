@@ -6,7 +6,7 @@ use futures::StreamExt;
 use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{error, warn};
 
 use crate::tasks::{
     agent, analytics, api_audit, api_key_role_permissions_sync, billing, conversation, document,
@@ -95,63 +95,12 @@ enum WorkerTask {
     ApiKeySyncWorkspaceRolePermissions(dto::json::nats::ApiKeyWorkspaceRoleSyncPayload),
 }
 
-impl WorkerTask {
-    fn task_type(&self) -> &'static str {
-        match self {
-            Self::EmailSendVerification(_) => "email.send_verification",
-            Self::EmailSendPasswordReset(_) => "email.send_password_reset",
-            Self::EmailSendMagicLink(_) => "email.send_magic_link",
-            Self::EmailSendSignInNotification(_) => "email.send_signin_notification",
-            Self::EmailSendEmailChangeNotification(_) => "email.send_email_change_notification",
-            Self::EmailSendPasswordChangeNotification(_) => {
-                "email.send_password_change_notification"
-            }
-            Self::EmailSendPasswordRemoveNotification(_) => {
-                "email.send_password_remove_notification"
-            }
-            Self::EmailSendWaitlistSignup(_) => "email.send_waitlist_signup",
-            Self::EmailSendOrganizationMembershipInvite(_) => {
-                "email.send_organization_membership_invite"
-            }
-            Self::EmailSendDeploymentInvite(_) => "email.send_deployment_invite",
-            Self::EmailSendWaitlistApproval(_) => "email.send_waitlist_approval",
-            Self::TokenClean(_) => "token.clean",
-            Self::ConversationCleanupCompacted(_) => "conversation.cleanup_compacted",
-            Self::WebhookDeliver(_) => "webhook.deliver",
-            Self::WebhookBatch(_) => "webhook.batch",
-            Self::WebhookRetry(_) => "webhook.retry",
-            Self::WebhookReplayBatch(_) => "webhook.replay_batch",
-            Self::DocumentProcess(_) => "document.process",
-            Self::AgentEventLogWork(_) => "agent.event_log_work",
-            Self::VectorStoreMaintain(_) => "vector_store.maintain",
-            Self::WebhookEvent(_) => "webhook.event",
-            Self::AnalyticsEvent(_) => "analytics.event",
-            Self::ApiAuditEvent(_) => "audit.api_key_verification",
-            Self::BillingEvent(_) => "billing.event",
-            Self::ApiKeySyncOrgMembershipPermissions(_) => {
-                "api_key.sync_org_membership_permissions"
-            }
-            Self::ApiKeySyncWorkspaceMembershipPermissions(_) => {
-                "api_key.sync_workspace_membership_permissions"
-            }
-            Self::ApiKeySyncOrgRolePermissions(_) => "api_key.sync_org_role_permissions",
-            Self::ApiKeySyncWorkspaceRolePermissions(_) => {
-                "api_key.sync_workspace_role_permissions"
-            }
-        }
-    }
-}
-
 pub struct NatsConsumer {
     jetstream: jetstream::Context,
     app_state: AppState,
 }
 
 impl NatsConsumer {
-    fn is_webhook_task(task: &WorkerTask) -> bool {
-        matches!(task, WorkerTask::WebhookEvent(_))
-    }
-
     pub async fn new(app_state: AppState) -> Result<Self> {
         Ok(Self {
             jetstream: app_state.nats_jetstream.clone(),
@@ -380,14 +329,13 @@ impl NatsConsumer {
                     })?;
             }
             WorkerTask::VectorStoreMaintain(task) => {
-                let outcome = vector_store::maintain_vector_store_impl(
+                vector_store::maintain_vector_store_impl(
                     task.deployment_id,
                     task.store_name,
                     &self.app_state,
                 )
                 .await
                 .map_err(|e| TaskError::Permanent(e.to_string()))?;
-                info!(task_id, outcome = %outcome, "Vector store maintenance task finished");
             }
             WorkerTask::WebhookEvent(task) => {
                 webhook_event::trigger_webhook_event(task, &self.app_state).await?;
@@ -426,8 +374,6 @@ impl NatsConsumer {
     }
 
     pub async fn start_consuming(&self) -> Result<()> {
-        info!("Starting NATS JetStream consumer for worker tasks");
-
         let stream = self.jetstream.get_stream("worker_tasks").await?;
 
         let consumer = match stream
@@ -488,47 +434,16 @@ impl NatsConsumer {
             }
         };
 
-        if Self::is_webhook_task(&task_message.task) {
-            debug!(
-                "Received JetStream task: {} (ID: {})",
-                task_message.task.task_type(),
-                task_message.task_id
-            );
-        } else {
-            info!(
-                "Received JetStream task: {} (ID: {})",
-                task_message.task.task_type(),
-                task_message.task_id
-            );
-        }
-
-        let is_webhook_task = Self::is_webhook_task(&task_message.task);
         match self
             .execute_task(&task_message.task_id, task_message.task)
             .await
         {
             Ok(_) => {
-                if is_webhook_task {
-                    debug!("Task {} completed successfully", task_message.task_id);
-                } else {
-                    info!("Task {} completed successfully", task_message.task_id);
-                }
                 if let Err(e) = message.ack().await {
                     error!("Failed to acknowledge task {}: {}", task_message.task_id, e);
                 }
             }
             Err(TaskError::RetryWithDelay(duration)) => {
-                if is_webhook_task {
-                    debug!(
-                        "Task {} will retry after {:?}",
-                        task_message.task_id, duration
-                    );
-                } else {
-                    info!(
-                        "Task {} will retry after {:?}",
-                        task_message.task_id, duration
-                    );
-                }
                 if let Err(e) = message.ack_with(AckKind::Nak(Some(duration))).await {
                     error!(
                         "Failed to NAK with delay for task {}: {}",
@@ -537,17 +452,10 @@ impl NatsConsumer {
                 }
             }
             Err(TaskError::Permanent(error_msg)) => {
-                if is_webhook_task {
-                    debug!(
-                        "Task {} permanently failed: {}",
-                        task_message.task_id, error_msg
-                    );
-                } else {
-                    error!(
-                        "Task {} permanently failed: {}",
-                        task_message.task_id, error_msg
-                    );
-                }
+                error!(
+                    "Task {} permanently failed: {}",
+                    task_message.task_id, error_msg
+                );
                 if let Err(e) = message.ack().await {
                     error!(
                         "Failed to acknowledge failed task {}: {}",

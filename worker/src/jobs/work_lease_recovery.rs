@@ -14,7 +14,7 @@ use commands::event_log::{
     MAX_LEASE_ATTEMPTS, mark_exhausted_leases_failed, reclaim_expired_leases,
 };
 use common::state::AppState;
-use tracing::{error, info};
+use tracing::error;
 
 use crate::metrics::{EVENT_LOG_DEAD_LETTERED, WORK_LEASE_EXPIRED};
 
@@ -22,10 +22,6 @@ const RECOVERY_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Spawn the recovery loop. Runs forever.
 pub async fn run(app_state: AppState) -> Result<()> {
-    info!(
-        "work-lease recovery cron starting (interval = {:?})",
-        RECOVERY_INTERVAL
-    );
     let mut tick = tokio::time::interval(RECOVERY_INTERVAL);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -40,13 +36,10 @@ pub async fn run(app_state: AppState) -> Result<()> {
 async fn sweep_once(app_state: &AppState) -> Result<()> {
     let pool = app_state.db_router.writer();
 
-    // Reclaim expired leases that still have retry budget.
     match reclaim_expired_leases(pool, MAX_LEASE_ATTEMPTS).await {
         Ok(reclaimed) => {
             if !reclaimed.is_empty() {
-                let n = reclaimed.len() as u64;
-                WORK_LEASE_EXPIRED.add(n, &[]);
-                info!(count = n, "reclaimed expired leases for retry");
+                WORK_LEASE_EXPIRED.add(reclaimed.len() as u64, &[]);
             }
         }
         Err(e) => {
@@ -54,11 +47,9 @@ async fn sweep_once(app_state: &AppState) -> Result<()> {
         }
     }
 
-    // Dead-letter leases that exhausted their retry budget.
     match mark_exhausted_leases_failed(pool, MAX_LEASE_ATTEMPTS).await {
         Ok(n) if n > 0 => {
             EVENT_LOG_DEAD_LETTERED.add(n, &[]);
-            info!(count = n, "dead-lettered events that exhausted lease retries");
         }
         Ok(_) => {}
         Err(e) => {

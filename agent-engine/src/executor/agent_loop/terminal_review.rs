@@ -23,17 +23,17 @@ pub enum TerminalReviewChoice {
     Complete,
 }
 
-const CONTINUE_TOOL: &str = "continue_execution";
-const COMPLETE_TOOL: &str = "complete_execution";
+const CONTINUE_TOOL: &str = "mark_continue";
+const COMPLETE_TOOL: &str = "mark_complete";
 
 const REVIEW_SYSTEM_PROMPT: &str = "\
 You are an honest reviewer. Read the recent execution history and the agent's most recent text-only response. Decide whether the agent should continue or complete by calling exactly one of the two tools.
 
-Call `continue_execution` ONLY when there is a concrete, retryable failure where the *justification for retrying is clear from the visible history*. Specifically:
+Call `mark_continue` ONLY when there is a concrete, retryable failure where the *justification for retrying is clear from the visible history*. Specifically:
 - A tool returned a recoverable error (bad input, malformed parameter, transient retryable status) that the agent has not yet retried with corrected input — and the corrected input is obvious from the error.
 - The agent emitted text that explicitly promised a tool call (\"I'll save this to memory\", \"I'll log the worklog\") and did not make the call. The call must be the agent's own stated intent, not your inference.
 
-Otherwise call `complete_execution`. This includes:
+Otherwise call `mark_complete`. This includes:
 - Final answers, clarifying questions, status updates, standby messages, acknowledgements.
 - Tool errors that look like genuine API limitations, 404s on resources that may not exist, validation errors without an obvious correction.
 - Anything ambiguous. When uncertain, complete.
@@ -45,9 +45,9 @@ Hard prohibitions:
 - Never recommend a tool by name in the hint.
 - Never inflate continue cases to seem useful. Default is complete.
 
-When calling `continue_execution`, `hint` is a 5-12 word observation describing *what was left unaddressed*, in observation form: \"promised memory save not emitted\", \"worklog 400 due to malformed entity_id\", \"tool error on bad input not retried\". Never directive. If you cannot phrase a concrete, honest observation grounded in the visible history, call `complete_execution` instead.
+When calling `mark_continue`, `hint` is a 5-12 word observation describing *what was left unaddressed*, in observation form: \"promised memory save not emitted\", \"worklog 400 due to malformed entity_id\", \"tool error on bad input not retried\". Never directive. If you cannot phrase a concrete, honest observation grounded in the visible history, call `mark_complete` instead.
 
-Call exactly one tool. Do not emit any free-form text.";
+Call exactly one tool. Do not emit any free-form text. Output the function name exactly as defined — do NOT prepend `default_api.` or any other namespace prefix. Ensure all string values in arguments are properly JSON-escaped.";
 
 const REVIEW_HISTORY_LIMIT: usize = 40;
 
@@ -64,15 +64,19 @@ impl AgentExecutor {
         for attempt in 1..=MAX_REVIEW_ATTEMPTS {
             let config = SemanticLlmPromptConfig {
                 response_json_schema: json!({}),
-                temperature: Some(0.1),
+                temperature: Some(1.0),
                 max_output_tokens: Some(200),
                 reasoning_effort: None,
             };
-            let request = SemanticLlmRequest::from_config(
+            let mut request = SemanticLlmRequest::from_config(
                 REVIEW_SYSTEM_PROMPT.to_string(),
                 history.clone(),
                 config,
             );
+            request.forced_tool_names = Some(vec![
+                CONTINUE_TOOL.to_string(),
+                COMPLETE_TOOL.to_string(),
+            ]);
             match self
                 .create_weak_llm()
                 .await?
@@ -181,7 +185,7 @@ impl AgentExecutor {
         ));
         entries.push(SemanticLlmMessage::text(
             "user",
-            "Call exactly one tool: continue_execution or complete_execution.",
+            "Call exactly one tool: mark_continue or mark_complete.",
         ));
 
         entries

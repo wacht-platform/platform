@@ -1,5 +1,5 @@
 use chrono::Utc;
-use commands::event_log::{EVENT_LOG_WORK_SUBJECT, InsertEventLogCommand};
+use commands::event_log::{self, EVENT_LOG_WORK_SUBJECT, InsertEventLogCommand};
 use commands::{SetBoardItemPendingApprovalCommand, SetBoardItemPendingQuestionCommand};
 use common::error::AppError;
 use common::HasDbRouter;
@@ -223,6 +223,8 @@ pub async fn answer_project_task_board_item_question(
 
     tx.commit().await?;
 
+    event_log::nudge_dispatcher(&app_state.nats_client).await;
+
     GetProjectTaskBoardItemByIdQuery::new(item_id)
         .execute_with_db(app_state.db_router.writer())
         .await?
@@ -421,6 +423,8 @@ pub async fn approve_project_task_board_item_tool(
 
     tx.commit().await?;
 
+    event_log::nudge_dispatcher(&app_state.nats_client).await;
+
     GetProjectTaskBoardItemByIdQuery::new(item_id)
         .execute_with_db(app_state.db_router.writer())
         .await?
@@ -558,6 +562,10 @@ pub async fn create_project_task_board_item_comment(
     }
 
     tx.commit().await?;
+
+    if coordinator_thread_id.is_some() {
+        event_log::nudge_dispatcher(&app_state.nats_client).await;
+    }
 
     Ok(comment)
 }

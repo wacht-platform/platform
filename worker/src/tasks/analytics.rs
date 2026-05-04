@@ -3,7 +3,6 @@ use chrono::{DateTime, Utc};
 use common::clickhouse::UserEvent;
 use common::state::AppState;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AnalyticsEventTask {
@@ -21,11 +20,6 @@ pub async fn store_analytics_event_impl(
     task: AnalyticsEventTask,
     app_state: &AppState,
 ) -> Result<String> {
-    info!(
-        "[ANALYTICS WORKER] Processing {} event for deployment {} (user: {:?})",
-        task.event_type, task.deployment_id, task.user_id
-    );
-
     let user_event = UserEvent {
         deployment_id: task.deployment_id as i64,
         user_id: task.user_id.map(|id| id as i64),
@@ -41,11 +35,6 @@ pub async fn store_analytics_event_impl(
         .clickhouse_service
         .insert_user_event(&user_event)
         .await?;
-
-    info!(
-        "[ANALYTICS WORKER] Successfully stored {} event for deployment {}",
-        task.event_type, task.deployment_id
-    );
 
     Ok(format!(
         "Analytics event {} stored successfully",

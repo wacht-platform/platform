@@ -227,6 +227,17 @@ pub struct UpdateProjectTaskParams {
     pub status: Option<String>,
     #[serde(default)]
     pub schedule: Option<ProjectTaskScheduleParams>,
+    /// Required when transitioning to a terminal status (`completed`, `failed`,
+    /// `blocked`, `rejected`). Free-form prose describing what was produced or why
+    /// the task is in this state. Validated at the boundary — short or empty
+    /// summaries are rejected with a `BadRequest`.
+    #[serde(default)]
+    pub result_summary: Option<String>,
+    /// Required when transitioning to `completed`. Each path must point at a file
+    /// that exists in the task sandbox at the moment of the call. Typically under
+    /// `/task/artifacts/`. Validated at the boundary.
+    #[serde(default)]
+    pub artifacts: Option<Vec<String>>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

@@ -280,8 +280,10 @@ impl GetCompactionWindowConversationsQuery {
                 c.id, c.thread_id, c.board_item_id, c.execution_run_id, c.timestamp, c.content, c.message_type,
                 c.created_at, c.updated_at, c.metadata
             FROM conversations c, last_summary_with_default ls
-            WHERE c.thread_id = $1
-              AND ($3::bigint IS NULL OR c.board_item_id = $3)
+            WHERE (
+                ($3::bigint IS NOT NULL AND c.board_item_id = $3)
+                OR ($3::bigint IS NULL AND c.thread_id = $1)
+            )
               AND c.id > ls.last_summary_id
               AND c.id < $2
               AND c.message_type <> 'execution_summary'
@@ -355,5 +357,189 @@ impl ListConversationsForBoardItemQuery {
         .map_err(AppError::from)?;
 
         Ok(records)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskRoutingEventRecord {
+    pub id: i64,
+    pub coordinator_thread_id: Option<i64>,
+    pub routing_reason: Option<String>,
+    pub summary: Option<String>,
+    pub note: Option<String>,
+    pub created_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug)]
+pub struct GetBoardItemConversationHistoryQuery {
+    pub board_item_id: i64,
+    pub own_thread_id: i64,
+}
+
+impl GetBoardItemConversationHistoryQuery {
+    pub fn new(board_item_id: i64, own_thread_id: i64) -> Self {
+        Self {
+            board_item_id,
+            own_thread_id,
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Vec<ConversationRecord>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query_as::<_, ConversationRecord>(
+            r#"
+            WITH last_summary AS (
+                SELECT id AS last_summary_id
+                FROM conversations
+                WHERE thread_id = $2
+                  AND board_item_id = $1
+                  AND message_type = 'execution_summary'
+                ORDER BY id DESC
+                LIMIT 1
+            ),
+            last_summary_with_default AS (
+                SELECT COALESCE(last_summary_id, 0) AS last_summary_id
+                FROM (SELECT 1) dummy
+                LEFT JOIN last_summary ON TRUE
+            )
+            SELECT
+                c.id, c.thread_id, c.board_item_id, c.execution_run_id, c.timestamp, c.content, c.message_type,
+                c.created_at, c.updated_at, c.metadata
+            FROM conversations c, last_summary_with_default ls
+            WHERE c.board_item_id = $1
+              AND c.id >= ls.last_summary_id
+            ORDER BY c.id ASC
+            "#,
+        )
+        .bind(self.board_item_id)
+        .bind(self.own_thread_id)
+        .fetch_all(executor)
+        .await
+        .map_err(AppError::from)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskThreadMetaRecord {
+    pub thread_id: i64,
+    pub title: String,
+    pub thread_purpose: String,
+}
+
+#[derive(Debug)]
+pub struct GetBoardItemThreadMetaQuery {
+    pub board_item_id: i64,
+}
+
+impl GetBoardItemThreadMetaQuery {
+    pub fn new(board_item_id: i64) -> Self {
+        Self { board_item_id }
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Vec<TaskThreadMetaRecord>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let rows = sqlx::query!(
+            r#"
+            SELECT DISTINCT
+                t.id            AS "id!",
+                t.title         AS "title!",
+                t.thread_purpose AS "thread_purpose!"
+            FROM agent_threads t
+            INNER JOIN conversations c ON c.thread_id = t.id
+            WHERE c.board_item_id = $1
+            "#,
+            self.board_item_id,
+        )
+        .fetch_all(executor)
+        .await
+        .map_err(AppError::from)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| TaskThreadMetaRecord {
+                thread_id: r.id,
+                title: r.title,
+                thread_purpose: r.thread_purpose,
+            })
+            .collect())
+    }
+}
+
+#[derive(Debug)]
+pub struct GetBoardItemRoutingEventsQuery {
+    pub board_item_id: i64,
+    pub limit: i64,
+}
+
+impl GetBoardItemRoutingEventsQuery {
+    pub fn new(board_item_id: i64) -> Self {
+        Self {
+            board_item_id,
+            limit: 100,
+        }
+    }
+
+    pub fn with_limit(mut self, limit: i64) -> Self {
+        self.limit = limit;
+        self
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Vec<TaskRoutingEventRecord>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let rows = sqlx::query!(
+            r#"
+            SELECT id           AS "id!",
+                   payload      AS "payload!",
+                   created_at   AS "created_at!"
+            FROM event_log
+            WHERE aggregate_type = 'board_item'
+              AND aggregate_id = $1
+              AND event_type = 'task_routing'
+            ORDER BY created_at ASC
+            LIMIT $2
+            "#,
+            self.board_item_id,
+            self.limit,
+        )
+        .fetch_all(executor)
+        .await
+        .map_err(AppError::from)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                let payload: serde_json::Value = r.payload;
+                let str_field = |key: &str| -> Option<String> {
+                    payload
+                        .get(key)
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                };
+                let coordinator_thread_id = str_field("thread_id")
+                    .and_then(|s| s.parse::<i64>().ok());
+                TaskRoutingEventRecord {
+                    id: r.id,
+                    coordinator_thread_id,
+                    routing_reason: str_field("routing_reason"),
+                    summary: str_field("summary"),
+                    note: str_field("note"),
+                    created_at: r.created_at,
+                }
+            })
+            .collect())
     }
 }

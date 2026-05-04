@@ -31,12 +31,6 @@ impl SandboxRuntime for NatsSandboxRuntime {
         &self,
         spec: ThreadSandboxSpec,
     ) -> SandboxResult<Box<dyn SandboxHandle>> {
-        let started = std::time::Instant::now();
-        tracing::info!(
-            deployment_id = %spec.deployment_id,
-            thread_id = %spec.thread_id,
-            "sandbox: ensure_thread start",
-        );
         let handle = self
             .client
             .thread(&CreateThreadSandboxRequest {
@@ -55,12 +49,6 @@ impl SandboxRuntime for NatsSandboxRuntime {
                 );
                 map_client_error(err)
             })?;
-        tracing::info!(
-            sandbox_id = %handle.sandbox_id(),
-            node_id = %handle.node_id(),
-            elapsed_ms = started.elapsed().as_millis() as u64,
-            "sandbox: ensure_thread done",
-        );
         Ok(Box::new(NatsSandboxHandleAdapter { inner: handle }))
     }
 
@@ -68,13 +56,6 @@ impl SandboxRuntime for NatsSandboxRuntime {
         &self,
         spec: TaskSandboxSpec,
     ) -> SandboxResult<Box<dyn SandboxHandle>> {
-        let started = std::time::Instant::now();
-        tracing::info!(
-            deployment_id = %spec.deployment_id,
-            project_id = %spec.project_id,
-            task_key = %spec.task_key,
-            "sandbox: ensure_task start",
-        );
         let handle = self
             .client
             .task(&CreateTaskSandboxRequest {
@@ -92,12 +73,6 @@ impl SandboxRuntime for NatsSandboxRuntime {
                 );
                 map_client_error(err)
             })?;
-        tracing::info!(
-            sandbox_id = %handle.sandbox_id(),
-            node_id = %handle.node_id(),
-            elapsed_ms = started.elapsed().as_millis() as u64,
-            "sandbox: ensure_task done",
-        );
         Ok(Box::new(NatsSandboxHandleAdapter { inner: handle }))
     }
 }

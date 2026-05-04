@@ -18,7 +18,7 @@ use reqwest::header::RETRY_AFTER;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::time::Instant;
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct WebhookDeliveryTask {
@@ -220,15 +220,6 @@ pub async fn process_webhook_delivery(
 
     if let Some(filter_rules) = &delivery.filter_rules {
         let filter_match = evaluate_filter(filter_rules, &payload);
-        info!(
-            delivery_id,
-            deployment_id,
-            endpoint_id = delivery.endpoint_id,
-            event_name = %delivery.event_name,
-            filter_match,
-            "Worker evaluated snapshot filter rules for delivery",
-        );
-
         if !filter_match {
             let payload_json = serde_json::to_string(&outbound_payload).unwrap_or_default();
             let ch_delivery = build_webhook_log(
@@ -258,15 +249,6 @@ pub async fn process_webhook_delivery(
         }
     }
 
-    info!(
-        delivery_id,
-        deployment_id,
-        endpoint_id = delivery.endpoint_id,
-        app_slug = %delivery.app_slug,
-        event_name = %delivery.event_name,
-        "Processing queued webhook delivery",
-    );
-
     if let Some(rate_limit_config) = &delivery.rate_limit_config {
         let config: models::webhook::RateLimitConfig =
             serde_json::from_value(rate_limit_config.clone())
@@ -282,17 +264,8 @@ pub async fn process_webhook_delivery(
             )
             .await?
         {
-            None => {
-                info!(
-                    "Webhook delivery {} allowed (limit: {} per {}ms)",
-                    delivery_id, config.max_requests, config.duration_ms
-                );
-            }
+            None => {}
             Some(delay_ms) => {
-                info!(
-                    "Webhook delivery {} rate limited, requeuing with {}ms delay (limit: {} per {}ms)",
-                    delivery_id, delay_ms, config.max_requests, config.duration_ms
-                );
                 return Ok(DeliveryResult::RetryAfter(
                     std::time::Duration::from_millis(delay_ms as u64),
                 ));
@@ -383,11 +356,6 @@ pub async fn process_webhook_delivery(
                 .await?;
 
                 deactivate_endpoint(app_state, delivery.endpoint_id).await?;
-
-                info!(
-                    "Endpoint {} (ID: {}) has been permanently disabled due to 410 Gone response",
-                    delivery.url, delivery.endpoint_id
-                );
 
                 if let Err(e) = send_webhook_failure_notification(
                     deployment_id,
@@ -546,13 +514,6 @@ async fn handle_delivery_failure(
             + chrono::Duration::from_std(retry_delay)
                 .unwrap_or_else(|_| chrono::Duration::hours(6));
 
-        info!(
-            "Scheduling retry for delivery {} at {} (delay: {}s)",
-            delivery_id,
-            next_retry,
-            retry_delay.as_secs()
-        );
-
         UpdateDeliveryAttemptsCommand {
             delivery_id,
             new_attempts,
@@ -612,11 +573,6 @@ async fn handle_delivery_failure(
                 } else {
                     warn!("Failed to generate snowflake id for endpoint deactivation log");
                 }
-
-                info!(
-                    "Endpoint {} for app {} has been auto-deactivated. Customer should be notified.",
-                    endpoint_id, app_slug
-                );
 
                 if let Err(e) = send_webhook_failure_notification(
                     deployment_id,
@@ -712,13 +668,6 @@ async fn send_webhook_failure_notification(
             .await?;
 
         if lock_set.is_none() {
-            info!(
-                deployment_id,
-                app_slug,
-                endpoint_id,
-                recipient = %recipient_email,
-                "Skipping duplicate webhook failure notification within cooldown",
-            );
             continue;
         }
 
@@ -743,14 +692,6 @@ async fn send_webhook_failure_notification(
                 "Failed to send webhook failure notification email: {}",
                 e
             );
-        } else {
-            info!(
-                deployment_id,
-                app_slug,
-                endpoint_id,
-                recipient = %recipient_email,
-                "Webhook failure notification email sent",
-            );
         }
     }
 
@@ -765,12 +706,6 @@ pub async fn process_webhook_batch(
     if delivery_ids.is_empty() {
         return Ok("No deliveries to process".to_string());
     }
-
-    info!(
-        "Processing webhook batch of {} deliveries for deployment {}",
-        delivery_ids.len(),
-        deployment_id
-    );
 
     let mut successful = 0;
     let mut failed = 0;
@@ -821,11 +756,6 @@ pub async fn process_webhook_retry(
     app_state: &AppState,
 ) -> Result<String> {
     use crate::tasks::webhook_replay::replay_webhook_delivery;
-
-    info!(
-        "Processing webhook retry for delivery {} in deployment {}",
-        delivery_id, deployment_id
-    );
 
     let new_delivery_id = replay_webhook_delivery(app_state, delivery_id, deployment_id)
         .await

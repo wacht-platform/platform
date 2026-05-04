@@ -214,21 +214,9 @@ impl MaterializeProjectTaskScheduleCommand {
         .await?;
 
         let Some(row) = row else {
-            println!(
-                "[schedule_debug] schedule_id={} skipped: row not selectable (status != active, next_run_at > NOW(), or row locked)",
-                self.schedule_id
-            );
             tx.commit().await?;
             return Ok(None);
         };
-        println!(
-            "[schedule_debug] schedule_id={} picked up: next_run_at={} overlap_policy={} schedule_kind={} interval_seconds={:?}",
-            self.schedule_id,
-            row.next_run_at,
-            row.overlap_policy,
-            row.schedule_kind,
-            row.interval_seconds
-        );
 
         let scheduled_for = row.next_run_at;
         let now = Utc::now();
@@ -314,16 +302,8 @@ impl MaterializeProjectTaskScheduleCommand {
         tx.commit().await?;
 
         let Some(_) = inserted else {
-            println!(
-                "[schedule_debug] schedule_id={} INSERT hit ON CONFLICT (already a row at scheduled_for={}). advanced next_run_at={:?}",
-                self.schedule_id, scheduled_for, next
-            );
             return Ok(None);
         };
-        println!(
-            "[schedule_debug] schedule_id={} FIRED new board_item_id={} task_key=TASK-{} scheduled_for={} next_run_at={:?}",
-            self.schedule_id, new_item_id, new_item_id, scheduled_for, next
-        );
 
         ReconcileProjectTaskBoardItemCommand::new(new_item_id)
             .with_note("Scheduled task fired; new instance materialized".to_string())

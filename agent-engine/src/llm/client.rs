@@ -105,6 +105,11 @@ pub struct SemanticLlmRequest {
     pub max_output_tokens: Option<u32>,
     #[serde(default)]
     pub reasoning_effort: Option<String>,
+    /// When set, forces Gemini's `toolConfig.functionCallingConfig.mode` to `ANY`
+    /// and constrains `allowed_function_names` to this list. Use for narrow
+    /// dispatch calls where text fallback is not acceptable.
+    #[serde(default)]
+    pub forced_tool_names: Option<Vec<String>>,
 }
 
 impl SemanticLlmRequest {
@@ -120,6 +125,7 @@ impl SemanticLlmRequest {
             temperature: config.temperature,
             max_output_tokens: config.max_output_tokens,
             reasoning_effort: config.reasoning_effort,
+            forced_tool_names: None,
         }
     }
 }

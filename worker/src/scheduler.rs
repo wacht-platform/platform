@@ -2,7 +2,7 @@ use anyhow::Result;
 use common::state::AppState;
 use std::time::Duration;
 use tokio::time;
-use tracing::{error, info};
+use tracing::error;
 
 use crate::jobs;
 
@@ -16,8 +16,6 @@ impl JobScheduler {
     }
 
     pub async fn start(&self) -> Result<()> {
-        info!("Starting job scheduler...");
-
         // Spawn billing sync job (runs every 10 minutes)
         let billing_state = self.app_state.clone();
         tokio::spawn(async move {
@@ -25,15 +23,10 @@ impl JobScheduler {
             interval.tick().await;
             loop {
                 interval.tick().await;
-                info!("Running billing sync job...");
-
-                match jobs::billing_sync::sync_redis_to_postgres_and_dodo(&billing_state).await {
-                    Ok(result) => {
-                        info!("Billing sync completed: {}", result);
-                    }
-                    Err(e) => {
-                        error!("Billing sync failed: {}", e);
-                    }
+                if let Err(e) =
+                    jobs::billing_sync::sync_redis_to_postgres_and_dodo(&billing_state).await
+                {
+                    error!("Billing sync failed: {}", e);
                 }
             }
         });
@@ -44,15 +37,8 @@ impl JobScheduler {
             interval.tick().await;
             loop {
                 interval.tick().await;
-                info!("Running storage sync job...");
-
-                match jobs::storage_sync::sync_storage_to_dodo(&storage_state).await {
-                    Ok(result) => {
-                        info!("Storage sync completed: {}", result);
-                    }
-                    Err(e) => {
-                        error!("Storage sync failed: {}", e);
-                    }
+                if let Err(e) = jobs::storage_sync::sync_storage_to_dodo(&storage_state).await {
+                    error!("Storage sync failed: {}", e);
                 }
             }
         });
@@ -63,40 +49,28 @@ impl JobScheduler {
             interval.tick().await;
             loop {
                 interval.tick().await;
-                match jobs::oauth_grant_last_used_sync::sync_oauth_grant_last_used(
+                if let Err(e) = jobs::oauth_grant_last_used_sync::sync_oauth_grant_last_used(
                     &oauth_grant_last_used_state,
                 )
                 .await
                 {
-                    Ok(result) => {
-                        info!("OAuth grant last_used sync completed: {}", result);
-                    }
-                    Err(e) => {
-                        error!("OAuth grant last_used sync failed: {}", e);
-                    }
+                    error!("OAuth grant last_used sync failed: {}", e);
                 }
             }
         });
 
         let project_task_schedule_state = self.app_state.clone();
         tokio::spawn(async move {
-            info!("Project task schedule dispatcher starting (interval = 300s, first run immediate)");
             let mut interval = time::interval(Duration::from_secs(300));
             loop {
                 interval.tick().await;
-                info!("Running project task schedule dispatch job...");
-
-                match jobs::project_task_schedule_dispatch::dispatch_due_project_task_schedules(
-                    &project_task_schedule_state,
-                )
-                .await
+                if let Err(e) =
+                    jobs::project_task_schedule_dispatch::dispatch_due_project_task_schedules(
+                        &project_task_schedule_state,
+                    )
+                    .await
                 {
-                    Ok(result) => {
-                        info!("Project task schedule dispatch completed: {}", result);
-                    }
-                    Err(e) => {
-                        error!("Project task schedule dispatch failed: {}", e);
-                    }
+                    error!("Project task schedule dispatch failed: {}", e);
                 }
             }
         });
@@ -111,14 +85,12 @@ impl JobScheduler {
             loop {
                 match jobs::board_reconciler::acquire_lease(&board_reconciler_state, &owner).await {
                     Ok(true) => {
-                        info!(owner = %owner, "Board reconciler acquired lease, running tick...");
-                        match jobs::board_reconciler::reconcile_stale_board_items(
+                        if let Err(e) = jobs::board_reconciler::reconcile_stale_board_items(
                             &board_reconciler_state,
                         )
                         .await
                         {
-                            Ok(result) => info!("Board reconciler tick completed: {}", result),
-                            Err(e) => error!("Board reconciler tick failed: {}", e),
+                            error!("Board reconciler tick failed: {}", e);
                         }
                         if let Err(e) =
                             jobs::board_reconciler::release_lease(&board_reconciler_state, &owner)
@@ -173,7 +145,6 @@ impl JobScheduler {
             }
         });
 
-        info!("Job scheduler started successfully");
         Ok(())
     }
 }

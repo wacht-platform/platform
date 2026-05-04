@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::Result;
 use commands::event_log::list_stuck_assignments;
 use common::state::AppState;
-use tracing::{error, info};
+use tracing::{error, warn};
 
 use crate::metrics::STUCK_ASSIGNMENT_DETECTED;
 
@@ -17,10 +17,6 @@ const STALE_AFTER_SECS: i64 = 30 * 60;
 const BATCH_LIMIT: i64 = 200;
 
 pub async fn run(app_state: AppState) -> Result<()> {
-    info!(
-        "stuck-assignment sweeper starting (interval = {:?}, threshold = {}s)",
-        SWEEP_INTERVAL, STALE_AFTER_SECS
-    );
     let mut tick = tokio::time::interval(SWEEP_INTERVAL);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -45,7 +41,7 @@ async fn sweep_once(app_state: &AppState) -> Result<()> {
     }
 
     STUCK_ASSIGNMENT_DETECTED.add(rows.len() as u64, &[]);
-    info!(count = rows.len(), "stuck assignments detected");
+    warn!(count = rows.len(), "stuck assignments detected");
 
     Ok(())
 }

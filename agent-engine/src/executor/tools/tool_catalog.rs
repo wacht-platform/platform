@@ -479,10 +479,7 @@ impl AgentExecutor {
                     })
                 })
                 .collect::<Vec<_>>();
-            let recommended = external_tools
-                .iter()
-                .map(|tool| tool.name.clone())
-                .collect::<Vec<_>>();
+            let recommended: Vec<String> = Vec::new();
             let apps_searched: Vec<String> = if apps.is_empty() {
                 external_tools
                     .iter()

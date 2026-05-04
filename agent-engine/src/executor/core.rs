@@ -17,6 +17,8 @@ pub struct AgentExecutor {
     pub(crate) ctx:
         std::sync::Arc<crate::runtime::thread_execution_context::ThreadExecutionContext>,
     pub(crate) conversations: Vec<ConversationRecord>,
+    pub(crate) routing_events: Vec<models::TaskRoutingEvent>,
+    pub(crate) task_thread_meta: Vec<models::TaskThreadMeta>,
     pub(crate) tool_executor: ToolExecutor,
     pub(crate) channel: tokio::sync::mpsc::Sender<StreamEvent>,
     pub(crate) memories: Vec<MemoryRecord>,
@@ -47,6 +49,7 @@ pub struct AgentExecutor {
     pub(crate) repeated_tool_call_count: usize,
     pub(crate) terminal_review_continue_count: usize,
     pub(crate) preloaded_immediate_context: Option<ImmediateContext>,
+    pub(crate) budget: super::budget::BudgetCounter,
 }
 
 pub struct PreparedExecutor {
@@ -301,6 +304,8 @@ impl AgentExecutorBuilder {
             channel,
             memories: Vec::new(),
             conversations: Vec::new(),
+            routing_events: Vec::new(),
+            task_thread_meta: Vec::new(),
             system_instructions,
             filesystem,
             shell,
@@ -327,6 +332,7 @@ impl AgentExecutorBuilder {
             repeated_tool_call_count: 0,
             terminal_review_continue_count: 0,
             preloaded_immediate_context: Some(immediate_context),
+            budget: super::budget::BudgetCounter::default(),
         })
     }
 
@@ -415,6 +421,23 @@ impl AgentExecutor {
                 .as_ref()
                 .map(|event| Self::thread_event_implies_coordinator(&event.event_type))
                 .unwrap_or(false)
+    }
+
+    /// Resolve the role this executor is currently acting as. Mirrors
+    /// `effective_is_coordinator_thread` (a routing event on a non-coordinator
+    /// thread still counts as coordinator), then falls through to review /
+    /// conversation / executor.
+    pub(crate) fn current_thread_role(&self) -> super::project::status_machine::ThreadRole {
+        use super::project::status_machine::ThreadRole;
+        if self.effective_is_coordinator_thread() {
+            ThreadRole::Coordinator
+        } else if self.is_review_thread {
+            ThreadRole::Reviewer
+        } else if self.is_conversation_thread {
+            ThreadRole::Conversation
+        } else {
+            ThreadRole::Executor
+        }
     }
 
     pub(crate) fn system_prompt_name(&self) -> &'static str {

@@ -25,7 +25,7 @@ use commands::event_log::{
 use common::state::AppState;
 use futures::StreamExt;
 use tokio::time::Instant;
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 
 use crate::metrics::{
     EVENT_LOG_DEAD_LETTERED, EVENT_LOG_PUBLISH_FAILED, EVENT_LOG_PUBLISH_LATENCY, label,
@@ -37,8 +37,6 @@ const BATCH_SIZE: i64 = 100;
 const PARANOID_SWEEP: Duration = Duration::from_secs(120);
 
 pub async fn run(app_state: AppState) -> Result<()> {
-    info!("event dispatcher starting");
-
     let mut wake_sub = app_state
         .nats_client
         .subscribe(WAKE_SUBJECT.to_string())

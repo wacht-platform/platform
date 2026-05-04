@@ -211,6 +211,16 @@ impl InsertEventLogCommand {
         .fetch_optional(executor)
         .await?;
 
+        if row.is_none() && self.publish_subject.is_some() {
+            tracing::warn!(
+                aggregate_type = %self.aggregate_type,
+                aggregate_id = self.aggregate_id,
+                event_type = %self.event_type,
+                idempotency_key = %self.idempotency_key,
+                "event_log INSERT hit ON CONFLICT; wake will not fire for this attempt (existing row may have already been published)"
+            );
+        }
+
         Ok(row.map(|r| r.id))
     }
 }

@@ -380,12 +380,17 @@ impl GeminiClient {
             "tools".to_string(),
             json!([{ "functionDeclarations": function_declarations }]),
         );
-        // AUTO mode: model may emit tool calls, text, or both. Text-only response is
-        // the terminal signal in the unified ReAct loop.
-        body.insert(
-            "toolConfig".to_string(),
-            json!({ "functionCallingConfig": { "mode": "AUTO" } }),
-        );
+        let tool_config = if let Some(forced) = prompt.forced_tool_names.as_ref() {
+            json!({
+                "functionCallingConfig": {
+                    "mode": "ANY",
+                    "allowedFunctionNames": forced,
+                }
+            })
+        } else {
+            json!({ "functionCallingConfig": { "mode": "AUTO" } })
+        };
+        body.insert("toolConfig".to_string(), tool_config);
         if !generation_config.is_empty() {
             body.insert(
                 "generationConfig".to_string(),

@@ -1,7 +1,6 @@
 use chrono::{Datelike, Utc};
 use common::state::AppState;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillingEventTask {
@@ -75,11 +74,6 @@ pub async fn process_billing_event(
     pipe.expire(&format!("billing:{}:dirty_deployments", period), 5184000);
 
     let _: () = pipe.query_async(&mut conn).await?;
-
-    info!(
-        "Billing event {} recorded for deployment {}",
-        task.event_type, task.deployment_id
-    );
 
     Ok(format!(
         "Recorded {} event for deployment {}",

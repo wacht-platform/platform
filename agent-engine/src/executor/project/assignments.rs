@@ -139,6 +139,17 @@ impl AgentExecutor {
 
             if let Some(matched) = matched {
                 consumed.insert(matched.id);
+                if matched.status == models::project_task_board::assignment_status::AVAILABLE {
+                    commands::UpdateProjectTaskBoardItemAssignmentStateCommand::new(
+                        matched.id,
+                        models::project_task_board::assignment_status::AVAILABLE.to_string(),
+                    )
+                    .with_note(
+                        "Coordinator re-issued plan; rewake executor".to_string(),
+                    )
+                    .execute_with_deps(&deps)
+                    .await?;
+                }
                 continue;
             }
 

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT DISTINCT\n                t.id            AS \"id!\",\n                t.title         AS \"title!\",\n                t.thread_purpose AS \"thread_purpose!\"\n            FROM agent_threads t\n            INNER JOIN conversations c ON c.thread_id = t.id\n            WHERE c.board_item_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "title!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "thread_purpose!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ef52d8c5e67d2edccfa2a45a7c743a434cf79d0d388d6101a3c3b82704c51d08"
+}

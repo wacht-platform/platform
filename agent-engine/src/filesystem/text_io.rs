@@ -35,6 +35,30 @@ impl AgentFilesystem {
         Ok(format!("/uploads/{}", filename))
     }
 
+    /// Cheap existence check — runs `test -e` in the sandbox. Returns `Ok(true)`
+    /// for files and directories alike, `Ok(false)` if absent. Used by terminal
+    /// status validation to confirm declared artifacts actually exist on disk.
+    pub async fn exists(&self, path: &str) -> Result<bool, AppError> {
+        let result = self
+            .sandbox_handle
+            .exec(ExecRequest {
+                command: vec![
+                    "bash".into(),
+                    "-c".into(),
+                    "test -e \"$1\"".into(),
+                    "_".into(),
+                    sandbox_path(path),
+                ],
+                cwd: None,
+                env: BTreeMap::new(),
+                timeout: Some(Duration::from_secs(5)),
+                exec_id: None,
+            })
+            .await
+            .map_err(|e| map_sandbox_error(path, "exists", e))?;
+        Ok(result.exit_code == 0)
+    }
+
     pub async fn read_file_bytes(&self, path: &str) -> Result<Vec<u8>, AppError> {
         self.sandbox_handle
             .read_file(&sandbox_path(path))
@@ -97,7 +121,16 @@ impl AgentFilesystem {
                 .await
                 .unwrap_or_default();
             let mut buf = existing;
+            if !buf.is_empty()
+                && buf.last() != Some(&b'\n')
+                && !content.starts_with('\n')
+            {
+                buf.push(b'\n');
+            }
             buf.extend_from_slice(content.as_bytes());
+            if buf.last() != Some(&b'\n') {
+                buf.push(b'\n');
+            }
             buf
         } else {
             content.as_bytes().to_vec()

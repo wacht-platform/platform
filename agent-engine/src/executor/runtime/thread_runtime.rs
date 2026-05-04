@@ -94,6 +94,8 @@ impl AgentExecutor {
             self.conversations.push(trigger_conversation.clone());
         }
         self.memories = context.memories;
+        self.routing_events = context.routing_events;
+        self.task_thread_meta = context.task_thread_meta;
 
         Ok(())
     }
@@ -113,6 +115,8 @@ impl AgentExecutor {
         let immediate_context = self.take_or_load_immediate_context().await?;
         self.conversations = immediate_context.conversations;
         self.memories = immediate_context.memories;
+        self.routing_events = immediate_context.routing_events;
+        self.task_thread_meta = immediate_context.task_thread_meta;
 
         match resume_context {
             ResumeContext::ApprovalResponse(approvals) => {

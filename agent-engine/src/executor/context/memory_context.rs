@@ -1,8 +1,11 @@
 use crate::runtime::thread_execution_context::ThreadExecutionContext;
 use common::state::AppState;
 use common::{error::AppError, get_startup_memories_in_table};
-use models::{ImmediateContext, MemoryRecord};
-use queries::GetLLMConversationHistoryQuery;
+use models::{ImmediateContext, MemoryRecord, TaskRoutingEvent, TaskThreadMeta};
+use queries::{
+    GetBoardItemConversationHistoryQuery, GetBoardItemRoutingEventsQuery,
+    GetBoardItemThreadMetaQuery, GetLLMConversationHistoryQuery,
+};
 use redis::AsyncCommands;
 use std::sync::Arc;
 
@@ -67,15 +70,21 @@ pub(crate) async fn load_immediate_context(
     ctx: &Arc<ThreadExecutionContext>,
     board_item_id: Option<i64>,
 ) -> Result<ImmediateContext, AppError> {
-    let (mru_memories, recent_conversations) = tokio::join!(
+    let (mru_memories, recent_conversations, routing_events, thread_meta) = tokio::join!(
         load_startup_memories(ctx, 50),
         load_recent_conversations(ctx, board_item_id),
+        load_routing_events(ctx, board_item_id),
+        load_task_thread_meta(ctx, board_item_id),
     );
     Ok(ImmediateContext {
         memories: mru_memories?,
         conversations: recent_conversations?,
+        routing_events: routing_events?,
+        task_thread_meta: thread_meta?,
     })
 }
+
+
 
 async fn load_startup_memories(
     ctx: &Arc<ThreadExecutionContext>,
@@ -106,9 +115,57 @@ async fn load_recent_conversations(
     ctx: &Arc<ThreadExecutionContext>,
     board_item_id: Option<i64>,
 ) -> Result<Vec<models::ConversationRecord>, AppError> {
-    GetLLMConversationHistoryQuery::new(ctx.thread_id)
-        .with_board_item_id(board_item_id)
+    if let Some(board_item_id) = board_item_id {
+        GetBoardItemConversationHistoryQuery::new(board_item_id, ctx.thread_id)
+            .execute_with_db(ctx.app_state.db_router.writer())
+            .await
+    } else {
+        GetLLMConversationHistoryQuery::new(ctx.thread_id)
+            .execute_with_db(ctx.app_state.db_router.writer())
+            .await
+    }
+}
+
+async fn load_task_thread_meta(
+    ctx: &Arc<ThreadExecutionContext>,
+    board_item_id: Option<i64>,
+) -> Result<Vec<TaskThreadMeta>, AppError> {
+    let Some(board_item_id) = board_item_id else {
+        return Ok(Vec::new());
+    };
+    let rows = GetBoardItemThreadMetaQuery::new(board_item_id)
         .execute_with_db(ctx.app_state.db_router.writer())
-        .await
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| TaskThreadMeta {
+            thread_id: r.thread_id,
+            title: r.title,
+            thread_purpose: r.thread_purpose,
+        })
+        .collect())
+}
+
+async fn load_routing_events(
+    ctx: &Arc<ThreadExecutionContext>,
+    board_item_id: Option<i64>,
+) -> Result<Vec<TaskRoutingEvent>, AppError> {
+    let Some(board_item_id) = board_item_id else {
+        return Ok(Vec::new());
+    };
+    let rows = GetBoardItemRoutingEventsQuery::new(board_item_id)
+        .execute_with_db(ctx.app_state.db_router.writer())
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| TaskRoutingEvent {
+            id: r.id,
+            coordinator_thread_id: r.coordinator_thread_id,
+            routing_reason: r.routing_reason,
+            summary: r.summary,
+            note: r.note,
+            created_at: r.created_at,
+        })
+        .collect())
 }
 

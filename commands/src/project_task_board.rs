@@ -147,6 +147,12 @@ where
     .await?;
 
     let Some(thread) = thread else {
+        tracing::warn!(
+            assignment_id = assignment.id,
+            board_item_id = assignment.board_item_id,
+            thread_id = assignment.thread_id,
+            "skipping assignment_execution enqueue: executor thread missing or archived"
+        );
         return Ok(());
     };
 

@@ -171,6 +171,27 @@ impl AgentExecutor {
                 "update_project_task requires at least one meaningful change. Use sleep when nothing should change.".to_string(),
             ));
         }
+
+        if let Some(next_status) = params.status.as_deref() {
+            super::status_machine::validate_status_for_role(
+                self.current_thread_role(),
+                next_status,
+            )?;
+            super::status_machine::validate_terminal_payload_shape(next_status, &params)?;
+            if next_status == "completed" {
+                if let Some(artifacts) = params.artifacts.as_deref() {
+                    for path in artifacts {
+                        if !self.filesystem.exists(path).await? {
+                            return Err(AppError::BadRequest(format!(
+                                "update_project_task: declared artifact `{path}` is not present in \
+                                 the task sandbox. Write the file before marking the task completed."
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+
         let task_key = params.task_key.clone();
 
         self.guard_routing_requires_task_brief(&task_key, "update_project_task")
