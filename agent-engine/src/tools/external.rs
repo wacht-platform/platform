@@ -262,7 +262,7 @@ pub async fn search_external_tools(
         "composio search: querying Composio API"
     );
 
-    let limit = options.limit.clamp(1, 25);
+    let limit = options.limit.clamp(1, 200);
     let limit_str = limit.to_string();
     let mode = options.mode;
     let query_owned = query.map(|q| q.to_string());

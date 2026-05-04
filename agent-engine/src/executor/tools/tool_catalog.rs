@@ -419,10 +419,19 @@ impl AgentExecutor {
             }));
         }
 
-        let max_results = params
-            .max_results_per_query
-            .unwrap_or(if is_browse { 10 } else { 3 })
-            .clamp(1, if is_browse { 25 } else { 5 });
+        let browse_scoped_default = 100;
+        let browse_scoped_cap = 200;
+        let max_results = if is_browse && !browse_unscoped {
+            params
+                .max_results_per_query
+                .unwrap_or(browse_scoped_default)
+                .clamp(1, browse_scoped_cap)
+        } else {
+            params
+                .max_results_per_query
+                .unwrap_or(10)
+                .clamp(1, 25)
+        };
         let effective_browse_limit = if browse_unscoped {
             max_results.min(5)
         } else {

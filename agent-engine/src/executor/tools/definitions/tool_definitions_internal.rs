@@ -378,7 +378,7 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "search_tools",
-            "Discover external tools across connected apps. Two modes: \"search\" (default) ranks tools by your natural-language `queries`; \"browse\" lists featured tools for specific `apps` when you know the service but not the keyword. Returns matching tool names plus input schemas. Use \"browse\" if a keyword search comes back empty or you just want the headline capabilities of a service.",
+            "Discover external tools across connected apps. Two modes: \"search\" (default) ranks tools by your natural-language `queries`; \"browse\" lists tools for specific `apps`. Returns matching tool names plus input schemas. When you know the service (e.g. gmail) but the keyword search returned an incomplete set, call browse with `apps: [\"<slug>\"]` to enumerate the full toolkit — keyword search may rank some tools out of the top-N. Browse + scoped apps returns up to 100 tools per service by default, so it's the canonical way to confirm whether a tool exists for a given service before concluding it doesn't.",
             InternalToolType::SearchTools,
             vec![
                 SchemaField {
@@ -408,9 +408,9 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "max_results_per_query".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Max matches per query (default 3, max 5 in search mode; up to 25 in browse mode).".to_string()),
+                    description: Some("Max matches per query. Defaults: 10 (max 25) in search mode; 10 (max 25) in unscoped browse; 100 (max 200) in browse with explicit `apps`.".to_string()),
                     minimum: Some(1.0),
-                    maximum: Some(25.0),
+                    maximum: Some(200.0),
                     required: false,
                     ..Default::default()
                 },

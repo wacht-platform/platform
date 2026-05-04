@@ -5093,7 +5093,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -9537,7 +9537,7 @@ dependencies = [
 [[package]]
 name = "wacht-sandbox-client"
 version = "0.1.0"
-source = "git+https://github.com/wacht-platform/sandbox-client?branch=main#5f73369fd5b71d1ab1233336cd9c71aa634a7fe6"
+source = "git+https://github.com/wacht-platform/sandbox-client?branch=main#3bcce734eac64a79e922df8e55c4e93c06547b34"
 dependencies = [
  "anyhow",
  "async-nats",

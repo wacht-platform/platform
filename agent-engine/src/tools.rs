@@ -22,8 +22,11 @@ pub struct ToolExecutor {
     sandbox_handle: Option<std::sync::Arc<dyn crate::sandbox::SandboxHandle>>,
 }
 
-const DEFAULT_INLINE_OUTPUT_THRESHOLD_CHARS: usize = 60_000;
-const WEB_CONTEXT_INLINE_OUTPUT_THRESHOLD_CHARS: usize = 200_000;
+const INLINE_OUTPUT_THRESHOLD_CHARS: usize = 40_000;
+const COMPLEXITY_GATE_MIN_CHARS: usize = 2_000;
+const COMPLEXITY_MAX_DEPTH: usize = 4;
+const COMPLEXITY_MAX_LEAVES: usize = 150;
+const COMPLEXITY_MAX_OBJECT_ARRAY_LEN: usize = 20;
 
 impl ToolExecutor {
     pub fn new(
@@ -93,7 +96,7 @@ impl ToolExecutor {
         filesystem: &AgentFilesystem,
         _shell: &ShellExecutor,
     ) -> Result<Value, AppError> {
-        let mut final_result = match &tool.configuration {
+        let final_result = match &tool.configuration {
             AiToolConfiguration::Api(config) => {
                 let result = self
                     .execute_api_tool(tool, config, &execution_params)
@@ -134,6 +137,14 @@ impl ToolExecutor {
             }
         };
 
+        self.apply_output_postprocess(final_result, filesystem).await
+    }
+
+    async fn apply_output_postprocess(
+        &self,
+        mut final_result: Value,
+        filesystem: &AgentFilesystem,
+    ) -> Result<Value, AppError> {
         if final_result.is_object() && final_result.get("structure_hint").is_none() {
             let mut special_hint = None;
             for key in ["data", "result", "stdout"] {
@@ -161,10 +172,13 @@ impl ToolExecutor {
 
         let result_str = serde_json::to_string_pretty(&final_result)?;
         let char_count = result_str.chars().count();
-        let threshold = match tool.name.as_str() {
-            "web_search" | "url_content" => WEB_CONTEXT_INLINE_OUTPUT_THRESHOLD_CHARS,
-            _ => DEFAULT_INLINE_OUTPUT_THRESHOLD_CHARS,
-        };
+        let threshold = INLINE_OUTPUT_THRESHOLD_CHARS;
+
+        let complexity = result_shape::complexity_metrics(&final_result);
+        let too_complex_for_inline = char_count >= COMPLEXITY_GATE_MIN_CHARS
+            && (complexity.max_depth > COMPLEXITY_MAX_DEPTH
+                || complexity.leaf_count > COMPLEXITY_MAX_LEAVES
+                || complexity.max_object_array_len > COMPLEXITY_MAX_OBJECT_ARRAY_LEN);
 
         let timestamp = chrono::Utc::now().timestamp_millis();
         let random_suffix: String = (0..4)
@@ -176,7 +190,7 @@ impl ToolExecutor {
             .collect();
 
         let scratch_filename = format!("tool_output_{}_{}.txt", timestamp, random_suffix);
-        let scratch_path = format!("scratch/{}", scratch_filename);
+        let scratch_path = format!("/scratch/{}", scratch_filename);
         let scratch_write_result = filesystem
             .write_file(&scratch_path, &result_str, false)
             .await;
@@ -186,12 +200,23 @@ impl ToolExecutor {
         let lines = result_str.lines().count();
         let size_bytes = result_str.len();
 
-        if char_count > threshold {
+        if char_count > threshold || too_complex_for_inline {
             let structure_hint = final_result
                 .get("structure_hint")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown")
                 .to_string();
+
+            let reason = if char_count > threshold {
+                format!("Output is larger than {} chars", threshold)
+            } else {
+                format!(
+                    "Output is structurally complex (depth={}, leaves={}, max_object_array_len={})",
+                    complexity.max_depth,
+                    complexity.leaf_count,
+                    complexity.max_object_array_len
+                )
+            };
 
             return Ok(serde_json::json!({
                 "truncated": true,
@@ -201,23 +226,23 @@ impl ToolExecutor {
                     "size_bytes": size_bytes,
                     "lines": lines,
                     "char_count": char_count,
+                    "max_depth": complexity.max_depth,
+                    "leaf_count": complexity.leaf_count,
+                    "max_object_array_len": complexity.max_object_array_len,
                     "saved_to_path": if scratch_saved { serde_json::json!(scratch_path) } else { serde_json::Value::Null }
                 },
                 "persistence_error": scratch_write_error,
-                "hint": format!(
-                    "{}",
-                    if scratch_saved {
-                        format!(
-                    "Output is larger than {} chars, so inline data is omitted. Read '{}' now (execution-scoped temp file) and filter with execute_command.",
-                            threshold, scratch_path
-                        )
-                    } else {
-                        format!(
-                            "Output is larger than {} chars, so inline data is omitted. Could not persist a scratch copy due to a write error.",
-                            threshold
-                        )
-                    }
-                ),
+                "hint": if scratch_saved {
+                    format!(
+                        "{}, so inline data is omitted. Read '{}' now (execution-scoped temp file) and filter with execute_command.",
+                        reason, scratch_path
+                    )
+                } else {
+                    format!(
+                        "{}, so inline data is omitted. Could not persist a scratch copy due to a write error.",
+                        reason
+                    )
+                },
             }));
         }
 
@@ -266,8 +291,10 @@ impl ToolExecutor {
                     .await
             }
             _ => {
-                self.execute_internal_tool_request(tool, request, filesystem, shell)
-                    .await
+                let result = self
+                    .execute_internal_tool_request(tool, request, filesystem, shell)
+                    .await?;
+                self.apply_output_postprocess(result, filesystem).await
             }
         }
     }
