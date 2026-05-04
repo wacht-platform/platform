@@ -733,6 +733,16 @@ impl AgentExecutor {
         )
     }
 
+    #[tracing::instrument(
+        name = "agent_loop.run",
+        skip(self),
+        fields(
+            thread_id = self.ctx.thread_id,
+            execution_run_id = self.ctx.execution_run_id,
+            board_item_id = ?self.current_board_item_id(),
+            role = self.current_thread_role().as_str(),
+        )
+    )]
     pub(super) async fn repl(&mut self) -> Result<(), AppError> {
         let mut iteration = 0;
         let mut consecutive_errors = 0usize;
@@ -760,6 +770,17 @@ impl AgentExecutor {
         }
     }
 
+    #[tracing::instrument(
+        name = "agent_loop.iteration",
+        skip(self),
+        fields(
+            thread_id = self.ctx.thread_id,
+            execution_run_id = self.ctx.execution_run_id,
+            board_item_id = ?self.current_board_item_id(),
+            iteration = self.current_iteration,
+            role = self.current_thread_role().as_str(),
+        )
+    )]
     async fn run_unified_iteration(&mut self) -> Result<bool, AppError> {
         use crate::llm::NativeToolDefinition;
         use meta_tools::{
@@ -769,7 +790,13 @@ impl AgentExecutor {
         use dto::json::agent_executor::{AbortDirective, AbortOutcome};
 
         if let Err(exhausted) = self.budget.check() {
-            tracing::warn!(thread_id = self.ctx.thread_id, "budget exhausted: {}", exhausted.reason());
+            tracing::warn!(
+                thread_id = self.ctx.thread_id,
+                board_item_id = ?self.current_board_item_id(),
+                execution_run_id = self.ctx.execution_run_id,
+                "budget exhausted: {}",
+                exhausted.reason()
+            );
             if self.can_abort_current_assignment_execution() {
                 let reason = format!(
                     "Run preempted by budget cap: {}. Coordinator should decide whether to extend, retry with a tighter brief, or mark the task `failed`.",
@@ -965,10 +992,12 @@ impl AgentExecutor {
             {
                 return self.handle_terminal_text_response(text).await;
             }
+            let truncated_raw = raw_output_snapshot.chars().take(800).collect::<String>();
             tracing::warn!(
                 thread_id = self.ctx.thread_id,
+                board_item_id = ?self.current_board_item_id(),
                 execution_run_id = self.ctx.execution_run_id,
-                raw_output = %raw_output_snapshot,
+                raw_output_preview = %truncated_raw,
                 "empty_response_guard: LLM returned no tool calls and no text",
             );
             self.store_transient_steer(
@@ -1172,6 +1201,7 @@ impl AgentExecutor {
                 Err(error) => {
                     tracing::warn!(
                         thread_id = self.ctx.thread_id,
+                        board_item_id = ?self.current_board_item_id(),
                         execution_run_id = self.ctx.execution_run_id,
                         ?error,
                         "terminal review failed; defaulting to complete"
@@ -1184,6 +1214,7 @@ impl AgentExecutor {
             };
             tracing::info!(
                 thread_id = self.ctx.thread_id,
+                board_item_id = ?self.current_board_item_id(),
                 execution_run_id = self.ctx.execution_run_id,
                 decision = ?decision.decision,
                 hint = decision.hint.as_deref().unwrap_or(""),

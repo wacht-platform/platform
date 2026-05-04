@@ -8,6 +8,16 @@ use models::{AiTool, ConversationContent, ConversationMessageType};
 use serde_json::Value;
 use std::collections::HashSet;
 impl AgentExecutor {
+    #[tracing::instrument(
+        name = "tools.execute_batch",
+        skip(self, requested_actions),
+        fields(
+            thread_id = self.ctx.thread_id,
+            board_item_id = ?self.current_board_item_id(),
+            execution_run_id = self.ctx.execution_run_id,
+            batch_size = requested_actions.len(),
+        )
+    )]
     pub(crate) async fn execute_requested_actions(
         &mut self,
         requested_actions: Vec<ToolCallRequest>,

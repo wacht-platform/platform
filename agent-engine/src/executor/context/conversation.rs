@@ -118,12 +118,27 @@ impl AgentExecutor {
             updated_at: now,
             metadata: None,
         };
-        tracing::info!(
-            thread_id = self.ctx.thread_id,
-            execution_run_id = self.ctx.execution_run_id,
-            step = step,
-            "transient steer fired"
-        );
+        let is_guard_class = step.ends_with("_guard")
+            || step.starts_with("complete_blocked")
+            || step.starts_with("compaction_blocked");
+        let board_item_id = self.current_board_item_id();
+        if is_guard_class {
+            tracing::warn!(
+                thread_id = self.ctx.thread_id,
+                board_item_id = ?board_item_id,
+                execution_run_id = self.ctx.execution_run_id,
+                step = step,
+                "guard fired"
+            );
+        } else {
+            tracing::info!(
+                thread_id = self.ctx.thread_id,
+                board_item_id = ?board_item_id,
+                execution_run_id = self.ctx.execution_run_id,
+                step = step,
+                "transient steer fired"
+            );
+        }
         self.conversations.push(conversation);
     }
 
@@ -1341,6 +1356,16 @@ impl AgentExecutor {
 use commands::UpdateAgentThreadStateCommand;
 
 impl AgentExecutor {
+    #[tracing::instrument(
+        name = "conversation.compact",
+        skip(self, trigger_conversation),
+        fields(
+            thread_id = self.ctx.thread_id,
+            board_item_id = ?self.current_board_item_id(),
+            execution_run_id = self.ctx.execution_run_id,
+            compacted = tracing::field::Empty,
+        )
+    )]
     pub(crate) async fn compact_history_before_execution_if_needed(
         &mut self,
         trigger_conversation: &ConversationRecord,

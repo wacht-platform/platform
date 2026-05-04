@@ -322,6 +322,16 @@ impl AgentExecutor {
         Ok(())
     }
 
+    #[tracing::instrument(
+        name = "assignment.abort",
+        skip(self, directive),
+        fields(
+            thread_id = self.ctx.thread_id,
+            board_item_id = ?self.current_board_item_id(),
+            execution_run_id = self.ctx.execution_run_id,
+            outcome = ?directive.outcome,
+        )
+    )]
     pub(crate) async fn abort_current_assignment_execution(
         &mut self,
         directive: &dto::json::agent_executor::AbortDirective,

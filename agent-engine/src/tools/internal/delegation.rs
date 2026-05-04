@@ -12,6 +12,30 @@ use tokio::time::{sleep, Duration};
 
 const MAX_CUSTOM_THREAD_INSTRUCTION_WORDS: usize = 160;
 const MAX_CUSTOM_THREAD_INSTRUCTION_CHARS: usize = 1200;
+const MIN_LANE_RESPONSIBILITY_CHARS: usize = 30;
+const MIN_LANE_RESPONSIBILITY_WORDS: usize = 4;
+
+/// Reject single-word / two-word generic labels and length-padded gaming.
+/// Combined floor: {chars} catches "research" / "marketing research", and
+/// {words} catches "doing-research-work-here" (one compound token padded out).
+fn validate_lane_responsibility(input: Option<&str>) -> Result<String, AppError> {
+    let normalized = input
+        .map(|v| v.split_whitespace().collect::<Vec<_>>().join(" "))
+        .unwrap_or_default();
+    if normalized.is_empty() {
+        return Err(AppError::BadRequest(
+            "create_thread / update_thread requires `responsibility` — a durable routing label naming what this lane owns. At least 30 characters and 4 words. Examples: 'competitor pricing research for SaaS landing pages', 'final approval before publishing customer-facing collateral'.".to_string(),
+        ));
+    }
+    let char_count = normalized.chars().count();
+    let word_count = normalized.split_whitespace().count();
+    if char_count < MIN_LANE_RESPONSIBILITY_CHARS || word_count < MIN_LANE_RESPONSIBILITY_WORDS {
+        return Err(AppError::BadRequest(format!(
+            "responsibility ({normalized:?}, {char_count} chars / {word_count} words) is too generic. Minimum: {MIN_LANE_RESPONSIBILITY_CHARS} chars AND {MIN_LANE_RESPONSIBILITY_WORDS} words. It must differentiate this lane from siblings — name the *scope* it owns, not just the domain. Bad: 'research', 'marketing research', 'review'. Good: 'competitor pricing research for SaaS landing pages', 'pricing-page copy review with conversion focus'."
+        )));
+    }
+    Ok(normalized)
+}
 
 fn thread_identity_is_coordinator(
     title: &str,
@@ -27,6 +51,43 @@ fn thread_identity_is_coordinator(
             })
             .unwrap_or(false)
 }
+
+/// Stopwords stripped before computing lane similarity. They carry no semantic
+/// distinctness ("Research Lane" vs "Marketing Lane" should not match because
+/// they share "lane") and would otherwise inflate Jaccard scores.
+const LANE_SIMILARITY_STOPWORDS: &[&str] = &[
+    "a", "an", "and", "for", "of", "or", "the", "to", "with", "lane", "thread",
+    "agent", "service", "team", "specialist", "executor", "execution", "worker",
+    "helper", "support", "general", "subagent",
+];
+
+fn tokenize_for_similarity(input: &str) -> std::collections::HashSet<String> {
+    input
+        .to_ascii_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .filter(|t| !LANE_SIMILARITY_STOPWORDS.contains(t))
+        .map(|t| t.to_string())
+        .collect()
+}
+
+fn jaccard_similarity(
+    a: &std::collections::HashSet<String>,
+    b: &std::collections::HashSet<String>,
+) -> f64 {
+    if a.is_empty() && b.is_empty() {
+        return 0.0;
+    }
+    let intersection = a.intersection(b).count() as f64;
+    let union = a.union(b).count() as f64;
+    if union == 0.0 {
+        0.0
+    } else {
+        intersection / union
+    }
+}
+
+const LANE_SIMILARITY_REJECT_THRESHOLD: f64 = 0.80;
 
 fn preview_text_by_words(input: Option<&str>, max_words: usize) -> Option<String> {
     let input = input?.trim();
@@ -203,10 +264,7 @@ impl ToolExecutor {
         }
 
         let thread_purpose = models::agent_thread::purpose::EXECUTION.to_string();
-        let responsibility = params
-            .responsibility
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
+        let responsibility = Some(validate_lane_responsibility(params.responsibility.as_deref())?);
         let requested_agent_name = params
             .assigned_agent_name
             .map(|value| value.trim().to_string())
@@ -282,6 +340,65 @@ impl ToolExecutor {
             }
             None => (self.agent().id, self.agent().name.clone()),
         };
+
+        let proposed_signature = format!(
+            "{} {}",
+            title,
+            responsibility.as_deref().unwrap_or("")
+        );
+        let proposed_tokens = tokenize_for_similarity(&proposed_signature);
+        if !proposed_tokens.is_empty() {
+            let existing_threads = queries::ListAgentThreadsQuery::new(
+                self.agent().deployment_id,
+                current_thread.project_id,
+            )
+            .execute_with_db(
+                self.app_state()
+                    .db_router
+                    .reader(common::db_router::ReadConsistency::Strong),
+            )
+            .await?;
+
+            let mut best_match: Option<(f64, &models::AgentThread)> = None;
+            for existing in existing_threads.iter() {
+                if existing.id == current_thread.id {
+                    continue;
+                }
+                if existing.thread_purpose == models::agent_thread::purpose::CONVERSATION
+                    || existing.thread_purpose == models::agent_thread::purpose::COORDINATOR
+                {
+                    continue;
+                }
+                let existing_signature = format!(
+                    "{} {}",
+                    existing.title,
+                    existing.responsibility.as_deref().unwrap_or("")
+                );
+                let existing_tokens = tokenize_for_similarity(&existing_signature);
+                if existing_tokens.is_empty() {
+                    continue;
+                }
+                let score = jaccard_similarity(&proposed_tokens, &existing_tokens);
+                if score >= LANE_SIMILARITY_REJECT_THRESHOLD
+                    && best_match.map(|(prior, _)| score > prior).unwrap_or(true)
+                {
+                    best_match = Some((score, existing));
+                }
+            }
+
+            if let Some((score, dupe)) = best_match {
+                return Err(AppError::BadRequest(format!(
+                    "create_thread: proposed lane (`{}` / `{}`) is {:.0}% similar to existing lane #{} (`{}` / `{}`). Reuse it via `assign_project_task` if the responsibility matches, or differentiate this lane by giving it a more specific title and responsibility (must be <{:.0}% overlap).",
+                    title,
+                    responsibility.as_deref().unwrap_or(""),
+                    score * 100.0,
+                    dupe.id,
+                    dupe.title,
+                    dupe.responsibility.as_deref().unwrap_or(""),
+                    LANE_SIMILARITY_REJECT_THRESHOLD * 100.0,
+                )));
+            }
+        }
 
         let thread_id = self.app_state().sf.next_id()? as i64;
         let mut command = CreateAgentThreadCommand::new(
@@ -381,12 +498,8 @@ impl ToolExecutor {
             command = command.with_title(title);
         }
         if params.responsibility.is_some() {
-            command = command.with_responsibility(
-                params
-                    .responsibility
-                    .map(|value| value.trim().to_string())
-                    .filter(|value| !value.is_empty()),
-            );
+            let validated = validate_lane_responsibility(params.responsibility.as_deref())?;
+            command = command.with_responsibility(Some(validated));
         }
         if params.system_instructions.is_some() {
             command = command.with_system_instructions(

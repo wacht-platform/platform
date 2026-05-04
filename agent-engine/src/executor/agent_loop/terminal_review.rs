@@ -97,6 +97,7 @@ impl AgentExecutor {
                         ));
                         tracing::warn!(
                             thread_id = self.ctx.thread_id,
+                            board_item_id = ?self.current_board_item_id(),
                             execution_run_id = self.ctx.execution_run_id,
                             attempt,
                             ?error,
@@ -108,6 +109,7 @@ impl AgentExecutor {
                 Err(error) => {
                     tracing::warn!(
                         thread_id = self.ctx.thread_id,
+                        board_item_id = ?self.current_board_item_id(),
                         execution_run_id = self.ctx.execution_run_id,
                         attempt,
                         ?error,

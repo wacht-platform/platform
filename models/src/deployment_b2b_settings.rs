@@ -33,9 +33,13 @@ pub struct DeploymentB2bSettings {
     pub org_creation_per_user_count: i32,
     pub workspaces_per_org_count: i32,
     pub custom_workspace_role_enabled: bool,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub default_workspace_creator_role_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub default_workspace_member_role_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub default_org_creator_role_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub default_org_member_role_id: i64,
     pub workspace_permissions: Option<Vec<String>>,
     pub organization_permissions: Option<Vec<String>>,

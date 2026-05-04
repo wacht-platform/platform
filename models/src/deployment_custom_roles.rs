@@ -9,9 +9,11 @@ pub struct DeploymentWorkspaceRole {
     pub updated_at: DateTime<Utc>,
     pub name: String,
     pub permissions: Vec<String>,
+    #[serde(with = "crate::utils::serde::i64_as_string_option")]
     pub organization_id: Option<i64>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string_option")]
     pub workspace_id: Option<i64>,
 }
 
@@ -25,6 +27,7 @@ pub struct DeploymentOrganizationRole {
     pub permissions: Vec<String>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string_option")]
     pub organization_id: Option<i64>,
 }
 

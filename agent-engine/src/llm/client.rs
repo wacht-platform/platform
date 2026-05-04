@@ -226,16 +226,48 @@ impl LlmClient {
         }
     }
 
+    #[tracing::instrument(
+        name = "llm.generate_tool_calls",
+        skip(self, prompt, tools, cache),
+        fields(
+            provider = self.provider_label(),
+            tool_count = tools.len(),
+            empty_response = tracing::field::Empty,
+            tool_call_count = tracing::field::Empty,
+        )
+    )]
     pub async fn generate_tool_calls(
         &self,
         prompt: SemanticLlmRequest,
         tools: Vec<NativeToolDefinition>,
         cache: Option<PromptCacheRequest>,
     ) -> Result<ToolCallGenerationOutput, AppError> {
-        match self {
+        let result = match self {
             Self::Gemini(client) => client.generate_tool_calls(prompt, tools, cache).await,
             Self::OpenAi(client) => client.generate_tool_calls(prompt, tools, cache).await,
             Self::OpenRouter(client) => client.generate_tool_calls(prompt, tools, cache).await,
+        };
+        if let Ok(output) = &result {
+            let span = tracing::Span::current();
+            span.record("tool_call_count", output.calls.len());
+            span.record(
+                "empty_response",
+                output.calls.is_empty()
+                    && output
+                        .content_text
+                        .as_deref()
+                        .map(|t| t.trim().is_empty())
+                        .unwrap_or(true),
+            );
+        }
+        result
+    }
+
+    fn provider_label(&self) -> &'static str {
+        match self {
+            Self::Gemini(_) => "gemini",
+            Self::OpenAi(_) => "openai",
+            Self::OpenRouter(_) => "openrouter",
         }
     }
 
