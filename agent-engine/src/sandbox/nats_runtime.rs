@@ -3,7 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use wacht_sandbox_client::{
     CreateTaskSandboxRequest, CreateThreadSandboxRequest, ExecSandboxRequest,
-    SandboxHandle as NatsHandle, SandboxNatsClient, SandboxNatsClientError,
+    SandboxHandle as NatsHandle, SandboxMountSpec, SandboxNatsClient, SandboxNatsClientError,
 };
 
 use super::{
@@ -56,12 +56,22 @@ impl SandboxRuntime for NatsSandboxRuntime {
         &self,
         spec: TaskSandboxSpec,
     ) -> SandboxResult<Box<dyn SandboxHandle>> {
+        let mounts: Vec<SandboxMountSpec> = spec
+            .mounts
+            .iter()
+            .map(|m| SandboxMountSpec {
+                mount_path: m.mount_path.clone(),
+                s3_relative_key: m.s3_relative_key.clone(),
+                mode: m.mode.as_str().to_string(),
+            })
+            .collect();
         let handle = self
             .client
             .task(&CreateTaskSandboxRequest {
                 deployment_id: spec.deployment_id.clone(),
                 project_id: spec.project_id.clone(),
                 task_key: spec.task_key.clone(),
+                mounts,
             })
             .await
             .map_err(|err| {

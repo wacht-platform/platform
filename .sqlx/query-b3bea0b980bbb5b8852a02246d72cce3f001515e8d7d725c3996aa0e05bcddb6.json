@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id, board_id, task_key, template_payload, state, state_version,\n                status, schedule_kind, interval_seconds, next_run_at, last_fired_at,\n                overlap_policy, created_at, updated_at\n            FROM project_task_schedules\n            WHERE board_id = $1\n              AND task_key = $2\n            LIMIT 1\n            ",
+  "query": "\n            INSERT INTO project_task_schedules (\n                id, board_id, task_key, template_payload, mounts, status, schedule_kind,\n                interval_seconds, next_run_at, overlap_policy, created_at, updated_at\n            ) VALUES (\n                $1, $2, $3, $4, $5, 'active', $6,\n                $7, $8, $9, $10, $10\n            )\n            RETURNING\n                id, board_id, task_key, template_payload, mounts,\n                status, schedule_kind, interval_seconds, next_run_at, last_fired_at,\n                overlap_policy, created_at, updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -25,51 +25,46 @@
       },
       {
         "ordinal": 4,
-        "name": "state",
+        "name": "mounts",
         "type_info": "Jsonb"
       },
       {
         "ordinal": 5,
-        "name": "state_version",
-        "type_info": "Int8"
-      },
-      {
-        "ordinal": 6,
         "name": "status",
         "type_info": "Text"
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "schedule_kind",
         "type_info": "Text"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "interval_seconds",
         "type_info": "Int8"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "next_run_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "last_fired_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "overlap_policy",
         "type_info": "Text"
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -77,11 +72,18 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Text"
+        "Int8",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Int8",
+        "Timestamptz",
+        "Text",
+        "Timestamptz"
       ]
     },
     "nullable": [
-      false,
       false,
       false,
       false,
@@ -97,5 +99,5 @@
       false
     ]
   },
-  "hash": "876f5492c6ad8e1d0eb2ec2882cb2f48be3459b0ad08746e4f5107b270007c09"
+  "hash": "b3bea0b980bbb5b8852a02246d72cce3f001515e8d7d725c3996aa0e05bcddb6"
 }

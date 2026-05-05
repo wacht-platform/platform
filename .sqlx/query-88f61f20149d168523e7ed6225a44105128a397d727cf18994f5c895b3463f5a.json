@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                s.id              AS schedule_id,\n                s.board_id        AS board_id,\n                s.task_key        AS task_key,\n                s.template_payload AS template_payload,\n                s.state           AS state,\n                s.state_version   AS state_version,\n                s.schedule_kind   AS schedule_kind,\n                s.interval_seconds AS interval_seconds,\n                s.next_run_at     AS next_run_at,\n                s.overlap_policy  AS overlap_policy\n            FROM project_task_schedules s\n            WHERE s.id = $1\n              AND s.status = 'active'\n              AND s.next_run_at <= NOW()\n            FOR UPDATE SKIP LOCKED\n            ",
+  "query": "\n            SELECT\n                s.id              AS schedule_id,\n                s.board_id        AS board_id,\n                s.task_key        AS task_key,\n                s.template_payload AS template_payload,\n                s.mounts          AS mounts,\n                s.schedule_kind   AS schedule_kind,\n                s.interval_seconds AS interval_seconds,\n                s.next_run_at     AS next_run_at,\n                s.overlap_policy  AS overlap_policy\n            FROM project_task_schedules s\n            WHERE s.id = $1\n              AND s.status = 'active'\n              AND s.next_run_at <= NOW()\n            FOR UPDATE SKIP LOCKED\n            ",
   "describe": {
     "columns": [
       {
@@ -25,31 +25,26 @@
       },
       {
         "ordinal": 4,
-        "name": "state",
+        "name": "mounts",
         "type_info": "Jsonb"
       },
       {
         "ordinal": 5,
-        "name": "state_version",
-        "type_info": "Int8"
-      },
-      {
-        "ordinal": 6,
         "name": "schedule_kind",
         "type_info": "Text"
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "interval_seconds",
         "type_info": "Int8"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "next_run_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "overlap_policy",
         "type_info": "Text"
       }
@@ -66,11 +61,10 @@
       false,
       false,
       false,
-      false,
       true,
       false,
       false
     ]
   },
-  "hash": "a186e2e16d337c514fe02ebbab7be4394d23545bc090acc1e6a5480094930537"
+  "hash": "88f61f20149d168523e7ed6225a44105128a397d727cf18994f5c895b3463f5a"
 }

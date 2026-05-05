@@ -25,23 +25,6 @@ pub fn note_tool() -> NativeToolDefinition {
     }
 }
 
-pub fn update_schedule_state_tool() -> NativeToolDefinition {
-    NativeToolDefinition {
-        name: "update_schedule_state".to_string(),
-        description: "Update the persistent state for this recurring task. The patch is shallow-merged into schedule.state; top-level keys you set overwrite existing keys, untouched keys are preserved. Available only on runs of recurring tasks.".to_string(),
-        input_schema: json!({
-            "type": "object",
-            "properties": {
-                "patch": {
-                    "type": "object",
-                    "description": "JSON object with the keys to update or add."
-                }
-            },
-            "required": ["patch"]
-        }),
-    }
-}
-
 pub fn ask_user_tool() -> NativeToolDefinition {
     NativeToolDefinition {
         name: "ask_user".to_string(),

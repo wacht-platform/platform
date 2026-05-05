@@ -2,6 +2,7 @@ use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use common::{HasDbRouter, HasIdProvider, HasNatsJetStreamProvider, error::AppError};
 use models::{
     ProjectTaskBoardItemMetadata, ProjectTaskSchedule, ScheduleCarryover, ScheduleTemplatePayload,
+    project_task_schedule::{ScheduleMount, implicit_mount_for_schedule, validate_mount},
 };
 
 use crate::ReconcileProjectTaskBoardItemCommand;
@@ -9,6 +10,7 @@ use crate::ReconcileProjectTaskBoardItemCommand;
 pub struct CreateProjectTaskScheduleCommand {
     pub id: i64,
     pub board_id: i64,
+    pub project_id: i64,
     pub task_key: String,
     pub template_payload: ScheduleTemplatePayload,
     pub schedule_kind: String,
@@ -24,16 +26,39 @@ pub struct UpdateProjectTaskScheduleCommand {
     pub next_run_at: Option<DateTime<Utc>>,
     pub overlap_policy: Option<String>,
     pub template_payload: Option<ScheduleTemplatePayload>,
+    pub mounts: Option<Vec<ScheduleMount>>,
 }
 
 pub struct MaterializeProjectTaskScheduleCommand {
     pub schedule_id: i64,
 }
 
-pub struct ApplyScheduleStatePatchCommand {
-    pub schedule_id: i64,
-    pub expected_version: i64,
-    pub patch: serde_json::Value,
+pub struct DeleteProjectTaskScheduleByTaskKeyCommand {
+    pub board_id: i64,
+    pub task_key: String,
+}
+
+impl DeleteProjectTaskScheduleByTaskKeyCommand {
+    pub fn new(board_id: i64, task_key: impl Into<String>) -> Self {
+        Self {
+            board_id,
+            task_key: task_key.into(),
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<bool, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let result = sqlx::query!(
+            "DELETE FROM project_task_schedules WHERE board_id = $1 AND task_key = $2",
+            self.board_id,
+            self.task_key,
+        )
+        .execute(executor)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
 }
 
 impl CreateProjectTaskScheduleCommand {
@@ -50,19 +75,23 @@ impl CreateProjectTaskScheduleCommand {
             AppError::Internal(format!("Failed to serialize template_payload: {e}"))
         })?;
 
+        let initial_mounts = vec![implicit_mount_for_schedule(self.project_id, self.id)];
+        let mounts_value = serde_json::to_value(&initial_mounts)
+            .map_err(|e| AppError::Internal(format!("Failed to serialize mounts: {e}")))?;
+
         let now = Utc::now();
         let schedule = sqlx::query_as!(
             ProjectTaskSchedule,
             r#"
             INSERT INTO project_task_schedules (
-                id, board_id, task_key, template_payload, status, schedule_kind,
+                id, board_id, task_key, template_payload, mounts, status, schedule_kind,
                 interval_seconds, next_run_at, overlap_policy, created_at, updated_at
             ) VALUES (
-                $1, $2, $3, $4, 'active', $5,
-                $6, $7, $8, $9, $9
+                $1, $2, $3, $4, $5, 'active', $6,
+                $7, $8, $9, $10, $10
             )
             RETURNING
-                id, board_id, task_key, template_payload, state, state_version,
+                id, board_id, task_key, template_payload, mounts,
                 status, schedule_kind, interval_seconds, next_run_at, last_fired_at,
                 overlap_policy, created_at, updated_at
             "#,
@@ -70,6 +99,7 @@ impl CreateProjectTaskScheduleCommand {
             self.board_id,
             self.task_key,
             template_payload,
+            mounts_value,
             self.schedule_kind,
             self.interval_seconds,
             self.next_run_at,
@@ -92,6 +122,7 @@ impl UpdateProjectTaskScheduleCommand {
             next_run_at: None,
             overlap_policy: None,
             template_payload: None,
+            mounts: None,
         }
     }
 
@@ -120,6 +151,11 @@ impl UpdateProjectTaskScheduleCommand {
         self
     }
 
+    pub fn with_mounts(mut self, mounts: Vec<ScheduleMount>) -> Self {
+        self.mounts = Some(mounts);
+        self
+    }
+
     pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<ProjectTaskSchedule, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -136,6 +172,17 @@ impl UpdateProjectTaskScheduleCommand {
                 })
             })
             .transpose()?;
+        let mounts_value = if let Some(mounts) = &self.mounts {
+            for m in mounts {
+                validate_mount(m).map_err(|e| AppError::BadRequest(e.to_string()))?;
+            }
+            Some(
+                serde_json::to_value(mounts)
+                    .map_err(|e| AppError::Internal(format!("Failed to serialize mounts: {e}")))?,
+            )
+        } else {
+            None
+        };
 
         let now = Utc::now();
         let schedule = sqlx::query_as!(
@@ -148,10 +195,11 @@ impl UpdateProjectTaskScheduleCommand {
                 next_run_at = COALESCE($4, next_run_at),
                 overlap_policy = COALESCE($5, overlap_policy),
                 template_payload = COALESCE($6, template_payload),
-                updated_at = $7
+                mounts = COALESCE($7, mounts),
+                updated_at = $8
             WHERE id = $1
             RETURNING
-                id, board_id, task_key, template_payload, state, state_version,
+                id, board_id, task_key, template_payload, mounts,
                 status, schedule_kind, interval_seconds, next_run_at, last_fired_at,
                 overlap_policy, created_at, updated_at
             "#,
@@ -161,6 +209,7 @@ impl UpdateProjectTaskScheduleCommand {
             self.next_run_at,
             self.overlap_policy,
             template_payload,
+            mounts_value,
             now,
         )
         .fetch_one(executor)
@@ -176,9 +225,6 @@ impl MaterializeProjectTaskScheduleCommand {
         Self { schedule_id }
     }
 
-    /// Returns the new instance's `board_item_id` when a fire was materialized,
-    /// or `None` when the schedule was advanced without firing (skipped due to
-    /// overlap policy, or already fired by another worker).
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Option<i64>, AppError>
     where
         D: HasDbRouter
@@ -196,8 +242,7 @@ impl MaterializeProjectTaskScheduleCommand {
                 s.board_id        AS board_id,
                 s.task_key        AS task_key,
                 s.template_payload AS template_payload,
-                s.state           AS state,
-                s.state_version   AS state_version,
+                s.mounts          AS mounts,
                 s.schedule_kind   AS schedule_kind,
                 s.interval_seconds AS interval_seconds,
                 s.next_run_at     AS next_run_at,
@@ -257,13 +302,12 @@ impl MaterializeProjectTaskScheduleCommand {
         let mut metadata: ProjectTaskBoardItemMetadata = template.metadata.clone();
         metadata.schedule_carryover = Some(ScheduleCarryover {
             schedule_id: self.schedule_id,
-            state_snapshot: row.state.clone(),
-            state_version: row.state_version,
             scheduled_for,
         });
         let metadata_value = serde_json::to_value(&metadata).map_err(|e| {
             AppError::Internal(format!("Failed to serialize new instance metadata: {e}"))
         })?;
+        let mounts_value = row.mounts.clone();
 
         let inserted = sqlx::query!(
             r#"
@@ -271,12 +315,12 @@ impl MaterializeProjectTaskScheduleCommand {
                 id, board_id, task_key, title, description, status,
                 assigned_thread_id, metadata, completed_at, archived_at,
                 created_at, updated_at, state_version,
-                schedule_id, scheduled_for, fired_at, pending_question
+                schedule_id, scheduled_for, fired_at, pending_question, mounts
             ) VALUES (
                 $1, $2, $3, $4, $5, 'pending',
                 NULL, $6, NULL, NULL,
                 $7, $7, 0,
-                $8, $9, $7, NULL
+                $8, $9, $7, NULL, $10
             )
             ON CONFLICT (schedule_id, scheduled_for)
                 WHERE schedule_id IS NOT NULL DO NOTHING
@@ -291,6 +335,7 @@ impl MaterializeProjectTaskScheduleCommand {
             now,
             self.schedule_id,
             scheduled_for,
+            mounts_value,
         )
         .fetch_optional(&mut *tx)
         .await?;
@@ -314,50 +359,6 @@ impl MaterializeProjectTaskScheduleCommand {
     }
 }
 
-impl ApplyScheduleStatePatchCommand {
-    pub fn new(schedule_id: i64, expected_version: i64, patch: serde_json::Value) -> Self {
-        Self {
-            schedule_id,
-            expected_version,
-            patch,
-        }
-    }
-
-    /// Returns `Ok(true)` when the patch applied, `Ok(false)` on version conflict.
-    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<bool, AppError>
-    where
-        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-    {
-        if !self.patch.is_object() {
-            return Err(AppError::BadRequest(
-                "schedule_state_patch must be a JSON object".to_string(),
-            ));
-        }
-
-        let result = sqlx::query!(
-            r#"
-            UPDATE project_task_schedules
-            SET state = state || $2::jsonb,
-                state_version = state_version + 1,
-                updated_at = NOW()
-            WHERE id = $1
-              AND state_version = $3
-            "#,
-            self.schedule_id,
-            self.patch,
-            self.expected_version,
-        )
-        .execute(executor)
-        .await?;
-
-        Ok(result.rows_affected() > 0)
-    }
-}
-
-/// Minimum allowed interval for recurring schedules. The dispatcher ticks
-/// every 5 minutes, so anything shorter would either fire on every tick
-/// regardless of intent, or miss its window entirely. 10 minutes gives a 2x
-/// margin against tick alignment and clock skew.
 pub const MIN_INTERVAL_SECONDS: i64 = 600;
 
 fn validate_schedule_kind(

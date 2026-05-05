@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id, board_id, task_key, template_payload, state, state_version,\n                status, schedule_kind, interval_seconds, next_run_at, last_fired_at,\n                overlap_policy, created_at, updated_at\n            FROM project_task_schedules\n            WHERE id = $1\n            ",
+  "query": "\n            SELECT\n                id, board_id, task_key, template_payload, mounts,\n                status, schedule_kind, interval_seconds, next_run_at, last_fired_at,\n                overlap_policy, created_at, updated_at\n            FROM project_task_schedules\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -25,51 +25,46 @@
       },
       {
         "ordinal": 4,
-        "name": "state",
+        "name": "mounts",
         "type_info": "Jsonb"
       },
       {
         "ordinal": 5,
-        "name": "state_version",
-        "type_info": "Int8"
-      },
-      {
-        "ordinal": 6,
         "name": "status",
         "type_info": "Text"
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "schedule_kind",
         "type_info": "Text"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "interval_seconds",
         "type_info": "Int8"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "next_run_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "last_fired_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "overlap_policy",
         "type_info": "Text"
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -87,7 +82,6 @@
       false,
       false,
       false,
-      false,
       true,
       false,
       true,
@@ -96,5 +90,5 @@
       false
     ]
   },
-  "hash": "9a61f8351f5b51180f9cc575de9bb20f5cb43f6f41f15754e815a93f4a5d7de7"
+  "hash": "0105ee217a741d71d662accc8c05e0390757005f9679aae27a5a184118ffa88e"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE project_task_board_items\n        SET updated_at = NOW()\n        WHERE id = (\n            SELECT id\n            FROM project_task_board_items\n            WHERE status IN ('pending', 'in_progress')\n              AND archived_at IS NULL\n              AND updated_at < $1\n            ORDER BY updated_at ASC\n            LIMIT 1\n            FOR UPDATE SKIP LOCKED\n        )\n        RETURNING\n            id, board_id, task_key, title, description, status,\n            assigned_thread_id, metadata, completed_at, archived_at,\n            created_at, updated_at, state_version,\n            schedule_id, scheduled_for, fired_at, pending_question, pending_approval\n        ",
+  "query": "\n        UPDATE project_task_board_items\n        SET\n            archived_at = CASE WHEN $3 THEN NOW() ELSE NULL END,\n            updated_at = NOW()\n        WHERE id = $1 AND board_id = $2\n        RETURNING id, board_id, task_key, title, description, status,\n                  assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,\n                  schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts\n        ",
   "describe": {
     "columns": [
       {
@@ -92,11 +92,18 @@
         "ordinal": 17,
         "name": "pending_approval",
         "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 18,
+        "name": "mounts",
+        "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
-        "Timestamptz"
+        "Int8",
+        "Int8",
+        "Bool"
       ]
     },
     "nullable": [
@@ -117,8 +124,9 @@
       true,
       true,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "de79ff8226312b766d0e49b100de0c3d835284dbce08fcf776dc46676aaceef5"
+  "hash": "00700cf647dc72af71bda7e078c782db8788a29a169741c3f6368394a7ea9fb1"
 }

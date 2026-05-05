@@ -60,7 +60,7 @@ impl GetProjectTaskScheduleByIdQuery {
             ProjectTaskSchedule,
             r#"
             SELECT
-                id, board_id, task_key, template_payload, state, state_version,
+                id, board_id, task_key, template_payload, mounts,
                 status, schedule_kind, interval_seconds, next_run_at, last_fired_at,
                 overlap_policy, created_at, updated_at
             FROM project_task_schedules
@@ -94,7 +94,7 @@ impl GetProjectTaskScheduleByTaskKeyQuery {
             ProjectTaskSchedule,
             r#"
             SELECT
-                id, board_id, task_key, template_payload, state, state_version,
+                id, board_id, task_key, template_payload, mounts,
                 status, schedule_kind, interval_seconds, next_run_at, last_fired_at,
                 overlap_policy, created_at, updated_at
             FROM project_task_schedules

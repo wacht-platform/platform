@@ -1,6 +1,8 @@
 use commands::{
     CreateActorCommand, CreateActorProjectCommand, CreateAgentThreadCommand,
-    CreateProjectTaskBoardItemCommand, UpdateProjectTaskBoardItemCommand,
+    CreateProjectTaskBoardItemCommand, CreateProjectTaskScheduleCommand,
+    DeleteProjectTaskScheduleByTaskKeyCommand, UpdateProjectTaskBoardItemCommand,
+    UpdateProjectTaskBoardItemMountsCommand, UpdateProjectTaskScheduleCommand,
     UpsertThreadAgentAssignmentCommand,
 };
 use common::ReadConsistency;
@@ -13,17 +15,18 @@ use dto::json::deployment::{
 use models::{
     Actor, ActorProject, AgentThread, AgentThreadState, ConversationRecord, ProjectTaskBoard,
     ProjectTaskBoardItem, ProjectTaskBoardItemAssignment, ProjectTaskBoardItemRelation,
-    ThreadTaskEdge, ThreadTaskGraph, ThreadTaskGraphSummary, ThreadTaskNode,
+    ScheduleTemplatePayload, ThreadTaskEdge, ThreadTaskGraph, ThreadTaskGraphSummary,
+    ThreadTaskNode,
 };
 use queries::{
     GetActorByIdQuery, GetActorProjectByIdQuery, GetAgentThreadByIdQuery, GetAgentThreadStateQuery,
     GetLatestThreadTaskGraphQuery, GetMcpServerByIdQuery, GetMcpServersQuery,
     GetProjectTaskBoardByIdQuery, GetProjectTaskBoardByProjectIdQuery,
-    GetProjectTaskBoardItemByIdQuery, GetThreadTaskGraphByIdQuery,
-    GetThreadTaskGraphSummaryQuery, ListActorProjectsQuery, ListActorsQuery, ListAgentThreadsQuery,
-    ListAssignmentsForThreadQuery, ListProjectTaskBoardItemAssignmentsQuery,
-    ListProjectTaskBoardItemRelationsQuery, ListProjectTaskBoardItemsQuery,
-    ListThreadTaskEdgesQuery, ListThreadTaskNodesQuery,
+    GetProjectTaskBoardItemByIdQuery, GetProjectTaskScheduleByTaskKeyQuery,
+    GetThreadTaskGraphByIdQuery, GetThreadTaskGraphSummaryQuery, ListActorProjectsQuery,
+    ListActorsQuery, ListAgentThreadsQuery, ListAssignmentsForThreadQuery,
+    ListProjectTaskBoardItemAssignmentsQuery, ListProjectTaskBoardItemRelationsQuery,
+    ListProjectTaskBoardItemsQuery, ListThreadTaskEdgesQuery, ListThreadTaskNodesQuery,
 };
 
 use crate::application::{AppState, agent_thread_execution as agent_thread_execution_app};
@@ -1348,6 +1351,13 @@ pub async fn create_project_task_board_item(
     let task_key = format!("TASK-{}", item_id);
     let status = request.status.unwrap_or_else(|| "pending".to_string());
     let assigned_thread_id = project.coordinator_thread_id;
+    let schedule = parse_schedule_request(
+        request.schedule_kind.as_deref(),
+        request.next_run_at,
+        request.interval_seconds,
+    )?;
+    let mounts_value = validate_and_serialize_mounts(request.mounts.as_deref())?
+        .unwrap_or_else(|| serde_json::json!([]));
 
     let mut tx = app_state.db_router.writer().begin().await?;
 
@@ -1360,9 +1370,26 @@ pub async fn create_project_task_board_item(
         status,
         assigned_thread_id,
         metadata: serde_json::json!({}),
+        mounts: mounts_value,
     }
     .execute_with_db(&mut *tx)
     .await?;
+
+    if let Some(schedule) = schedule {
+        CreateProjectTaskScheduleCommand {
+            id: app_state.sf.next_id()? as i64,
+            board_id: board.id,
+            project_id,
+            task_key: item.task_key.clone(),
+            template_payload: build_schedule_template_payload(&item),
+            schedule_kind: schedule.kind,
+            interval_seconds: schedule.interval_seconds,
+            next_run_at: schedule.next_run_at,
+            overlap_policy: None,
+        }
+        .execute_with_db(&mut *tx)
+        .await?;
+    }
 
     let routed = if let Some(coordinator_thread_id) = project.coordinator_thread_id {
         commands::InsertTaskRoutingEvent {
@@ -1455,9 +1482,21 @@ pub async fn update_project_task_board_item(
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty());
     let description = request.description.map(|v| v.trim().to_string());
+    let clear_schedule = request.clear_schedule.unwrap_or(false);
+    let schedule = parse_schedule_request(
+        request.schedule_kind.as_deref(),
+        request.next_run_at,
+        request.interval_seconds,
+    )?;
+    if clear_schedule && schedule.is_some() {
+        return Err(AppError::BadRequest(
+            "clear_schedule cannot be combined with new schedule fields".to_string(),
+        ));
+    }
+    let mounts_value = validate_and_serialize_mounts(request.mounts.as_deref())?;
 
-    if title.is_some() || description.is_some() {
-        let updated = sqlx::query_as!(
+    let mut current = if title.is_some() || description.is_some() {
+        sqlx::query_as!(
             ProjectTaskBoardItem,
             r#"
             UPDATE project_task_board_items
@@ -1468,7 +1507,7 @@ pub async fn update_project_task_board_item(
             WHERE id = $1 AND board_id = $2 AND archived_at IS NULL
             RETURNING id, board_id, task_key, title, description, status,
                       assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-                      schedule_id, scheduled_for, fired_at, pending_question, pending_approval
+                      schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
             "#,
             item.id,
             board.id,
@@ -1476,21 +1515,68 @@ pub async fn update_project_task_board_item(
             description,
         )
         .fetch_one(app_state.db_router.writer())
-        .await?;
+        .await?
+    } else {
+        item.clone()
+    };
 
-        if request.status.is_none() {
-            return Ok(updated);
+    if request.status.is_some() {
+        current = UpdateProjectTaskBoardItemCommand {
+            board_id: board.id,
+            task_key: current.task_key.clone(),
+            status: request.status,
+            metadata: current.metadata.clone(),
+        }
+        .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
+        .await?;
+    }
+
+    if let Some(mounts) = mounts_value {
+        UpdateProjectTaskBoardItemMountsCommand {
+            board_id: board.id,
+            task_key: current.task_key.clone(),
+            mounts: mounts.clone(),
+        }
+        .execute_with_db(app_state.db_router.writer())
+        .await?;
+        current.mounts = mounts;
+    }
+
+    if clear_schedule {
+        DeleteProjectTaskScheduleByTaskKeyCommand::new(board.id, current.task_key.clone())
+            .execute_with_db(app_state.db_router.writer())
+            .await?;
+    } else if let Some(schedule) = schedule {
+        let existing =
+            GetProjectTaskScheduleByTaskKeyQuery::new(board.id, current.task_key.clone())
+                .execute_with_db(app_state.db_router.writer())
+                .await?;
+        if let Some(existing) = existing {
+            UpdateProjectTaskScheduleCommand::new(existing.id)
+                .with_status(models::project_task_schedule::status::ACTIVE.to_string())
+                .with_interval_seconds(schedule.interval_seconds)
+                .with_next_run_at(schedule.next_run_at)
+                .with_template_payload(build_schedule_template_payload(&current))
+                .execute_with_db(app_state.db_router.writer())
+                .await?;
+        } else {
+            CreateProjectTaskScheduleCommand {
+                id: app_state.sf.next_id()? as i64,
+                board_id: board.id,
+                project_id,
+                task_key: current.task_key.clone(),
+                template_payload: build_schedule_template_payload(&current),
+                schedule_kind: schedule.kind,
+                interval_seconds: schedule.interval_seconds,
+                next_run_at: schedule.next_run_at,
+                overlap_policy: None,
+            }
+            .execute_with_db(app_state.db_router.writer())
+            .await?;
         }
     }
 
-    UpdateProjectTaskBoardItemCommand {
-        board_id: board.id,
-        task_key: item.task_key,
-        status: request.status,
-        metadata: item.metadata,
-    }
-    .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
-    .await
+    Ok(current)
 }
 
 pub async fn set_project_task_board_item_archived(
@@ -1518,7 +1604,7 @@ pub async fn set_project_task_board_item_archived(
         WHERE id = $1 AND board_id = $2
         RETURNING id, board_id, task_key, title, description, status,
                   assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-                  schedule_id, scheduled_for, fired_at, pending_question, pending_approval
+                  schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
         "#,
         item_id,
         board.id,
@@ -1695,4 +1781,91 @@ pub async fn get_thread_task_graph_summary(
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?
         .ok_or_else(|| AppError::NotFound("Thread task graph summary not found".to_string()))
+}
+
+struct ParsedSchedule {
+    kind: String,
+    next_run_at: chrono::DateTime<chrono::Utc>,
+    interval_seconds: Option<i64>,
+}
+
+fn parse_schedule_request(
+    schedule_kind: Option<&str>,
+    next_run_at: Option<chrono::DateTime<chrono::Utc>>,
+    interval_seconds: Option<i64>,
+) -> Result<Option<ParsedSchedule>, AppError> {
+    if schedule_kind.is_none() && next_run_at.is_none() && interval_seconds.is_none() {
+        return Ok(None);
+    }
+    let kind = schedule_kind
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            AppError::BadRequest(
+                "Pick a schedule type and choose when the task should run.".to_string(),
+            )
+        })?;
+    let next_run_at = next_run_at.ok_or_else(|| {
+        AppError::BadRequest(
+            "Pick a schedule type and choose when the task should run.".to_string(),
+        )
+    })?;
+    match kind.as_str() {
+        models::project_task_schedule::schedule_kind::ONCE => {
+            if interval_seconds.is_some() {
+                return Err(AppError::BadRequest(
+                    "A one-off task can't have a repeat interval.".to_string(),
+                ));
+            }
+            Ok(Some(ParsedSchedule {
+                kind,
+                next_run_at,
+                interval_seconds: None,
+            }))
+        }
+        models::project_task_schedule::schedule_kind::INTERVAL => {
+            let secs = interval_seconds.unwrap_or(0);
+            if secs <= 0 {
+                return Err(AppError::BadRequest(
+                    "A recurring task needs a repeat interval.".to_string(),
+                ));
+            }
+            if secs < commands::MIN_INTERVAL_SECONDS {
+                return Err(AppError::BadRequest(
+                    "Recurring tasks must repeat at least every 10 minutes.".to_string(),
+                ));
+            }
+            Ok(Some(ParsedSchedule {
+                kind,
+                next_run_at,
+                interval_seconds: Some(secs),
+            }))
+        }
+        _ => Err(AppError::BadRequest(
+            "Pick either a one-off run or a recurring interval for this task.".to_string(),
+        )),
+    }
+}
+
+fn build_schedule_template_payload(item: &ProjectTaskBoardItem) -> ScheduleTemplatePayload {
+    ScheduleTemplatePayload {
+        title: item.title.clone(),
+        description: item.description.clone(),
+        metadata: item.typed_metadata(),
+    }
+}
+
+fn validate_and_serialize_mounts(
+    mounts: Option<&[models::project_task_schedule::ScheduleMount]>,
+) -> Result<Option<serde_json::Value>, AppError> {
+    let Some(mounts) = mounts else {
+        return Ok(None);
+    };
+    for m in mounts {
+        models::project_task_schedule::validate_mount(m)
+            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    }
+    let value = serde_json::to_value(mounts)
+        .map_err(|e| AppError::Internal(format!("Failed to serialize mounts: {e}")))?;
+    Ok(Some(value))
 }

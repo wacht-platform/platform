@@ -162,6 +162,7 @@ impl AgentExecutor {
             status,
             assigned_thread_id: None,
             metadata: serde_json::to_value(metadata)?,
+            mounts: serde_json::json!([]),
         }
         .execute_with_db(&mut *tx)
         .await?;
@@ -204,9 +205,11 @@ impl AgentExecutor {
         }
 
         if let Some((schedule_kind, next_run_at, interval_seconds)) = schedule {
+            let project_id = self.ctx.get_thread().await?.project_id;
             CreateProjectTaskScheduleCommand {
                 id: self.ctx.app_state.sf.next_id()? as i64,
                 board_id,
+                project_id,
                 task_key: item.task_key.clone(),
                 template_payload: build_schedule_template_payload(&item),
                 schedule_kind,
@@ -259,9 +262,11 @@ impl AgentExecutor {
                     .execute_with_db(self.ctx.app_state.db_router.writer())
                     .await?;
             } else {
+                let project_id = self.ctx.get_thread().await?.project_id;
                 CreateProjectTaskScheduleCommand {
                     id: self.ctx.app_state.sf.next_id()? as i64,
                     board_id,
+                    project_id,
                     task_key: item.task_key.clone(),
                     template_payload: build_schedule_template_payload(&item),
                     schedule_kind,

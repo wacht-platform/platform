@@ -54,6 +54,7 @@ pub struct ProjectTaskBoardItem {
     pub pending_question: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_approval: Option<serde_json::Value>,
+    pub mounts: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -166,9 +167,6 @@ pub struct ProjectTaskBoardItemMetadata {
 pub struct ScheduleCarryover {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub schedule_id: i64,
-    pub state_snapshot: serde_json::Value,
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub state_version: i64,
     pub scheduled_for: DateTime<Utc>,
 }
 

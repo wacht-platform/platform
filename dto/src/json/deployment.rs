@@ -98,6 +98,10 @@ pub struct CreateProjectTaskBoardItemRequest {
     pub title: String,
     pub description: Option<String>,
     pub status: Option<String>,
+    pub schedule_kind: Option<String>,
+    pub next_run_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub interval_seconds: Option<i64>,
+    pub mounts: Option<Vec<models::project_task_schedule::ScheduleMount>>,
 }
 
 #[derive(Deserialize)]
@@ -105,6 +109,11 @@ pub struct UpdateProjectTaskBoardItemRequest {
     pub title: Option<String>,
     pub description: Option<String>,
     pub status: Option<String>,
+    pub schedule_kind: Option<String>,
+    pub next_run_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub interval_seconds: Option<i64>,
+    pub clear_schedule: Option<bool>,
+    pub mounts: Option<Vec<models::project_task_schedule::ScheduleMount>>,
 }
 
 #[derive(Deserialize)]

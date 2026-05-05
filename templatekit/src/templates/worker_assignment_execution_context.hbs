@@ -22,7 +22,13 @@
 {{#if parent_task_key}}- Parent task (read-only): `/project_workspace/tasks/{{parent_task_key}}/`
 {{/if}}- Other tasks (read-only): `/project_workspace/tasks/<task_key>/`
 {{#if runbook_file}}- Runbook (recurring): `{{runbook_file}}`
-{{/if}}{{#if schedule_state_version}}- Persistent schedule state from prior runs is available (version `{{schedule_state_version}}`{{#if schedule_scheduled_for}}, scheduled_for `{{schedule_scheduled_for}}`{{/if}}); return a `schedule_state_patch` object in `result_payload` to update it.
+{{/if}}{{#if task_mounts}}
+## Mounts
+
+S3-backed paths inside the sandbox; contents persist across this task's lifetime. For recurring tasks, contents persist across every fire of the schedule. Read at the start, write before you finish.
+{{#each task_mounts}}- `{{mount_path}}` ({{mode}}){{#if description}} — {{description}}{{/if}}
+{{/each}}{{#if schedule_scheduled_for}}Scheduled fire: `{{schedule_scheduled_for}}`.
+{{/if}}When you write to a mounted path, note it in `/task/JOURNAL.md` so the next run (or a reviewer) can see what changed in shared storage.
 {{/if}}
 {{#if prior_fires}}## Prior fires of this schedule
 

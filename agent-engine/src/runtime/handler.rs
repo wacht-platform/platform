@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use crate::executor::core::AgentExecutorBuilder;
 use crate::runtime::thread_execution_context::DeploymentProviderKeys;
-use crate::sandbox::{SandboxHandle, SandboxRuntimeFactory, TaskSandboxSpec, ThreadSandboxSpec};
+use crate::sandbox::{
+    SandboxHandle, SandboxMount, SandboxMountMode, SandboxRuntimeFactory, TaskSandboxSpec,
+    ThreadSandboxSpec,
+};
 use crate::{AgentExecutor, ResumeContext};
 use common::error::AppError;
 use common::state::AppState;
@@ -21,6 +24,11 @@ enum ExecutionMode {
     ApprovalResponse(Vec<dto::json::deployment::ToolApprovalSelection>),
     Conversation(i64),
     ThreadEvent(ThreadEvent),
+}
+
+struct TaskSandboxRef {
+    task_key: String,
+    mounts: Vec<SandboxMount>,
 }
 
 fn thread_owns_status(thread_purpose: &str) -> bool {
@@ -127,18 +135,19 @@ impl AgentHandler {
         &self,
         request: &ExecutionRequest,
         thread_state: &models::AgentThreadState,
-        task_sandbox_key: Option<String>,
+        task_sandbox: Option<TaskSandboxRef>,
     ) -> Result<Arc<dyn SandboxHandle>, AppError> {
         let deployment_id = request.agent.deployment_id;
         let runtime = self
             .sandbox_factory
             .for_deployment(&deployment_id.to_string());
 
-        if let Some(task_key) = task_sandbox_key {
+        if let Some(task_ref) = task_sandbox {
             let spec = TaskSandboxSpec {
                 deployment_id: deployment_id.to_string(),
                 project_id: thread_state.project_id.to_string(),
-                task_key,
+                task_key: task_ref.task_key,
+                mounts: task_ref.mounts,
             };
             let handle = runtime
                 .ensure_task_sandbox(spec)
@@ -160,10 +169,10 @@ impl AgentHandler {
         Ok(Arc::from(handle))
     }
 
-    async fn resolve_task_key_for_event(
+    async fn resolve_task_sandbox_ref(
         &self,
         request: &ExecutionRequest,
-    ) -> Result<Option<String>, AppError> {
+    ) -> Result<Option<TaskSandboxRef>, AppError> {
         let Some(event) = request.thread_event.as_ref() else {
             return Ok(None);
         };
@@ -177,10 +186,29 @@ impl AgentHandler {
         let Some(board_item_id) = event.board_item_id else {
             return Ok(None);
         };
-        let item = queries::GetProjectTaskBoardItemByIdQuery::new(board_item_id)
+        let Some(item) = queries::GetProjectTaskBoardItemByIdQuery::new(board_item_id)
             .execute_with_db(self.app_state.db_router.writer())
-            .await?;
-        Ok(item.map(|i| i.task_key))
+            .await?
+        else {
+            return Ok(None);
+        };
+        let mounts = models::project_task_schedule::parse_mounts(&item.mounts)
+            .map_err(|e| AppError::Internal(format!("Invalid task mounts: {e}")))?
+            .into_iter()
+            .map(|m| SandboxMount {
+                mount_path: m.mount_path,
+                s3_relative_key: m.s3_relative_key,
+                mode: if m.mode == models::project_task_schedule::mount_mode::RO {
+                    SandboxMountMode::Ro
+                } else {
+                    SandboxMountMode::Rw
+                },
+            })
+            .collect();
+        Ok(Some(TaskSandboxRef {
+            task_key: item.task_key,
+            mounts,
+        }))
     }
 
     pub async fn execute_agent_streaming(&self, request: ExecutionRequest) -> Result<(), AppError> {
@@ -194,12 +222,12 @@ impl AgentHandler {
             queries::GetAgentThreadStateQuery::new(request.thread_id, deployment_id);
         let settings_fut = settings_query.execute_with_db(db);
         let thread_fut = thread_query.execute_with_db(db);
-        let task_key_fut = self.resolve_task_key_for_event(&request);
-        let (settings_result, thread_result, task_key_result) =
-            tokio::join!(settings_fut, thread_fut, task_key_fut);
+        let task_ref_fut = self.resolve_task_sandbox_ref(&request);
+        let (settings_result, thread_result, task_ref_result) =
+            tokio::join!(settings_fut, thread_fut, task_ref_fut);
         let deployment_ai_settings = settings_result.ok().flatten();
         let thread_state = thread_result?;
-        let task_sandbox_key = task_key_result?;
+        let task_sandbox_ref = task_ref_result?;
 
         let provider_keys = DeploymentProviderKeys::from_settings(
             deployment_ai_settings.as_ref(),
@@ -235,7 +263,7 @@ impl AgentHandler {
             .as_ref()
             .and_then(|event| event.board_item_id);
         let (sandbox_handle, prepared, _mark) = tokio::try_join!(
-            self.resolve_sandbox_handle(&request, &thread_state, task_sandbox_key),
+            self.resolve_sandbox_handle(&request, &thread_state, task_sandbox_ref),
             AgentExecutorBuilder::prepare(execution_context.clone(), board_item_id),
             mark_running_fut,
         )?;

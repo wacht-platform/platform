@@ -109,6 +109,29 @@ pub struct TaskSandboxSpec {
     pub deployment_id: String,
     pub project_id: String,
     pub task_key: String,
+    pub mounts: Vec<SandboxMount>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SandboxMount {
+    pub mount_path: String,
+    pub s3_relative_key: String,
+    pub mode: SandboxMountMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxMountMode {
+    Rw,
+    Ro,
+}
+
+impl SandboxMountMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Rw => "rw",
+            Self::Ro => "ro",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

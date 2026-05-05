@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE project_task_board_items\n            SET mounts = $3, updated_at = NOW()\n            WHERE board_id = $1 AND task_key = $2 AND archived_at IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bbe37ea5468606c8570d17966c66d6536b039f7b37559c478f00b88d1c153825"
+}

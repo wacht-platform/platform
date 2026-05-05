@@ -24,10 +24,10 @@ Status: {{status}}{{#if previous_status}} (was {{previous_status}}){{/if}}
 {{else}}No active assignments yet.
 {{/if}}
 {{#if parent_task_key}}Parent task (read-only): /project_workspace/tasks/{{parent_task_key}}/
-{{/if}}{{#if schedule_state_pretty}}Persistent state across runs:
-```json
-{{schedule_state_pretty}}
-```
+{{/if}}{{#if task_mounts}}Mounts (S3-backed, persist across this task's lifetime):
+{{#each task_mounts}}- {{mount_path}} ({{mode}}){{#if description}} — {{description}}{{/if}}
+{{/each}}{{#if schedule_scheduled_for}}Scheduled fire: {{schedule_scheduled_for}}.
+{{/if}}Read state from the mount at the start; write before finishing. For recurring tasks the mount persists across every fire of the schedule. Note any writes to mounted paths in `/task/JOURNAL.md`.
 {{/if}}
 Workspace: /task — Brief: /task/TASK.md — Journal: /task/JOURNAL.md
 Other tasks read-only at /project_workspace/tasks/<task_key>/.

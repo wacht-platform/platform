@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM project_task_schedules WHERE board_id = $1 AND task_key = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9713a21589d383fba7f1fd3aa5e810aa2f583643da042af3f91e692cd2d846b4"
+}

@@ -9537,7 +9537,7 @@ dependencies = [
 [[package]]
 name = "wacht-sandbox-client"
 version = "0.1.0"
-source = "git+https://github.com/wacht-platform/sandbox-client?branch=main#6a9fc13670666638fa48ecea07ba555462c4e97e"
+source = "git+https://github.com/wacht-platform/sandbox-client?branch=main#f83932d62264dd2daa803a97f34bc1376a688bcb"
 dependencies = [
  "anyhow",
  "async-nats",

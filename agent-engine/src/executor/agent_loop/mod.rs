@@ -13,24 +13,13 @@ use common::error::AppError;
 use dto::json::agent_executor::ToolCallRequest;
 use models::{AgentThreadStatus, ConversationContent, ConversationMessageType};
 use queries::{
-    GetProjectTaskBoardItemAssignmentByIdQuery, GetProjectTaskScheduleByIdQuery,
-    ListPriorScheduleFiresQuery, ListProjectTaskBoardItemCommentsQuery,
+    GetProjectTaskBoardItemAssignmentByIdQuery, ListPriorScheduleFiresQuery,
+    ListProjectTaskBoardItemCommentsQuery,
 };
 use serde_json::json;
 use std::collections::HashSet;
 
 const MAX_LOOP_ITERATIONS: usize = 50;
-
-fn json_type_label(value: &serde_json::Value) -> &'static str {
-    match value {
-        serde_json::Value::Null => "null",
-        serde_json::Value::Bool(_) => "bool",
-        serde_json::Value::Number(_) => "number",
-        serde_json::Value::String(_) => "string",
-        serde_json::Value::Array(_) => "array",
-        serde_json::Value::Object(_) => "object",
-    }
-}
 
 impl AgentExecutor {
     fn require_worker_task_identity(
@@ -301,8 +290,11 @@ impl AgentExecutor {
                     self.task_journal_tail_snippet(),
                 )?;
                 self.initialize_task_journal_start_hash(journal_hash).await?;
-                let (schedule_state_pretty, schedule_state_version, schedule_scheduled_for) =
-                    Self::format_schedule_carryover(carryover.as_ref());
+                let task_mounts = board_item
+                    .as_ref()
+                    .map(|item| Self::format_task_mounts(&item.mounts))
+                    .unwrap_or_default();
+                let schedule_scheduled_for = Self::format_scheduled_for(carryover.as_ref());
                 self.active_schedule_carryover = carryover;
 
                 let active_assignments = all_assignments
@@ -360,8 +352,7 @@ impl AgentExecutor {
                         "runbook_file": workspace.runbook_file_path,
                         "task_journal_tail": task_journal_tail,
                         "parent_task_key": parent_task_key,
-                        "schedule_state_pretty": schedule_state_pretty,
-                        "schedule_state_version": schedule_state_version,
+                        "task_mounts": task_mounts,
                         "schedule_scheduled_for": schedule_scheduled_for,
                         "routing_reason": routing_reason,
                         "previous_status": previous_status,
@@ -465,8 +456,11 @@ impl AgentExecutor {
                     self.task_journal_tail_snippet(),
                 )?;
                 self.initialize_task_journal_start_hash(journal_hash).await?;
-                let (schedule_state_pretty, schedule_state_version, schedule_scheduled_for) =
-                    Self::format_schedule_carryover(carryover.as_ref());
+                let task_mounts = board_item
+                    .as_ref()
+                    .map(|item| Self::format_task_mounts(&item.mounts))
+                    .unwrap_or_default();
+                let schedule_scheduled_for = Self::format_scheduled_for(carryover.as_ref());
                 self.active_schedule_carryover = carryover;
 
                 let current_thread_id = self.ctx.thread_id;
@@ -530,8 +524,7 @@ impl AgentExecutor {
                         "runbook_file": workspace.runbook_file_path,
                         "task_journal_tail": task_journal_tail,
                         "parent_task_key": parent_task_key,
-                        "schedule_state_pretty": schedule_state_pretty,
-                        "schedule_state_version": schedule_state_version,
+                        "task_mounts": task_mounts,
                         "schedule_scheduled_for": schedule_scheduled_for,
                         "comment_timeline": comment_timeline,
                         "prior_fires": prior_fires,
@@ -648,117 +641,24 @@ impl AgentExecutor {
             .is_some())
     }
 
-    async fn handle_update_schedule_state(
-        &mut self,
-        call: &crate::llm::GeneratedToolCall,
-    ) -> Result<(), AppError> {
-        let Some(carryover) = self.active_schedule_carryover.as_ref() else {
-            return Err(AppError::BadRequest(
-                "update_schedule_state is only available on recurring task runs".to_string(),
-            ));
-        };
-        let patch = call
-            .arguments
-            .get("patch")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        let serde_json::Value::Object(patch_obj) = &patch else {
-            return Err(AppError::BadRequest(
-                "update_schedule_state.patch must be a JSON object".to_string(),
-            ));
-        };
-        if patch_obj.is_empty() {
-            return Err(AppError::BadRequest(
-                "update_schedule_state.patch is empty — omit the call instead of sending a no-op patch.".to_string(),
-            ));
-        }
-        if let serde_json::Value::Object(prior_state) = &carryover.state_snapshot {
-            for (key, new_value) in patch_obj.iter() {
-                let Some(prior_value) = prior_state.get(key) else {
-                    continue;
-                };
-                if matches!(new_value, serde_json::Value::Null)
-                    || matches!(prior_value, serde_json::Value::Null)
-                {
-                    continue;
-                }
-                let prior_kind = json_type_label(prior_value);
-                let new_kind = json_type_label(new_value);
-                if prior_kind != new_kind {
-                    return Err(AppError::BadRequest(format!(
-                        "update_schedule_state.patch: key `{key}` changes type from `{prior_kind}` (prior state) to `{new_kind}` (new patch). Schedule state keys keep their type across runs — re-check the prior `schedule_state` and patch with the correct type, or omit this key."
-                    )));
-                }
-            }
-        }
-
-        let schedule_id = carryover.schedule_id;
-        let mut expected_version = carryover.state_version;
-        let mut applied = false;
-        for _ in 0..3 {
-            applied = commands::ApplyScheduleStatePatchCommand::new(
-                schedule_id,
-                expected_version,
-                patch.clone(),
-            )
-            .execute_with_db(self.ctx.app_state.db_router.writer())
-            .await?;
-            if applied {
-                break;
-            }
-            // Refresh version on conflict and retry.
-            let Some(current) = GetProjectTaskScheduleByIdQuery::new(schedule_id)
-                .execute_with_db(self.ctx.app_state.db_router.writer())
-                .await?
-            else {
-                return Err(AppError::NotFound(format!(
-                    "Schedule {schedule_id} not found"
-                )));
-            };
-            expected_version = current.state_version;
-        }
-        if !applied {
-            return Err(AppError::Internal(
-                "schedule state update lost CAS race repeatedly".to_string(),
-            ));
-        }
-
-        if let Some(carryover) = self.active_schedule_carryover.as_mut() {
-            if let serde_json::Value::Object(ref obj) = patch {
-                if let serde_json::Value::Object(state) = &mut carryover.state_snapshot {
-                    for (k, v) in obj {
-                        state.insert(k.clone(), v.clone());
-                    }
-                } else {
-                    carryover.state_snapshot = serde_json::Value::Object(obj.clone());
-                }
-            }
-            carryover.state_version = expected_version + 1;
-        }
-        Ok(())
+    fn format_task_mounts(mounts: &serde_json::Value) -> Vec<serde_json::Value> {
+        models::project_task_schedule::parse_mounts(mounts)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| {
+                json!({
+                    "mount_path": m.mount_path,
+                    "mode": m.mode,
+                    "description": m.description,
+                })
+            })
+            .collect()
     }
 
-    /// Formats the schedule carryover snapshot for the worker prompt. Returns
-    /// `(state_pretty, state_version, scheduled_for)` as serializable values that
-    /// the templates render conditionally; all three are `null` when this is not
-    /// a recurring fire.
-    fn format_schedule_carryover(
+    fn format_scheduled_for(
         carryover: Option<&models::ScheduleCarryover>,
-    ) -> (
-        Option<String>,
-        Option<i64>,
-        Option<chrono::DateTime<chrono::Utc>>,
-    ) {
-        let Some(carryover) = carryover else {
-            return (None, None, None);
-        };
-        let pretty = serde_json::to_string_pretty(&carryover.state_snapshot)
-            .unwrap_or_else(|_| "{}".to_string());
-        (
-            Some(pretty),
-            Some(carryover.state_version),
-            Some(carryover.scheduled_for),
-        )
+    ) -> Option<chrono::DateTime<chrono::Utc>> {
+        carryover.map(|c| c.scheduled_for)
     }
 
     fn describe_non_worker_thread_event(thread_event: &models::ThreadEvent) -> String {
@@ -820,7 +720,6 @@ impl AgentExecutor {
         use crate::llm::NativeToolDefinition;
         use meta_tools::{
             abort_tool, ask_user_tool, note_tool, notify_user_tool, resolve_user_feedback_tool,
-            update_schedule_state_tool,
         };
         use dto::json::agent_executor::{AbortDirective, AbortOutcome};
 
@@ -872,9 +771,6 @@ impl AgentExecutor {
         if self.can_abort_current_assignment_execution() {
             native_tools.push(abort_tool());
         }
-        if self.active_schedule_carryover.is_some() {
-            native_tools.push(update_schedule_state_tool());
-        }
 
         let llm = self.create_strong_llm().await?;
         let cache_request = self.build_prompt_cache_request().await;
@@ -893,12 +789,6 @@ impl AgentExecutor {
             .calls
             .iter()
             .filter(|c| c.tool_name == "note")
-            .cloned()
-            .collect();
-        let schedule_state_calls: Vec<_> = output
-            .calls
-            .iter()
-            .filter(|c| c.tool_name == "update_schedule_state")
             .cloned()
             .collect();
         let ask_user_calls: Vec<_> = output
@@ -924,7 +814,6 @@ impl AgentExecutor {
             .iter()
             .filter(|c| {
                 c.tool_name != "note"
-                    && c.tool_name != "update_schedule_state"
                     && c.tool_name != "ask_user"
                     && c.tool_name != "resolve_user_feedback"
                     && c.tool_name != "notify_user"
@@ -934,10 +823,6 @@ impl AgentExecutor {
 
         if output.calls.iter().any(|c| c.tool_name != "note") {
             self.terminal_review_continue_count = 0;
-        }
-
-        for call in &schedule_state_calls {
-            self.handle_update_schedule_state(call).await?;
         }
 
         for call in &resolve_calls {
@@ -1017,7 +902,7 @@ impl AgentExecutor {
         }
 
         if non_note_calls.is_empty() {
-            if !resolve_calls.is_empty() || !schedule_state_calls.is_empty() {
+            if !resolve_calls.is_empty() {
                 return Ok(true);
             }
             if let Some(text) = output
