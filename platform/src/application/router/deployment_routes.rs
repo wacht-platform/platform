@@ -157,6 +157,14 @@ fn settings_routes() -> Router<AppState> {
             patch(api::b2b::update_deployment_b2b_settings),
         )
         .route(
+            "/settings/b2b/organization-roles",
+            get(api::b2b::get_deployment_organization_roles),
+        )
+        .route(
+            "/settings/b2b/workspace-roles",
+            get(api::b2b::get_deployment_workspace_roles),
+        )
+        .route(
             "/settings/social-connections",
             get(api::connection::get_deployment_social_connections),
         )

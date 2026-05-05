@@ -8,12 +8,15 @@ use dto::{
     json::deployment_settings::DeploymentB2bSettingsUpdates, query::OrganizationListQueryParams,
 };
 use models::{
-    Organization, OrganizationDetails, OrganizationMemberDetails, OrganizationRole,
-    WorkspaceDetails, WorkspaceMemberDetails, WorkspaceRole, WorkspaceWithOrganizationName,
+    DeploymentOrganizationRole, DeploymentWorkspaceRole, Organization, OrganizationDetails,
+    OrganizationMemberDetails, OrganizationRole, WorkspaceDetails, WorkspaceMemberDetails,
+    WorkspaceRole, WorkspaceWithOrganizationName,
 };
 use queries::{
-    DeploymentOrganizationListQuery, DeploymentWorkspaceListQuery, GetOrganizationDetailsQuery,
-    GetOrganizationMembersQuery, GetWorkspaceDetailsQuery, GetWorkspaceMembersQuery,
+    DeploymentOrganizationListQuery, DeploymentWorkspaceListQuery,
+    GetDeploymentOrganizationRolesQuery, GetDeploymentWorkspaceRolesQuery,
+    GetOrganizationDetailsQuery, GetOrganizationMembersQuery, GetWorkspaceDetailsQuery,
+    GetWorkspaceMembersQuery,
 };
 
 fn paginated_with_has_more<T>(
@@ -45,6 +48,17 @@ pub async fn get_workspace_roles(
     Ok(PaginatedResponse::from(workspace.roles))
 }
 
+pub async fn get_deployment_workspace_roles(
+    app_state: &AppState,
+    deployment_id: i64,
+) -> Result<PaginatedResponse<DeploymentWorkspaceRole>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    let roles = GetDeploymentWorkspaceRolesQuery::new(deployment_id)
+        .execute_with_db(reader)
+        .await?;
+    Ok(PaginatedResponse::from(roles))
+}
+
 pub async fn get_organization_roles(
     app_state: &AppState,
     deployment_id: i64,
@@ -55,6 +69,17 @@ pub async fn get_organization_roles(
         .execute_with_db(reader)
         .await?;
     Ok(PaginatedResponse::from(organization.roles))
+}
+
+pub async fn get_deployment_organization_roles(
+    app_state: &AppState,
+    deployment_id: i64,
+) -> Result<PaginatedResponse<DeploymentOrganizationRole>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    let roles = GetDeploymentOrganizationRolesQuery::new(deployment_id)
+        .execute_with_db(reader)
+        .await?;
+    Ok(PaginatedResponse::from(roles))
 }
 
 pub async fn update_deployment_b2b_settings(

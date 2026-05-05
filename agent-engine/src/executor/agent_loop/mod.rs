@@ -21,6 +21,17 @@ use std::collections::HashSet;
 
 const MAX_LOOP_ITERATIONS: usize = 50;
 
+fn json_type_label(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "bool",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
+}
+
 impl AgentExecutor {
     fn require_worker_task_identity(
         thread_event: &models::ThreadEvent,
@@ -651,10 +662,34 @@ impl AgentExecutor {
             .get("patch")
             .cloned()
             .unwrap_or(serde_json::Value::Null);
-        if !patch.is_object() {
+        let serde_json::Value::Object(patch_obj) = &patch else {
             return Err(AppError::BadRequest(
                 "update_schedule_state.patch must be a JSON object".to_string(),
             ));
+        };
+        if patch_obj.is_empty() {
+            return Err(AppError::BadRequest(
+                "update_schedule_state.patch is empty — omit the call instead of sending a no-op patch.".to_string(),
+            ));
+        }
+        if let serde_json::Value::Object(prior_state) = &carryover.state_snapshot {
+            for (key, new_value) in patch_obj.iter() {
+                let Some(prior_value) = prior_state.get(key) else {
+                    continue;
+                };
+                if matches!(new_value, serde_json::Value::Null)
+                    || matches!(prior_value, serde_json::Value::Null)
+                {
+                    continue;
+                }
+                let prior_kind = json_type_label(prior_value);
+                let new_kind = json_type_label(new_value);
+                if prior_kind != new_kind {
+                    return Err(AppError::BadRequest(format!(
+                        "update_schedule_state.patch: key `{key}` changes type from `{prior_kind}` (prior state) to `{new_kind}` (new patch). Schedule state keys keep their type across runs — re-check the prior `schedule_state` and patch with the correct type, or omit this key."
+                    )));
+                }
+            }
         }
 
         let schedule_id = carryover.schedule_id;

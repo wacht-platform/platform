@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct DeploymentWorkspaceRole {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -17,7 +17,7 @@ pub struct DeploymentWorkspaceRole {
     pub workspace_id: Option<i64>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct DeploymentOrganizationRole {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

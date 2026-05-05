@@ -3,7 +3,7 @@
 </h1>
 
 <p align="center">
-  Open-source identity platform backend for modern SaaS and B2B products.
+  <strong>The open-source identity, access, and agent runtime backend for modern SaaS.</strong>
 </p>
 
 <p align="center">
@@ -11,70 +11,112 @@
     <img alt="GitHub Stars" src="https://img.shields.io/github/stars/wacht-platform/platform-api?style=flat-square" />
   </a>
   <a href="https://github.com/wacht-platform/platform-api/blob/main/LICENSE.md">
-    <img alt="License" src="https://img.shields.io/github/license/wacht-platform/platform-api?style=flat-square" />
+    <img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square" />
   </a>
-  <img alt="Public Beta" src="https://img.shields.io/badge/status-public%20beta-blue?style=flat-square" />
-  <img alt="Runtime Rust" src="https://img.shields.io/badge/runtime-rust-orange?style=flat-square" />
-  <img alt="Service Platform API" src="https://img.shields.io/badge/service-platform--api-0f172a?style=flat-square" />
+  <img alt="Status" src="https://img.shields.io/badge/status-public%20beta-blue?style=flat-square" />
+  <img alt="Built with Rust" src="https://img.shields.io/badge/built%20with-rust-orange?style=flat-square" />
 </p>
 
 <p align="center">
-  <a href="https://wacht.dev">Website</a> |
-  <a href="https://wacht.dev/docs">Documentation</a> |
-  <a href="https://github.com/wacht-platform/platform-api/issues">Issues</a>
+  <a href="https://wacht.dev">Website</a> ·
+  <a href="https://wacht.dev/docs">Docs</a> ·
+  <a href="https://github.com/wacht-platform/platform-api/issues">Issues</a> ·
+  <a href="https://wacht.dev/changelog">Changelog</a>
 </p>
 
-## What This Platform Is
+---
 
-Wacht Platform API is the backend for Wacht: a programmable identity and access platform.
+## Overview
 
-It is built for teams that treat identity as a product surface, not just login plumbing.
+Wacht Platform API is the backend that powers [Wacht](https://wacht.dev) — a programmable
+identity, access, and agent platform for B2B and SaaS products. It exposes the control plane,
+authentication runtime, integration surface, and the agent execution engine that applications
+build on top of.
 
-## Why Teams Use It
+It is designed for teams that treat identity, authorization, and AI workflows as first-class
+product surfaces rather than commodity infrastructure.
 
-Wacht helps you ship:
+## Capabilities
 
-- Multi-tenant authentication with deployment-level control
-- B2B access models (organizations, workspaces, roles, permission catalogs)
-- API authorization for machine and user clients
-- OAuth integrations and token-based runtime flows
-- Event-driven operations (webhooks, async workflows, usage tracking)
+- **Multi-tenant authentication.** Sign-in, sign-up, MFA, sessions, and deployment-scoped policies.
+- **B2B access model.** Organizations, workspaces, roles, and a permission catalog suitable for
+  customer-facing admin UIs.
+- **Machine and user authorization.** Token issuance, API keys, scoped credentials, and
+  authorization decisions for both human and service callers.
+- **OAuth and integrations.** First-party OAuth provider plus relay flows for external services.
+- **Event-driven operations.** Webhooks, async workers, retries, notifications, usage metering,
+  and billing hooks.
+- **Agent runtime.** A first-class engine for long-running, tool-using agents with sandboxed
+  execution, scheduled work, and human-in-the-loop approvals.
 
-## Platform Model
+## Architecture
 
-At a product level, the platform has four layers:
+The system is organized into four planes:
 
-- Control plane: configure deployments, policies, auth factors, and access models
-- Runtime plane: execute sign-in/sign-up and authorization decisions
-- Integration plane: OAuth, webhooks, and external service connectors
-- Operations plane: workers, retries, notifications, usage and billing pipelines
+| Plane          | Responsibility                                                            |
+| -------------- | ------------------------------------------------------------------------- |
+| Control plane  | Configure deployments, policies, auth factors, and access models.         |
+| Runtime plane  | Execute sign-in/sign-up flows and authorization decisions at request time.|
+| Integration    | OAuth providers, webhooks, and external service connectors.               |
+| Operations     | Background workers, retries, notifications, usage and billing pipelines.  |
 
-## How This Repo Fits In Wacht
+This repository is the backend for those four planes. It is consumed by:
 
-- `platform-api` is the backend control plane + runtime core
-- `console` is the operator UI for managing platform configuration
-- `frontend-api` serves end-user auth flows for application frontends
+- **`console`** — operator UI for managing platform configuration.
+- **`frontend-api`** — end-user authentication flows embedded in application frontends.
 
-## Contributor Notes (Minimal Repo Map)
+## Repository Layout
 
-- `platform/` API entrypoints
-- `worker/` background jobs
-- `agent-engine/` agent runtime
-- `commands/`, `queries/`, `models/`, `dto/`, `common/` shared backend foundation
+```
+platform/        HTTP entrypoints (console-api, frontend-api, oauth-relay)
+agent-engine/    Agent execution runtime, planner, tool dispatch
+worker/          Background job runner (webhooks, retries, schedules)
+commands/        Write-side handlers (CQRS-style commands)
+queries/         Read-side projections and query handlers
+models/          Domain models and persistence types
+dto/             Wire types shared across services
+templatekit/     Prompt and template assets for the agent engine
+common/          Shared utilities (telemetry, error, config)
+oauth-relay/     OAuth relay service
+scripts/         Operational and developer scripts
+```
 
 ## Quickstart
 
+Requirements: a recent stable Rust toolchain, PostgreSQL, and NATS.
+
 ```bash
+# Verify the workspace builds
 cargo check --workspace
+
+# Run the console API
 CONSOLE_API_PORT=3001 cargo run -p platform --bin console-api
+
+# Run the background worker
 cargo run -p platform-worker --bin worker
 ```
 
+See the [documentation](https://wacht.dev/docs) for environment variables, schema migrations,
+and deployment guidance.
+
+## Status
+
+Wacht Platform API is in **public beta**. The HTTP surface and data model are stabilizing;
+breaking changes are documented in the changelog. Production usage is supported with the
+expectations typical of a beta release.
+
+## Contributing
+
+We're not accepting pull requests yet — the contribution process isn't set up. Forks,
+self-hosting, and any other use the AGPL-3.0 allows are welcome. Self-hosting documentation
+is still in progress.
+
 ## Support
 
-- Report issues: [GitHub Issues](https://github.com/wacht-platform/platform-api/issues)
-- Product docs: [wacht.dev/docs](https://wacht.dev/docs)
+- Product and integration docs: [wacht.dev/docs](https://wacht.dev/docs).
+- Direct assistance: [engineering@intellinesia.com](mailto:engineering@intellinesia.com).
 
 ## License
 
-GNU Affero General Public License v3.0 (AGPL-3.0-only). See [LICENSE.md](./LICENSE.md).
+Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0-only).
+See [LICENSE.md](./LICENSE.md) for the full text.

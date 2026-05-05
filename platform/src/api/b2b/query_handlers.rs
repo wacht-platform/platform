@@ -10,8 +10,9 @@ use dto::{
     json::deployment_settings::DeploymentB2bSettingsUpdates, query::OrganizationListQueryParams,
 };
 use models::{
-    Organization, OrganizationDetails, OrganizationMemberDetails, OrganizationRole,
-    WorkspaceDetails, WorkspaceMemberDetails, WorkspaceRole, WorkspaceWithOrganizationName,
+    DeploymentOrganizationRole, DeploymentWorkspaceRole, Organization, OrganizationDetails,
+    OrganizationMemberDetails, OrganizationRole, WorkspaceDetails, WorkspaceMemberDetails,
+    WorkspaceRole, WorkspaceWithOrganizationName,
 };
 
 use super::{
@@ -28,6 +29,14 @@ pub async fn get_workspace_roles(
     Ok(roles.into())
 }
 
+pub async fn get_deployment_workspace_roles(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+) -> ApiResult<crate::application::response::PaginatedResponse<DeploymentWorkspaceRole>> {
+    let roles = b2b_query_app::get_deployment_workspace_roles(&app_state, deployment_id).await?;
+    Ok(roles.into())
+}
+
 pub async fn get_organization_roles(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -36,6 +45,14 @@ pub async fn get_organization_roles(
     let roles =
         b2b_query_app::get_organization_roles(&app_state, deployment_id, params.organization_id)
             .await?;
+    Ok(roles.into())
+}
+
+pub async fn get_deployment_organization_roles(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+) -> ApiResult<crate::application::response::PaginatedResponse<DeploymentOrganizationRole>> {
+    let roles = b2b_query_app::get_deployment_organization_roles(&app_state, deployment_id).await?;
     Ok(roles.into())
 }
 

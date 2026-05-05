@@ -1,5 +1,5 @@
 use serde::de::DeserializeOwned;
-use sqlx::{Postgres, QueryBuilder, Row, query_as};
+use sqlx::{Postgres, QueryBuilder, Row};
 
 use crate::prelude::*;
 use models::{
@@ -33,12 +33,11 @@ impl GetDeploymentWorkspaceRolesQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let rows = query_as!(
-            DeploymentWorkspaceRole,
+        let rows = sqlx::query_as::<_, DeploymentWorkspaceRole>(
             r#"
-            SELECT * FROM workspace_roles WHERE deployment_id = $1"#,
-            self.deployment_id
+            SELECT * FROM workspace_roles WHERE deployment_id = $1 AND workspace_id IS NULL"#,
         )
+        .bind(self.deployment_id)
         .fetch_all(executor)
         .await?;
 
@@ -62,11 +61,10 @@ impl GetDeploymentOrganizationRolesQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let rows = query_as!(
-            DeploymentOrganizationRole,
-            r#"SELECT * FROM organization_roles WHERE deployment_id = $1"#,
-            self.deployment_id
+        let rows = sqlx::query_as::<_, DeploymentOrganizationRole>(
+            r#"SELECT * FROM organization_roles WHERE deployment_id = $1 AND organization_id IS NULL"#,
         )
+        .bind(self.deployment_id)
         .fetch_all(executor)
         .await?;
 
