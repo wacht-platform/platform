@@ -1,5 +1,5 @@
 <h1 align="center">
-  <a href="https://wacht.dev" style="text-decoration:none;">Wacht Platform API</a>
+  <a href="https://wacht.dev" style="text-decoration:none;">Wacht Platform</a>
 </h1>
 
 <p align="center">
@@ -7,9 +7,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/wacht-platform/platform-api/stargazers">
-    <img alt="GitHub Stars" src="https://img.shields.io/github/stars/wacht-platform/platform-api?style=flat-square" />
-  </a>
   <a href="https://github.com/wacht-platform/platform-api/blob/main/LICENSE.md">
     <img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square" />
   </a>
@@ -28,7 +25,7 @@
 
 ## Overview
 
-Wacht Platform API is the backend that powers [Wacht](https://wacht.dev) — a programmable
+Wacht Platform is the backend that powers [Wacht](https://wacht.dev) — a programmable
 identity, access, and agent platform for B2B and SaaS products. It exposes the control plane,
 authentication runtime, integration surface, and the agent execution engine that applications
 build on top of.
@@ -101,7 +98,7 @@ and deployment guidance.
 
 ## Status
 
-Wacht Platform API is in **public beta**. The HTTP surface and data model are stabilizing;
+Wacht Platform is in **public beta**. The HTTP surface and data model are stabilizing;
 breaking changes are documented in the changelog. Production usage is supported with the
 expectations typical of a beta release.
 
@@ -120,3 +117,7 @@ is still in progress.
 
 Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0-only).
 See [LICENSE.md](./LICENSE.md) for the full text.
+
+---
+
+<sub>* This README was AI-generated.</sub>
