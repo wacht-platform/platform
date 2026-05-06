@@ -168,7 +168,7 @@ impl AgentExecutor {
 
         if !update_project_task_has_meaningful_mutation(&params) {
             return Err(AppError::BadRequest(
-                "update_project_task requires at least one meaningful change. Use sleep when nothing should change.".to_string(),
+                "update_project_task requires at least one meaningful change. If no changes are to be made, this tool is not useful, and should not be called.".to_string(),
             ));
         }
 

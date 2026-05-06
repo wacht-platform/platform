@@ -121,6 +121,16 @@ pub struct TaskWorkspaceFileEntry {
 pub struct TaskWorkspaceListing {
     pub exists: bool,
     pub files: Vec<TaskWorkspaceFileEntry>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub mounts: Vec<TaskWorkspaceMount>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct TaskWorkspaceMount {
+    pub mount_path: String,
+    pub mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -441,6 +451,7 @@ async fn list_workspace_directory(
     Ok(TaskWorkspaceListing {
         exists: cleaned_relative_path.is_empty() || !files.is_empty(),
         files,
+        mounts: Vec::new(),
     })
 }
 
@@ -1007,6 +1018,7 @@ pub async fn list_thread_filesystem(
                     modified_at: None,
                 },
             ],
+            mounts: Vec::new(),
         });
     }
     match cleaned.as_str() {
@@ -1630,13 +1642,23 @@ pub async fn list_project_task_board_item_filesystem(
             "Project task board item not found".to_string(),
         ));
     }
-    list_workspace_directory(
+    let mut listing = list_workspace_directory(
         app_state,
         deployment_id,
         task_workspace_storage_prefix(deployment_id, project_id, &item.task_key),
         path,
     )
-    .await
+    .await?;
+    listing.mounts = models::project_task_schedule::parse_mounts(&item.mounts)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|m| TaskWorkspaceMount {
+            mount_path: m.mount_path,
+            mode: m.mode,
+            description: m.description,
+        })
+        .collect();
+    Ok(listing)
 }
 
 pub async fn get_project_task_board_item_filesystem_file(
