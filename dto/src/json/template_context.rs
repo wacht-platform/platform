@@ -445,6 +445,19 @@ pub struct ProjectTaskBoardPromptItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<String>,
     pub updated_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<BoardItemSchedulePromptInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoardItemSchedulePromptInfo {
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interval: Option<String>,
+    pub next_run_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_fired_at: Option<String>,
+    pub overlap_policy: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

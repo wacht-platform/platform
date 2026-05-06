@@ -7,7 +7,10 @@
 {{else if (eq routing_reason "user_feedback")}}User left feedback on this task. The current executor (if any) was preempted; partial work is in `/task/JOURNAL.md`. Read the full feedback timeline below, decide whether to acknowledge, adjust the brief, re-route, or close. Append a short note to `/task/JOURNAL.md` capturing how you're acting on the latest feedback.
 {{else}}Routing event for this task.
 {{/if}}
+{{#if is_recurring}}
+> **Recurring task.** This is one fire of a schedule that runs repeatedly. Listed mounts (e.g. `/shared/`) persist across every fire — read prior state at the start, write any state to remember before finishing. `/task/` is per-fire and resets next run.{{#if task_schedule}} Schedule: `{{task_schedule.kind}}`{{#if task_schedule.interval}}, every `{{task_schedule.interval}}`{{/if}}, next run `{{task_schedule.next_run_at}}`{{#if task_schedule.last_fired_at}}, last fired `{{task_schedule.last_fired_at}}`{{/if}}, overlap `{{task_schedule.overlap_policy}}`.{{/if}}
 
+{{/if}}
 Task key: {{task_key}}
 Board item id: {{board_item_id}}
 Title: {{title}}

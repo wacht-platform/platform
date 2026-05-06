@@ -13,8 +13,8 @@ use common::error::AppError;
 use dto::json::agent_executor::ToolCallRequest;
 use models::{AgentThreadStatus, ConversationContent, ConversationMessageType};
 use queries::{
-    GetProjectTaskBoardItemAssignmentByIdQuery, ListPriorScheduleFiresQuery,
-    ListProjectTaskBoardItemCommentsQuery,
+    GetProjectTaskBoardItemAssignmentByIdQuery, GetProjectTaskScheduleByIdQuery,
+    ListPriorScheduleFiresQuery, ListProjectTaskBoardItemCommentsQuery,
 };
 use serde_json::json;
 use std::collections::HashSet;
@@ -295,6 +295,11 @@ impl AgentExecutor {
                     .map(|item| Self::format_task_mounts(&item.mounts))
                     .unwrap_or_default();
                 let schedule_scheduled_for = Self::format_scheduled_for(carryover.as_ref());
+                let task_schedule = self
+                    .load_schedule_info_for_prompt(
+                        board_item.as_ref().and_then(|item| item.schedule_id),
+                    )
+                    .await?;
                 self.active_schedule_carryover = carryover;
 
                 let active_assignments = all_assignments
@@ -352,7 +357,9 @@ impl AgentExecutor {
                         "runbook_file": workspace.runbook_file_path,
                         "task_journal_tail": task_journal_tail,
                         "parent_task_key": parent_task_key,
+                        "is_recurring": is_recurring,
                         "task_mounts": task_mounts,
+                        "task_schedule": task_schedule,
                         "schedule_scheduled_for": schedule_scheduled_for,
                         "routing_reason": routing_reason,
                         "previous_status": previous_status,
@@ -461,6 +468,11 @@ impl AgentExecutor {
                     .map(|item| Self::format_task_mounts(&item.mounts))
                     .unwrap_or_default();
                 let schedule_scheduled_for = Self::format_scheduled_for(carryover.as_ref());
+                let task_schedule = self
+                    .load_schedule_info_for_prompt(
+                        board_item.as_ref().and_then(|item| item.schedule_id),
+                    )
+                    .await?;
                 self.active_schedule_carryover = carryover;
 
                 let current_thread_id = self.ctx.thread_id;
@@ -524,7 +536,9 @@ impl AgentExecutor {
                         "runbook_file": workspace.runbook_file_path,
                         "task_journal_tail": task_journal_tail,
                         "parent_task_key": parent_task_key,
+                        "is_recurring": is_recurring,
                         "task_mounts": task_mounts,
+                        "task_schedule": task_schedule,
                         "schedule_scheduled_for": schedule_scheduled_for,
                         "comment_timeline": comment_timeline,
                         "prior_fires": prior_fires,
@@ -639,6 +653,30 @@ impl AgentExecutor {
         Ok(item
             .and_then(|i| i.pending_question)
             .is_some())
+    }
+
+    async fn load_schedule_info_for_prompt(
+        &self,
+        schedule_id: Option<i64>,
+    ) -> Result<Option<serde_json::Value>, AppError> {
+        let Some(schedule_id) = schedule_id else {
+            return Ok(None);
+        };
+        let Some(schedule) = GetProjectTaskScheduleByIdQuery::new(schedule_id)
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(json!({
+            "kind": schedule.schedule_kind,
+            "interval": schedule
+                .interval_seconds
+                .map(super::project::prompt_items::humanize_interval),
+            "next_run_at": schedule.next_run_at.to_rfc3339(),
+            "last_fired_at": schedule.last_fired_at.map(|t| t.to_rfc3339()),
+            "overlap_policy": schedule.overlap_policy,
+        })))
     }
 
     fn format_task_mounts(mounts: &serde_json::Value) -> Vec<serde_json::Value> {

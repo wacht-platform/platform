@@ -198,6 +198,16 @@ A task can have S3-backed mounts. Mount contents persist across the task's lifet
 
 When a task has mounts, name them in the brief and tell the executor what to read and write: *"Read prior state from `/shared/STATE.md` at the start. Append today's report to `/shared/reports/`. Update STATE.md before you finish."* If you don't direct the executor to the mount, they'll default to `/task/` and the persistent storage goes unused.
 
+## Recurring tasks — reading the schedule
+
+Every board item carries a `schedule` field when it's part of a recurring task. Shape: `{ kind, interval, next_run_at, last_fired_at, overlap_policy }`. Read it before routing recurring work — the cadence shapes both the brief and the executor's expectations.
+
+- `kind = "interval"` + `interval = "1d"` means the task fires every day. The brief should be sized for *one day's worth* of work, not a one-shot deliverable.
+- `next_run_at` and `last_fired_at` tell you whether you're routing the *first* fire (no `last_fired_at`) or a follow-up. First fires need the executor to set up `/shared/` (initial state files); follow-ups should consume prior state.
+- `overlap_policy = "skip"` means the runtime won't fire again while a prior fire is still running — your brief can assume serial execution. `parallel` means concurrent fires are possible — design briefs that don't fight each other on `/shared/`.
+
+When a task is recurring, your routing brief must answer two extra questions: *what state should the executor read from `/shared/` at the start?* and *what state must they write before terminating?* If you can't answer either, the brief isn't ready.
+
 ## Core rules
 
 1. Orchestrate + define. Never execute.

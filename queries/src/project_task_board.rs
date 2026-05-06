@@ -95,6 +95,21 @@ pub struct ListProjectTaskBoardItemsQuery {
     pub board_id: i64,
 }
 
+#[derive(Debug, Clone)]
+pub struct BoardItemScheduleSummary {
+    pub kind: String,
+    pub interval_seconds: Option<i64>,
+    pub next_run_at: chrono::DateTime<chrono::Utc>,
+    pub last_fired_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub overlap_policy: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProjectTaskBoardItemWithSchedule {
+    pub item: ProjectTaskBoardItem,
+    pub schedule: Option<BoardItemScheduleSummary>,
+}
+
 impl ListProjectTaskBoardItemsQuery {
     pub fn new(board_id: i64) -> Self {
         Self { board_id }
@@ -123,6 +138,95 @@ impl ListProjectTaskBoardItemsQuery {
         .await?;
 
         Ok(items)
+    }
+
+    pub async fn execute_with_schedules<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Vec<ProjectTaskBoardItemWithSchedule>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let rows = sqlx::query!(
+            r#"
+            SELECT
+                i.id                AS "id!",
+                i.board_id          AS "board_id!",
+                i.task_key          AS "task_key!",
+                i.title             AS "title!",
+                i.description       AS "description?",
+                i.status            AS "status!",
+                i.assigned_thread_id AS "assigned_thread_id?",
+                i.metadata          AS "metadata!",
+                i.completed_at      AS "completed_at?",
+                i.archived_at       AS "archived_at?",
+                i.created_at        AS "created_at!",
+                i.updated_at        AS "updated_at!",
+                i.state_version     AS "state_version!",
+                i.schedule_id       AS "schedule_id?",
+                i.scheduled_for     AS "scheduled_for?",
+                i.fired_at          AS "fired_at?",
+                i.pending_question  AS "pending_question?",
+                i.pending_approval  AS "pending_approval?",
+                i.mounts            AS "mounts!",
+                s.schedule_kind     AS "schedule_kind?",
+                s.interval_seconds  AS "schedule_interval_seconds?",
+                s.next_run_at       AS "schedule_next_run_at?",
+                s.last_fired_at     AS "schedule_last_fired_at?",
+                s.overlap_policy    AS "schedule_overlap_policy?"
+            FROM project_task_board_items i
+            LEFT JOIN project_task_schedules s
+                ON s.board_id = i.board_id AND s.task_key = i.task_key
+            WHERE i.board_id = $1 AND i.archived_at IS NULL
+            ORDER BY i.created_at ASC
+            "#,
+            self.board_id,
+        )
+        .fetch_all(executor)
+        .await?;
+
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            let schedule = match (
+                row.schedule_kind,
+                row.schedule_next_run_at,
+                row.schedule_overlap_policy,
+            ) {
+                (Some(kind), Some(next_run_at), Some(overlap_policy)) => {
+                    Some(BoardItemScheduleSummary {
+                        kind,
+                        interval_seconds: row.schedule_interval_seconds,
+                        next_run_at,
+                        last_fired_at: row.schedule_last_fired_at,
+                        overlap_policy,
+                    })
+                }
+                _ => None,
+            };
+            let item = ProjectTaskBoardItem {
+                id: row.id,
+                board_id: row.board_id,
+                task_key: row.task_key,
+                title: row.title,
+                description: row.description,
+                status: row.status,
+                assigned_thread_id: row.assigned_thread_id,
+                metadata: row.metadata,
+                completed_at: row.completed_at,
+                archived_at: row.archived_at,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                state_version: row.state_version,
+                schedule_id: row.schedule_id,
+                scheduled_for: row.scheduled_for,
+                fired_at: row.fired_at,
+                pending_question: row.pending_question,
+                pending_approval: row.pending_approval,
+                mounts: row.mounts,
+            };
+            out.push(ProjectTaskBoardItemWithSchedule { item, schedule });
+        }
+        Ok(out)
     }
 }
 

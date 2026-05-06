@@ -1,5 +1,5 @@
 mod assignments;
-mod prompt_items;
+pub(crate) mod prompt_items;
 pub(crate) mod status_machine;
 mod task_commands;
 mod task_graph;
@@ -55,16 +55,16 @@ pub(crate) async fn load_project_task_board_state(
     ctx: &ThreadExecutionContext,
 ) -> Result<(i64, Vec<ProjectTaskBoardPromptItem>), AppError> {
     let board_id = lookup_or_create_project_task_board_id(ctx).await?;
-    let items = ListProjectTaskBoardItemsQuery::new(board_id)
-        .execute_with_db(ctx.app_state.db_router.writer())
+    let rows = ListProjectTaskBoardItemsQuery::new(board_id)
+        .execute_with_schedules(ctx.app_state.db_router.writer())
         .await?;
     let relations = ListProjectTaskBoardRelationsQuery::new(board_id)
         .execute_with_db(ctx.app_state.db_router.writer())
         .await?;
 
-    let task_key_by_item_id: HashMap<i64, String> = items
+    let task_key_by_item_id: HashMap<i64, String> = rows
         .iter()
-        .map(|item| (item.id, item.task_key.clone()))
+        .map(|row| (row.item.id, row.item.task_key.clone()))
         .collect();
     let mut parent_task_key_by_child_id: HashMap<i64, String> = HashMap::new();
     let mut child_task_keys_by_parent_id: HashMap<i64, Vec<String>> = HashMap::new();
@@ -92,15 +92,16 @@ pub(crate) async fn load_project_task_board_state(
             .push(child_task_key);
     }
 
-    let prompt_items = items
+    let prompt_items = rows
         .iter()
-        .map(|item| {
+        .map(|row| {
             AgentExecutor::project_task_board_item_to_prompt_item_with_relations(
-                item,
-                parent_task_key_by_child_id.get(&item.id).cloned(),
+                &row.item,
+                parent_task_key_by_child_id.get(&row.item.id).cloned(),
                 child_task_keys_by_parent_id
-                    .remove(&item.id)
+                    .remove(&row.item.id)
                     .unwrap_or_default(),
+                row.schedule.as_ref(),
             )
         })
         .collect();
