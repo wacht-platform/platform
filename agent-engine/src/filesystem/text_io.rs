@@ -1,7 +1,7 @@
 use super::{AgentFilesystem, EditFileResult, ReadFileResult, WriteFileResult};
 use crate::sandbox::{ExecRequest, SandboxError};
-use common::error::AppError;
 use commands::WriteToDeploymentStorageCommand;
+use common::error::AppError;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -9,9 +9,7 @@ use std::time::Duration;
 fn map_sandbox_error(path: &str, op: &str, err: SandboxError) -> AppError {
     match err {
         SandboxError::NotFound(msg) => AppError::NotFound(format!("{op} {path}: {msg}")),
-        SandboxError::Timeout(msg) => {
-            AppError::Internal(format!("{op} {path}: timed out: {msg}"))
-        }
+        SandboxError::Timeout(msg) => AppError::Internal(format!("{op} {path}: timed out: {msg}")),
         SandboxError::Cancelled => AppError::Internal(format!("{op} {path}: cancelled")),
         SandboxError::Transient(msg) => {
             AppError::Internal(format!("{op} {path}: transient sandbox error: {msg}"))
@@ -121,10 +119,7 @@ impl AgentFilesystem {
                 .await
                 .unwrap_or_default();
             let mut buf = existing;
-            if !buf.is_empty()
-                && buf.last() != Some(&b'\n')
-                && !content.starts_with('\n')
-            {
+            if !buf.is_empty() && buf.last() != Some(&b'\n') && !content.starts_with('\n') {
                 buf.push(b'\n');
             }
             buf.extend_from_slice(content.as_bytes());

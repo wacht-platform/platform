@@ -78,21 +78,24 @@ async fn enqueue_thread_work(
     execution_type: dto::json::AgentExecutionType,
 ) -> Result<i64, AppError> {
     let event_log_id = app_state.sf.next_id()? as i64;
-    let (event_type, conversation_id, approval_request_message_id): (&str, Option<i64>, Option<String>) =
-        match &execution_type {
-            dto::json::AgentExecutionType::NewMessage { conversation_id } => (
-                models::thread_event::event_type::USER_MESSAGE_RECEIVED,
-                conversation_id.parse::<i64>().ok(),
-                None,
-            ),
-            dto::json::AgentExecutionType::ApprovalResponse {
-                request_message_id, ..
-            } => (
-                models::thread_event::event_type::APPROVAL_RESPONSE_RECEIVED,
-                None,
-                Some(request_message_id.clone()),
-            ),
-        };
+    let (event_type, conversation_id, approval_request_message_id): (
+        &str,
+        Option<i64>,
+        Option<String>,
+    ) = match &execution_type {
+        dto::json::AgentExecutionType::NewMessage { conversation_id } => (
+            models::thread_event::event_type::USER_MESSAGE_RECEIVED,
+            conversation_id.parse::<i64>().ok(),
+            None,
+        ),
+        dto::json::AgentExecutionType::ApprovalResponse {
+            request_message_id, ..
+        } => (
+            models::thread_event::event_type::APPROVAL_RESPONSE_RECEIVED,
+            None,
+            Some(request_message_id.clone()),
+        ),
+    };
 
     let request = dto::json::AgentExecutionRequest {
         deployment_id: thread_state.deployment_id.to_string(),
@@ -102,7 +105,9 @@ async fn enqueue_thread_work(
     };
 
     let execution_payload = serde_json::to_value(&request).map_err(|err| {
-        AppError::Internal(format!("Failed to serialize agent execution request: {err}"))
+        AppError::Internal(format!(
+            "Failed to serialize agent execution request: {err}"
+        ))
     })?;
 
     let idempotency_key = if let Some(cid) = conversation_id {

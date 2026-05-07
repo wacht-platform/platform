@@ -1,6 +1,5 @@
 use crate::application::{
-    agent_threads as agent_threads_app,
-    board_item_actions as board_actions_app,
+    agent_threads as agent_threads_app, board_item_actions as board_actions_app,
     response::{ApiResult, PaginatedResponse},
 };
 use crate::middleware::RequireDeployment;
@@ -17,8 +16,7 @@ use dto::json::deployment::{
 use models::{
     Actor, ActorProject, AgentThread, AgentThreadState, ConversationRecord, ProjectTaskBoard,
     ProjectTaskBoardItem, ProjectTaskBoardItemAssignment, ProjectTaskBoardItemRelation,
-    ThreadTaskEdge, ThreadTaskGraph,
-    ThreadTaskGraphSummary, ThreadTaskNode,
+    ThreadTaskEdge, ThreadTaskGraph, ThreadTaskGraphSummary, ThreadTaskNode,
 };
 use serde::{Deserialize, Serialize};
 
@@ -640,8 +638,8 @@ pub async fn cancel_project_task_board_item(
     RequireDeployment(_deployment_id): RequireDeployment,
     Path((project_id, item_id)): Path<(i64, i64)>,
 ) -> ApiResult<ProjectTaskBoardItem> {
-    let item = board_actions_app::cancel_project_task_board_item(&app_state, project_id, item_id)
-        .await?;
+    let item =
+        board_actions_app::cancel_project_task_board_item(&app_state, project_id, item_id).await?;
     Ok(item.into())
 }
 
@@ -652,10 +650,7 @@ pub async fn answer_project_task_board_item_question(
     Json(submission): Json<dto::json::ask_user::AnswerSubmission>,
 ) -> ApiResult<ProjectTaskBoardItem> {
     let item = board_actions_app::answer_project_task_board_item_question(
-        &app_state,
-        project_id,
-        item_id,
-        submission,
+        &app_state, project_id, item_id, submission,
     )
     .await?;
     Ok(item.into())
@@ -688,12 +683,9 @@ pub async fn list_project_task_board_item_comments(
     RequireDeployment(_deployment_id): RequireDeployment,
     Path((project_id, item_id)): Path<(i64, i64)>,
 ) -> ApiResult<PaginatedResponse<models::ProjectTaskBoardItemComment>> {
-    let comments = board_actions_app::list_project_task_board_item_comments(
-        &app_state,
-        project_id,
-        item_id,
-    )
-    .await?;
+    let comments =
+        board_actions_app::list_project_task_board_item_comments(&app_state, project_id, item_id)
+            .await?;
     Ok(PaginatedResponse::from(comments).into())
 }
 

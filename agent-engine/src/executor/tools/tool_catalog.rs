@@ -50,7 +50,11 @@ fn mcp_schema_to_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
     properties
         .iter()
         .map(|(name, prop)| {
-            let field_type = match prop.get("type").and_then(|t| t.as_str()).unwrap_or("string") {
+            let field_type = match prop
+                .get("type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("string")
+            {
                 "integer" | "number" => "NUMBER",
                 "boolean" => "BOOLEAN",
                 "array" => "ARRAY",
@@ -61,9 +65,18 @@ fn mcp_schema_to_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
                 name: name.clone(),
                 field_type: field_type.to_string(),
                 required: required_set.contains(name.as_str()),
-                description: prop.get("description").and_then(|d| d.as_str()).map(|s| s.to_string()),
-                title: prop.get("title").and_then(|t| t.as_str()).map(|s| s.to_string()),
-                enum_values: prop.get("enum").and_then(|e| e.as_array()).map(|arr| arr.clone()),
+                description: prop
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .map(|s| s.to_string()),
+                title: prop
+                    .get("title")
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.to_string()),
+                enum_values: prop
+                    .get("enum")
+                    .and_then(|e| e.as_array())
+                    .map(|arr| arr.clone()),
                 ..SchemaField::default()
             }
         })
@@ -200,18 +213,20 @@ impl AgentExecutor {
             return NativeToolDefinition {
                 name: tool.name.clone(),
                 description,
-                input_schema: config.input_schema.clone().unwrap_or_else(|| {
-                    serde_json::json!({"type": "object", "properties": {}})
-                }),
+                input_schema: config
+                    .input_schema
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
             };
         }
         if let AiToolConfiguration::Virtual(config) = &tool.configuration {
             return NativeToolDefinition {
                 name: tool.name.clone(),
                 description,
-                input_schema: config.input_schema.clone().unwrap_or_else(|| {
-                    serde_json::json!({"type": "object", "properties": {}})
-                }),
+                input_schema: config
+                    .input_schema
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
             };
         }
 
@@ -404,8 +419,12 @@ impl AgentExecutor {
             .collect::<Vec<_>>();
 
         let mode = match params.mode {
-            dto::json::tool_calls::SearchToolsMode::Search => crate::tools::external::ExternalSearchMode::Keyword,
-            dto::json::tool_calls::SearchToolsMode::Browse => crate::tools::external::ExternalSearchMode::Browse,
+            dto::json::tool_calls::SearchToolsMode::Search => {
+                crate::tools::external::ExternalSearchMode::Keyword
+            }
+            dto::json::tool_calls::SearchToolsMode::Browse => {
+                crate::tools::external::ExternalSearchMode::Browse
+            }
         };
 
         let is_browse = matches!(mode, crate::tools::external::ExternalSearchMode::Browse);
@@ -427,10 +446,7 @@ impl AgentExecutor {
                 .unwrap_or(browse_scoped_default)
                 .clamp(1, browse_scoped_cap)
         } else {
-            params
-                .max_results_per_query
-                .unwrap_or(10)
-                .clamp(1, 25)
+            params.max_results_per_query.unwrap_or(10).clamp(1, 25)
         };
         let effective_browse_limit = if browse_unscoped {
             max_results.min(5)
@@ -439,12 +455,19 @@ impl AgentExecutor {
         };
 
         if is_browse {
-            let apps_arg: Option<&[String]> =
-                if apps.is_empty() { None } else { Some(apps.as_slice()) };
+            let apps_arg: Option<&[String]> = if apps.is_empty() {
+                None
+            } else {
+                Some(apps.as_slice())
+            };
             self.populate_virtual_tool_cache_browse(apps_arg, effective_browse_limit)
                 .await;
         } else {
-            let apps_filter = if apps.is_empty() { None } else { Some(apps.as_slice()) };
+            let apps_filter = if apps.is_empty() {
+                None
+            } else {
+                Some(apps.as_slice())
+            };
             self.populate_virtual_tool_cache(&queries, apps_filter, max_results)
                 .await;
         }
@@ -470,7 +493,9 @@ impl AgentExecutor {
                             .input_schema
                             .clone()
                             .unwrap_or_else(|| json!({"type": "object", "properties": {}})),
-                        _ => SchemaField::object_json_schema(&Self::tool_input_schema_for_search(tool)),
+                        _ => SchemaField::object_json_schema(&Self::tool_input_schema_for_search(
+                            tool,
+                        )),
                     };
                     json!({
                         "tool_name": tool.name,
@@ -633,11 +658,19 @@ External tool catalog with descriptions and input schemas:
                     .filter_map(|matched| {
                         let tool = catalog_by_name.get(&matched.tool_name)?;
                         let input_schema = match &tool.configuration {
-                            AiToolConfiguration::Mcp(config) => config
-                                .input_schema
-                                .clone()
-                                .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
-                            _ => SchemaField::object_json_schema(&Self::tool_input_schema_for_search(tool)),
+                            AiToolConfiguration::Mcp(config) => {
+                                config.input_schema.clone().unwrap_or_else(
+                                    || serde_json::json!({"type": "object", "properties": {}}),
+                                )
+                            }
+                            AiToolConfiguration::Virtual(config) => {
+                                config.input_schema.clone().unwrap_or_else(
+                                    || serde_json::json!({"type": "object", "properties": {}}),
+                                )
+                            }
+                            _ => SchemaField::object_json_schema(
+                                &Self::tool_input_schema_for_search(tool),
+                            ),
                         };
                         Some(json!({
                             "tool_name": matched.tool_name,
@@ -779,11 +812,7 @@ External tool catalog with descriptions and input schemas:
         self.merge_search_batches(batches);
     }
 
-    async fn populate_virtual_tool_cache_browse(
-        &mut self,
-        apps: Option<&[String]>,
-        limit: usize,
-    ) {
+    async fn populate_virtual_tool_cache_browse(&mut self, apps: Option<&[String]>, limit: usize) {
         let deployment_id = self.ctx.agent.deployment_id;
         let actor_id = match self.ctx.get_thread().await {
             Ok(thread) => thread.actor_id,

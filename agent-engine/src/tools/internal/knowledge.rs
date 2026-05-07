@@ -45,12 +45,7 @@ impl ToolExecutor {
 
         let started = std::time::Instant::now();
         let hints = KnowledgeOrchestrator::new(self.ctx.clone())
-            .gather_local_knowledge_hints(
-                query,
-                search_type,
-                explicit_kb_ids,
-                max_results,
-            )
+            .gather_local_knowledge_hints(query, search_type, explicit_kb_ids, max_results)
             .await?;
 
         tracing::info!(

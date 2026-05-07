@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use models::{AiToolConfiguration, FlexibleI64};
+use models::{AgentHooksConfig, AgentModelOverride, AiToolConfiguration, FlexibleI64};
 
 #[derive(Deserialize)]
 pub struct CreateAgentRequest {
@@ -11,6 +11,9 @@ pub struct CreateAgentRequest {
     pub knowledge_base_ids: Option<Vec<FlexibleI64>>,
     /// Agent IDs this agent can spawn as sub-agents
     pub sub_agents: Option<Vec<FlexibleI64>>,
+    pub strong_model: Option<AgentModelOverride>,
+    pub weak_model: Option<AgentModelOverride>,
+    pub hooks: Option<AgentHooksConfig>,
 }
 
 #[derive(Deserialize)]
@@ -22,6 +25,13 @@ pub struct UpdateAgentRequest {
     pub tool_ids: Option<Vec<FlexibleI64>>,
     pub knowledge_base_ids: Option<Vec<FlexibleI64>>,
     pub sub_agents: Option<Vec<FlexibleI64>>,
+    pub strong_model: Option<AgentModelOverride>,
+    #[serde(default)]
+    pub clear_strong_model: bool,
+    pub weak_model: Option<AgentModelOverride>,
+    #[serde(default)]
+    pub clear_weak_model: bool,
+    pub hooks: Option<AgentHooksConfig>,
 }
 
 #[derive(Deserialize)]

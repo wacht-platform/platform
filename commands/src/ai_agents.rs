@@ -1,6 +1,7 @@
 use chrono::Utc;
 use common::{HasDbRouter, error::AppError};
-use models::AiAgent;
+use models::{AgentHooksConfig, AgentModelOverride, AiAgent};
+use sqlx::types::Json;
 use std::collections::BTreeSet;
 
 const AGENT_NOT_FOUND: &str = "Agent not found";
@@ -17,6 +18,9 @@ pub struct CreateAiAgentCommand {
     pub tool_ids: Option<Vec<i64>>,
     pub knowledge_base_ids: Option<Vec<i64>>,
     pub sub_agents: Option<Vec<i64>>,
+    pub strong_model: Option<AgentModelOverride>,
+    pub weak_model: Option<AgentModelOverride>,
+    pub hooks: Option<AgentHooksConfig>,
 }
 
 impl CreateAiAgentCommand {
@@ -36,6 +40,9 @@ impl CreateAiAgentCommand {
             tool_ids: None,
             knowledge_base_ids: None,
             sub_agents: None,
+            strong_model: None,
+            weak_model: None,
+            hooks: None,
         }
     }
 
@@ -53,6 +60,21 @@ impl CreateAiAgentCommand {
         self.sub_agents = Some(sub_agents);
         self
     }
+
+    pub fn with_strong_model(mut self, override_: AgentModelOverride) -> Self {
+        self.strong_model = Some(override_);
+        self
+    }
+
+    pub fn with_weak_model(mut self, override_: AgentModelOverride) -> Self {
+        self.weak_model = Some(override_);
+        self
+    }
+
+    pub fn with_hooks(mut self, hooks: AgentHooksConfig) -> Self {
+        self.hooks = Some(hooks);
+        self
+    }
 }
 
 impl CreateAiAgentCommand {
@@ -67,6 +89,27 @@ impl CreateAiAgentCommand {
         let sub_agent_ids = self.sub_agents.unwrap_or_default();
         let sanitized_configuration = sanitize_configuration(self.configuration);
 
+        validate_model_override("strong_model", self.strong_model.as_ref())?;
+        validate_model_override("weak_model", self.weak_model.as_ref())?;
+        if let Some(hooks) = &self.hooks {
+            validate_hooks(hooks)?;
+        }
+
+        let strong_provider = self
+            .strong_model
+            .as_ref()
+            .map(|o| o.provider.trim().to_string());
+        let strong_model = self
+            .strong_model
+            .as_ref()
+            .map(|o| o.model.trim().to_string());
+        let weak_provider = self
+            .weak_model
+            .as_ref()
+            .map(|o| o.provider.trim().to_string());
+        let weak_model = self.weak_model.as_ref().map(|o| o.model.trim().to_string());
+        let hooks_value = Json(self.hooks.clone().unwrap_or_default());
+
         let mut tx = deps
             .db_router()
             .writer()
@@ -76,9 +119,17 @@ impl CreateAiAgentCommand {
 
         let agent = sqlx::query!(
             r#"
-            INSERT INTO ai_agents (id, created_at, updated_at, name, description, deployment_id, configuration)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, created_at, updated_at, name, description, deployment_id, configuration
+            INSERT INTO ai_agents (
+                id, created_at, updated_at, name, description, deployment_id,
+                configuration, strong_model_provider, strong_model,
+                weak_model_provider, weak_model, hooks
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING id, created_at, updated_at, name, description, deployment_id,
+                      configuration,
+                      strong_model_provider, strong_model,
+                      weak_model_provider, weak_model,
+                      hooks as "hooks!: Json<AgentHooksConfig>"
             "#,
             agent_id,
             now,
@@ -87,6 +138,11 @@ impl CreateAiAgentCommand {
             self.description,
             self.deployment_id,
             sanitized_configuration,
+            strong_provider,
+            strong_model,
+            weak_provider,
+            weak_model,
+            hooks_value as _,
         )
         .fetch_one(&mut *tx)
         .await
@@ -113,6 +169,9 @@ impl CreateAiAgentCommand {
             deployment_id: agent.deployment_id,
             configuration: agent.configuration,
             sub_agents: Some(sub_agent_ids),
+            strong_model: build_override(agent.strong_model_provider, agent.strong_model),
+            weak_model: build_override(agent.weak_model_provider, agent.weak_model),
+            hooks: agent.hooks.0,
         })
     }
 }
@@ -126,6 +185,11 @@ pub struct UpdateAiAgentCommand {
     pub tool_ids: Option<Vec<i64>>,
     pub knowledge_base_ids: Option<Vec<i64>>,
     pub sub_agents: Option<Vec<i64>>,
+    pub strong_model: Option<AgentModelOverride>,
+    pub clear_strong_model: bool,
+    pub weak_model: Option<AgentModelOverride>,
+    pub clear_weak_model: bool,
+    pub hooks: Option<AgentHooksConfig>,
 }
 
 impl UpdateAiAgentCommand {
@@ -139,6 +203,11 @@ impl UpdateAiAgentCommand {
             tool_ids: None,
             knowledge_base_ids: None,
             sub_agents: None,
+            strong_model: None,
+            clear_strong_model: false,
+            weak_model: None,
+            clear_weak_model: false,
+            hooks: None,
         }
     }
 
@@ -171,6 +240,35 @@ impl UpdateAiAgentCommand {
         self.sub_agents = Some(sub_agents);
         self
     }
+
+    pub fn with_strong_model(mut self, override_: AgentModelOverride) -> Self {
+        self.strong_model = Some(override_);
+        self.clear_strong_model = false;
+        self
+    }
+
+    pub fn clearing_strong_model(mut self) -> Self {
+        self.strong_model = None;
+        self.clear_strong_model = true;
+        self
+    }
+
+    pub fn with_weak_model(mut self, override_: AgentModelOverride) -> Self {
+        self.weak_model = Some(override_);
+        self.clear_weak_model = false;
+        self
+    }
+
+    pub fn clearing_weak_model(mut self) -> Self {
+        self.weak_model = None;
+        self.clear_weak_model = true;
+        self
+    }
+
+    pub fn with_hooks(mut self, hooks: AgentHooksConfig) -> Self {
+        self.hooks = Some(hooks);
+        self
+    }
 }
 
 impl UpdateAiAgentCommand {
@@ -182,6 +280,37 @@ impl UpdateAiAgentCommand {
         let agent_id = self.agent_id;
         let deployment_id = self.deployment_id;
         let configuration = self.configuration.map(sanitize_configuration);
+
+        validate_model_override("strong_model", self.strong_model.as_ref())?;
+        validate_model_override("weak_model", self.weak_model.as_ref())?;
+        if self.clear_strong_model && self.strong_model.is_some() {
+            return Err(AppError::BadRequest(
+                "clear_strong_model cannot be combined with a new strong_model".to_string(),
+            ));
+        }
+        if self.clear_weak_model && self.weak_model.is_some() {
+            return Err(AppError::BadRequest(
+                "clear_weak_model cannot be combined with a new weak_model".to_string(),
+            ));
+        }
+        if let Some(hooks) = &self.hooks {
+            validate_hooks(hooks)?;
+        }
+
+        let strong_provider = self
+            .strong_model
+            .as_ref()
+            .map(|o| o.provider.trim().to_string());
+        let strong_model = self
+            .strong_model
+            .as_ref()
+            .map(|o| o.model.trim().to_string());
+        let weak_provider = self
+            .weak_model
+            .as_ref()
+            .map(|o| o.provider.trim().to_string());
+        let weak_model = self.weak_model.as_ref().map(|o| o.model.trim().to_string());
+        let hooks_value = self.hooks.clone().map(Json);
 
         let mut tx = deps
             .db_router()
@@ -197,16 +326,48 @@ impl UpdateAiAgentCommand {
                 updated_at = $1,
                 name = COALESCE($2, name),
                 description = COALESCE($3, description),
-                configuration = COALESCE($4, configuration)
+                configuration = COALESCE($4, configuration),
+                strong_model_provider = CASE
+                    WHEN $7::bool THEN NULL
+                    WHEN $8::text IS NOT NULL THEN $8
+                    ELSE strong_model_provider
+                END,
+                strong_model = CASE
+                    WHEN $7::bool THEN NULL
+                    WHEN $9::text IS NOT NULL THEN $9
+                    ELSE strong_model
+                END,
+                weak_model_provider = CASE
+                    WHEN $10::bool THEN NULL
+                    WHEN $11::text IS NOT NULL THEN $11
+                    ELSE weak_model_provider
+                END,
+                weak_model = CASE
+                    WHEN $10::bool THEN NULL
+                    WHEN $12::text IS NOT NULL THEN $12
+                    ELSE weak_model
+                END,
+                hooks = COALESCE($13, hooks)
             WHERE id = $5 AND deployment_id = $6
-            RETURNING id, created_at, updated_at, name, description, deployment_id, configuration
+            RETURNING id, created_at, updated_at, name, description, deployment_id,
+                      configuration,
+                      strong_model_provider, strong_model,
+                      weak_model_provider, weak_model,
+                      hooks as "hooks!: Json<AgentHooksConfig>"
             "#,
             now,
             self.name,
             self.description,
             configuration,
             agent_id,
-            deployment_id
+            deployment_id,
+            self.clear_strong_model,
+            strong_provider,
+            strong_model,
+            self.clear_weak_model,
+            weak_provider,
+            weak_model,
+            hooks_value as _,
         )
         .fetch_one(&mut *tx)
         .await
@@ -235,6 +396,9 @@ impl UpdateAiAgentCommand {
             deployment_id: agent.deployment_id,
             configuration: agent.configuration,
             sub_agents: self.sub_agents,
+            strong_model: build_override(agent.strong_model_provider, agent.strong_model),
+            weak_model: build_override(agent.weak_model_provider, agent.weak_model),
+            hooks: agent.hooks.0,
         })
     }
 }
@@ -817,4 +981,53 @@ fn dedupe_ids(ids: &[i64]) -> Vec<i64> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+fn validate_model_override(
+    field: &'static str,
+    override_: Option<&AgentModelOverride>,
+) -> Result<(), AppError> {
+    let Some(o) = override_ else { return Ok(()) };
+    if o.provider.trim().is_empty() {
+        return Err(AppError::BadRequest(format!(
+            "{field}.provider is required when {field} is set"
+        )));
+    }
+    if o.model.trim().is_empty() {
+        return Err(AppError::BadRequest(format!(
+            "{field}.model is required when {field} is set"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_hooks(hooks: &AgentHooksConfig) -> Result<(), AppError> {
+    for (kind, steps) in [
+        ("execution_start", &hooks.execution_start),
+        ("execution_end", &hooks.execution_end),
+    ] {
+        for (i, step) in steps.iter().enumerate() {
+            if step.tool_name.trim().is_empty() {
+                return Err(AppError::BadRequest(format!(
+                    "hooks.{kind}[{i}].tool_name must not be empty"
+                )));
+            }
+            if !step.args.is_object() && !step.args.is_null() {
+                return Err(AppError::BadRequest(format!(
+                    "hooks.{kind}[{i}].args must be a JSON object"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn build_override(provider: Option<String>, model: Option<String>) -> Option<AgentModelOverride> {
+    match (provider, model) {
+        (Some(p), Some(m)) => Some(AgentModelOverride {
+            provider: p,
+            model: m,
+        }),
+        _ => None,
+    }
 }

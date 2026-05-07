@@ -1,18 +1,20 @@
 use chrono::Utc;
 use common::error::AppError;
 use models::{
-    AiTool, AiToolConfiguration, AiToolType, McpAuthConfig, McpConnectionMetadata,
-    McpServerConfig, McpToolConfiguration,
+    AiTool, AiToolConfiguration, AiToolType, McpAuthConfig, McpConnectionMetadata, McpServerConfig,
+    McpToolConfiguration,
 };
 use queries::ActorMcpConnection;
 use rmcp::{
-    ServiceExt,
     model::{CallToolRequestParam, ClientCapabilities, ClientInfo, Implementation},
-    transport::{StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig},
+    transport::{
+        streamable_http_client::StreamableHttpClientTransportConfig, StreamableHttpClientTransport,
+    },
+    ServiceExt,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use tokio::time::{Duration, timeout};
+use tokio::time::{timeout, Duration};
 
 use super::ToolExecutor;
 use crate::filesystem::AgentFilesystem;
@@ -25,9 +27,32 @@ fn mcp_tool_synthetic_id(mcp_server_id: i64, tool_name: &str) -> i64 {
     -(i64::from_le_bytes(bytes).abs().max(1))
 }
 
-// Stable tool name uses the server's DB id (immutable) rather than the mutable server name.
-fn mcp_tool_agent_name(server_id: i64, tool_name: &str) -> String {
-    format!("mcp_{}__{}", server_id, tool_name)
+// OpenAI caps tool names at 64 chars and rejects anything outside [A-Za-z0-9_-].
+// Slug is already DB-constrained; remote tool name is operator-set upstream.
+const MAX_TOOL_NAME_LEN: usize = 64;
+
+fn sanitise_tool_segment(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn mcp_tool_agent_name(server_slug: &str, tool_name: &str) -> String {
+    let mut name = format!(
+        "mcp_{}_{}",
+        sanitise_tool_segment(server_slug),
+        sanitise_tool_segment(tool_name)
+    );
+    if name.len() > MAX_TOOL_NAME_LEN {
+        name.truncate(MAX_TOOL_NAME_LEN);
+    }
+    name
 }
 
 async fn fetch_client_credentials_token(
@@ -254,9 +279,7 @@ fn is_connection_usable(conn: &ActorMcpConnection) -> bool {
         return false;
     };
 
-    meta.expires_at
-        .map(|exp| exp > Utc::now())
-        .unwrap_or(true)
+    meta.expires_at.map(|exp| exp > Utc::now()).unwrap_or(true)
 }
 
 async fn discover_tools_from_connection(
@@ -268,6 +291,7 @@ async fn discover_tools_from_connection(
     }
 
     let server_id = conn.server.id;
+    let server_slug = conn.server.slug.clone();
     let transport = build_transport(&conn.server.config, conn.connection_metadata.as_ref()).await;
 
     let client = match timeout(Duration::from_secs(10), client_info().serve(transport)).await {
@@ -282,8 +306,11 @@ async fn discover_tools_from_connection(
         }
     };
 
-    let list_result =
-        timeout(Duration::from_secs(15), client.list_tools(Default::default())).await;
+    let list_result = timeout(
+        Duration::from_secs(15),
+        client.list_tools(Default::default()),
+    )
+    .await;
 
     let _ = client.cancel().await;
 
@@ -306,8 +333,10 @@ async fn discover_tools_from_connection(
             let input_schema: Option<Value> = serde_json::to_value(&tool.input_schema).ok();
             AiTool {
                 id: mcp_tool_synthetic_id(server_id, &tool.name),
-                name: mcp_tool_agent_name(server_id, &tool.name),
-                description: tool.description.map(|d: std::borrow::Cow<'_, str>| d.into_owned()),
+                name: mcp_tool_agent_name(&server_slug, &tool.name),
+                description: tool
+                    .description
+                    .map(|d: std::borrow::Cow<'_, str>| d.into_owned()),
                 tool_type: AiToolType::Mcp,
                 deployment_id,
                 requires_user_approval: false,

@@ -16,9 +16,8 @@ use queries::GetDeploymentAiSettingsQuery;
 
 use crate::application::AppState;
 use crate::application::ai_settings_admission::{
-    run_embedding_admission_if_needed,
-    validate_embedding_provider_settings, validate_openrouter_strong_model,
-    validate_provider_key_consistency,
+    run_embedding_admission_if_needed, validate_embedding_provider_settings,
+    validate_openrouter_strong_model, validate_provider_key_consistency,
 };
 use common::deps;
 

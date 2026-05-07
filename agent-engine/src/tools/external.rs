@@ -46,11 +46,15 @@ pub struct ExternalToolCandidate {
 
 impl ExternalToolCandidate {
     pub fn tool_name(&self) -> String {
+        // Format: v_{provider}_{remote_tool_slug}. The provider is kept as a
+        // namespace so future providers (Arcade, Pipedream, ...) won't collide.
+        // The toolkit slug is dropped because Composio's remote slugs already
+        // include it (e.g. `gmail_send_email`); if a future provider ships
+        // unprefixed slugs we'll revisit per-provider.
         format!(
-            "{}{}_{}_{}",
+            "{}{}_{}",
             VIRTUAL_TOOL_NAME_PREFIX,
             self.provider.to_lowercase(),
-            self.toolkit_slug.to_lowercase(),
             self.remote_tool_slug.to_lowercase()
         )
     }
@@ -202,7 +206,11 @@ pub async fn search_external_tools(
     let query = options.query.map(|q| q.trim()).filter(|q| !q.is_empty());
 
     if matches!(options.mode, ExternalSearchMode::Keyword) && query.is_none() {
-        tracing::warn!(deployment_id, actor_id, "composio search skipped: empty query in keyword mode");
+        tracing::warn!(
+            deployment_id,
+            actor_id,
+            "composio search skipped: empty query in keyword mode"
+        );
         return Ok(Vec::new());
     }
 
@@ -220,7 +228,12 @@ pub async fn search_external_tools(
             .iter()
             .map(|s| s.trim().to_lowercase())
             .filter(|s| !s.is_empty())
-            .filter(|s| settings.enabled_toolkit_slugs.iter().any(|enabled| enabled == s))
+            .filter(|s| {
+                settings
+                    .enabled_toolkit_slugs
+                    .iter()
+                    .any(|enabled| enabled == s)
+            })
             .collect(),
         _ => settings.enabled_toolkit_slugs.clone(),
     };
@@ -236,13 +249,10 @@ pub async fn search_external_tools(
         return Ok(Vec::new());
     }
 
-    let connected = GetActiveComposioSlugsForActorQuery::new(
-        deployment_id,
-        actor_id,
-        candidate_apps.clone(),
-    )
-    .execute_with_db(state.db_router.writer())
-    .await?;
+    let connected =
+        GetActiveComposioSlugsForActorQuery::new(deployment_id, actor_id, candidate_apps.clone())
+            .execute_with_db(state.db_router.writer())
+            .await?;
     if connected.is_empty() {
         tracing::warn!(
             deployment_id,
@@ -326,6 +336,93 @@ pub async fn search_external_tools(
     Ok(candidates)
 }
 
+/// Deployment-scoped listing — used by the console at hook/tool config time.
+/// Returns Composio tools across the deployment's enabled toolkits with input
+/// schemas attached. Does **not** filter by actor connections, so the caller
+/// cannot assume any of these tools are runnable yet. Capped at **200 tools
+/// per toolkit** by Composio's `limit` parameter — toolkits with more than
+/// that will be truncated.
+pub async fn list_external_tools_for_deployment(
+    state: &AppState,
+    deployment_id: i64,
+    toolkit_filter: Option<&[String]>,
+) -> Result<Vec<ExternalToolCandidate>, AppError> {
+    let Some(settings) = load_composio_runtime_settings(state, deployment_id).await? else {
+        return Ok(Vec::new());
+    };
+
+    let toolkits: Vec<String> = match toolkit_filter {
+        Some(requested) if !requested.is_empty() => requested
+            .iter()
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty())
+            .filter(|s| settings.enabled_toolkit_slugs.iter().any(|e| e == s))
+            .collect(),
+        _ => settings.enabled_toolkit_slugs.clone(),
+    };
+
+    if toolkits.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let limit_str = "200".to_string();
+    let per_toolkit = toolkits.iter().map(|toolkit| {
+        let api_key = settings.api_key.clone();
+        let toolkit = toolkit.clone();
+        let limit_str = limit_str.clone();
+        async move {
+            let params: Vec<(&str, String)> = vec![
+                ("toolkit_slug", toolkit.clone()),
+                ("toolkit_versions", "latest".to_string()),
+                ("limit", limit_str.clone()),
+            ];
+            let resp = http_client()
+                .get(format!("{COMPOSIO_API_BASE}/api/v3/tools"))
+                .header("x-api-key", &api_key)
+                .query(&params)
+                .send()
+                .await
+                .map_err(|e| AppError::Internal(format!("composio tools list: {e}")))?;
+            let status = resp.status();
+            let text = resp
+                .text()
+                .await
+                .map_err(|e| AppError::Internal(format!("composio list body: {e}")))?;
+            if !status.is_success() {
+                return Err(AppError::Internal(format!(
+                    "composio list ({toolkit}) returned {status}: {text}"
+                )));
+            }
+            let parsed: ComposioSearchResponse = serde_json::from_str(&text).map_err(|e| {
+                AppError::Internal(format!("composio list parse: {e}; body: {text}"))
+            })?;
+            Ok::<_, AppError>((toolkit, parsed.items))
+        }
+    });
+
+    let batches = futures::future::join_all(per_toolkit).await;
+    let mut candidates: Vec<ExternalToolCandidate> = Vec::new();
+    for result in batches {
+        let (toolkit, items) = result?;
+        for t in items {
+            let Some(slug) = t.slug else { continue };
+            candidates.push(ExternalToolCandidate {
+                provider: EXTERNAL_PROVIDER_COMPOSIO.to_string(),
+                toolkit_slug: t
+                    .toolkit
+                    .as_ref()
+                    .and_then(|tk| tk.slug.clone())
+                    .unwrap_or_else(|| toolkit.clone()),
+                remote_tool_slug: slug,
+                display_name: t.name.unwrap_or_default(),
+                description: t.description.unwrap_or_default(),
+                input_schema: t.input_parameters,
+            });
+        }
+    }
+    Ok(candidates)
+}
+
 // ---------------------------------------------------------------------------
 // Execute
 // ---------------------------------------------------------------------------
@@ -390,9 +487,8 @@ pub async fn execute_external_tool(
         )));
     }
 
-    let parsed: ComposioExecuteResponse = serde_json::from_str(&text).map_err(|e| {
-        AppError::Internal(format!("composio execute parse: {e}; body: {text}"))
-    })?;
+    let parsed: ComposioExecuteResponse = serde_json::from_str(&text)
+        .map_err(|e| AppError::Internal(format!("composio execute parse: {e}; body: {text}")))?;
 
     if let Some(false) = parsed.successful {
         let detail = parsed

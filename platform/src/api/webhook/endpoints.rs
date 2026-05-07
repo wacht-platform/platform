@@ -89,7 +89,10 @@ pub async fn update_webhook_endpoint_for_app(
     update_webhook_endpoint(
         State(app_state),
         RequireDeployment(deployment_id),
-        Path(EndpointIdParams { endpoint_id, rest: Default::default() }),
+        Path(EndpointIdParams {
+            endpoint_id,
+            rest: Default::default(),
+        }),
         Json(request),
     )
     .await
@@ -122,7 +125,10 @@ pub async fn delete_webhook_endpoint_for_app(
     delete_webhook_endpoint(
         State(app_state),
         RequireDeployment(deployment_id),
-        Path(EndpointIdParams { endpoint_id, rest: Default::default() }),
+        Path(EndpointIdParams {
+            endpoint_id,
+            rest: Default::default(),
+        }),
     )
     .await
 }

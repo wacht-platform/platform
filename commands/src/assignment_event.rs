@@ -13,10 +13,7 @@ pub fn build_task_routing_summary(
 ) -> String {
     format!(
         "Coordinator received routing signal for task #{} '{}' (status={}). {} prior assignment(s) on this task.",
-        board_item.id,
-        board_item.title,
-        board_item.status,
-        prior_assignment_count,
+        board_item.id, board_item.title, board_item.status, prior_assignment_count,
     )
 }
 

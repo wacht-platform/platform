@@ -78,7 +78,5 @@ pub fn render_project_instructions(
     HANDLEBARS
         .render("project_instructions", &context)
         .map(|rendered| rendered.trim().to_string())
-        .map_err(|e| {
-            AppError::Internal(format!("Failed to render project_instructions: {e}"))
-        })
+        .map_err(|e| AppError::Internal(format!("Failed to render project_instructions: {e}")))
 }

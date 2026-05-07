@@ -24,10 +24,7 @@ async fn read_cached_startup_memories(
         .get_multiplexed_async_connection()
         .await
         .ok()?;
-    let json: String = conn
-        .get(startup_memory_cache_key(thread_id))
-        .await
-        .ok()?;
+    let json: String = conn.get(startup_memory_cache_key(thread_id)).await.ok()?;
     serde_json::from_str(&json).ok()
 }
 
@@ -83,8 +80,6 @@ pub(crate) async fn load_immediate_context(
         task_thread_meta: thread_meta?,
     })
 }
-
-
 
 async fn load_startup_memories(
     ctx: &Arc<ThreadExecutionContext>,
@@ -168,4 +163,3 @@ async fn load_routing_events(
         })
         .collect())
 }
-

@@ -529,8 +529,8 @@ impl GetBoardItemRoutingEventsQuery {
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string())
                 };
-                let coordinator_thread_id = str_field("thread_id")
-                    .and_then(|s| s.parse::<i64>().ok());
+                let coordinator_thread_id =
+                    str_field("thread_id").and_then(|s| s.parse::<i64>().ok());
                 TaskRoutingEventRecord {
                     id: r.id,
                     coordinator_thread_id,

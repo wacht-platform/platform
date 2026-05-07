@@ -43,17 +43,15 @@ impl AgentExecutor {
         call: &crate::llm::GeneratedToolCall,
     ) -> Result<bool, AppError> {
         let args: dto::json::agent_executor::NotifyUserParams =
-            serde_json::from_value(call.arguments.clone()).map_err(|e| {
-                AppError::BadRequest(format!("notify_user params malformed: {e}"))
-            })?;
+            serde_json::from_value(call.arguments.clone())
+                .map_err(|e| AppError::BadRequest(format!("notify_user params malformed: {e}")))?;
         let message = args.message.trim();
         if message.is_empty() {
             return Err(AppError::BadRequest(
                 "notify_user requires a non-empty message".to_string(),
             ));
         }
-        let safe_message =
-            Self::sanitize_user_facing_message(message, "Posted a status update.");
+        let safe_message = Self::sanitize_user_facing_message(message, "Posted a status update.");
         self.store_conversation(
             ConversationContent::Steer {
                 message: safe_message,
@@ -232,17 +230,31 @@ impl AgentExecutor {
                 let routing_payload = thread_event.task_routing_payload();
                 let parent_task_key_fut = async {
                     match thread_event.board_item_id {
-                        Some(id) => queries::GetParentTaskKeyQuery::new(id)
-                            .execute_with_db(self.ctx.app_state.db_router.writer())
-                            .await,
+                        Some(id) => {
+                            queries::GetParentTaskKeyQuery::new(id)
+                                .execute_with_db(
+                                    self.ctx
+                                        .app_state
+                                        .db_router
+                                        .reader(common::ReadConsistency::Strong),
+                                )
+                                .await
+                        }
                         None => Ok(None),
                     }
                 };
                 let assignments_fut = async {
                     match thread_event.board_item_id {
-                        Some(id) => queries::ListProjectTaskBoardItemAssignmentsQuery::new(id)
-                            .execute_with_db(self.ctx.app_state.db_router.writer())
-                            .await,
+                        Some(id) => {
+                            queries::ListProjectTaskBoardItemAssignmentsQuery::new(id)
+                                .execute_with_db(
+                                    self.ctx
+                                        .app_state
+                                        .db_router
+                                        .reader(common::ReadConsistency::Strong),
+                                )
+                                .await
+                        }
                         None => Ok(Vec::new()),
                     }
                 };
@@ -289,7 +301,8 @@ impl AgentExecutor {
                     self.prepare_task_workspace_for_key(&task_key, &workspace_title, is_recurring),
                     self.task_journal_tail_snippet(),
                 )?;
-                self.initialize_task_journal_start_hash(journal_hash).await?;
+                self.initialize_task_journal_start_hash(journal_hash)
+                    .await?;
                 let task_mounts = board_item
                     .as_ref()
                     .map(|item| Self::format_task_mounts(&item.mounts))
@@ -339,9 +352,7 @@ impl AgentExecutor {
                 let comment_timeline = self
                     .load_comment_timeline_for_board_item(board_item_id)
                     .await?;
-                let prior_fires = self
-                    .load_prior_fires_for_board_item(board_item_id)
-                    .await?;
+                let prior_fires = self.load_prior_fires_for_board_item(board_item_id).await?;
 
                 render_template_with_prompt(
                     AgentTemplates::WORKER_TASK_ROUTING_CONTEXT,
@@ -383,7 +394,12 @@ impl AgentExecutor {
                     match payload.as_ref().map(|p| p.assignment_id) {
                         Some(assignment_id) => {
                             GetProjectTaskBoardItemAssignmentByIdQuery::new(assignment_id)
-                                .execute_with_db(self.ctx.app_state.db_router.writer())
+                                .execute_with_db(
+                                    self.ctx
+                                        .app_state
+                                        .db_router
+                                        .reader(common::ReadConsistency::Strong),
+                                )
                                 .await
                         }
                         None => Ok(None),
@@ -391,17 +407,31 @@ impl AgentExecutor {
                 };
                 let parent_task_key_fut = async {
                     match thread_event.board_item_id {
-                        Some(id) => queries::GetParentTaskKeyQuery::new(id)
-                            .execute_with_db(self.ctx.app_state.db_router.writer())
-                            .await,
+                        Some(id) => {
+                            queries::GetParentTaskKeyQuery::new(id)
+                                .execute_with_db(
+                                    self.ctx
+                                        .app_state
+                                        .db_router
+                                        .reader(common::ReadConsistency::Strong),
+                                )
+                                .await
+                        }
                         None => Ok(None),
                     }
                 };
                 let assignments_fut = async {
                     match thread_event.board_item_id {
-                        Some(id) => queries::ListProjectTaskBoardItemAssignmentsQuery::new(id)
-                            .execute_with_db(self.ctx.app_state.db_router.writer())
-                            .await,
+                        Some(id) => {
+                            queries::ListProjectTaskBoardItemAssignmentsQuery::new(id)
+                                .execute_with_db(
+                                    self.ctx
+                                        .app_state
+                                        .db_router
+                                        .reader(common::ReadConsistency::Strong),
+                                )
+                                .await
+                        }
                         None => Ok(Vec::new()),
                     }
                 };
@@ -462,7 +492,8 @@ impl AgentExecutor {
                     self.prepare_task_workspace_for_key(&task_key, &title, is_recurring),
                     self.task_journal_tail_snippet(),
                 )?;
-                self.initialize_task_journal_start_hash(journal_hash).await?;
+                self.initialize_task_journal_start_hash(journal_hash)
+                    .await?;
                 let task_mounts = board_item
                     .as_ref()
                     .map(|item| Self::format_task_mounts(&item.mounts))
@@ -501,7 +532,8 @@ impl AgentExecutor {
                     .count();
                 let has_reviewer_after = all_assignments.iter().any(|a| {
                     a.id != assignment_id
-                        && a.assignment_role == models::project_task_board::assignment_role::REVIEWER
+                        && a.assignment_role
+                            == models::project_task_board::assignment_role::REVIEWER
                         && matches!(
                             a.status.as_str(),
                             "pending" | "available" | "claimed" | "in_progress",
@@ -511,9 +543,7 @@ impl AgentExecutor {
                 let comment_timeline = self
                     .load_comment_timeline_for_board_item(board_item_id)
                     .await?;
-                let prior_fires = self
-                    .load_prior_fires_for_board_item(board_item_id)
-                    .await?;
+                let prior_fires = self.load_prior_fires_for_board_item(board_item_id).await?;
 
                 render_template_with_prompt(
                     AgentTemplates::WORKER_ASSIGNMENT_EXECUTION_CONTEXT,
@@ -569,9 +599,7 @@ impl AgentExecutor {
         }
 
         self.invalidate_stale_pending_question();
-        if self.pending_question.is_some()
-            || self.board_item_has_pending_question().await?
-        {
+        if self.pending_question.is_some() || self.board_item_has_pending_question().await? {
             self.store_transient_steer(
                 "ask_user_blocked_by_pending_question",
                 "ask_user blocked: active pending question already on this thread/task. Wait for user answer before asking new.".to_string(),
@@ -650,9 +678,7 @@ impl AgentExecutor {
                     .reader(common::ReadConsistency::Strong),
             )
             .await?;
-        Ok(item
-            .and_then(|i| i.pending_question)
-            .is_some())
+        Ok(item.and_then(|i| i.pending_question).is_some())
     }
 
     async fn load_schedule_info_for_prompt(
@@ -663,7 +689,12 @@ impl AgentExecutor {
             return Ok(None);
         };
         let Some(schedule) = GetProjectTaskScheduleByIdQuery::new(schedule_id)
-            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .execute_with_db(
+                self.ctx
+                    .app_state
+                    .db_router
+                    .reader(common::ReadConsistency::Strong),
+            )
             .await?
         else {
             return Ok(None);
@@ -717,6 +748,14 @@ impl AgentExecutor {
         )
     )]
     pub(super) async fn repl(&mut self) -> Result<(), AppError> {
+        use super::hooks::HookKind;
+        self.run_hooks(HookKind::ExecutionStart).await;
+        let result = self.repl_inner().await;
+        self.run_hooks(HookKind::ExecutionEnd).await;
+        result
+    }
+
+    async fn repl_inner(&mut self) -> Result<(), AppError> {
         let mut iteration = 0;
         let mut consecutive_errors = 0usize;
         loop {
@@ -756,10 +795,10 @@ impl AgentExecutor {
     )]
     async fn run_unified_iteration(&mut self) -> Result<bool, AppError> {
         use crate::llm::NativeToolDefinition;
+        use dto::json::agent_executor::{AbortDirective, AbortOutcome};
         use meta_tools::{
             abort_tool, ask_user_tool, note_tool, notify_user_tool, resolve_user_feedback_tool,
         };
-        use dto::json::agent_executor::{AbortDirective, AbortOutcome};
 
         if let Err(exhausted) = self.budget.check() {
             tracing::warn!(
@@ -1009,10 +1048,7 @@ impl AgentExecutor {
                     self.record_invalid_tool_call(
                         &call.tool_name,
                         &call.arguments,
-                        &format!(
-                            "Tool '{}' arguments must be a JSON object",
-                            call.tool_name
-                        ),
+                        &format!("Tool '{}' arguments must be a JSON object", call.tool_name),
                     )
                     .await?;
                     continue;
@@ -1021,12 +1057,8 @@ impl AgentExecutor {
             match self.build_tool_call_request_from_native_call(tool, input_object) {
                 Ok(req) => tool_requests.push(req),
                 Err(e) => {
-                    self.record_invalid_tool_call(
-                        &call.tool_name,
-                        &call.arguments,
-                        &e.to_string(),
-                    )
-                    .await?;
+                    self.record_invalid_tool_call(&call.tool_name, &call.arguments, &e.to_string())
+                        .await?;
                 }
             }
         }
@@ -1042,8 +1074,7 @@ impl AgentExecutor {
             .map(|prev| prev == signature)
             .unwrap_or(false)
         {
-            self.repeated_tool_call_count =
-                self.repeated_tool_call_count.saturating_add(1);
+            self.repeated_tool_call_count = self.repeated_tool_call_count.saturating_add(1);
         } else {
             self.repeated_tool_call_count = 0;
         }
@@ -1239,7 +1270,6 @@ impl AgentExecutor {
 
         Ok(false)
     }
-
 
     pub(super) fn derive_input_safety_signals(&self) -> Vec<String> {
         let Some((source, latest_input)) =

@@ -14,11 +14,8 @@ impl AgentExecutor {
         if snapshot.nodes.is_empty() {
             return None;
         }
-        let ready_node_ids: HashSet<&str> = snapshot
-            .ready_node_ids
-            .iter()
-            .map(String::as_str)
-            .collect();
+        let ready_node_ids: HashSet<&str> =
+            snapshot.ready_node_ids.iter().map(String::as_str).collect();
 
         let mut dependency_map: HashMap<String, Vec<String>> = HashMap::new();
         for edge in &snapshot.edges {

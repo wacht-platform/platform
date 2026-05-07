@@ -251,8 +251,10 @@ where
     let siblings = fetch_assignment_siblings(deps, board_item.id).await?;
     let summary = build_task_routing_summary(board_item, siblings.len());
     let event_id = deps.id_provider().next_id()? as i64;
-    let idempotency_key =
-        format!("task_routing_{}_{}", board_item.id, board_item.state_version);
+    let idempotency_key = format!(
+        "task_routing_{}_{}",
+        board_item.id, board_item.state_version
+    );
 
     crate::InsertTaskRoutingEvent {
         event_log_id: event_id,
@@ -475,6 +477,39 @@ impl UpdateProjectTaskBoardItemMountsCommand {
         .execute(executor)
         .await?;
         Ok(())
+    }
+}
+
+pub struct AttachProjectTaskBoardItemScheduleCommand {
+    pub board_id: i64,
+    pub task_key: String,
+    pub schedule_id: i64,
+    pub mounts: serde_json::Value,
+}
+
+impl AttachProjectTaskBoardItemScheduleCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<ProjectTaskBoardItem, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let item = sqlx::query_as::<_, ProjectTaskBoardItem>(
+            r#"
+            UPDATE project_task_board_items
+            SET schedule_id = $3, mounts = $4, updated_at = NOW()
+            WHERE board_id = $1 AND task_key = $2 AND archived_at IS NULL
+            RETURNING
+                id, board_id, task_key, title, description, status,
+                assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
+                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
+            "#,
+        )
+        .bind(self.board_id)
+        .bind(self.task_key)
+        .bind(self.schedule_id)
+        .bind(self.mounts)
+        .fetch_one(executor)
+        .await?;
+        Ok(item)
     }
 }
 
@@ -843,10 +878,7 @@ impl ReconcileProjectTaskBoardItemCommand {
             .min_by_key(|assignment| assignment.id)
         {
             let activation_note = self.note.clone().unwrap_or_else(|| {
-                format!(
-                    "Scheduler activated assignment {}",
-                    next_assignment.id
-                )
+                format!("Scheduler activated assignment {}", next_assignment.id)
             });
 
             let activated = UpdateProjectTaskBoardItemAssignmentStateCommand::new(
@@ -1079,7 +1111,6 @@ impl UpdateProjectTaskBoardItemAssignmentCommand {
             .execute(&mut *tx)
             .await?;
         }
-
 
         tx.commit().await?;
         Ok(assignment)

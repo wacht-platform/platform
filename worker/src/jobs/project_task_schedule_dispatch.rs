@@ -35,6 +35,9 @@ pub async fn dispatch_due_project_task_schedules(app_state: &AppState) -> Result
         }
     }
 
-    debug!(materialized, "project task schedule dispatch scan completed");
+    debug!(
+        materialized,
+        "project task schedule dispatch scan completed"
+    );
     Ok(format!("Queued {materialized} project task schedules"))
 }

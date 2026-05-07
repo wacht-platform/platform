@@ -197,7 +197,11 @@ fn mcp_json_schema_to_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
     properties
         .iter()
         .map(|(name, prop)| {
-            let field_type = match prop.get("type").and_then(|t| t.as_str()).unwrap_or("string") {
+            let field_type = match prop
+                .get("type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("string")
+            {
                 "integer" | "number" => "NUMBER",
                 "boolean" => "BOOLEAN",
                 "array" => "ARRAY",

@@ -218,8 +218,7 @@ impl AgentHandler {
 
         let db = self.app_state.db_router.writer();
         let settings_query = queries::GetDeploymentAiSettingsQuery::new(deployment_id);
-        let thread_query =
-            queries::GetAgentThreadStateQuery::new(request.thread_id, deployment_id);
+        let thread_query = queries::GetAgentThreadStateQuery::new(request.thread_id, deployment_id);
         let settings_fut = settings_query.execute_with_db(db);
         let thread_fut = thread_query.execute_with_db(db);
         let task_ref_fut = self.resolve_task_sandbox_ref(&request);
@@ -253,9 +252,7 @@ impl AgentHandler {
         let mark_running_fut = async move {
             commands::UpdateAgentThreadStateCommand::new(thread_id_for_mark, deployment_id)
                 .with_status(AgentThreadStatus::Running)
-                .execute_with_deps(
-                    &common::deps::from_app(&app_state_for_mark).db().nats().id(),
-                )
+                .execute_with_deps(&common::deps::from_app(&app_state_for_mark).db().nats().id())
                 .await
         };
         let board_item_id = request
@@ -460,7 +457,8 @@ impl AgentHandler {
             .await;
         self.finalize_execution_run(&context, request, deployment_id, execution_result)
             .await;
-        self.finalize_event_log_work(request, execution_result).await;
+        self.finalize_event_log_work(request, execution_result)
+            .await;
     }
 
     async fn finalize_assignment_outcome(

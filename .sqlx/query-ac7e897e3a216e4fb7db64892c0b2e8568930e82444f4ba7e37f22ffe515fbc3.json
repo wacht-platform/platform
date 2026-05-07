@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, created_at, updated_at, deployment_id, name, config as \"config!: serde_json::Value\"\n            FROM mcp_servers\n            WHERE deployment_id = $1\n            ORDER BY created_at DESC\n            LIMIT $2 OFFSET $3\n            ",
+  "query": "\n            UPDATE mcp_servers\n            SET\n                updated_at = $1,\n                name = COALESCE($2, name),\n                config = COALESCE($3, config)\n            WHERE id = $4 AND deployment_id = $5\n            RETURNING id, created_at, updated_at, deployment_id, name, slug, config as \"config!: Json<McpServerConfig>\"\n            ",
   "describe": {
     "columns": [
       {
@@ -30,13 +30,20 @@
       },
       {
         "ordinal": 5,
-        "name": "config!: serde_json::Value",
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "config!: Json<McpServerConfig>",
         "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
+        "Timestamptz",
+        "Text",
+        "Jsonb",
         "Int8",
         "Int8"
       ]
@@ -47,8 +54,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "f65fe6567a46c7fe081ec75db32c9aff9c10cc0eb58f69c79ee2dc452464c809"
+  "hash": "ac7e897e3a216e4fb7db64892c0b2e8568930e82444f4ba7e37f22ffe515fbc3"
 }

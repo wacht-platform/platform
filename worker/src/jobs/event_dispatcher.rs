@@ -68,14 +68,13 @@ pub async fn run(app_state: AppState) -> Result<()> {
 /// Drain everything currently claimable.
 async fn drain(app_state: &AppState) {
     loop {
-        let claimed =
-            match claim_pending_events(app_state.db_router.writer(), BATCH_SIZE).await {
-                Ok(v) => v,
-                Err(e) => {
-                    error!(error = %e, "claim_pending_events failed");
-                    return;
-                }
-            };
+        let claimed = match claim_pending_events(app_state.db_router.writer(), BATCH_SIZE).await {
+            Ok(v) => v,
+            Err(e) => {
+                error!(error = %e, "claim_pending_events failed");
+                return;
+            }
+        };
         if claimed.is_empty() {
             break;
         }
@@ -138,9 +137,7 @@ async fn publish_one(app_state: &AppState, event: event_log::ClaimedEvent) {
 
     match result {
         Ok(_) => {
-            if let Err(e) =
-                mark_event_published(app_state.db_router.writer(), event.id).await
-            {
+            if let Err(e) = mark_event_published(app_state.db_router.writer(), event.id).await {
                 error!(event_id = event.id, error = %e, "failed to mark event published");
             }
         }

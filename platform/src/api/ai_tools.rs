@@ -12,7 +12,7 @@ use dto::{
     json::deployment::{CreateToolRequest, UpdateToolRequest},
     query::deployment::GetToolsQuery,
 };
-use models::{AiTool, AiToolWithDetails};
+use models::{AiTool, AiToolWithDetails, InternalToolListResponse, InternalToolSummary};
 
 #[derive(Deserialize)]
 pub struct ToolParams {
@@ -109,4 +109,19 @@ pub async fn delete_ai_tool(
 ) -> ApiResult<()> {
     ai_tools_app::delete_ai_tool(&app_state, deployment_id, params.tool_id).await?;
     Ok(().into())
+}
+
+pub async fn list_internal_tools(
+    State(_app_state): State<AppState>,
+    RequireDeployment(_deployment_id): RequireDeployment,
+) -> ApiResult<InternalToolListResponse> {
+    let tools = agent_engine::tools::internal_specs::list_internal_tool_specs()
+        .into_iter()
+        .map(|spec| InternalToolSummary {
+            name: spec.name,
+            description: spec.description,
+            input_schema: spec.input_schema,
+        })
+        .collect();
+    Ok(InternalToolListResponse { tools }.into())
 }

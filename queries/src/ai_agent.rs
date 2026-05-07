@@ -1,5 +1,16 @@
 use common::error::AppError;
-use models::{AiAgentWithDetails, AiAgentWithFeatures};
+use models::{AgentHooksConfig, AgentModelOverride, AiAgentWithDetails, AiAgentWithFeatures};
+use sqlx::types::Json;
+
+fn build_override(provider: Option<String>, model: Option<String>) -> Option<AgentModelOverride> {
+    match (provider, model) {
+        (Some(p), Some(m)) => Some(AgentModelOverride {
+            provider: p,
+            model: m,
+        }),
+        _ => None,
+    }
+}
 
 fn parse_sub_agents(value: serde_json::Value) -> Result<Option<Vec<i64>>, AppError> {
     let parsed = serde_json::from_value::<Vec<i64>>(value)
@@ -57,6 +68,9 @@ impl GetAiAgentsQuery {
                 SELECT
                     a.id, a.created_at, a.updated_at, a.name, a.description,
                     a.configuration, a.deployment_id,
+                    a.strong_model_provider, a.strong_model,
+                    a.weak_model_provider, a.weak_model,
+                    a.hooks as "hooks!: Json<AgentHooksConfig>",
                     COALESCE((
                         SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                         FROM ai_agent_sub_agents rel
@@ -96,6 +110,15 @@ impl GetAiAgentsQuery {
                         tools_count: agent.tools_count,
                         knowledge_bases_count: agent.knowledge_bases_count,
                         sub_agents,
+                        strong_model: build_override(
+                            agent.strong_model_provider,
+                            agent.strong_model,
+                        ),
+                        weak_model: build_override(
+                            agent.weak_model_provider,
+                            agent.weak_model,
+                        ),
+                        hooks: agent.hooks.0,
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?)
@@ -105,6 +128,9 @@ impl GetAiAgentsQuery {
                 SELECT
                     a.id, a.created_at, a.updated_at, a.name, a.description,
                     a.configuration, a.deployment_id,
+                    a.strong_model_provider, a.strong_model,
+                    a.weak_model_provider, a.weak_model,
+                    a.hooks as "hooks!: Json<AgentHooksConfig>",
                     COALESCE((
                         SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                         FROM ai_agent_sub_agents rel
@@ -142,6 +168,15 @@ impl GetAiAgentsQuery {
                         tools_count: agent.tools_count,
                         knowledge_bases_count: agent.knowledge_bases_count,
                         sub_agents,
+                        strong_model: build_override(
+                            agent.strong_model_provider,
+                            agent.strong_model,
+                        ),
+                        weak_model: build_override(
+                            agent.weak_model_provider,
+                            agent.weak_model,
+                        ),
+                        hooks: agent.hooks.0,
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?)
@@ -171,6 +206,9 @@ impl GetAiAgentByIdQuery {
             SELECT
                 a.id, a.created_at, a.updated_at, a.name, a.description,
                 a.configuration, a.deployment_id,
+                a.strong_model_provider, a.strong_model,
+                a.weak_model_provider, a.weak_model,
+                a.hooks as "hooks!: Json<AgentHooksConfig>",
                 COALESCE((
                     SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                     FROM ai_agent_sub_agents rel
@@ -203,6 +241,9 @@ impl GetAiAgentByIdQuery {
             tools_count: agent.tools_count,
             knowledge_bases_count: agent.knowledge_bases_count,
             sub_agents,
+            strong_model: build_override(agent.strong_model_provider, agent.strong_model),
+            weak_model: build_override(agent.weak_model_provider, agent.weak_model),
+            hooks: agent.hooks.0,
         })
     }
 }
@@ -235,6 +276,9 @@ impl GetAiAgentsByIdsQuery {
             SELECT
                 a.id, a.created_at, a.updated_at, a.name, a.description,
                 a.configuration, a.deployment_id,
+                a.strong_model_provider, a.strong_model,
+                a.weak_model_provider, a.weak_model,
+                a.hooks as "hooks!: Json<AgentHooksConfig>",
                 COALESCE((
                     SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                     FROM ai_agent_sub_agents rel
@@ -270,6 +314,9 @@ impl GetAiAgentsByIdsQuery {
                 tools_count: row.tools_count,
                 knowledge_bases_count: row.knowledge_bases_count,
                 sub_agents,
+                strong_model: build_override(row.strong_model_provider, row.strong_model),
+                weak_model: build_override(row.weak_model_provider, row.weak_model),
+                hooks: row.hooks.0,
             });
         }
 
@@ -300,6 +347,9 @@ impl GetAiAgentByIdWithFeatures {
                 a.name,
                 a.deployment_id,
                 a.configuration,
+                a.strong_model_provider, a.strong_model,
+                a.weak_model_provider, a.weak_model,
+                a.hooks as "hooks!: Json<AgentHooksConfig>",
                 COALESCE((
                     SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                     FROM ai_agent_sub_agents rel
@@ -373,6 +423,9 @@ impl GetAiAgentByIdWithFeatures {
             tools,
             knowledge_bases,
             sub_agents,
+            strong_model: build_override(row.strong_model_provider, row.strong_model),
+            weak_model: build_override(row.weak_model_provider, row.weak_model),
+            hooks: row.hooks.0,
         })
     }
 }

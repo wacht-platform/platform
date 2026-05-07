@@ -29,12 +29,8 @@ pub async fn run(app_state: AppState) -> Result<()> {
 }
 
 async fn sweep_once(app_state: &AppState) -> Result<()> {
-    let rows = list_stuck_assignments(
-        app_state.db_router.writer(),
-        STALE_AFTER_SECS,
-        BATCH_LIMIT,
-    )
-    .await?;
+    let rows =
+        list_stuck_assignments(app_state.db_router.writer(), STALE_AFTER_SECS, BATCH_LIMIT).await?;
 
     if rows.is_empty() {
         return Ok(());

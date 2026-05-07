@@ -1,12 +1,14 @@
 use crate::{
-    application::composio as composio_app, application::response::ApiResult,
+    application::composio as composio_app,
+    application::response::ApiResult,
     middleware::{RequireDeployment, SlugParams},
 };
 use common::state::AppState;
 
 use models::{
-    ComposioAuthConfigListResponse, ComposioConfigResponse, ComposioToolkitDetailsResponse,
-    ComposioToolkitListResponse, EnableComposioAppRequest, UpdateComposioConfigRequest,
+    ComposioAuthConfigListResponse, ComposioConfigResponse, ComposioToolListResponse,
+    ComposioToolkitDetailsResponse, ComposioToolkitListResponse, EnableComposioAppRequest,
+    UpdateComposioConfigRequest,
 };
 
 use axum::{
@@ -28,8 +30,7 @@ pub async fn update_composio_config(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(updates): Json<UpdateComposioConfigRequest>,
 ) -> ApiResult<ComposioConfigResponse> {
-    let response =
-        composio_app::update_composio_config(&app_state, deployment_id, updates).await?;
+    let response = composio_app::update_composio_config(&app_state, deployment_id, updates).await?;
     Ok(response.into())
 }
 
@@ -89,6 +90,29 @@ pub async fn get_toolkit_auth_details(
 ) -> ApiResult<ComposioToolkitDetailsResponse> {
     let response =
         composio_app::get_toolkit_auth_details(&app_state, deployment_id, &params.slug).await?;
+    Ok(response.into())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListToolsQuery {
+    /// Comma-separated toolkit slugs to restrict the listing to. When omitted,
+    /// every toolkit enabled on the deployment is enumerated.
+    #[serde(default)]
+    pub toolkits: Option<String>,
+}
+
+pub async fn list_composio_tools(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Query(params): Query<ListToolsQuery>,
+) -> ApiResult<ComposioToolListResponse> {
+    let filter = params.toolkits.as_deref().map(|raw| {
+        raw.split(',')
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+    });
+    let response = composio_app::list_composio_tools(&app_state, deployment_id, filter).await?;
     Ok(response.into())
 }
 

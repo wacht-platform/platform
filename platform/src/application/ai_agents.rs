@@ -80,6 +80,15 @@ pub async fn create_ai_agent(
         command = command
             .with_knowledge_base_ids(knowledge_base_ids.into_iter().map(i64::from).collect());
     }
+    if let Some(strong_model) = request.strong_model {
+        command = command.with_strong_model(strong_model);
+    }
+    if let Some(weak_model) = request.weak_model {
+        command = command.with_weak_model(weak_model);
+    }
+    if let Some(hooks) = request.hooks {
+        command = command.with_hooks(hooks);
+    }
     command.execute_with_deps(&db_deps).await
 }
 
@@ -145,6 +154,19 @@ pub async fn update_ai_agent(
     }
     if let Some(sub_agents) = request.sub_agents {
         command = command.with_sub_agents(sub_agents.into_iter().map(i64::from).collect());
+    }
+    if request.clear_strong_model {
+        command = command.clearing_strong_model();
+    } else if let Some(strong_model) = request.strong_model {
+        command = command.with_strong_model(strong_model);
+    }
+    if request.clear_weak_model {
+        command = command.clearing_weak_model();
+    } else if let Some(weak_model) = request.weak_model {
+        command = command.with_weak_model(weak_model);
+    }
+    if let Some(hooks) = request.hooks {
+        command = command.with_hooks(hooks);
     }
     command.execute_with_deps(&db_deps).await
 }

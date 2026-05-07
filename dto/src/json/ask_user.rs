@@ -72,7 +72,10 @@ fn validate_answer_kind(qid: &str, kind: &AnswerKind) -> Result<(), String> {
             }
         }
         AnswerKind::Date { min_date, max_date } => {
-            for value in [min_date.as_deref(), max_date.as_deref()].into_iter().flatten() {
+            for value in [min_date.as_deref(), max_date.as_deref()]
+                .into_iter()
+                .flatten()
+            {
                 chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| {
                     format!("question {qid}: date bound '{value}' must be ISO yyyy-mm-dd")
                 })?;
@@ -83,9 +86,7 @@ fn validate_answer_kind(qid: &str, kind: &AnswerKind) -> Result<(), String> {
             cancel_label,
         } => {
             if confirm_label.trim().is_empty() || cancel_label.trim().is_empty() {
-                return Err(format!(
-                    "question {qid}: confirm labels must be non-empty"
-                ));
+                return Err(format!("question {qid}: confirm labels must be non-empty"));
             }
         }
         AnswerKind::FreeText { max_length, .. } => {

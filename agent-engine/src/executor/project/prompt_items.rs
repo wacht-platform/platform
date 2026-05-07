@@ -70,7 +70,6 @@ pub(crate) fn humanize_interval(seconds: i64) -> String {
 }
 
 impl AgentExecutor {
-
     pub(crate) fn assignment_prompt_item_from_row(
         assignment: &models::ProjectTaskBoardItemAssignment,
     ) -> ProjectTaskBoardAssignmentPromptItem {

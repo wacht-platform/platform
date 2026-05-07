@@ -4,9 +4,10 @@ use common::deps;
 use common::error::AppError;
 use models::{
     ComposioAuthConfigListResponse, ComposioAuthConfigSummary, ComposioConfigResponse,
-    ComposioEnableAppAuth, ComposioEnabledApp, ComposioToolkit, ComposioToolkitAuthField,
-    ComposioToolkitAuthFields, ComposioToolkitAuthMode, ComposioToolkitDetailsResponse,
-    ComposioToolkitListResponse, EnableComposioAppRequest, UpdateComposioConfigRequest,
+    ComposioEnableAppAuth, ComposioEnabledApp, ComposioToolListResponse, ComposioToolSummary,
+    ComposioToolkit, ComposioToolkitAuthField, ComposioToolkitAuthFields, ComposioToolkitAuthMode,
+    ComposioToolkitDetailsResponse, ComposioToolkitListResponse, EnableComposioAppRequest,
+    UpdateComposioConfigRequest,
 };
 use queries::composio::GetComposioSettingsQuery;
 use serde::{Deserialize, Serialize};
@@ -24,7 +25,10 @@ fn deployment_name_prefix(deployment_id: i64) -> String {
     format!("wacht/{deployment_id}/")
 }
 
-async fn is_production_deployment(app_state: &AppState, deployment_id: i64) -> Result<bool, AppError> {
+async fn is_production_deployment(
+    app_state: &AppState,
+    deployment_id: i64,
+) -> Result<bool, AppError> {
     let row = sqlx::query!(
         r#"SELECT mode FROM deployments WHERE id = $1 AND deleted_at IS NULL"#,
         deployment_id,
@@ -32,9 +36,9 @@ async fn is_production_deployment(app_state: &AppState, deployment_id: i64) -> R
     .fetch_optional(app_state.db_router.reader(ReadConsistency::Eventual))
     .await?;
 
-    let mode = row.map(|r| r.mode).ok_or_else(|| {
-        AppError::NotFound(format!("deployment {deployment_id} not found"))
-    })?;
+    let mode = row
+        .map(|r| r.mode)
+        .ok_or_else(|| AppError::NotFound(format!("deployment {deployment_id} not found")))?;
     Ok(mode.eq_ignore_ascii_case("production"))
 }
 
@@ -140,9 +144,8 @@ pub async fn list_toolkits(
         )));
     }
 
-    let raw: RawToolkitsResponse = serde_json::from_str(&body).map_err(|e| {
-        AppError::Internal(format!("composio response parse: {e}; body: {body}"))
-    })?;
+    let raw: RawToolkitsResponse = serde_json::from_str(&body)
+        .map_err(|e| AppError::Internal(format!("composio response parse: {e}; body: {body}")))?;
 
     Ok(ComposioToolkitListResponse {
         toolkits: raw.items.into_iter().map(Into::into).collect(),
@@ -246,7 +249,9 @@ impl RawCategory {
 impl From<RawToolkit> for ComposioToolkit {
     fn from(raw: RawToolkit) -> Self {
         let name = raw.name.unwrap_or_else(|| raw.slug.clone());
-        let logo = raw.logo.or_else(|| raw.meta.as_ref().and_then(|m| m.logo.clone()));
+        let logo = raw
+            .logo
+            .or_else(|| raw.meta.as_ref().and_then(|m| m.logo.clone()));
         let description = raw
             .description
             .or_else(|| raw.meta.as_ref().and_then(|m| m.description.clone()));
@@ -460,9 +465,7 @@ async fn create_composio_auth_config(
         .map(|ac| ac.id)
         .or(parsed.id)
         .ok_or_else(|| {
-            AppError::Internal(format!(
-                "composio did not return an auth_config id: {text}"
-            ))
+            AppError::Internal(format!("composio did not return an auth_config id: {text}"))
         })
 }
 
@@ -657,6 +660,41 @@ struct CreatedAuthConfigInner {
 #[allow(dead_code)]
 fn _marker_use_serialize<T: Serialize>(_: &T) {}
 
+/// Deployment-scoped tool listing for the console hook/tool picker.
+///
+/// Returns every Composio tool across the deployment's enabled toolkits,
+/// each with its input schema and the runtime-prefixed `name` the agent
+/// will dispatch on. Doesn't check actor connections — these tools are
+/// shown to operators at config time, not chosen for execution.
+pub async fn list_composio_tools(
+    app_state: &AppState,
+    deployment_id: i64,
+    toolkit_filter: Option<Vec<String>>,
+) -> Result<ComposioToolListResponse, AppError> {
+    let filter_ref = toolkit_filter.as_deref();
+    let candidates =
+        agent_engine::tools::external::list_external_tools_for_deployment(
+            app_state,
+            deployment_id,
+            filter_ref,
+        )
+        .await?;
+
+    let tools = candidates
+        .into_iter()
+        .map(|c| ComposioToolSummary {
+            name: c.tool_name(),
+            toolkit_slug: c.toolkit_slug,
+            remote_tool_slug: c.remote_tool_slug,
+            display_name: c.display_name,
+            description: c.description,
+            input_schema: c.input_schema,
+        })
+        .collect();
+
+    Ok(ComposioToolListResponse { tools })
+}
+
 pub async fn list_toolkit_auth_configs(
     app_state: &AppState,
     deployment_id: i64,
@@ -708,7 +746,12 @@ pub async fn list_toolkit_auth_configs(
     let auth_configs: Vec<ComposioAuthConfigSummary> = raw
         .items
         .into_iter()
-        .filter(|c| c.name.as_deref().map(|n| n.starts_with(&prefix)).unwrap_or(false))
+        .filter(|c| {
+            c.name
+                .as_deref()
+                .map(|n| n.starts_with(&prefix))
+                .unwrap_or(false)
+        })
         .filter_map(|c| {
             let toolkit_slug = c
                 .toolkit

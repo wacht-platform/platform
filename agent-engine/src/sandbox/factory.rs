@@ -20,9 +20,7 @@ impl SandboxRuntimeFactory {
 
 static SHARED_FACTORY: OnceLock<Arc<SandboxRuntimeFactory>> = OnceLock::new();
 
-pub async fn init_shared_sandbox_runtime(
-    nats: async_nats::Client,
-) -> Result<(), String> {
+pub async fn init_shared_sandbox_runtime(nats: async_nats::Client) -> Result<(), String> {
     let client = SandboxNatsClient::new(nats);
     client.warm().await.map_err(|e| e.to_string())?;
     let runtime = Arc::new(NatsSandboxRuntime::new(client));

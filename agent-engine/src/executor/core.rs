@@ -3,7 +3,9 @@ use crate::tools::ToolExecutor;
 
 use common::error::AppError;
 use dto::json::{ProjectTaskBoardPromptItem, StreamEvent};
-use models::{AiTool, AiToolConfiguration, AiToolType, ImmediateContext, InternalToolConfiguration};
+use models::{
+    AiTool, AiToolConfiguration, AiToolType, ImmediateContext, InternalToolConfiguration,
+};
 use models::{ConversationRecord, MemoryRecord, ThreadEvent};
 use queries::ListActiveApprovalGrantsForThreadQuery;
 use std::collections::{HashMap, HashSet};
@@ -133,8 +135,7 @@ impl AgentExecutorBuilder {
                 futures::future::join_all(refresh_targets.into_iter().map(|idx| {
                     let conn_ref = &mcp_connections[idx];
                     async move {
-                        let result =
-                            crate::tools::mcp::refresh_connection_metadata(conn_ref).await;
+                        let result = crate::tools::mcp::refresh_connection_metadata(conn_ref).await;
                         (idx, result)
                     }
                 }))
@@ -166,8 +167,12 @@ impl AgentExecutorBuilder {
             crate::tools::mcp::discover_mcp_tools_for_actor(mcp_connections, deployment_id).await
         };
 
-        let (active_approvals, mcp_tools, board_state, immediate_context) =
-            tokio::join!(approvals_fut, mcp_pipeline_fut, board_fut, immediate_ctx_fut);
+        let (active_approvals, mcp_tools, board_state, immediate_context) = tokio::join!(
+            approvals_fut,
+            mcp_pipeline_fut,
+            board_fut,
+            immediate_ctx_fut
+        );
         let active_approvals = active_approvals?;
         let (project_task_board_id, project_task_board_items) = board_state?;
         let immediate_context = immediate_context?;

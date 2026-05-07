@@ -17,6 +17,7 @@ pub struct CreateProjectTaskScheduleCommand {
     pub interval_seconds: Option<i64>,
     pub next_run_at: DateTime<Utc>,
     pub overlap_policy: Option<String>,
+    pub mounts: Option<Vec<ScheduleMount>>,
 }
 
 pub struct UpdateProjectTaskScheduleCommand {
@@ -75,7 +76,12 @@ impl CreateProjectTaskScheduleCommand {
             AppError::Internal(format!("Failed to serialize template_payload: {e}"))
         })?;
 
-        let initial_mounts = vec![implicit_mount_for_schedule(self.project_id, self.id)];
+        let initial_mounts = self
+            .mounts
+            .unwrap_or_else(|| vec![implicit_mount_for_schedule(self.project_id, self.id)]);
+        for mount in &initial_mounts {
+            validate_mount(mount).map_err(|e| AppError::BadRequest(e.to_string()))?;
+        }
         let mounts_value = serde_json::to_value(&initial_mounts)
             .map_err(|e| AppError::Internal(format!("Failed to serialize mounts: {e}")))?;
 

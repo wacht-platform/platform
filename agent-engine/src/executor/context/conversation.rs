@@ -502,9 +502,7 @@ impl AgentExecutor {
                             ClarificationOutcome::Answered(&parsed_answers)
                         } else if ordered_conversations[i + 1..]
                             .iter()
-                            .any(|c| {
-                                matches!(c.message_type, ConversationMessageType::UserMessage)
-                            })
+                            .any(|c| matches!(c.message_type, ConversationMessageType::UserMessage))
                         {
                             ClarificationOutcome::Expired
                         } else {
@@ -531,7 +529,6 @@ impl AgentExecutor {
                 ConversationMessageType::ClarificationResponse => {
                     i += 1;
                 }
-
             }
         }
 
@@ -688,8 +685,7 @@ impl AgentExecutor {
                     }
                 }
                 ConversationMessageType::ApprovalResponse => {
-                    if let ConversationContent::ApprovalResponse { approvals, .. } = &conv.content
-                    {
+                    if let ConversationContent::ApprovalResponse { approvals, .. } = &conv.content {
                         let mut text = String::from("User responded to approval request:");
                         for d in approvals {
                             let mode = match d.mode {
@@ -836,7 +832,10 @@ impl AgentExecutor {
 
     fn describe_answer_kind(kind: &models::AnswerKind) -> String {
         match kind {
-            models::AnswerKind::FreeText { placeholder, max_length } => {
+            models::AnswerKind::FreeText {
+                placeholder,
+                max_length,
+            } => {
                 let mut s = String::from("free text");
                 if let Some(p) = placeholder.as_deref().filter(|s| !s.is_empty()) {
                     s.push_str(&format!(" — hint: {p}"));
@@ -846,7 +845,10 @@ impl AgentExecutor {
                 }
                 s
             }
-            models::AnswerKind::SingleChoice { choices, allow_other } => {
+            models::AnswerKind::SingleChoice {
+                choices,
+                allow_other,
+            } => {
                 let labels = choices
                     .iter()
                     .map(|c| c.label.as_str())
@@ -858,7 +860,11 @@ impl AgentExecutor {
                     format!("one of [{labels}]")
                 }
             }
-            models::AnswerKind::MultiChoice { choices, min_selected, max_selected } => {
+            models::AnswerKind::MultiChoice {
+                choices,
+                min_selected,
+                max_selected,
+            } => {
                 let labels = choices
                     .iter()
                     .map(|c| c.label.as_str())
@@ -896,7 +902,10 @@ impl AgentExecutor {
                 }
                 s
             }
-            models::AnswerKind::Confirm { confirm_label, cancel_label } => {
+            models::AnswerKind::Confirm {
+                confirm_label,
+                cancel_label,
+            } => {
                 format!("confirm ({confirm_label}) or cancel ({cancel_label})")
             }
         }
@@ -908,12 +917,20 @@ impl AgentExecutor {
             models::AnswerValue::SingleChoice { value } => value.clone(),
             models::AnswerValue::MultiChoice { values } => values.join(", "),
             models::AnswerValue::YesNo { value } => {
-                if *value { "yes".into() } else { "no".into() }
+                if *value {
+                    "yes".into()
+                } else {
+                    "no".into()
+                }
             }
             models::AnswerValue::Number { value } => value.to_string(),
             models::AnswerValue::Date { value } => value.clone(),
             models::AnswerValue::Confirm { accepted } => {
-                if *accepted { "confirmed".into() } else { "cancelled".into() }
+                if *accepted {
+                    "confirmed".into()
+                } else {
+                    "cancelled".into()
+                }
             }
         }
     }
@@ -988,12 +1005,8 @@ impl AgentExecutor {
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty() && s != "(empty)");
                 match body {
-                    Some(body) => format!(
-                        "You ran the tool: {action}\n\nIt produced:\n{body}"
-                    ),
-                    None => format!(
-                        "You ran the tool: {action}\n\nIt produced no output."
-                    ),
+                    Some(body) => format!("You ran the tool: {action}\n\nIt produced:\n{body}"),
+                    None => format!("You ran the tool: {action}\n\nIt produced no output."),
                 }
             }
             "error" => {
@@ -1019,9 +1032,8 @@ impl AgentExecutor {
     /// Known internal tools get hand-tuned verb+arg forms.
     /// Unknown / custom / MCP tools fall back to `Called <name>(<compact-args>)`.
     fn describe_tool_action(tool_name: &str, input: &Value) -> String {
-        let str_field = |key: &str| -> &str {
-            input.get(key).and_then(|v| v.as_str()).unwrap_or_default()
-        };
+        let str_field =
+            |key: &str| -> &str { input.get(key).and_then(|v| v.as_str()).unwrap_or_default() };
         let u64_field = |key: &str| -> Option<u64> { input.get(key).and_then(|v| v.as_u64()) };
 
         match tool_name {
@@ -1699,4 +1711,3 @@ fn conversation_message_type_label(message_type: &ConversationMessageType) -> &'
         ConversationMessageType::ClarificationResponse => "clarification_response",
     }
 }
-

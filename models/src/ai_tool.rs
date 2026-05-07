@@ -291,7 +291,6 @@ pub struct InternalToolConfiguration {
     pub input_schema: Option<Vec<SchemaField>>,
 }
 
-
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AuthorizationConfiguration {
     pub authorize_as_user: bool,

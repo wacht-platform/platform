@@ -38,10 +38,7 @@ pub mod i64_as_string_option {
     {
         let opt = Option::<String>::deserialize(deserializer)?;
         match opt {
-            Some(s) => s
-                .parse::<i64>()
-                .map(Some)
-                .map_err(serde::de::Error::custom),
+            Some(s) => s.parse::<i64>().map(Some).map_err(serde::de::Error::custom),
             None => Ok(None),
         }
     }

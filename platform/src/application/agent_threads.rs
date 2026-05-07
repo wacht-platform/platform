@@ -706,7 +706,6 @@ pub async fn create_agent_thread(
     get_agent_thread_by_id(app_state, deployment_id, thread_id).await
 }
 
-
 pub async fn get_agent_thread_by_id(
     app_state: &AppState,
     deployment_id: i64,
@@ -1368,12 +1367,13 @@ pub async fn create_project_task_board_item(
         request.next_run_at,
         request.interval_seconds,
     )?;
+    let requested_mounts = request.mounts.clone();
     let mounts_value = validate_and_serialize_mounts(request.mounts.as_deref())?
         .unwrap_or_else(|| serde_json::json!([]));
 
     let mut tx = app_state.db_router.writer().begin().await?;
 
-    let item = CreateProjectTaskBoardItemCommand {
+    let mut item = CreateProjectTaskBoardItemCommand {
         id: item_id,
         board_id: board.id,
         task_key,
@@ -1388,7 +1388,7 @@ pub async fn create_project_task_board_item(
     .await?;
 
     if let Some(schedule) = schedule {
-        CreateProjectTaskScheduleCommand {
+        let schedule = CreateProjectTaskScheduleCommand {
             id: app_state.sf.next_id()? as i64,
             board_id: board.id,
             project_id,
@@ -1398,8 +1398,17 @@ pub async fn create_project_task_board_item(
             interval_seconds: schedule.interval_seconds,
             next_run_at: schedule.next_run_at,
             overlap_policy: None,
+            mounts: requested_mounts,
         }
         .execute_with_db(&mut *tx)
+        .await?;
+        item = attach_schedule_mounts_to_board_item(
+            &mut *tx,
+            board.id,
+            &item.task_key,
+            schedule.id,
+            schedule.mounts,
+        )
         .await?;
     }
 
@@ -1506,6 +1515,7 @@ pub async fn update_project_task_board_item(
         ));
     }
     let mounts_value = validate_and_serialize_mounts(request.mounts.as_deref())?;
+    let requested_mounts = request.mounts.clone();
 
     let mut current = if title.is_some() || description.is_some() {
         sqlx::query_as!(
@@ -1564,15 +1574,27 @@ pub async fn update_project_task_board_item(
                 .execute_with_db(app_state.db_router.writer())
                 .await?;
         if let Some(existing) = existing {
-            UpdateProjectTaskScheduleCommand::new(existing.id)
+            let mut command = UpdateProjectTaskScheduleCommand::new(existing.id)
                 .with_status(models::project_task_schedule::status::ACTIVE.to_string())
                 .with_interval_seconds(schedule.interval_seconds)
                 .with_next_run_at(schedule.next_run_at)
-                .with_template_payload(build_schedule_template_payload(&current))
+                .with_template_payload(build_schedule_template_payload(&current));
+            if let Some(mounts) = requested_mounts.clone() {
+                command = command.with_mounts(mounts);
+            }
+            let schedule = command
                 .execute_with_db(app_state.db_router.writer())
                 .await?;
+            current = attach_schedule_mounts_to_board_item(
+                app_state.db_router.writer(),
+                board.id,
+                &current.task_key,
+                schedule.id,
+                schedule.mounts,
+            )
+            .await?;
         } else {
-            CreateProjectTaskScheduleCommand {
+            let schedule = CreateProjectTaskScheduleCommand {
                 id: app_state.sf.next_id()? as i64,
                 board_id: board.id,
                 project_id,
@@ -1582,13 +1604,51 @@ pub async fn update_project_task_board_item(
                 interval_seconds: schedule.interval_seconds,
                 next_run_at: schedule.next_run_at,
                 overlap_policy: None,
+                mounts: requested_mounts,
             }
             .execute_with_db(app_state.db_router.writer())
+            .await?;
+            current = attach_schedule_mounts_to_board_item(
+                app_state.db_router.writer(),
+                board.id,
+                &current.task_key,
+                schedule.id,
+                schedule.mounts,
+            )
             .await?;
         }
     }
 
     Ok(current)
+}
+
+async fn attach_schedule_mounts_to_board_item<'e, E>(
+    executor: E,
+    board_id: i64,
+    task_key: &str,
+    schedule_id: i64,
+    mounts: serde_json::Value,
+) -> Result<ProjectTaskBoardItem, AppError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
+    sqlx::query_as::<_, ProjectTaskBoardItem>(
+        r#"
+        UPDATE project_task_board_items
+        SET schedule_id = $3, mounts = $4, updated_at = NOW()
+        WHERE board_id = $1 AND task_key = $2 AND archived_at IS NULL
+        RETURNING id, board_id, task_key, title, description, status,
+                  assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
+                  schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
+        "#,
+    )
+    .bind(board_id)
+    .bind(task_key)
+    .bind(schedule_id)
+    .bind(mounts)
+    .fetch_one(executor)
+    .await
+    .map_err(AppError::from)
 }
 
 pub async fn set_project_task_board_item_archived(

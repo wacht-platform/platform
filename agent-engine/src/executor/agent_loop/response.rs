@@ -44,10 +44,7 @@ impl AgentExecutor {
             .iter()
             .map(|m| text.matches(m).count())
             .sum();
-        let separator_lines = text
-            .lines()
-            .filter(|l| l.trim() == "---")
-            .count();
+        let separator_lines = text.lines().filter(|l| l.trim() == "---").count();
         if pseudo_count >= 2 && separator_lines >= 2 {
             return true;
         }
@@ -194,9 +191,7 @@ impl AgentExecutor {
             .cloned()
             .collect::<Vec<_>>();
         for tool in self.virtual_tool_cache.values() {
-            if loaded_tool_ids.contains(&tool.id)
-                && self.tool_allowed_in_current_mode(&tool.name)
-            {
+            if loaded_tool_ids.contains(&tool.id) && self.tool_allowed_in_current_mode(&tool.name) {
                 loaded_external_tools.push(tool.clone());
             }
         }

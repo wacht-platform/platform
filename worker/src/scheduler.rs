@@ -127,8 +127,7 @@ impl JobScheduler {
         let lease_recovery_state = self.app_state.clone();
         tokio::spawn(async move {
             loop {
-                if let Err(e) = jobs::work_lease_recovery::run(lease_recovery_state.clone()).await
-                {
+                if let Err(e) = jobs::work_lease_recovery::run(lease_recovery_state.clone()).await {
                     error!(error = %e, "work-lease recovery exited; restarting in 5s");
                     tokio::time::sleep(Duration::from_secs(5)).await;
                 }

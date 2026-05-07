@@ -1,8 +1,8 @@
 use chrono::Utc;
 use commands::event_log::{self, EVENT_LOG_WORK_SUBJECT, InsertEventLogCommand};
 use commands::{SetBoardItemPendingApprovalCommand, SetBoardItemPendingQuestionCommand};
-use common::error::AppError;
 use common::HasDbRouter;
+use common::error::AppError;
 use dto::json::ask_user::{AnswerSubmission, validate_answers};
 use models::{
     ConversationContent, ProjectTaskBoardItem, ProjectTaskBoardItemComment, ToolApprovalMode,
@@ -245,10 +245,9 @@ pub async fn approve_project_task_board_item_tool(
         .ok_or_else(|| AppError::BadRequest("no pending approval on this task".to_string()))?;
     let pending: ToolApprovalRequestState = serde_json::from_value(pending_value.clone())
         .map_err(|e| AppError::BadRequest(format!("malformed pending_approval: {e}")))?;
-    let request_message_id = pending
-        .request_message_id
-        .as_deref()
-        .ok_or_else(|| AppError::BadRequest("pending approval has no request_message_id".to_string()))?;
+    let request_message_id = pending.request_message_id.as_deref().ok_or_else(|| {
+        AppError::BadRequest("pending approval has no request_message_id".to_string())
+    })?;
     if request_message_id != submission.request_message_id {
         return Err(AppError::BadRequest(
             "request_message_id does not match the pending approval".to_string(),
@@ -262,7 +261,9 @@ pub async fn approve_project_task_board_item_tool(
     let mut seen = std::collections::HashSet::new();
     for approval in &submission.approvals {
         if approval.tool_name.is_empty() {
-            return Err(AppError::BadRequest("approval tool name must be non-empty".to_string()));
+            return Err(AppError::BadRequest(
+                "approval tool name must be non-empty".to_string(),
+            ));
         }
         if !seen.insert(approval.tool_name.clone()) {
             return Err(AppError::BadRequest(format!(

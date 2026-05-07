@@ -73,7 +73,6 @@ impl From<redis::RedisError> for AgentExecutionError {
     }
 }
 
-
 async fn persist_tool_approval_response_grants(
     app_state: &AppState,
     deployment_id: i64,
@@ -405,11 +404,8 @@ pub async fn process_event_log_work(
         return Ok(format!("event_log {event_log_id}: already leased"));
     }
 
-    let (heartbeat_handle, heartbeat_stop) = spawn_event_log_heartbeat(
-        app_state.clone(),
-        event_log_id,
-        worker_id.clone(),
-    );
+    let (heartbeat_handle, heartbeat_stop) =
+        spawn_event_log_heartbeat(app_state.clone(), event_log_id, worker_id.clone());
 
     let outcome = run_event_log_work(
         app_state.clone(),
@@ -426,19 +422,15 @@ pub async fn process_event_log_work(
 
     match &outcome {
         Ok(_) => {
-            let _ = commands::event_log::release_work_lease(
-                app_state.db_router.writer(),
-                event_log_id,
-            )
-            .await;
+            let _ =
+                commands::event_log::release_work_lease(app_state.db_router.writer(), event_log_id)
+                    .await;
         }
         Err(e) => {
             tracing::warn!(event_log_id, error = %e, "event_log work failed; releasing lease for retry");
-            let _ = commands::event_log::release_work_lease(
-                app_state.db_router.writer(),
-                event_log_id,
-            )
-            .await;
+            let _ =
+                commands::event_log::release_work_lease(app_state.db_router.writer(), event_log_id)
+                    .await;
         }
     }
 
@@ -643,7 +635,6 @@ async fn run_event_log_work(
         ))),
     }
 }
-
 
 async fn resolve_agent_id_for_thread(
     app_state: &AppState,

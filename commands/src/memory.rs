@@ -263,17 +263,12 @@ impl UpdateAgentMemoryCommand {
             resolve_deployment_embedding_dimension(deps, self.deployment_id).await?;
 
         let filter = format!("id = {}", self.memory_id);
-        let mut existing = load_memories_in_table(
-            &table,
-            self.deployment_id,
-            &filter,
-            1,
-            embedding_dimension,
-        )
-        .await?;
-        let existing = existing.pop().ok_or_else(|| {
-            AppError::NotFound(format!("Memory {} not found", self.memory_id))
-        })?;
+        let mut existing =
+            load_memories_in_table(&table, self.deployment_id, &filter, 1, embedding_dimension)
+                .await?;
+        let existing = existing
+            .pop()
+            .ok_or_else(|| AppError::NotFound(format!("Memory {} not found", self.memory_id)))?;
 
         let scope_changed = self
             .scope
@@ -287,7 +282,10 @@ impl UpdateAgentMemoryCommand {
             ));
         }
 
-        let new_content = self.content.clone().unwrap_or_else(|| existing.content.clone());
+        let new_content = self
+            .content
+            .clone()
+            .unwrap_or_else(|| existing.content.clone());
         let content_changed = new_content != existing.content;
         let embedding = if content_changed {
             let embeddings = GenerateEmbeddingsCommand::new(vec![new_content.clone()])
@@ -310,9 +308,8 @@ impl UpdateAgentMemoryCommand {
             .category
             .as_deref()
             .map(|c| {
-                MemoryCategory::from_str(c).ok_or_else(|| {
-                    AppError::Validation(format!("Unknown memory category '{}'", c))
-                })
+                MemoryCategory::from_str(c)
+                    .ok_or_else(|| AppError::Validation(format!("Unknown memory category '{}'", c)))
             })
             .transpose()?
             .map(|c| c.to_string())

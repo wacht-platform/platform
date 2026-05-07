@@ -1,6 +1,7 @@
 use chrono::Utc;
 use common::error::AppError;
-use models::{McpServer, McpServerConfig};
+use models::{McpServer, McpServerConfig, mcp_server::slugify_mcp_server_name};
+use sqlx::types::Json;
 
 pub struct CreateMcpServerCommand {
     pub id: i64,
@@ -29,29 +30,33 @@ impl CreateMcpServerCommand {
             ));
         }
 
+        let slug = slugify_mcp_server_name(&self.name);
+        if slug.is_empty() {
+            return Err(AppError::BadRequest(
+                "MCP server name must contain at least one alphanumeric character".to_string(),
+            ));
+        }
+
         let now = Utc::now();
-        let config_json = serde_json::to_value(&self.config)
-            .map_err(|e| AppError::Serialization(e.to_string()))?;
+        let config_json = Json(self.config);
 
         let row = sqlx::query!(
             r#"
-            INSERT INTO mcp_servers (id, created_at, updated_at, deployment_id, name, config)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id, created_at, updated_at, deployment_id, name, config as "config!: serde_json::Value"
+            INSERT INTO mcp_servers (id, created_at, updated_at, deployment_id, name, slug, config)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id, created_at, updated_at, deployment_id, name, slug, config as "config!: Json<McpServerConfig>"
             "#,
             self.id,
             now,
             now,
             self.deployment_id,
             self.name,
-            config_json
+            slug,
+            config_json as _
         )
         .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
-
-        let config: McpServerConfig = serde_json::from_value(row.config)
-            .map_err(|e| AppError::Serialization(e.to_string()))?;
 
         Ok(McpServer {
             id: row.id,
@@ -59,7 +64,8 @@ impl CreateMcpServerCommand {
             updated_at: row.updated_at,
             deployment_id: row.deployment_id,
             name: row.name,
-            config,
+            slug: row.slug,
+            config: row.config.0,
         })
     }
 }
@@ -103,12 +109,7 @@ impl UpdateMcpServerCommand {
             }
         }
 
-        let config_json = self
-            .config
-            .map(|config| {
-                serde_json::to_value(config).map_err(|e| AppError::Serialization(e.to_string()))
-            })
-            .transpose()?;
+        let config_json = self.config.map(Json);
 
         let row = sqlx::query!(
             r#"
@@ -118,11 +119,11 @@ impl UpdateMcpServerCommand {
                 name = COALESCE($2, name),
                 config = COALESCE($3, config)
             WHERE id = $4 AND deployment_id = $5
-            RETURNING id, created_at, updated_at, deployment_id, name, config as "config!: serde_json::Value"
+            RETURNING id, created_at, updated_at, deployment_id, name, slug, config as "config!: Json<McpServerConfig>"
             "#,
             Utc::now(),
             self.name,
-            config_json,
+            config_json as _,
             self.mcp_server_id,
             self.deployment_id
         )
@@ -130,16 +131,14 @@ impl UpdateMcpServerCommand {
         .await
         .map_err(AppError::Database)?;
 
-        let config: McpServerConfig = serde_json::from_value(row.config)
-            .map_err(|e| AppError::Serialization(e.to_string()))?;
-
         Ok(McpServer {
             id: row.id,
             created_at: row.created_at,
             updated_at: row.updated_at,
             deployment_id: row.deployment_id,
             name: row.name,
-            config,
+            slug: row.slug,
+            config: row.config.0,
         })
     }
 }

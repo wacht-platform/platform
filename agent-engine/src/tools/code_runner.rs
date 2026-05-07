@@ -47,7 +47,8 @@ impl ToolExecutor {
         }
 
         let input_b64 = base64::engine::general_purpose::STANDARD.encode(&input_bytes);
-        let user_code_b64 = base64::engine::general_purpose::STANDARD.encode(config.code.as_bytes());
+        let user_code_b64 =
+            base64::engine::general_purpose::STANDARD.encode(config.code.as_bytes());
 
         let mut env: BTreeMap<String, String> = BTreeMap::new();
         env.insert("WACHT_INPUT_B64".into(), input_b64);

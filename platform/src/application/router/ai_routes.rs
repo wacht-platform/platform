@@ -54,6 +54,10 @@ pub(super) fn ai_routes() -> Router<AppState> {
             get(api::ai_tools::get_ai_tools).post(api::ai_tools::create_ai_tool),
         )
         .route(
+            "/ai/internal-tools",
+            get(api::ai_tools::list_internal_tools),
+        )
+        .route(
             "/ai/tools/{tool_id}",
             get(api::ai_tools::get_ai_tool_by_id)
                 .patch(api::ai_tools::update_ai_tool)
@@ -103,6 +107,10 @@ pub(super) fn ai_routes() -> Router<AppState> {
         .route(
             "/ai/composio/toolkits",
             get(api::composio::list_composio_toolkits),
+        )
+        .route(
+            "/ai/composio/tools",
+            get(api::composio::list_composio_tools),
         )
         .route(
             "/ai/composio/apps",

@@ -1,27 +1,30 @@
 use crate::prelude::*;
 use models::{McpConnectionMetadata, McpServer, McpServerConfig};
+use sqlx::types::Json;
 
-fn decode_mcp_config(config: serde_json::Value) -> StdResult<McpServerConfig, AppError> {
-    serde_json::from_value(config)
-        .map_err(|e| AppError::Internal(format!("Failed to decode MCP config: {}", e)))
-}
-
-fn build_mcp_server(
+#[derive(sqlx::FromRow)]
+struct McpServerRow {
     id: i64,
     created_at: chrono::DateTime<chrono::Utc>,
     updated_at: chrono::DateTime<chrono::Utc>,
     deployment_id: i64,
     name: String,
-    config: serde_json::Value,
-) -> StdResult<McpServer, AppError> {
-    Ok(McpServer {
-        id,
-        created_at,
-        updated_at,
-        deployment_id,
-        name,
-        config: decode_mcp_config(config)?,
-    })
+    slug: String,
+    config: Json<McpServerConfig>,
+}
+
+impl From<McpServerRow> for McpServer {
+    fn from(row: McpServerRow) -> Self {
+        McpServer {
+            id: row.id,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            deployment_id: row.deployment_id,
+            name: row.name,
+            slug: row.slug,
+            config: row.config.0,
+        }
+    }
 }
 
 pub struct GetMcpServersQuery {
@@ -56,9 +59,10 @@ impl GetMcpServersQuery {
         let limit = self.limit.unwrap_or(50) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
 
-        let rows = sqlx::query!(
+        let rows = sqlx::query_as!(
+            McpServerRow,
             r#"
-            SELECT id, created_at, updated_at, deployment_id, name, config as "config!: serde_json::Value"
+            SELECT id, created_at, updated_at, deployment_id, name, slug, config as "config!: Json<McpServerConfig>"
             FROM mcp_servers
             WHERE deployment_id = $1
             ORDER BY created_at DESC
@@ -72,18 +76,7 @@ impl GetMcpServersQuery {
         .await
         .map_err(AppError::Database)?;
 
-        rows.into_iter()
-            .map(|row| {
-                build_mcp_server(
-                    row.id,
-                    row.created_at,
-                    row.updated_at,
-                    row.deployment_id,
-                    row.name,
-                    row.config,
-                )
-            })
-            .collect()
+        Ok(rows.into_iter().map(McpServer::from).collect())
     }
 }
 
@@ -120,8 +113,9 @@ impl GetActorMcpConnectionsQuery {
                 ms.updated_at,
                 ms.deployment_id,
                 ms.name,
-                ms.config as "config!: serde_json::Value",
-                amsc.connection_metadata as "connection_metadata?: serde_json::Value"
+                ms.slug,
+                ms.config as "config!: Json<McpServerConfig>",
+                amsc.connection_metadata as "connection_metadata?: Json<McpConnectionMetadata>"
             FROM mcp_servers ms
             LEFT JOIN actor_mcp_server_connections amsc
                 ON amsc.mcp_server_id = ms.id
@@ -137,25 +131,21 @@ impl GetActorMcpConnectionsQuery {
         .await
         .map_err(AppError::Database)?;
 
-        rows.into_iter()
-            .map(|row| {
-                let server = build_mcp_server(
-                    row.id,
-                    row.created_at,
-                    row.updated_at,
-                    row.deployment_id,
-                    row.name,
-                    row.config,
-                )?;
-                let connection_metadata = row
-                    .connection_metadata
-                    .and_then(|m| serde_json::from_value::<McpConnectionMetadata>(m).ok());
-                Ok(ActorMcpConnection {
-                    server,
-                    connection_metadata,
-                })
+        Ok(rows
+            .into_iter()
+            .map(|row| ActorMcpConnection {
+                server: McpServer {
+                    id: row.id,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                    deployment_id: row.deployment_id,
+                    name: row.name,
+                    slug: row.slug,
+                    config: row.config.0,
+                },
+                connection_metadata: row.connection_metadata.map(|m| m.0),
             })
-            .collect()
+            .collect())
     }
 }
 
@@ -167,8 +157,18 @@ pub struct UpdateActorMcpConnectionMetadataQuery {
 }
 
 impl UpdateActorMcpConnectionMetadataQuery {
-    pub fn new(deployment_id: i64, actor_id: i64, mcp_server_id: i64, metadata: serde_json::Value) -> Self {
-        Self { deployment_id, actor_id, mcp_server_id, metadata }
+    pub fn new(
+        deployment_id: i64,
+        actor_id: i64,
+        mcp_server_id: i64,
+        metadata: serde_json::Value,
+    ) -> Self {
+        Self {
+            deployment_id,
+            actor_id,
+            mcp_server_id,
+            metadata,
+        }
     }
 
     pub async fn execute_with_db<'e, E>(&self, executor: E) -> StdResult<(), AppError>
@@ -210,9 +210,10 @@ impl GetMcpServerByIdQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query!(
+        let row = sqlx::query_as!(
+            McpServerRow,
             r#"
-            SELECT id, created_at, updated_at, deployment_id, name, config as "config!: serde_json::Value"
+            SELECT id, created_at, updated_at, deployment_id, name, slug, config as "config!: Json<McpServerConfig>"
             FROM mcp_servers
             WHERE id = $1 AND deployment_id = $2
             "#,
@@ -224,13 +225,6 @@ impl GetMcpServerByIdQuery {
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("MCP server not found".to_string()))?;
 
-        build_mcp_server(
-            row.id,
-            row.created_at,
-            row.updated_at,
-            row.deployment_id,
-            row.name,
-            row.config,
-        )
+        Ok(McpServer::from(row))
     }
 }

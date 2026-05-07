@@ -56,9 +56,28 @@ fn thread_identity_is_coordinator(
 /// distinctness ("Research Lane" vs "Marketing Lane" should not match because
 /// they share "lane") and would otherwise inflate Jaccard scores.
 const LANE_SIMILARITY_STOPWORDS: &[&str] = &[
-    "a", "an", "and", "for", "of", "or", "the", "to", "with", "lane", "thread",
-    "agent", "service", "team", "specialist", "executor", "execution", "worker",
-    "helper", "support", "general", "subagent",
+    "a",
+    "an",
+    "and",
+    "for",
+    "of",
+    "or",
+    "the",
+    "to",
+    "with",
+    "lane",
+    "thread",
+    "agent",
+    "service",
+    "team",
+    "specialist",
+    "executor",
+    "execution",
+    "worker",
+    "helper",
+    "support",
+    "general",
+    "subagent",
 ];
 
 fn tokenize_for_similarity(input: &str) -> std::collections::HashSet<String> {
@@ -264,7 +283,9 @@ impl ToolExecutor {
         }
 
         let thread_purpose = models::agent_thread::purpose::EXECUTION.to_string();
-        let responsibility = Some(validate_lane_responsibility(params.responsibility.as_deref())?);
+        let responsibility = Some(validate_lane_responsibility(
+            params.responsibility.as_deref(),
+        )?);
         let requested_agent_name = params
             .assigned_agent_name
             .map(|value| value.trim().to_string())
@@ -341,11 +362,7 @@ impl ToolExecutor {
             None => (self.agent().id, self.agent().name.clone()),
         };
 
-        let proposed_signature = format!(
-            "{} {}",
-            title,
-            responsibility.as_deref().unwrap_or("")
-        );
+        let proposed_signature = format!("{} {}", title, responsibility.as_deref().unwrap_or(""));
         let proposed_tokens = tokenize_for_similarity(&proposed_signature);
         if !proposed_tokens.is_empty() {
             let existing_threads = queries::ListAgentThreadsQuery::new(

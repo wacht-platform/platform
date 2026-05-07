@@ -87,7 +87,21 @@ pub struct ThreadExecutionContext {
 }
 
 impl ThreadExecutionContext {
+    fn agent_override_for(&self, role: LlmRole) -> Option<&models::AgentModelOverride> {
+        let candidate = match role {
+            LlmRole::Strong => self.agent.strong_model.as_ref(),
+            LlmRole::Weak => self.agent.weak_model.as_ref(),
+        }?;
+        if candidate.provider.trim().is_empty() || candidate.model.trim().is_empty() {
+            return None;
+        }
+        Some(candidate)
+    }
+
     fn llm_provider(&self, role: LlmRole) -> &str {
+        if let Some(over) = self.agent_override_for(role) {
+            return over.provider.as_str();
+        }
         let provider = match role {
             LlmRole::Strong => self.provider_keys.strong_llm_provider.as_deref(),
             LlmRole::Weak => self.provider_keys.weak_llm_provider.as_deref(),
@@ -98,6 +112,9 @@ impl ThreadExecutionContext {
     }
 
     fn resolve_model_name(&self, role: LlmRole) -> &str {
+        if let Some(over) = self.agent_override_for(role) {
+            return over.model.as_str();
+        }
         match role {
             LlmRole::Strong => self
                 .provider_keys

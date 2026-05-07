@@ -293,7 +293,8 @@ impl GeminiClient {
             if cache_request.reuse_only {
                 None
             } else {
-                self.refresh_explicit_cache(cache_request, cache_plan).await?
+                self.refresh_explicit_cache(cache_request, cache_plan)
+                    .await?
             }
         } else {
             None

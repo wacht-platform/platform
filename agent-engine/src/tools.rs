@@ -1,6 +1,7 @@
 mod code_runner;
 pub mod external;
 mod internal;
+pub mod internal_specs;
 pub mod mcp;
 mod platform;
 mod result_shape;
@@ -137,7 +138,8 @@ impl ToolExecutor {
             }
         };
 
-        self.apply_output_postprocess(final_result, filesystem).await
+        self.apply_output_postprocess(final_result, filesystem)
+            .await
     }
 
     async fn apply_output_postprocess(
@@ -212,9 +214,7 @@ impl ToolExecutor {
             } else {
                 format!(
                     "Output is structurally complex (depth={}, leaves={}, max_object_array_len={})",
-                    complexity.max_depth,
-                    complexity.leaf_count,
-                    complexity.max_object_array_len
+                    complexity.max_depth, complexity.leaf_count, complexity.max_object_array_len
                 )
             };
 

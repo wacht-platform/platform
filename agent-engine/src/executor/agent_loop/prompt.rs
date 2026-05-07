@@ -9,8 +9,8 @@ use dto::json::{
 };
 
 use crate::llm::{SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest};
-use templatekit::{AgentTemplates, render_prompt_text, render_template_only};
 use queries::GetProjectTaskBoardItemAssignmentByIdQuery;
+use templatekit::{render_prompt_text, render_template_only, AgentTemplates};
 const STEER_VISIBILITY_NUDGE_WINDOW: usize = 4;
 
 pub(crate) struct ThreadModeContext {
@@ -137,9 +137,7 @@ impl AgentExecutor {
             }
             _ => tokio::try_join!(
                 self.load_board_prompt_context(is_coordinator),
-                async {
-                    Ok::<_, AppError>(self.build_conversation_prompt_context().await)
-                },
+                async { Ok::<_, AppError>(self.build_conversation_prompt_context().await) },
                 self.load_tool_prompt_context(is_coordinator),
             )?,
         };
@@ -324,7 +322,10 @@ impl AgentExecutor {
             || has_field("task_journal_tail")
             || has_field("thread_assignment_queue");
 
-        task.insert("has_live_context".to_string(), serde_json::Value::Bool(has_any));
+        task.insert(
+            "has_live_context".to_string(),
+            serde_json::Value::Bool(has_any),
+        );
     }
 
     async fn load_thread_mode_context(&self) -> Result<ThreadModeContext, AppError> {
@@ -447,8 +448,7 @@ impl AgentExecutor {
             .iter()
             .map(KnowledgeBasePromptItem::from_knowledge_base)
             .collect::<Vec<_>>();
-        let (system_skill_prompt_items, agent_skill_prompt_items) =
-            (Vec::new(), Vec::new());
+        let (system_skill_prompt_items, agent_skill_prompt_items) = (Vec::new(), Vec::new());
 
         let connected_external_integrations = self.load_connected_external_integrations().await;
 

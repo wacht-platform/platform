@@ -501,12 +501,9 @@ pub async fn release_work_lease<'e, E>(executor: E, event_id: i64) -> Result<(),
 where
     E: sqlx::Executor<'e, Database = Postgres>,
 {
-    sqlx::query!(
-        "DELETE FROM work_lease WHERE event_id = $1",
-        event_id,
-    )
-    .execute(executor)
-    .await?;
+    sqlx::query!("DELETE FROM work_lease WHERE event_id = $1", event_id,)
+        .execute(executor)
+        .await?;
     Ok(())
 }
 

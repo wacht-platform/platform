@@ -73,10 +73,8 @@ impl AgentExecutor {
                 history.clone(),
                 config,
             );
-            request.forced_tool_names = Some(vec![
-                CONTINUE_TOOL.to_string(),
-                COMPLETE_TOOL.to_string(),
-            ]);
+            request.forced_tool_names =
+                Some(vec![CONTINUE_TOOL.to_string(), COMPLETE_TOOL.to_string()]);
             match self
                 .create_weak_llm()
                 .await?
@@ -136,7 +134,10 @@ impl AgentExecutor {
         for conv in conversations.into_iter().rev() {
             match &conv.content {
                 ConversationContent::UserMessage { message, .. } => {
-                    entries.push(SemanticLlmMessage::text("user", &format!("USER: {message}")));
+                    entries.push(SemanticLlmMessage::text(
+                        "user",
+                        &format!("USER: {message}"),
+                    ));
                 }
                 ConversationContent::Steer { message, .. } => {
                     entries.push(SemanticLlmMessage::text(
@@ -169,10 +170,7 @@ impl AgentExecutor {
                     entries.push(SemanticLlmMessage::text("user", "USER_ANSWERED_QUESTION"));
                 }
                 ConversationContent::ApprovalRequest { .. } => {
-                    entries.push(SemanticLlmMessage::text(
-                        "user",
-                        "AGENT_REQUESTED_APPROVAL",
-                    ));
+                    entries.push(SemanticLlmMessage::text("user", "AGENT_REQUESTED_APPROVAL"));
                 }
                 ConversationContent::ApprovalResponse { .. } => {
                     entries.push(SemanticLlmMessage::text("user", "USER_RESPONDED_APPROVAL"));

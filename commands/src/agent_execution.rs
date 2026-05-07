@@ -227,11 +227,7 @@ pub async fn write_execution_watch_key(
     kv.put(key.to_string(), token.as_bytes().to_vec().into())
         .await
         .map_err(|e| {
-            AppError::Internal(format!(
-                "Failed to set execution watch key {}: {}",
-                key, e
-            ))
+            AppError::Internal(format!("Failed to set execution watch key {}: {}", key, e))
         })?;
     Ok(())
 }
-

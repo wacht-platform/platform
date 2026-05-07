@@ -8,7 +8,7 @@ pub(crate) use super::core;
 use super::core::AgentExecutor;
 use crate::runtime::thread_execution_context::ThreadExecutionContext;
 use commands::{
-    CreateProjectTaskBoardItemCommand,
+    AttachProjectTaskBoardItemScheduleCommand, CreateProjectTaskBoardItemCommand,
     CreateProjectTaskBoardItemRelationCommand, CreateProjectTaskScheduleCommand,
     EnsureProjectTaskBoardCommand, ReconcileProjectTaskBoardItemCommand,
     UpdateProjectTaskBoardItemCommand, UpdateProjectTaskScheduleCommand,
@@ -154,7 +154,7 @@ impl AgentExecutor {
             None => None,
         };
 
-        let item = CreateProjectTaskBoardItemCommand {
+        let mut item = CreateProjectTaskBoardItemCommand {
             id: board_item_id,
             board_id,
             task_key: format!("TASK-{board_item_id}"),
@@ -207,7 +207,7 @@ impl AgentExecutor {
 
         if let Some((schedule_kind, next_run_at, interval_seconds)) = schedule {
             let project_id = self.ctx.get_thread().await?.project_id;
-            CreateProjectTaskScheduleCommand {
+            let schedule = CreateProjectTaskScheduleCommand {
                 id: self.ctx.app_state.sf.next_id()? as i64,
                 board_id,
                 project_id,
@@ -217,6 +217,15 @@ impl AgentExecutor {
                 interval_seconds,
                 next_run_at,
                 overlap_policy: None,
+                mounts: None,
+            }
+            .execute_with_db(&mut *tx)
+            .await?;
+            item = AttachProjectTaskBoardItemScheduleCommand {
+                board_id,
+                task_key: item.task_key.clone(),
+                schedule_id: schedule.id,
+                mounts: schedule.mounts,
             }
             .execute_with_db(&mut *tx)
             .await?;
@@ -239,7 +248,7 @@ impl AgentExecutor {
         schedule: Option<(String, chrono::DateTime<chrono::Utc>, Option<i64>)>,
     ) -> Result<ProjectTaskBoardItem, AppError> {
         let board_id = self.ensure_project_task_board_id().await?;
-        let item = UpdateProjectTaskBoardItemCommand {
+        let mut item = UpdateProjectTaskBoardItemCommand {
             board_id,
             task_key,
             status,
@@ -255,16 +264,24 @@ impl AgentExecutor {
                     .await?;
 
             if let Some(existing_schedule) = existing_schedule {
-                UpdateProjectTaskScheduleCommand::new(existing_schedule.id)
+                let schedule = UpdateProjectTaskScheduleCommand::new(existing_schedule.id)
                     .with_status(models::project_task_schedule::status::ACTIVE.to_string())
                     .with_interval_seconds(interval_seconds)
                     .with_next_run_at(next_run_at)
                     .with_template_payload(build_schedule_template_payload(&item))
                     .execute_with_db(self.ctx.app_state.db_router.writer())
                     .await?;
+                item = AttachProjectTaskBoardItemScheduleCommand {
+                    board_id,
+                    task_key: item.task_key.clone(),
+                    schedule_id: schedule.id,
+                    mounts: schedule.mounts,
+                }
+                .execute_with_db(self.ctx.app_state.db_router.writer())
+                .await?;
             } else {
                 let project_id = self.ctx.get_thread().await?.project_id;
-                CreateProjectTaskScheduleCommand {
+                let schedule = CreateProjectTaskScheduleCommand {
                     id: self.ctx.app_state.sf.next_id()? as i64,
                     board_id,
                     project_id,
@@ -274,6 +291,15 @@ impl AgentExecutor {
                     interval_seconds,
                     next_run_at,
                     overlap_policy: None,
+                    mounts: None,
+                }
+                .execute_with_db(self.ctx.app_state.db_router.writer())
+                .await?;
+                item = AttachProjectTaskBoardItemScheduleCommand {
+                    board_id,
+                    task_key: item.task_key.clone(),
+                    schedule_id: schedule.id,
+                    mounts: schedule.mounts,
                 }
                 .execute_with_db(self.ctx.app_state.db_router.writer())
                 .await?;

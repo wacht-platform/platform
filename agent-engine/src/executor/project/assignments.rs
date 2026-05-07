@@ -49,7 +49,8 @@ impl AgentExecutor {
     }
 
     fn assignment_status_is_active_plan(status: &str) -> bool {
-        Self::assignment_status_locks_chain(status) || Self::assignment_status_is_mutable_plan(status)
+        Self::assignment_status_locks_chain(status)
+            || Self::assignment_status_is_mutable_plan(status)
     }
 
     fn normalize_planned_assignment_status(status: Option<&str>, index: usize) -> String {
@@ -144,9 +145,7 @@ impl AgentExecutor {
                         matched.id,
                         models::project_task_board::assignment_status::AVAILABLE.to_string(),
                     )
-                    .with_note(
-                        "Coordinator re-issued plan; rewake executor".to_string(),
-                    )
+                    .with_note("Coordinator re-issued plan; rewake executor".to_string())
                     .execute_with_deps(&deps)
                     .await?;
                 }
