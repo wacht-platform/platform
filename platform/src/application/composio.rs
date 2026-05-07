@@ -672,13 +672,12 @@ pub async fn list_composio_tools(
     toolkit_filter: Option<Vec<String>>,
 ) -> Result<ComposioToolListResponse, AppError> {
     let filter_ref = toolkit_filter.as_deref();
-    let candidates =
-        agent_engine::tools::external::list_external_tools_for_deployment(
-            app_state,
-            deployment_id,
-            filter_ref,
-        )
-        .await?;
+    let candidates = agent_engine::tools::external::list_external_tools_for_deployment(
+        app_state,
+        deployment_id,
+        filter_ref,
+    )
+    .await?;
 
     let tools = candidates
         .into_iter()

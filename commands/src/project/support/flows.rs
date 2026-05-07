@@ -200,13 +200,19 @@ pub(in crate::project) async fn create_staging_deployment_for_project<D>(
     app_name: String,
     auth_methods: &[String],
     pulse_usage_disabled: bool,
+    product_id: Option<&str>,
     max_staging_deployments_per_project: i64,
 ) -> Result<StagingDeploymentInsertedRow, AppError>
 where
     D: HasIdProvider + ?Sized,
 {
     ProjectValidator::validate_auth_methods(auth_methods)?;
-    ensure_phone_auth_allowed(auth_methods, pulse_usage_disabled)?;
+    ensure_phone_auth_allowed(
+        auth_methods,
+        pulse_usage_disabled,
+        product_id,
+        "staging deployments",
+    )?;
 
     let staging_count = queries::StagingDeploymentCountByProjectQuery::builder()
         .project_id(project_id)

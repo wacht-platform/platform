@@ -1,4 +1,5 @@
 use super::*;
+use models::plan_features::{PlanFeature, PlanTier};
 pub(in crate::project) fn next_id_from<D>(deps: &D) -> Result<i64, AppError>
 where
     D: HasIdProvider + ?Sized,
@@ -38,6 +39,16 @@ pub(in crate::project) fn includes_phone_auth(auth_methods: &[String]) -> bool {
     auth_methods.iter().any(|method| method == "phone")
 }
 
+pub(in crate::project) fn product_has_feature(
+    product_id: Option<&str>,
+    feature: PlanFeature,
+) -> bool {
+    product_id
+        .and_then(PlanTier::from_product_id)
+        .map(|tier| tier.has_feature(feature))
+        .unwrap_or(false)
+}
+
 pub(in crate::project) fn ensure_billing_status_active(
     status: &str,
     target: &str,
@@ -55,11 +66,20 @@ pub(in crate::project) fn ensure_billing_status_active(
 pub(in crate::project) fn ensure_phone_auth_allowed(
     auth_methods: &[String],
     pulse_usage_disabled: bool,
+    product_id: Option<&str>,
+    target: &str,
 ) -> Result<(), AppError> {
+    if includes_phone_auth(auth_methods) && !product_has_feature(product_id, PlanFeature::PhoneAuth)
+    {
+        return Err(AppError::Validation(format!(
+            "Phone authentication is not available on the current plan for {target}"
+        )));
+    }
+
     if includes_phone_auth(auth_methods) && pulse_usage_disabled {
-        return Err(AppError::Validation(
-            "Prepaid recharge is required before enabling phone authentication for staging deployments".to_string(),
-        ));
+        return Err(AppError::Validation(format!(
+            "Prepaid recharge is required before enabling phone authentication for {target}"
+        )));
     }
 
     Ok(())

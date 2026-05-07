@@ -46,6 +46,12 @@ impl CreateProductionDeploymentCommand {
         let project = load_project_for_production(self.project_id, tx.as_mut()).await?;
 
         ensure_billing_status_active(&project.status, "deployment")?;
+        ensure_phone_auth_allowed(
+            &self.auth_methods,
+            project.pulse_usage_disabled,
+            project.product_id.as_deref(),
+            "production deployments",
+        )?;
         ensure_production_deployment_is_unique(self.project_id, &self.custom_domain, tx.as_mut())
             .await?;
 

@@ -74,6 +74,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             self.name.clone(),
             &self.auth_methods,
             billing_account.pulse_usage_disabled,
+            billing_account.product_id.as_deref(),
             billing_account.max_staging_deployments_per_project,
         )
         .await?;

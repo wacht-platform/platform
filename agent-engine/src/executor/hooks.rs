@@ -38,12 +38,8 @@ impl HookKind {
             (HookKind::ExecutionEnd, HookStepStatus::Succeeded) => {
                 "agent.execution_end_hook.succeeded"
             }
-            (HookKind::ExecutionEnd, HookStepStatus::Failed) => {
-                "agent.execution_end_hook.failed"
-            }
-            (HookKind::ExecutionEnd, HookStepStatus::Skipped) => {
-                "agent.execution_end_hook.skipped"
-            }
+            (HookKind::ExecutionEnd, HookStepStatus::Failed) => "agent.execution_end_hook.failed",
+            (HookKind::ExecutionEnd, HookStepStatus::Skipped) => "agent.execution_end_hook.skipped",
         }
     }
 }
@@ -84,7 +80,10 @@ impl AgentExecutor {
 
         for (index, step) in steps.into_iter().enumerate() {
             let merged_input = merge_runtime_context(&step.args, &runtime_context);
-            match self.run_hook_step(&step.tool_name, merged_input.clone()).await {
+            match self
+                .run_hook_step(&step.tool_name, merged_input.clone())
+                .await
+            {
                 Ok(HookStepOutcome::Success(output)) => {
                     if let Err(e) = self
                         .record_hook_success(&step.tool_name, &merged_input, &output)
@@ -167,7 +166,11 @@ impl AgentExecutor {
             .iter()
             .find(|t| t.name == tool_name)
             .cloned()
-            .or_else(|| self.virtual_tool_cache.get(&tool_lookup_id(self, tool_name)).cloned());
+            .or_else(|| {
+                self.virtual_tool_cache
+                    .get(&tool_lookup_id(self, tool_name))
+                    .cloned()
+            });
 
         let Some(tool) = tool else {
             if tool_name.starts_with(VIRTUAL_TOOL_NAME_PREFIX) {
@@ -182,12 +185,9 @@ impl AgentExecutor {
 
         let request = AgentExecutor::build_tool_call_request(&tool, input)?;
 
-        let exec_fut = self.tool_executor.execute_tool_request(
-            &tool,
-            &request,
-            &self.filesystem,
-            &self.shell,
-        );
+        let exec_fut =
+            self.tool_executor
+                .execute_tool_request(&tool, &request, &self.filesystem, &self.shell);
         match timeout(HOOK_STEP_TIMEOUT, exec_fut).await {
             Ok(Ok(output)) => Ok(HookStepOutcome::Success(output)),
             Ok(Err(e)) => Err(e),

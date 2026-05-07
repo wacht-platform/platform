@@ -120,10 +120,7 @@ impl GetAiAgentsQuery {
                             agent.strong_model_provider,
                             agent.strong_model,
                         ),
-                        weak_model: build_override(
-                            agent.weak_model_provider,
-                            agent.weak_model,
-                        ),
+                        weak_model: build_override(agent.weak_model_provider, agent.weak_model),
                         hooks: agent.hooks.0,
                         require_approval_mcp: agent.require_approval_mcp,
                         require_approval_virtual: agent.require_approval_virtual,
@@ -184,10 +181,7 @@ impl GetAiAgentsQuery {
                             agent.strong_model_provider,
                             agent.strong_model,
                         ),
-                        weak_model: build_override(
-                            agent.weak_model_provider,
-                            agent.weak_model,
-                        ),
+                        weak_model: build_override(agent.weak_model_provider, agent.weak_model),
                         hooks: agent.hooks.0,
                         require_approval_mcp: agent.require_approval_mcp,
                         require_approval_virtual: agent.require_approval_virtual,

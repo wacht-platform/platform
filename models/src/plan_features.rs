@@ -9,6 +9,7 @@ pub enum PlanFeature {
     AiTools,
     AiKnowledgeBase,
     ApiKeys,
+    PhoneAuth,
     Organizations,
     Workspaces,
 }
@@ -33,6 +34,15 @@ impl PlanTier {
         }
     }
 
+    pub fn from_plan_name(plan_name: &str) -> Option<Self> {
+        match plan_name.to_ascii_lowercase().as_str() {
+            "starter" => Some(Self::Starter),
+            "growth" => Some(Self::Growth),
+            "pro" => Some(Self::Pro),
+            _ => None,
+        }
+    }
+
     pub fn features(&self) -> HashSet<PlanFeature> {
         use PlanFeature::*;
 
@@ -50,11 +60,14 @@ impl PlanTier {
                     AiTools,
                     AiKnowledgeBase,
                     ApiKeys,
+                    PhoneAuth,
                     Organizations,
                     Workspaces,
                 ])
             }
-            PlanTier::Pro => HashSet::from([Webhooks, ApiKeys, Organizations, Workspaces]),
+            PlanTier::Pro => {
+                HashSet::from([Webhooks, ApiKeys, PhoneAuth, Organizations, Workspaces])
+            }
         }
     }
 
@@ -74,6 +87,7 @@ mod tests {
         assert!(!plan.has_feature(PlanFeature::Webhooks));
         assert!(!plan.has_feature(PlanFeature::AiAgents));
         assert!(!plan.has_feature(PlanFeature::ApiKeys));
+        assert!(!plan.has_feature(PlanFeature::PhoneAuth));
         assert!(plan.has_feature(PlanFeature::Organizations));
         assert!(plan.has_feature(PlanFeature::Workspaces));
     }
@@ -85,6 +99,7 @@ mod tests {
         assert!(plan.has_feature(PlanFeature::Webhooks));
         assert!(plan.has_feature(PlanFeature::AiAgents));
         assert!(plan.has_feature(PlanFeature::ApiKeys));
+        assert!(plan.has_feature(PlanFeature::PhoneAuth));
         assert!(plan.has_feature(PlanFeature::Organizations));
     }
 
@@ -95,6 +110,7 @@ mod tests {
         assert!(plan.has_feature(PlanFeature::Webhooks));
         assert!(!plan.has_feature(PlanFeature::AiAgents));
         assert!(plan.has_feature(PlanFeature::ApiKeys));
+        assert!(plan.has_feature(PlanFeature::PhoneAuth));
         assert!(plan.has_feature(PlanFeature::Organizations));
     }
 }

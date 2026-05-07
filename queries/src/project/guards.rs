@@ -2,6 +2,7 @@ use super::*;
 pub struct BillingAccountForOwnerLockResult {
     pub id: i64,
     pub status: String,
+    pub product_id: Option<String>,
     pub pulse_usage_disabled: bool,
     pub max_projects_per_account: i64,
     pub max_staging_deployments_per_project: i64,
@@ -37,14 +38,16 @@ impl BillingAccountForOwnerLockQuery {
         let row = sqlx::query!(
             r#"
             SELECT
-                id,
-                status,
-                COALESCE(pulse_usage_disabled, false) AS "pulse_usage_disabled!",
-                COALESCE((to_jsonb(billing_accounts) ->> 'max_projects_per_account')::BIGINT, 10) AS "max_projects_per_account!",
-                COALESCE((to_jsonb(billing_accounts) ->> 'max_staging_deployments_per_project')::BIGINT, 3) AS "max_staging_deployments_per_project!"
-            FROM billing_accounts
-            WHERE owner_id = $1
-            FOR UPDATE
+                ba.id,
+                ba.status,
+                s.product_id,
+                COALESCE(ba.pulse_usage_disabled, false) AS "pulse_usage_disabled!",
+                COALESCE((to_jsonb(ba) ->> 'max_projects_per_account')::BIGINT, 10) AS "max_projects_per_account!",
+                COALESCE((to_jsonb(ba) ->> 'max_staging_deployments_per_project')::BIGINT, 3) AS "max_staging_deployments_per_project!"
+            FROM billing_accounts ba
+            LEFT JOIN subscriptions s ON s.billing_account_id = ba.id AND s.status = 'active'
+            WHERE ba.owner_id = $1
+            FOR UPDATE OF ba
             "#,
             owner_id
         )
@@ -54,6 +57,7 @@ impl BillingAccountForOwnerLockQuery {
         Ok(row.map(|r| BillingAccountForOwnerLockResult {
             id: r.id,
             status: r.status,
+            product_id: r.product_id,
             pulse_usage_disabled: r.pulse_usage_disabled,
             max_projects_per_account: r.max_projects_per_account,
             max_staging_deployments_per_project: r.max_staging_deployments_per_project,
@@ -103,6 +107,7 @@ impl ProjectsCountByBillingAccountQuery {
 pub struct ProjectWithBillingForStagingRow {
     pub name: String,
     pub status: String,
+    pub product_id: Option<String>,
     pub pulse_usage_disabled: bool,
     pub max_staging_deployments_per_project: i64,
 }
@@ -138,10 +143,12 @@ impl ProjectWithBillingForStagingQuery {
             SELECT
                 p.name,
                 ba.status,
+                s.product_id,
                 COALESCE(ba.pulse_usage_disabled, false) AS "pulse_usage_disabled!",
                 COALESCE((to_jsonb(ba) ->> 'max_staging_deployments_per_project')::BIGINT, 3) AS "max_staging_deployments_per_project!"
             FROM projects p
             JOIN billing_accounts ba ON p.billing_account_id = ba.id
+            LEFT JOIN subscriptions s ON s.billing_account_id = ba.id AND s.status = 'active'
             WHERE p.id = $1 AND p.deleted_at IS NULL
             "#,
             project_id
@@ -152,6 +159,7 @@ impl ProjectWithBillingForStagingQuery {
         Ok(row.map(|r| ProjectWithBillingForStagingRow {
             name: r.name,
             status: r.status,
+            product_id: r.product_id,
             pulse_usage_disabled: r.pulse_usage_disabled,
             max_staging_deployments_per_project: r.max_staging_deployments_per_project,
         }))
@@ -195,6 +203,8 @@ impl StagingDeploymentCountByProjectQuery {
 pub struct ProjectForProductionRow {
     pub name: String,
     pub status: String,
+    pub product_id: Option<String>,
+    pub pulse_usage_disabled: bool,
 }
 
 #[derive(Default)]
@@ -231,6 +241,8 @@ impl ProjectForProductionQuery {
         Ok(row.map(|r| ProjectForProductionRow {
             name: r.name,
             status: r.status,
+            product_id: r.product_id,
+            pulse_usage_disabled: r.pulse_usage_disabled,
         }))
     }
 }
