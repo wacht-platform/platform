@@ -339,7 +339,7 @@ async fn discover_tools_from_connection(
                     .map(|d: std::borrow::Cow<'_, str>| d.into_owned()),
                 tool_type: AiToolType::Mcp,
                 deployment_id,
-                requires_user_approval: false,
+                approval_action: models::ApprovalAction::default(),
                 configuration: AiToolConfiguration::Mcp(McpToolConfiguration {
                     mcp_server_id: server_id,
                     remote_tool_name: tool.name.to_string(),

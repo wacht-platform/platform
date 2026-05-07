@@ -1,0 +1,121 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ai_agents\n            SET\n                updated_at = $1,\n                name = COALESCE($2, name),\n                description = COALESCE($3, description),\n                configuration = COALESCE($4, configuration),\n                strong_model_provider = CASE\n                    WHEN $7::bool THEN NULL\n                    WHEN $8::text IS NOT NULL THEN $8\n                    ELSE strong_model_provider\n                END,\n                strong_model = CASE\n                    WHEN $7::bool THEN NULL\n                    WHEN $9::text IS NOT NULL THEN $9\n                    ELSE strong_model\n                END,\n                weak_model_provider = CASE\n                    WHEN $10::bool THEN NULL\n                    WHEN $11::text IS NOT NULL THEN $11\n                    ELSE weak_model_provider\n                END,\n                weak_model = CASE\n                    WHEN $10::bool THEN NULL\n                    WHEN $12::text IS NOT NULL THEN $12\n                    ELSE weak_model\n                END,\n                hooks = COALESCE($13, hooks),\n                require_approval_mcp = COALESCE($14, require_approval_mcp),\n                require_approval_virtual = COALESCE($15, require_approval_virtual),\n                tool_approval_rules = COALESCE($16, tool_approval_rules)\n            WHERE id = $5 AND deployment_id = $6\n            RETURNING id, created_at, updated_at, name, description, deployment_id,\n                      configuration,\n                      strong_model_provider, strong_model,\n                      weak_model_provider, weak_model,\n                      hooks as \"hooks!: Json<AgentHooksConfig>\",\n                      require_approval_mcp,\n                      require_approval_virtual,\n                      tool_approval_rules as \"tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "configuration",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "strong_model_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "strong_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "weak_model_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "weak_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "hooks!: Json<AgentHooksConfig>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 12,
+        "name": "require_approval_mcp",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 13,
+        "name": "require_approval_virtual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 14,
+        "name": "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Bool",
+        "Bool",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "aab11de53b834051ab6162641a92a651fcc65890f12d00565ce6f7bb660ff663"
+}

@@ -1,10 +1,11 @@
 use super::core::AgentExecutor;
 use super::tool_params::{PlannedToolCall, ResolvedToolCall, ToolExecutionLoopOutcome};
 
+use crate::tools::approval::resolve_approval_action;
 use commands::ConsumeOnceApprovalGrantForThreadCommand;
 use common::error::AppError;
 use dto::json::agent_executor::{ApprovalRequestData, ToolCallRequest};
-use models::{AiTool, ConversationContent, ConversationMessageType};
+use models::{AiTool, ApprovalAction, ConversationContent, ConversationMessageType};
 use serde_json::Value;
 use std::collections::HashSet;
 impl AgentExecutor {
@@ -183,22 +184,28 @@ impl AgentExecutor {
         let mut gated_tool_names = Vec::new();
 
         for call in planned_calls {
-            if !seen.insert(call.tool_name().to_string()) {
+            let tool_name = call.tool_name().to_string();
+            if !seen.insert(tool_name.clone()) {
                 continue;
             }
 
-            let Some(tool) = self
+            if !matches!(
+                resolve_approval_action(&self.ctx.agent, &tool_name),
+                ApprovalAction::Review
+            ) {
+                continue;
+            }
+
+            let already_approved = self
                 .ctx
                 .agent
                 .tools
                 .iter()
-                .find(|tool| tool.name == call.tool_name())
-            else {
-                continue;
-            };
-
-            if tool.requires_user_approval && !effective_approved_tool_ids.contains(&tool.id) {
-                gated_tool_names.push(call.tool_name().to_string());
+                .find(|tool| tool.name == tool_name)
+                .map(|tool| effective_approved_tool_ids.contains(&tool.id))
+                .unwrap_or(false);
+            if !already_approved {
+                gated_tool_names.push(tool_name);
             }
         }
 
@@ -229,8 +236,14 @@ impl AgentExecutor {
 
     async fn authorize_tool_call(&mut self, tool_name: &str) -> Result<AiTool, AppError> {
         let tool = self.find_available_tool(tool_name).await?;
-        if !tool.requires_user_approval {
-            return Ok(tool);
+        match resolve_approval_action(&self.ctx.agent, tool_name) {
+            ApprovalAction::Allow => return Ok(tool),
+            ApprovalAction::Deny => {
+                return Err(AppError::BadRequest(format!(
+                    "Tool '{tool_name}' denied by agent approval policy"
+                )));
+            }
+            ApprovalAction::Review => {}
         }
 
         self.refresh_inherited_approval_state().await?;

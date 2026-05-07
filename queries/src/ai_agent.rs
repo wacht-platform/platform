@@ -1,5 +1,8 @@
 use common::error::AppError;
-use models::{AgentHooksConfig, AgentModelOverride, AiAgentWithDetails, AiAgentWithFeatures};
+use models::{
+    AgentHooksConfig, AgentModelOverride, AgentToolApprovalRule, AiAgentWithDetails,
+    AiAgentWithFeatures,
+};
 use sqlx::types::Json;
 
 fn build_override(provider: Option<String>, model: Option<String>) -> Option<AgentModelOverride> {
@@ -71,6 +74,9 @@ impl GetAiAgentsQuery {
                     a.strong_model_provider, a.strong_model,
                     a.weak_model_provider, a.weak_model,
                     a.hooks as "hooks!: Json<AgentHooksConfig>",
+                    a.require_approval_mcp,
+                    a.require_approval_virtual,
+                    a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
                     COALESCE((
                         SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                         FROM ai_agent_sub_agents rel
@@ -119,6 +125,9 @@ impl GetAiAgentsQuery {
                             agent.weak_model,
                         ),
                         hooks: agent.hooks.0,
+                        require_approval_mcp: agent.require_approval_mcp,
+                        require_approval_virtual: agent.require_approval_virtual,
+                        tool_approval_rules: agent.tool_approval_rules.0,
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?)
@@ -131,6 +140,9 @@ impl GetAiAgentsQuery {
                     a.strong_model_provider, a.strong_model,
                     a.weak_model_provider, a.weak_model,
                     a.hooks as "hooks!: Json<AgentHooksConfig>",
+                    a.require_approval_mcp,
+                    a.require_approval_virtual,
+                    a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
                     COALESCE((
                         SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                         FROM ai_agent_sub_agents rel
@@ -177,6 +189,9 @@ impl GetAiAgentsQuery {
                             agent.weak_model,
                         ),
                         hooks: agent.hooks.0,
+                        require_approval_mcp: agent.require_approval_mcp,
+                        require_approval_virtual: agent.require_approval_virtual,
+                        tool_approval_rules: agent.tool_approval_rules.0,
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?)
@@ -209,6 +224,9 @@ impl GetAiAgentByIdQuery {
                 a.strong_model_provider, a.strong_model,
                 a.weak_model_provider, a.weak_model,
                 a.hooks as "hooks!: Json<AgentHooksConfig>",
+                    a.require_approval_mcp,
+                    a.require_approval_virtual,
+                    a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
                 COALESCE((
                     SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                     FROM ai_agent_sub_agents rel
@@ -244,6 +262,9 @@ impl GetAiAgentByIdQuery {
             strong_model: build_override(agent.strong_model_provider, agent.strong_model),
             weak_model: build_override(agent.weak_model_provider, agent.weak_model),
             hooks: agent.hooks.0,
+            require_approval_mcp: agent.require_approval_mcp,
+            require_approval_virtual: agent.require_approval_virtual,
+            tool_approval_rules: agent.tool_approval_rules.0,
         })
     }
 }
@@ -279,6 +300,9 @@ impl GetAiAgentsByIdsQuery {
                 a.strong_model_provider, a.strong_model,
                 a.weak_model_provider, a.weak_model,
                 a.hooks as "hooks!: Json<AgentHooksConfig>",
+                    a.require_approval_mcp,
+                    a.require_approval_virtual,
+                    a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
                 COALESCE((
                     SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                     FROM ai_agent_sub_agents rel
@@ -317,6 +341,9 @@ impl GetAiAgentsByIdsQuery {
                 strong_model: build_override(row.strong_model_provider, row.strong_model),
                 weak_model: build_override(row.weak_model_provider, row.weak_model),
                 hooks: row.hooks.0,
+                require_approval_mcp: row.require_approval_mcp,
+                require_approval_virtual: row.require_approval_virtual,
+                tool_approval_rules: row.tool_approval_rules.0,
             });
         }
 
@@ -350,6 +377,9 @@ impl GetAiAgentByIdWithFeatures {
                 a.strong_model_provider, a.strong_model,
                 a.weak_model_provider, a.weak_model,
                 a.hooks as "hooks!: Json<AgentHooksConfig>",
+                    a.require_approval_mcp,
+                    a.require_approval_virtual,
+                    a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
                 COALESCE((
                     SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                     FROM ai_agent_sub_agents rel
@@ -369,7 +399,7 @@ impl GetAiAgentByIdWithFeatures {
                         'description', t.description,
                         'tool_type', t.tool_type,
                         'deployment_id', t.deployment_id::text,
-                        'requires_user_approval', t.requires_user_approval,
+                        'approval_action', at.approval_action,
                         'configuration', t.configuration
                     )
                 ), '[]'::jsonb) as list
@@ -426,6 +456,9 @@ impl GetAiAgentByIdWithFeatures {
             strong_model: build_override(row.strong_model_provider, row.strong_model),
             weak_model: build_override(row.weak_model_provider, row.weak_model),
             hooks: row.hooks.0,
+            require_approval_mcp: row.require_approval_mcp,
+            require_approval_virtual: row.require_approval_virtual,
+            tool_approval_rules: row.tool_approval_rules.0,
         })
     }
 }

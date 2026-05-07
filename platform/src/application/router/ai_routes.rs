@@ -69,7 +69,9 @@ pub(super) fn ai_routes() -> Router<AppState> {
         )
         .route(
             "/ai/agents/{agent_id}/tools/{tool_id}",
-            post(api::ai_tools::attach_tool_to_agent).delete(api::ai_tools::detach_tool_from_agent),
+            post(api::ai_tools::attach_tool_to_agent)
+                .patch(api::ai_tools::update_agent_tool_approval_action)
+                .delete(api::ai_tools::detach_tool_from_agent),
         )
         .route(
             "/ai/knowledge-bases",

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_agent_tools (deployment_id, agent_id, tool_id, approval_action)\n            SELECT $1, a.id, t.id, $4\n            FROM ai_agents a\n            JOIN ai_tools t ON t.id = $3 AND t.deployment_id = $1\n            WHERE a.id = $2 AND a.deployment_id = $1\n            ON CONFLICT DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "17c198a982040bc8e699cc0eb168d2ec4268e538a99a0af27c6de4b6e5ddc009"
+}

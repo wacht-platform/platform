@@ -1,10 +1,17 @@
 use sqlx::Row;
 
 use common::error::AppError;
-use models::{AiTool, AiToolConfiguration, AiToolType, AiToolWithDetails};
+use models::{AiTool, AiToolConfiguration, AiToolType, AiToolWithDetails, ApprovalAction};
 
 fn parse_ai_tool_configuration(value: serde_json::Value) -> AiToolConfiguration {
     serde_json::from_value(value).unwrap_or_default()
+}
+
+fn parse_approval_action(value: Option<String>) -> ApprovalAction {
+    value
+        .as_deref()
+        .and_then(ApprovalAction::from_str)
+        .unwrap_or_default()
 }
 
 fn build_ai_tool(
@@ -15,8 +22,8 @@ fn build_ai_tool(
     description: Option<String>,
     tool_type: AiToolType,
     deployment_id: i64,
-    requires_user_approval: bool,
     configuration: serde_json::Value,
+    approval_action: ApprovalAction,
 ) -> AiTool {
     AiTool {
         id,
@@ -26,8 +33,8 @@ fn build_ai_tool(
         description,
         tool_type,
         deployment_id,
-        requires_user_approval,
         configuration: parse_ai_tool_configuration(configuration),
+        approval_action,
     }
 }
 
@@ -39,7 +46,6 @@ fn build_ai_tool_with_details(
     description: Option<String>,
     tool_type: AiToolType,
     deployment_id: i64,
-    requires_user_approval: bool,
     configuration: serde_json::Value,
 ) -> AiToolWithDetails {
     AiToolWithDetails {
@@ -50,8 +56,8 @@ fn build_ai_tool_with_details(
         description,
         tool_type,
         deployment_id,
-        requires_user_approval,
         configuration: parse_ai_tool_configuration(configuration),
+        approval_action: ApprovalAction::default(),
     }
 }
 
@@ -97,7 +103,7 @@ impl GetAiToolsQuery {
         let mut query = r#"
             SELECT
                 t.id, t.created_at, t.updated_at, t.name, t.description,
-                t.tool_type, t.deployment_id, t.requires_user_approval, t.configuration,
+                t.tool_type, t.deployment_id, t.configuration,
                 COALESCE(a.agents_count, 0) as agents_count
             FROM ai_tools t
             LEFT JOIN (
@@ -156,7 +162,6 @@ impl GetAiToolsQuery {
                     row.get("description"),
                     AiToolType::from(row.get::<String, _>("tool_type")),
                     row.get("deployment_id"),
-                    row.get("requires_user_approval"),
                     row.get("configuration"),
                 )
             })
@@ -185,7 +190,7 @@ impl GetAiToolByIdQuery {
             r#"
             SELECT
                 t.id, t.created_at, t.updated_at, t.name, t.description,
-                t.tool_type, t.deployment_id, t.requires_user_approval, t.configuration,
+                t.tool_type, t.deployment_id, t.configuration,
                 COALESCE(a.agents_count, 0) as agents_count
             FROM ai_tools t
             LEFT JOIN (
@@ -210,7 +215,6 @@ impl GetAiToolByIdQuery {
             tool.description,
             AiToolType::from(tool.tool_type),
             tool.deployment_id,
-            tool.requires_user_approval,
             tool.configuration,
         ))
     }
@@ -237,7 +241,8 @@ impl GetAgentToolsQuery {
             r#"
             SELECT
                 t.id, t.created_at, t.updated_at, t.name, t.description,
-                t.tool_type, t.deployment_id, t.requires_user_approval, t.configuration
+                t.tool_type, t.deployment_id, t.configuration,
+                aat.approval_action
             FROM ai_tools t
             JOIN ai_agent_tools aat ON aat.tool_id = t.id
             WHERE t.deployment_id = $1 AND aat.agent_id = $2 AND aat.deployment_id = $1
@@ -261,8 +266,8 @@ impl GetAgentToolsQuery {
                     tool.description,
                     AiToolType::from(tool.tool_type),
                     tool.deployment_id,
-                    tool.requires_user_approval,
                     tool.configuration,
+                    parse_approval_action(Some(tool.approval_action)),
                 )
             })
             .collect())
@@ -284,7 +289,7 @@ impl GetToolByIdQuery {
     {
         let tool = sqlx::query!(
             r#"
-            SELECT 
+            SELECT
                 id,
                 created_at,
                 updated_at,
@@ -292,7 +297,6 @@ impl GetToolByIdQuery {
                 description,
                 deployment_id,
                 tool_type,
-                requires_user_approval,
                 configuration
             FROM ai_tools
             WHERE id = $1
@@ -316,8 +320,8 @@ impl GetToolByIdQuery {
             tool.description,
             AiToolType::from(tool.tool_type),
             tool.deployment_id,
-            tool.requires_user_approval,
             tool.configuration,
+            ApprovalAction::default(),
         ))
     }
 }
@@ -349,7 +353,7 @@ impl GetAiToolsByIdsQuery {
             .join(",");
 
         let query = format!(
-            "SELECT id, created_at, updated_at, name, description, tool_type, deployment_id, requires_user_approval, configuration
+            "SELECT id, created_at, updated_at, name, description, tool_type, deployment_id, configuration
              FROM ai_tools
              WHERE deployment_id = $1 AND id IN ({})",
             placeholders
@@ -377,8 +381,8 @@ impl GetAiToolsByIdsQuery {
                     row.get("description"),
                     AiToolType::from(row.get::<String, _>("tool_type")),
                     row.get("deployment_id"),
-                    row.get("requires_user_approval"),
                     row.get("configuration"),
+                    ApprovalAction::default(),
                 )
             })
             .collect())

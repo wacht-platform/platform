@@ -211,7 +211,7 @@ impl AgentExecutorBuilder {
                     description: Some(desc.to_string()),
                     tool_type: AiToolType::Internal,
                     deployment_id,
-                    requires_user_approval: false,
+                    approval_action: models::ApprovalAction::default(),
                     configuration: AiToolConfiguration::Internal(InternalToolConfiguration {
                         tool_type,
                         input_schema: Some(schema),

@@ -71,8 +71,31 @@ pub async fn attach_tool_to_agent(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentToolParams>,
 ) -> ApiResult<()> {
-    ai_tools_app::attach_tool_to_agent(&app_state, deployment_id, params.agent_id, params.tool_id)
-        .await?;
+    ai_tools_app::attach_tool_to_agent(
+        &app_state,
+        deployment_id,
+        params.agent_id,
+        params.tool_id,
+        models::ApprovalAction::default(),
+    )
+    .await?;
+    Ok(().into())
+}
+
+pub async fn update_agent_tool_approval_action(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentToolParams>,
+    Json(body): Json<dto::json::deployment::UpdateAgentToolApprovalActionRequest>,
+) -> ApiResult<()> {
+    ai_tools_app::update_agent_tool_approval_action(
+        &app_state,
+        deployment_id,
+        params.agent_id,
+        params.tool_id,
+        body.approval_action,
+    )
+    .await?;
     Ok(().into())
 }
 

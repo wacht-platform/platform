@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT\n                    a.id, a.created_at, a.updated_at, a.name, a.description,\n                    a.configuration, a.deployment_id,\n                    a.strong_model_provider, a.strong_model,\n                    a.weak_model_provider, a.weak_model,\n                    a.hooks as \"hooks!: Json<AgentHooksConfig>\",\n                    COALESCE((\n                        SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)\n                        FROM ai_agent_sub_agents rel\n                        WHERE rel.deployment_id = a.deployment_id\n                            AND rel.agent_id = a.id\n                    ), '[]'::jsonb) as \"sub_agents!: serde_json::Value\",\n                    COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as \"tools_count!\",\n                    COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as \"knowledge_bases_count!\"\n                FROM ai_agents a\n                WHERE a.deployment_id = $1\n                    AND (a.name ILIKE $2 OR a.description ILIKE $2)\n                ORDER BY a.created_at DESC\n                LIMIT $3 OFFSET $4\n                ",
+  "query": "\n            SELECT\n                a.id, a.created_at, a.updated_at, a.name, a.description,\n                a.configuration, a.deployment_id,\n                a.strong_model_provider, a.strong_model,\n                a.weak_model_provider, a.weak_model,\n                a.hooks as \"hooks!: Json<AgentHooksConfig>\",\n                    a.require_approval_mcp,\n                    a.require_approval_virtual,\n                    a.tool_approval_rules as \"tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>\",\n                COALESCE((\n                    SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)\n                    FROM ai_agent_sub_agents rel\n                    WHERE rel.deployment_id = a.deployment_id\n                        AND rel.agent_id = a.id\n                ), '[]'::jsonb) as \"sub_agents!: serde_json::Value\",\n                COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as \"tools_count!\",\n                COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as \"knowledge_bases_count!\"\n            FROM ai_agents a\n            WHERE a.id = $1 AND a.deployment_id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -65,24 +65,37 @@
       },
       {
         "ordinal": 12,
+        "name": "require_approval_mcp",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 13,
+        "name": "require_approval_virtual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 14,
+        "name": "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 15,
         "name": "sub_agents!: serde_json::Value",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 13,
+        "ordinal": 16,
         "name": "tools_count!",
         "type_info": "Int8"
       },
       {
-        "ordinal": 14,
+        "ordinal": 17,
         "name": "knowledge_bases_count!",
         "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Text",
         "Int8",
         "Int8"
       ]
@@ -100,10 +113,13 @@
       true,
       true,
       false,
+      false,
+      false,
+      false,
       null,
       null,
       null
     ]
   },
-  "hash": "379e8b8caee3931dbbe03d007703a1b60dbf4b0d4ca20576a505931b9358972e"
+  "hash": "57f57f1586d2d0eca057fd0986313fb732bc2b1ed545f5701854fe1cb7a6428a"
 }

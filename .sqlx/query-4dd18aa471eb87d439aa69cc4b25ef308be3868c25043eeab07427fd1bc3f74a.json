@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                t.id, t.created_at, t.updated_at, t.name, t.description,\n                t.tool_type, t.deployment_id, t.requires_user_approval, t.configuration\n            FROM ai_tools t\n            JOIN ai_agent_tools aat ON aat.tool_id = t.id\n            WHERE t.deployment_id = $1 AND aat.agent_id = $2 AND aat.deployment_id = $1\n            ORDER BY t.created_at DESC\n            ",
+  "query": "\n            SELECT\n                t.id, t.created_at, t.updated_at, t.name, t.description,\n                t.tool_type, t.deployment_id, t.configuration,\n                COALESCE(a.agents_count, 0) as agents_count\n            FROM ai_tools t\n            LEFT JOIN (\n                SELECT deployment_id, tool_id, COUNT(*) as agents_count\n                FROM ai_agent_tools\n                GROUP BY deployment_id, tool_id\n            ) a ON t.id = a.tool_id AND t.deployment_id = a.deployment_id\n            WHERE t.id = $1 AND t.deployment_id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -40,13 +40,13 @@
       },
       {
         "ordinal": 7,
-        "name": "requires_user_approval",
-        "type_info": "Bool"
+        "name": "configuration",
+        "type_info": "Jsonb"
       },
       {
         "ordinal": 8,
-        "name": "configuration",
-        "type_info": "Jsonb"
+        "name": "agents_count",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -64,8 +64,8 @@
       false,
       false,
       false,
-      false
+      null
     ]
   },
-  "hash": "c1bf39f79050c1d9c6089a8639ac9fd5a6bcc37dcff76cae0fae47dfa6a08fbc"
+  "hash": "4dd18aa471eb87d439aa69cc4b25ef308be3868c25043eeab07427fd1bc3f74a"
 }

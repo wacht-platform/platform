@@ -1,6 +1,8 @@
 use chrono::Utc;
 use common::{HasDbRouter, error::AppError};
-use models::{AgentHooksConfig, AgentModelOverride, AiAgent};
+use models::{
+    AgentHooksConfig, AgentModelOverride, AgentToolApprovalRule, AiAgent, ApprovalAction,
+};
 use sqlx::types::Json;
 use std::collections::BTreeSet;
 
@@ -21,6 +23,9 @@ pub struct CreateAiAgentCommand {
     pub strong_model: Option<AgentModelOverride>,
     pub weak_model: Option<AgentModelOverride>,
     pub hooks: Option<AgentHooksConfig>,
+    pub require_approval_mcp: Option<bool>,
+    pub require_approval_virtual: Option<bool>,
+    pub tool_approval_rules: Option<Vec<AgentToolApprovalRule>>,
 }
 
 impl CreateAiAgentCommand {
@@ -43,6 +48,9 @@ impl CreateAiAgentCommand {
             strong_model: None,
             weak_model: None,
             hooks: None,
+            require_approval_mcp: None,
+            require_approval_virtual: None,
+            tool_approval_rules: None,
         }
     }
 
@@ -73,6 +81,21 @@ impl CreateAiAgentCommand {
 
     pub fn with_hooks(mut self, hooks: AgentHooksConfig) -> Self {
         self.hooks = Some(hooks);
+        self
+    }
+
+    pub fn with_require_approval_mcp(mut self, value: bool) -> Self {
+        self.require_approval_mcp = Some(value);
+        self
+    }
+
+    pub fn with_require_approval_virtual(mut self, value: bool) -> Self {
+        self.require_approval_virtual = Some(value);
+        self
+    }
+
+    pub fn with_tool_approval_rules(mut self, rules: Vec<AgentToolApprovalRule>) -> Self {
+        self.tool_approval_rules = Some(rules);
         self
     }
 }
@@ -109,6 +132,9 @@ impl CreateAiAgentCommand {
             .map(|o| o.provider.trim().to_string());
         let weak_model = self.weak_model.as_ref().map(|o| o.model.trim().to_string());
         let hooks_value = Json(self.hooks.clone().unwrap_or_default());
+        let require_approval_mcp = self.require_approval_mcp.unwrap_or(false);
+        let require_approval_virtual = self.require_approval_virtual.unwrap_or(false);
+        let approval_rules_value = Json(self.tool_approval_rules.clone().unwrap_or_default());
 
         let mut tx = deps
             .db_router()
@@ -122,14 +148,18 @@ impl CreateAiAgentCommand {
             INSERT INTO ai_agents (
                 id, created_at, updated_at, name, description, deployment_id,
                 configuration, strong_model_provider, strong_model,
-                weak_model_provider, weak_model, hooks
+                weak_model_provider, weak_model, hooks,
+                require_approval_mcp, require_approval_virtual, tool_approval_rules
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING id, created_at, updated_at, name, description, deployment_id,
                       configuration,
                       strong_model_provider, strong_model,
                       weak_model_provider, weak_model,
-                      hooks as "hooks!: Json<AgentHooksConfig>"
+                      hooks as "hooks!: Json<AgentHooksConfig>",
+                      require_approval_mcp,
+                      require_approval_virtual,
+                      tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>"
             "#,
             agent_id,
             now,
@@ -143,6 +173,9 @@ impl CreateAiAgentCommand {
             weak_provider,
             weak_model,
             hooks_value as _,
+            require_approval_mcp,
+            require_approval_virtual,
+            approval_rules_value as _,
         )
         .fetch_one(&mut *tx)
         .await
@@ -172,6 +205,9 @@ impl CreateAiAgentCommand {
             strong_model: build_override(agent.strong_model_provider, agent.strong_model),
             weak_model: build_override(agent.weak_model_provider, agent.weak_model),
             hooks: agent.hooks.0,
+            require_approval_mcp: agent.require_approval_mcp,
+            require_approval_virtual: agent.require_approval_virtual,
+            tool_approval_rules: agent.tool_approval_rules.0,
         })
     }
 }
@@ -190,6 +226,9 @@ pub struct UpdateAiAgentCommand {
     pub weak_model: Option<AgentModelOverride>,
     pub clear_weak_model: bool,
     pub hooks: Option<AgentHooksConfig>,
+    pub require_approval_mcp: Option<bool>,
+    pub require_approval_virtual: Option<bool>,
+    pub tool_approval_rules: Option<Vec<AgentToolApprovalRule>>,
 }
 
 impl UpdateAiAgentCommand {
@@ -208,6 +247,9 @@ impl UpdateAiAgentCommand {
             weak_model: None,
             clear_weak_model: false,
             hooks: None,
+            require_approval_mcp: None,
+            require_approval_virtual: None,
+            tool_approval_rules: None,
         }
     }
 
@@ -269,6 +311,21 @@ impl UpdateAiAgentCommand {
         self.hooks = Some(hooks);
         self
     }
+
+    pub fn with_require_approval_mcp(mut self, value: bool) -> Self {
+        self.require_approval_mcp = Some(value);
+        self
+    }
+
+    pub fn with_require_approval_virtual(mut self, value: bool) -> Self {
+        self.require_approval_virtual = Some(value);
+        self
+    }
+
+    pub fn with_tool_approval_rules(mut self, rules: Vec<AgentToolApprovalRule>) -> Self {
+        self.tool_approval_rules = Some(rules);
+        self
+    }
 }
 
 impl UpdateAiAgentCommand {
@@ -311,6 +368,9 @@ impl UpdateAiAgentCommand {
             .map(|o| o.provider.trim().to_string());
         let weak_model = self.weak_model.as_ref().map(|o| o.model.trim().to_string());
         let hooks_value = self.hooks.clone().map(Json);
+        let require_approval_mcp = self.require_approval_mcp;
+        let require_approval_virtual = self.require_approval_virtual;
+        let approval_rules_value = self.tool_approval_rules.clone().map(Json);
 
         let mut tx = deps
             .db_router()
@@ -347,13 +407,19 @@ impl UpdateAiAgentCommand {
                     WHEN $12::text IS NOT NULL THEN $12
                     ELSE weak_model
                 END,
-                hooks = COALESCE($13, hooks)
+                hooks = COALESCE($13, hooks),
+                require_approval_mcp = COALESCE($14, require_approval_mcp),
+                require_approval_virtual = COALESCE($15, require_approval_virtual),
+                tool_approval_rules = COALESCE($16, tool_approval_rules)
             WHERE id = $5 AND deployment_id = $6
             RETURNING id, created_at, updated_at, name, description, deployment_id,
                       configuration,
                       strong_model_provider, strong_model,
                       weak_model_provider, weak_model,
-                      hooks as "hooks!: Json<AgentHooksConfig>"
+                      hooks as "hooks!: Json<AgentHooksConfig>",
+                      require_approval_mcp,
+                      require_approval_virtual,
+                      tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>"
             "#,
             now,
             self.name,
@@ -368,6 +434,9 @@ impl UpdateAiAgentCommand {
             weak_provider,
             weak_model,
             hooks_value as _,
+            require_approval_mcp,
+            require_approval_virtual,
+            approval_rules_value as _,
         )
         .fetch_one(&mut *tx)
         .await
@@ -399,6 +468,9 @@ impl UpdateAiAgentCommand {
             strong_model: build_override(agent.strong_model_provider, agent.strong_model),
             weak_model: build_override(agent.weak_model_provider, agent.weak_model),
             hooks: agent.hooks.0,
+            require_approval_mcp: agent.require_approval_mcp,
+            require_approval_virtual: agent.require_approval_virtual,
+            tool_approval_rules: agent.tool_approval_rules.0,
         })
     }
 }
@@ -407,6 +479,7 @@ pub struct AttachToolToAgentCommand {
     pub deployment_id: i64,
     pub agent_id: i64,
     pub tool_id: i64,
+    pub approval_action: ApprovalAction,
 }
 
 impl AttachToolToAgentCommand {
@@ -415,17 +488,24 @@ impl AttachToolToAgentCommand {
             deployment_id,
             agent_id,
             tool_id,
+            approval_action: ApprovalAction::default(),
         }
+    }
+
+    pub fn with_approval_action(mut self, action: ApprovalAction) -> Self {
+        self.approval_action = action;
+        self
     }
 
     pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
+        let action = self.approval_action.as_str().to_string();
         sqlx::query!(
             r#"
-            INSERT INTO ai_agent_tools (deployment_id, agent_id, tool_id)
-            SELECT $1, a.id, t.id
+            INSERT INTO ai_agent_tools (deployment_id, agent_id, tool_id, approval_action)
+            SELECT $1, a.id, t.id, $4
             FROM ai_agents a
             JOIN ai_tools t ON t.id = $3 AND t.deployment_id = $1
             WHERE a.id = $2 AND a.deployment_id = $1
@@ -433,12 +513,65 @@ impl AttachToolToAgentCommand {
             "#,
             self.deployment_id,
             self.agent_id,
-            self.tool_id
+            self.tool_id,
+            action,
         )
         .execute(executor)
         .await
         .map_err(AppError::Database)?;
 
+        Ok(())
+    }
+}
+
+pub struct UpdateAgentToolApprovalActionCommand {
+    pub deployment_id: i64,
+    pub agent_id: i64,
+    pub tool_id: i64,
+    pub approval_action: ApprovalAction,
+}
+
+impl UpdateAgentToolApprovalActionCommand {
+    pub fn new(
+        deployment_id: i64,
+        agent_id: i64,
+        tool_id: i64,
+        approval_action: ApprovalAction,
+    ) -> Self {
+        Self {
+            deployment_id,
+            agent_id,
+            tool_id,
+            approval_action,
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let action = self.approval_action.as_str().to_string();
+        let result = sqlx::query!(
+            r#"
+            UPDATE ai_agent_tools
+            SET approval_action = $4
+            WHERE deployment_id = $1 AND agent_id = $2 AND tool_id = $3
+            "#,
+            self.deployment_id,
+            self.agent_id,
+            self.tool_id,
+            action,
+        )
+        .execute(executor)
+        .await
+        .map_err(AppError::Database)?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!(
+                "Tool {} is not attached to agent {}",
+                self.tool_id, self.agent_id
+            )));
+        }
         Ok(())
     }
 }

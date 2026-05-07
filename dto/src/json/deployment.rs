@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use models::{AgentHooksConfig, AgentModelOverride, AiToolConfiguration, FlexibleI64};
+use models::{
+    AgentHooksConfig, AgentModelOverride, AgentToolApprovalRule, AiToolConfiguration,
+    ApprovalAction, FlexibleI64,
+};
 
 #[derive(Deserialize)]
 pub struct CreateAgentRequest {
@@ -14,6 +17,9 @@ pub struct CreateAgentRequest {
     pub strong_model: Option<AgentModelOverride>,
     pub weak_model: Option<AgentModelOverride>,
     pub hooks: Option<AgentHooksConfig>,
+    pub require_approval_mcp: Option<bool>,
+    pub require_approval_virtual: Option<bool>,
+    pub tool_approval_rules: Option<Vec<AgentToolApprovalRule>>,
 }
 
 #[derive(Deserialize)]
@@ -32,6 +38,20 @@ pub struct UpdateAgentRequest {
     #[serde(default)]
     pub clear_weak_model: bool,
     pub hooks: Option<AgentHooksConfig>,
+    pub require_approval_mcp: Option<bool>,
+    pub require_approval_virtual: Option<bool>,
+    pub tool_approval_rules: Option<Vec<AgentToolApprovalRule>>,
+}
+
+#[derive(Deserialize)]
+pub struct AttachToolRequest {
+    #[serde(default)]
+    pub approval_action: ApprovalAction,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateAgentToolApprovalActionRequest {
+    pub approval_action: ApprovalAction,
 }
 
 #[derive(Deserialize)]
@@ -39,8 +59,6 @@ pub struct CreateToolRequest {
     pub name: String,
     pub description: Option<String>,
     pub tool_type: String,
-    #[serde(default)]
-    pub requires_user_approval: bool,
     pub configuration: AiToolConfiguration,
 }
 
@@ -49,7 +67,6 @@ pub struct UpdateToolRequest {
     pub name: Option<String>,
     pub description: Option<String>,
     pub tool_type: Option<String>,
-    pub requires_user_approval: Option<bool>,
     pub configuration: Option<AiToolConfiguration>,
 }
 

@@ -70,7 +70,7 @@ impl ExternalToolCandidate {
             description: Some(self.description),
             tool_type: AiToolType::Virtual,
             deployment_id: 0,
-            requires_user_approval: false,
+            approval_action: models::ApprovalAction::default(),
             configuration: AiToolConfiguration::Virtual(VirtualToolConfiguration {
                 provider: self.provider,
                 toolkit_slug: self.toolkit_slug,

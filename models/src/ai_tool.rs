@@ -14,9 +14,9 @@ pub struct AiTool {
     pub tool_type: AiToolType,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
-    #[serde(default)]
-    pub requires_user_approval: bool,
     pub configuration: AiToolConfiguration,
+    #[serde(default)]
+    pub approval_action: ApprovalAction,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -31,9 +31,43 @@ pub struct AiToolWithDetails {
     pub tool_type: AiToolType,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
-    #[serde(default)]
-    pub requires_user_approval: bool,
     pub configuration: AiToolConfiguration,
+    #[serde(default)]
+    pub approval_action: ApprovalAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalAction {
+    #[default]
+    Allow,
+    Deny,
+    Review,
+}
+
+impl ApprovalAction {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ApprovalAction::Allow => "allow",
+            ApprovalAction::Deny => "deny",
+            ApprovalAction::Review => "review",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "allow" => Some(Self::Allow),
+            "deny" => Some(Self::Deny),
+            "review" => Some(Self::Review),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentToolApprovalRule {
+    pub pattern: String,
+    pub action: ApprovalAction,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]

@@ -353,12 +353,17 @@ impl AgentExecutor {
                 if !seen.insert(tool_name.clone()) {
                     return None;
                 }
+                if !matches!(
+                    crate::tools::approval::resolve_approval_action(&self.ctx.agent, tool_name),
+                    models::ApprovalAction::Review
+                ) {
+                    return None;
+                }
                 self.ctx
                     .agent
                     .tools
                     .iter()
                     .find(|tool| tool.name == *tool_name)
-                    .filter(|tool| tool.requires_user_approval)
                     .filter(|tool| !effective_approved_tool_ids.contains(&tool.id))
                     .map(|tool| RequestedToolApprovalState {
                         tool_id: tool.id,

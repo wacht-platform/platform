@@ -11,7 +11,6 @@ pub struct CreateAiToolCommand {
     pub name: String,
     pub description: Option<String>,
     pub tool_type: AiToolType,
-    pub requires_user_approval: bool,
     pub configuration: AiToolConfiguration,
 }
 
@@ -22,7 +21,6 @@ impl CreateAiToolCommand {
         name: String,
         description: Option<String>,
         tool_type: AiToolType,
-        requires_user_approval: bool,
         configuration: AiToolConfiguration,
     ) -> Self {
         Self {
@@ -31,7 +29,6 @@ impl CreateAiToolCommand {
             name,
             description,
             tool_type,
-            requires_user_approval,
             configuration,
         }
     }
@@ -95,9 +92,9 @@ impl CreateAiToolCommand {
 
         let tool = sqlx::query!(
             r#"
-            INSERT INTO ai_tools (id, created_at, updated_at, name, description, tool_type, deployment_id, requires_user_approval, configuration)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            RETURNING id, created_at, updated_at, name, description, tool_type, deployment_id, requires_user_approval, configuration
+            INSERT INTO ai_tools (id, created_at, updated_at, name, description, tool_type, deployment_id, configuration)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id, created_at, updated_at, name, description, tool_type, deployment_id, configuration
             "#,
             tool_id,
             now,
@@ -106,7 +103,6 @@ impl CreateAiToolCommand {
             self.description,
             tool_type_str,
             self.deployment_id,
-            self.requires_user_approval,
             configuration_json,
         )
         .fetch_one(executor)
@@ -125,8 +121,8 @@ impl CreateAiToolCommand {
             description: tool.description,
             tool_type,
             deployment_id: tool.deployment_id,
-            requires_user_approval: tool.requires_user_approval,
             configuration,
+            approval_action: models::ApprovalAction::default(),
         })
     }
 }
@@ -137,7 +133,6 @@ pub struct UpdateAiToolCommand {
     pub name: Option<String>,
     pub description: Option<String>,
     pub tool_type: Option<AiToolType>,
-    pub requires_user_approval: Option<bool>,
     pub configuration: Option<AiToolConfiguration>,
 }
 
@@ -149,7 +144,6 @@ impl UpdateAiToolCommand {
             name: None,
             description: None,
             tool_type: None,
-            requires_user_approval: None,
             configuration: None,
         }
     }
@@ -166,11 +160,6 @@ impl UpdateAiToolCommand {
 
     pub fn with_tool_type(mut self, tool_type: AiToolType) -> Self {
         self.tool_type = Some(tool_type);
-        self
-    }
-
-    pub fn with_requires_user_approval(mut self, requires_user_approval: bool) -> Self {
-        self.requires_user_approval = Some(requires_user_approval);
         self
     }
 
@@ -242,7 +231,6 @@ impl UpdateAiToolCommand {
         update_set.push_if_present("name", &self.name);
         update_set.push_if_present("description", &self.description);
         update_set.push_if_present("tool_type", &self.tool_type);
-        update_set.push_if_present("requires_user_approval", &self.requires_user_approval);
         update_set.push_if_present("configuration", &self.configuration);
         let (id_param, deployment_param) = update_set.where_indexes();
 
@@ -251,7 +239,7 @@ impl UpdateAiToolCommand {
             UPDATE ai_tools
             SET {}
             WHERE id = ${} AND deployment_id = ${}
-            RETURNING id, created_at, updated_at, name, description, tool_type, deployment_id, requires_user_approval, configuration
+            RETURNING id, created_at, updated_at, name, description, tool_type, deployment_id, configuration
             "#,
             update_set.set_clause(),
             id_param,
@@ -270,9 +258,6 @@ impl UpdateAiToolCommand {
         if let Some(tool_type) = self.tool_type {
             let tool_type_str: String = tool_type.into();
             query_builder = query_builder.bind(tool_type_str);
-        }
-        if let Some(requires_user_approval) = self.requires_user_approval {
-            query_builder = query_builder.bind(requires_user_approval);
         }
         if let Some(configuration) = self.configuration {
             let configuration_json = serde_json::to_value(&configuration)
@@ -299,8 +284,8 @@ impl UpdateAiToolCommand {
             description: tool.get("description"),
             tool_type,
             deployment_id: tool.get("deployment_id"),
-            requires_user_approval: tool.get("requires_user_approval"),
             configuration,
+            approval_action: models::ApprovalAction::default(),
         })
     }
 }

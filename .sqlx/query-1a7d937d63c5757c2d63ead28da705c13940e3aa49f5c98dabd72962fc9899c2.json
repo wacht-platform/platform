@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO ai_tools (id, created_at, updated_at, name, description, tool_type, deployment_id, requires_user_approval, configuration)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n            RETURNING id, created_at, updated_at, name, description, tool_type, deployment_id, requires_user_approval, configuration\n            ",
+  "query": "\n            SELECT\n                t.id, t.created_at, t.updated_at, t.name, t.description,\n                t.tool_type, t.deployment_id, t.configuration,\n                aat.approval_action\n            FROM ai_tools t\n            JOIN ai_agent_tools aat ON aat.tool_id = t.id\n            WHERE t.deployment_id = $1 AND aat.agent_id = $2 AND aat.deployment_id = $1\n            ORDER BY t.created_at DESC\n            ",
   "describe": {
     "columns": [
       {
@@ -40,26 +40,19 @@
       },
       {
         "ordinal": 7,
-        "name": "requires_user_approval",
-        "type_info": "Bool"
+        "name": "configuration",
+        "type_info": "Jsonb"
       },
       {
         "ordinal": 8,
-        "name": "configuration",
-        "type_info": "Jsonb"
+        "name": "approval_action",
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
         "Int8",
-        "Timestamptz",
-        "Timestamptz",
-        "Text",
-        "Text",
-        "Text",
-        "Int8",
-        "Bool",
-        "Jsonb"
+        "Int8"
       ]
     },
     "nullable": [
@@ -74,5 +67,5 @@
       false
     ]
   },
-  "hash": "d83f77d085934b90b34c9790f72d3560afb1f112754c77de27acdca12ab6f0c8"
+  "hash": "1a7d937d63c5757c2d63ead28da705c13940e3aa49f5c98dabd72962fc9899c2"
 }

@@ -1,6 +1,6 @@
 use commands::{
     AttachToolToAgentCommand, CreateAiToolCommand, DeleteAiToolCommand, DetachToolFromAgentCommand,
-    UpdateAiToolCommand,
+    UpdateAgentToolApprovalActionCommand, UpdateAiToolCommand,
 };
 use common::ReadConsistency;
 use common::error::AppError;
@@ -8,7 +8,10 @@ use dto::{
     json::deployment::{CreateToolRequest, UpdateToolRequest},
     query::deployment::GetToolsQuery,
 };
-use models::{AiTool, AiToolConfiguration, AiToolType, AiToolWithDetails, CodeRunnerEnvVariable};
+use models::{
+    AiTool, AiToolConfiguration, AiToolType, AiToolWithDetails, ApprovalAction,
+    CodeRunnerEnvVariable,
+};
 use queries::{GetAgentToolsQuery, GetAiToolByIdQuery, GetAiToolsQuery};
 
 use crate::{
@@ -55,7 +58,6 @@ pub async fn create_ai_tool(
         request.name,
         request.description,
         tool_type,
-        request.requires_user_approval,
         configuration,
     )
     .execute_with_db(app_state.db_router.writer())
@@ -95,8 +97,23 @@ pub async fn attach_tool_to_agent(
     deployment_id: i64,
     agent_id: i64,
     tool_id: i64,
+    approval_action: ApprovalAction,
 ) -> Result<(), AppError> {
     AttachToolToAgentCommand::new(deployment_id, agent_id, tool_id)
+        .with_approval_action(approval_action)
+        .execute_with_db(app_state.db_router.writer())
+        .await?;
+    Ok(())
+}
+
+pub async fn update_agent_tool_approval_action(
+    app_state: &AppState,
+    deployment_id: i64,
+    agent_id: i64,
+    tool_id: i64,
+    approval_action: ApprovalAction,
+) -> Result<(), AppError> {
+    UpdateAgentToolApprovalActionCommand::new(deployment_id, agent_id, tool_id, approval_action)
         .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
@@ -130,9 +147,6 @@ pub async fn update_ai_tool(
     }
     if let Some(tool_type) = request.tool_type {
         command = command.with_tool_type(AiToolType::from(tool_type));
-    }
-    if let Some(requires_user_approval) = request.requires_user_approval {
-        command = command.with_requires_user_approval(requires_user_approval);
     }
     if let Some(configuration) = request.configuration {
         command = command.with_configuration(encrypt_tool_configuration(

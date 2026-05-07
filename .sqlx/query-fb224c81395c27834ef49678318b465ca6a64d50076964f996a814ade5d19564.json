@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO ai_agents (\n                id, created_at, updated_at, name, description, deployment_id,\n                configuration, strong_model_provider, strong_model,\n                weak_model_provider, weak_model, hooks\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\n            RETURNING id, created_at, updated_at, name, description, deployment_id,\n                      configuration,\n                      strong_model_provider, strong_model,\n                      weak_model_provider, weak_model,\n                      hooks as \"hooks!: Json<AgentHooksConfig>\"\n            ",
+  "query": "\n            INSERT INTO ai_agents (\n                id, created_at, updated_at, name, description, deployment_id,\n                configuration, strong_model_provider, strong_model,\n                weak_model_provider, weak_model, hooks,\n                require_approval_mcp, require_approval_virtual, tool_approval_rules\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)\n            RETURNING id, created_at, updated_at, name, description, deployment_id,\n                      configuration,\n                      strong_model_provider, strong_model,\n                      weak_model_provider, weak_model,\n                      hooks as \"hooks!: Json<AgentHooksConfig>\",\n                      require_approval_mcp,\n                      require_approval_virtual,\n                      tool_approval_rules as \"tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>\"\n            ",
   "describe": {
     "columns": [
       {
@@ -62,6 +62,21 @@
         "ordinal": 11,
         "name": "hooks!: Json<AgentHooksConfig>",
         "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 12,
+        "name": "require_approval_mcp",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 13,
+        "name": "require_approval_virtual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 14,
+        "name": "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+        "type_info": "Jsonb"
       }
     ],
     "parameters": {
@@ -77,6 +92,9 @@
         "Text",
         "Text",
         "Text",
+        "Jsonb",
+        "Bool",
+        "Bool",
         "Jsonb"
       ]
     },
@@ -92,8 +110,11 @@
       true,
       true,
       true,
+      false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "fe0cd9ac5a16c651847007141f321b49229c19cd53645b30f6fdcb9176cc21f6"
+  "hash": "fb224c81395c27834ef49678318b465ca6a64d50076964f996a814ade5d19564"
 }

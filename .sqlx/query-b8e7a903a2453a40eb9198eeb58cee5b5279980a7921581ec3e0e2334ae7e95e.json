@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                t.id, t.created_at, t.updated_at, t.name, t.description,\n                t.tool_type, t.deployment_id, t.requires_user_approval, t.configuration,\n                COALESCE(a.agents_count, 0) as agents_count\n            FROM ai_tools t\n            LEFT JOIN (\n                SELECT deployment_id, tool_id, COUNT(*) as agents_count\n                FROM ai_agent_tools\n                GROUP BY deployment_id, tool_id\n            ) a ON t.id = a.tool_id AND t.deployment_id = a.deployment_id\n            WHERE t.id = $1 AND t.deployment_id = $2\n            ",
+  "query": "\n            INSERT INTO ai_tools (id, created_at, updated_at, name, description, tool_type, deployment_id, configuration)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n            RETURNING id, created_at, updated_at, name, description, tool_type, deployment_id, configuration\n            ",
   "describe": {
     "columns": [
       {
@@ -40,24 +40,20 @@
       },
       {
         "ordinal": 7,
-        "name": "requires_user_approval",
-        "type_info": "Bool"
-      },
-      {
-        "ordinal": 8,
         "name": "configuration",
         "type_info": "Jsonb"
-      },
-      {
-        "ordinal": 9,
-        "name": "agents_count",
-        "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
         "Int8",
-        "Int8"
+        "Timestamptz",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Text",
+        "Int8",
+        "Jsonb"
       ]
     },
     "nullable": [
@@ -68,10 +64,8 @@
       true,
       false,
       false,
-      false,
-      false,
-      null
+      false
     ]
   },
-  "hash": "8f913a69ca68437e64e739e9ba4a572d4695ba33b87a35f8a4a9bd539eb805c3"
+  "hash": "b8e7a903a2453a40eb9198eeb58cee5b5279980a7921581ec3e0e2334ae7e95e"
 }

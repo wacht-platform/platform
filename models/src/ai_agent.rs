@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{AiKnowledgeBase, AiTool};
+use crate::{AgentToolApprovalRule, AiKnowledgeBase, AiTool};
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
 pub struct AgentModelOverride {
@@ -47,6 +47,12 @@ pub struct AiAgent {
     pub weak_model: Option<AgentModelOverride>,
     #[serde(default)]
     pub hooks: AgentHooksConfig,
+    #[serde(default)]
+    pub require_approval_mcp: bool,
+    #[serde(default)]
+    pub require_approval_virtual: bool,
+    #[serde(default)]
+    pub tool_approval_rules: Vec<AgentToolApprovalRule>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -70,6 +76,12 @@ pub struct AiAgentWithDetails {
     pub weak_model: Option<AgentModelOverride>,
     #[serde(default)]
     pub hooks: AgentHooksConfig,
+    #[serde(default)]
+    pub require_approval_mcp: bool,
+    #[serde(default)]
+    pub require_approval_virtual: bool,
+    #[serde(default)]
+    pub tool_approval_rules: Vec<AgentToolApprovalRule>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -93,4 +105,10 @@ pub struct AiAgentWithFeatures {
     pub weak_model: Option<AgentModelOverride>,
     #[serde(default)]
     pub hooks: AgentHooksConfig,
+    #[serde(default)]
+    pub require_approval_mcp: bool,
+    #[serde(default)]
+    pub require_approval_virtual: bool,
+    #[serde(default)]
+    pub tool_approval_rules: Vec<AgentToolApprovalRule>,
 }

@@ -237,7 +237,7 @@ pub struct ToolPromptItem {
     pub description: Option<String>,
     pub tool_type: String,
     #[serde(default)]
-    pub requires_user_approval: bool,
+    pub approval_action: models::ApprovalAction,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input_schema: Vec<SchemaField>,
 }
@@ -271,7 +271,7 @@ impl ToolPromptItem {
             name: tool.name.clone(),
             description: tool.description.clone(),
             tool_type: String::from(tool.tool_type.clone()),
-            requires_user_approval: tool.requires_user_approval,
+            approval_action: tool.approval_action,
             input_schema,
         }
     }

@@ -202,16 +202,28 @@ impl AgentExecutor {
         tools
             .into_iter()
             .map(|mut tool| {
-                if tool.requires_user_approval {
-                    let is_approved = effective_approved_tool_ids
-                        .as_ref()
-                        .map(|ids| ids.contains(&tool.id))
-                        .unwrap_or_else(|| self.tool_is_approved(tool.id));
-                    let suffix = if is_approved {
-                        " Requires user approval, and approval is already active for this context."
-                    } else {
-                        " Requires user approval. Runtime will request approval automatically if action execution selects it without an active grant."
-                    };
+                let action = crate::tools::approval::resolve_approval_action(
+                    &self.ctx.agent,
+                    &tool.name,
+                );
+                let suffix = match action {
+                    models::ApprovalAction::Allow => None,
+                    models::ApprovalAction::Deny => Some(
+                        " Denied by agent policy — calling this tool will return an error without executing.".to_string(),
+                    ),
+                    models::ApprovalAction::Review => {
+                        let is_approved = effective_approved_tool_ids
+                            .as_ref()
+                            .map(|ids| ids.contains(&tool.id))
+                            .unwrap_or_else(|| self.tool_is_approved(tool.id));
+                        Some(if is_approved {
+                            " Requires user approval, and approval is already active for this context.".to_string()
+                        } else {
+                            " Requires user approval. Runtime will request approval automatically if action execution selects it without an active grant.".to_string()
+                        })
+                    }
+                };
+                if let Some(suffix) = suffix {
                     let description = tool.description.unwrap_or_default();
                     tool.description = Some(format!("{description}{suffix}").trim().to_string());
                 }

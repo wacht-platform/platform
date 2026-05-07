@@ -89,6 +89,15 @@ pub async fn create_ai_agent(
     if let Some(hooks) = request.hooks {
         command = command.with_hooks(hooks);
     }
+    if let Some(value) = request.require_approval_mcp {
+        command = command.with_require_approval_mcp(value);
+    }
+    if let Some(value) = request.require_approval_virtual {
+        command = command.with_require_approval_virtual(value);
+    }
+    if let Some(rules) = request.tool_approval_rules {
+        command = command.with_tool_approval_rules(rules);
+    }
     command.execute_with_deps(&db_deps).await
 }
 
@@ -167,6 +176,15 @@ pub async fn update_ai_agent(
     }
     if let Some(hooks) = request.hooks {
         command = command.with_hooks(hooks);
+    }
+    if let Some(value) = request.require_approval_mcp {
+        command = command.with_require_approval_mcp(value);
+    }
+    if let Some(value) = request.require_approval_virtual {
+        command = command.with_require_approval_virtual(value);
+    }
+    if let Some(rules) = request.tool_approval_rules {
+        command = command.with_tool_approval_rules(rules);
     }
     command.execute_with_deps(&db_deps).await
 }

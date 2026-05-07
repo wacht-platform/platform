@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ai_agent_tools\n            SET approval_action = $4\n            WHERE deployment_id = $1 AND agent_id = $2 AND tool_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ffece12e07e811c6e0893a9f35e2f9ebee5a572efaeedc93ae4e93cebe8cc507"
+}
