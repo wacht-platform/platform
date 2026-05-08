@@ -78,6 +78,7 @@ pub struct ThreadExecutionContext {
     pub app_state: AppState,
     pub agent: AiAgentWithFeatures,
     pub thread_id: i64,
+    pub actor_id: i64,
     pub execution_run_id: i64,
     pub provider_keys: DeploymentProviderKeys,
     cached_thread: RwLock<Option<AgentThreadState>>,
@@ -139,27 +140,11 @@ impl ThreadExecutionContext {
         }
     }
 
-    pub fn new(
-        app_state: AppState,
-        agent: AiAgentWithFeatures,
-        thread_id: i64,
-        execution_run_id: i64,
-        provider_keys: DeploymentProviderKeys,
-    ) -> Arc<Self> {
-        Self::new_with_thread(
-            app_state,
-            agent,
-            thread_id,
-            execution_run_id,
-            provider_keys,
-            None,
-        )
-    }
-
     pub fn new_with_thread(
         app_state: AppState,
         agent: AiAgentWithFeatures,
         thread_id: i64,
+        actor_id: i64,
         execution_run_id: i64,
         provider_keys: DeploymentProviderKeys,
         cached_thread: Option<AgentThreadState>,
@@ -168,6 +153,7 @@ impl ThreadExecutionContext {
             app_state,
             agent,
             thread_id,
+            actor_id,
             execution_run_id,
             provider_keys,
             cached_thread: RwLock::new(cached_thread),
@@ -177,7 +163,6 @@ impl ThreadExecutionContext {
         })
     }
 
-    /// Create a new ThreadExecutionContext with a replaced agent.
     pub fn with_agent(self: &Arc<Self>, agent: AiAgentWithFeatures) -> Arc<Self> {
         let carried_thread = self
             .cached_thread
@@ -188,6 +173,7 @@ impl ThreadExecutionContext {
             app_state: self.app_state.clone(),
             agent,
             thread_id: self.thread_id,
+            actor_id: self.actor_id,
             execution_run_id: self.execution_run_id,
             provider_keys: self.provider_keys.clone(),
             cached_thread: RwLock::new(carried_thread),

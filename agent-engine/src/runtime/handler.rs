@@ -238,6 +238,7 @@ impl AgentHandler {
                 self.app_state.clone(),
                 request.agent.clone(),
                 request.thread_id,
+                thread_state.actor_id,
                 request.execution_run_id,
                 provider_keys,
                 Some(thread_state.clone()),

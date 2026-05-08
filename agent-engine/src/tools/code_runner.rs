@@ -53,6 +53,8 @@ impl ToolExecutor {
         let mut env: BTreeMap<String, String> = BTreeMap::new();
         env.insert("WACHT_INPUT_B64".into(), input_b64);
         env.insert("WACHT_USER_CODE_B64".into(), user_code_b64);
+        env.insert("WACHT_THREAD_ID".into(), self.ctx.thread_id.to_string());
+        env.insert("WACHT_ACTOR_ID".into(), self.ctx.actor_id.to_string());
         for (key, value) in self.code_runner_execution_env(config)? {
             env.insert(key, value);
         }

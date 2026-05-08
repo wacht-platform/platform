@@ -58,6 +58,10 @@ impl ToolExecutor {
             HttpMethod::DELETE => client.delete(&url),
         };
 
+        request_builder = request_builder
+            .header("X-Wacht-Thread-Id", self.ctx.thread_id.to_string())
+            .header("X-Wacht-Actor-Id", self.ctx.actor_id.to_string());
+
         if let Some(headers) = execution_params.get("headers").and_then(|v| v.as_object()) {
             for (key, value) in headers {
                 if let Some(header_value) = value.as_str() {
