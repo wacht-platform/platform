@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM agent_skills WHERE deployment_id = $1 AND agent_id = $2 AND slug = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7d4b57f7a684e5189678377ba1f65ffd332a84d1938482235a94e8b52043a5af"
+}

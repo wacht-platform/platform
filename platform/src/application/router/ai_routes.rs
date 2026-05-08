@@ -33,6 +33,10 @@ pub(super) fn ai_routes() -> Router<AppState> {
             delete(api::ai_skills::delete_agent_skill),
         )
         .route(
+            "/ai/agents/{agent_id}/skills/list",
+            get(api::ai_skills::list_agent_skills_summary),
+        )
+        .route(
             "/ai/agents/{agent_id}/skills/tree",
             get(api::ai_skills::list_skill_tree),
         )

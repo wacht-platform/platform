@@ -9,7 +9,7 @@ use crate::application::{ai_skills as ai_skills_app, response::ApiResult};
 use crate::middleware::RequireDeployment;
 use common::state::AppState;
 
-pub use ai_skills_app::{SkillFileResponse, SkillTreeResponse};
+pub use ai_skills_app::{AgentSkillsSummary, SkillFileResponse, SkillTreeResponse};
 
 #[derive(Deserialize)]
 pub struct AgentParams {
@@ -26,6 +26,17 @@ pub struct AgentSkillParams {
 pub struct SkillTreeQuery {
     pub scope: String,
     pub path: Option<String>,
+}
+
+pub async fn list_agent_skills_summary(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentParams>,
+) -> ApiResult<AgentSkillsSummary> {
+    let response =
+        ai_skills_app::list_agent_skills_summary(&app_state, deployment_id, params.agent_id)
+            .await?;
+    Ok(response.into())
 }
 
 pub async fn list_skill_tree(

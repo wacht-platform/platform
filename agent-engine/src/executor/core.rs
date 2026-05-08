@@ -28,6 +28,7 @@ pub struct AgentExecutor {
     pub(crate) system_instructions: Option<String>,
     pub(crate) filesystem: AgentFilesystem,
     pub(crate) shell: ShellExecutor,
+    pub(crate) sandbox: std::sync::Arc<dyn crate::sandbox::SandboxHandle>,
     pub(crate) current_iteration: usize,
     pub(crate) loaded_external_tool_ids: Vec<i64>,
     pub(crate) virtual_tool_cache: std::collections::HashMap<i64, models::AiTool>,
@@ -300,7 +301,7 @@ impl AgentExecutorBuilder {
             sandbox_handle.clone(),
         )?;
 
-        let shell = ShellExecutor::new(sandbox_handle);
+        let shell = ShellExecutor::new(sandbox_handle.clone());
 
         Ok(AgentExecutor {
             ctx,
@@ -314,6 +315,7 @@ impl AgentExecutorBuilder {
             system_instructions,
             filesystem,
             shell,
+            sandbox: sandbox_handle,
             current_iteration: 0,
             loaded_external_tool_ids,
             virtual_tool_cache,

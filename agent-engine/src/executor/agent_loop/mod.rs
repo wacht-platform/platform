@@ -749,10 +749,37 @@ impl AgentExecutor {
     )]
     pub(super) async fn repl(&mut self) -> Result<(), AppError> {
         use super::hooks::HookKind;
+        self.reconcile_agent_skills().await;
         self.run_hooks(HookKind::ExecutionStart).await;
         let result = self.repl_inner().await;
         self.run_hooks(HookKind::ExecutionEnd).await;
         result
+    }
+
+    async fn reconcile_agent_skills(&self) {
+        let agent_id = self.ctx.agent.id;
+        let slugs = match queries::ListAgentSkillsQuery::new(self.ctx.agent.deployment_id, agent_id)
+            .execute_with_db(
+                self.ctx
+                    .app_state
+                    .db_router
+                    .reader(common::ReadConsistency::Eventual),
+            )
+            .await
+        {
+            Ok(rows) => rows.into_iter().map(|r| r.slug).collect::<Vec<_>>(),
+            Err(e) => {
+                tracing::warn!(agent_id, error = %e, "skills reconcile: list query failed");
+                return;
+            }
+        };
+        if let Err(e) = self
+            .sandbox
+            .reconcile_skills(&agent_id.to_string(), slugs)
+            .await
+        {
+            tracing::warn!(agent_id, error = %e, "skills reconcile: sandbox call failed");
+        }
     }
 
     async fn repl_inner(&mut self) -> Result<(), AppError> {

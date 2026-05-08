@@ -448,7 +448,46 @@ impl AgentExecutor {
             .iter()
             .map(KnowledgeBasePromptItem::from_knowledge_base)
             .collect::<Vec<_>>();
-        let (system_skill_prompt_items, agent_skill_prompt_items) = (Vec::new(), Vec::new());
+        let system_skill_prompt_items = crate::tools::system_skills::list_system_skills()
+            .into_iter()
+            .map(|s| SkillPromptItem {
+                slug: s.slug.clone(),
+                mount_path: s.mount_path(),
+                description: s.description,
+                source: "system".to_string(),
+            })
+            .collect::<Vec<_>>();
+
+        let agent_skill_prompt_items = match queries::ListAgentSkillsQuery::new(
+            self.ctx.agent.deployment_id,
+            self.ctx.agent.id,
+        )
+        .execute_with_db(
+            self.ctx
+                .app_state
+                .db_router
+                .reader(common::ReadConsistency::Eventual),
+        )
+        .await
+        {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|r| SkillPromptItem {
+                    mount_path: format!("/skills/agent/{}", r.slug),
+                    slug: r.slug,
+                    description: r.description,
+                    source: "agent".to_string(),
+                })
+                .collect(),
+            Err(e) => {
+                tracing::warn!(
+                    agent_id = self.ctx.agent.id,
+                    error = %e,
+                    "failed to load agent skills for prompt; serving empty list"
+                );
+                Vec::new()
+            }
+        };
 
         let connected_external_integrations = self.load_connected_external_integrations().await;
 

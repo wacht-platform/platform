@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO agent_skills\n            (deployment_id, agent_id, slug, name, description, storage_prefix)\n        VALUES ($1, $2, $3, $4, $5, $6)\n        ON CONFLICT (deployment_id, agent_id, slug) DO UPDATE\n            SET name = EXCLUDED.name,\n                description = EXCLUDED.description,\n                storage_prefix = EXCLUDED.storage_prefix,\n                updated_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "989f8206a1bc3ec095e83b71eba48f2d3fc8ade73a1b75fd45932f8ece1093e3"
+}

@@ -6,6 +6,7 @@ pub mod internal_specs;
 pub mod mcp;
 mod platform;
 mod result_shape;
+pub mod system_skills;
 
 use crate::filesystem::{shell::ShellExecutor, AgentFilesystem};
 use common::error::AppError;

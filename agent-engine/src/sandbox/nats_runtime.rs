@@ -154,6 +154,19 @@ impl SandboxHandle for NatsSandboxHandleAdapter {
             .await
             .map_err(map_client_error)
     }
+
+    async fn reconcile_skills(
+        &self,
+        agent_id: &str,
+        slugs: Vec<String>,
+    ) -> SandboxResult<Vec<String>> {
+        let response = self
+            .inner
+            .reconcile_skills(agent_id, slugs)
+            .await
+            .map_err(map_client_error)?;
+        Ok(response.mounted)
+    }
 }
 
 fn map_client_error(err: SandboxNatsClientError) -> SandboxError {

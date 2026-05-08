@@ -37,6 +37,12 @@ pub trait SandboxHandle: Send + Sync {
 
     async fn delete(&self) -> SandboxResult<()>;
 
+    async fn reconcile_skills(
+        &self,
+        agent_id: &str,
+        slugs: Vec<String>,
+    ) -> SandboxResult<Vec<String>>;
+
     async fn read_file(&self, path: &str) -> SandboxResult<Vec<u8>> {
         use base64::Engine;
         let result = self

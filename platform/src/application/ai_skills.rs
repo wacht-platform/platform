@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -42,6 +42,58 @@ impl SkillScope {
 }
 
 #[derive(serde::Serialize)]
+pub struct AgentSkillsSummary {
+    pub system: Vec<SkillSummaryEntry>,
+    pub agent: Vec<SkillSummaryEntry>,
+}
+
+#[derive(serde::Serialize)]
+pub struct SkillSummaryEntry {
+    pub slug: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub mount_path: String,
+    pub source: String,
+}
+
+pub async fn list_agent_skills_summary(
+    app_state: &AppState,
+    deployment_id: i64,
+    agent_id: i64,
+) -> Result<AgentSkillsSummary, ApiErrorResponse> {
+    ensure_agent_exists(app_state, deployment_id, agent_id).await?;
+
+    let system = agent_engine::tools::system_skills::list_system_skills()
+        .into_iter()
+        .map(|s| SkillSummaryEntry {
+            mount_path: s.mount_path(),
+            slug: s.slug,
+            name: s.name,
+            description: s.description,
+            source: "system".to_string(),
+        })
+        .collect();
+
+    let rows = queries::ListAgentSkillsQuery::new(deployment_id, agent_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
+        .await
+        .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;
+    let agent = rows
+        .into_iter()
+        .map(|r| SkillSummaryEntry {
+            mount_path: format!("/skills/agent/{}", r.slug),
+            slug: r.slug,
+            name: r.name,
+            description: r.description,
+            source: "agent".to_string(),
+        })
+        .collect();
+
+    Ok(AgentSkillsSummary { system, agent })
+}
+
+#[derive(serde::Serialize)]
 pub struct SkillTreeEntry {
     pub name: String,
     pub path: String,
@@ -75,31 +127,6 @@ pub struct CreateSkillBundleInput {
     pub replace_existing: bool,
 }
 
-fn system_skills_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../agent-engine/skills/system")
-        .clean()
-}
-
-trait PathCleanExt {
-    fn clean(&self) -> PathBuf;
-}
-
-impl PathCleanExt for PathBuf {
-    fn clean(&self) -> PathBuf {
-        let mut out = PathBuf::new();
-        for component in self.components() {
-            match component {
-                Component::CurDir => {}
-                Component::ParentDir => {
-                    out.pop();
-                }
-                other => out.push(other.as_os_str()),
-            }
-        }
-        out
-    }
-}
 
 fn normalize_virtual_path(path: &str) -> Result<String, ApiErrorResponse> {
     let trimmed = path.trim();
@@ -172,56 +199,33 @@ pub async fn list_skill_tree(
 
     match scope {
         SkillScope::System => {
-            let root = system_skills_root();
-            let target = if normalized.is_empty() {
-                root.clone()
+            let specs = agent_engine::tools::system_skills::list_system_skills();
+            let entries = if normalized.is_empty() {
+                specs
+                    .into_iter()
+                    .map(|s| SkillTreeEntry {
+                        path: format!("/{}", s.slug),
+                        name: s.slug,
+                        kind: "directory".to_string(),
+                        size_bytes: None,
+                    })
+                    .collect::<Vec<_>>()
             } else {
-                root.join(&normalized)
-            };
-            if !target.starts_with(&root) {
-                return Err(ApiErrorResponse::bad_request("invalid path"));
-            }
-            if !target.exists() {
-                return Err(ApiErrorResponse::not_found("Path not found"));
-            }
-            if !target.is_dir() {
-                return Err(ApiErrorResponse::bad_request("path is not a directory"));
-            }
-
-            let mut entries = Vec::new();
-            let mut dir = fs::read_dir(&target)
-                .await
-                .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;
-            while let Some(entry) = dir
-                .next_entry()
-                .await
-                .map_err(|e| ApiErrorResponse::internal(e.to_string()))?
-            {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with('.') {
-                    continue;
+                let mut parts = normalized.split('/');
+                let slug = parts.next().unwrap_or("");
+                let rest = parts.next();
+                if rest.is_some() || !specs.iter().any(|s| s.slug == slug) {
+                    return Err(ApiErrorResponse::not_found("Path not found"));
                 }
-                let metadata = entry
-                    .metadata()
-                    .await
-                    .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;
-                let entry_path = if normalized.is_empty() {
-                    format!("/{}", name)
-                } else {
-                    format!("/{}/{}", normalized, name)
-                };
-                entries.push(SkillTreeEntry {
-                    name,
-                    path: entry_path,
-                    kind: if metadata.is_dir() {
-                        "directory".to_string()
-                    } else {
-                        "file".to_string()
-                    },
-                    size_bytes: metadata.is_file().then_some(metadata.len()),
-                });
-            }
-            entries.sort_by(|a, b| a.name.cmp(&b.name));
+                let md = agent_engine::tools::system_skills::read_system_skill_md(slug)
+                    .unwrap_or("");
+                vec![SkillTreeEntry {
+                    name: "SKILL.md".to_string(),
+                    path: format!("/{}/SKILL.md", slug),
+                    kind: "file".to_string(),
+                    size_bytes: Some(md.len() as u64),
+                }]
+            };
 
             Ok(SkillTreeResponse {
                 scope: scope.as_str().to_string(),
@@ -355,22 +359,21 @@ pub async fn read_skill_file(
 
     match scope {
         SkillScope::System => {
-            let root = system_skills_root();
-            let target = root.join(&normalized);
-            if !target.starts_with(&root) {
-                return Err(ApiErrorResponse::bad_request("invalid path"));
+            let mut parts = normalized.split('/');
+            let slug = parts.next().unwrap_or("");
+            let file = parts.next().unwrap_or("");
+            if slug.is_empty() || parts.next().is_some() || file != "SKILL.md" {
+                return Err(ApiErrorResponse::not_found("File not found"));
             }
-            let bytes = fs::read(&target)
-                .await
-                .map_err(|_| ApiErrorResponse::not_found("File not found"))?;
-            let is_text = std::str::from_utf8(&bytes).is_ok();
+            let content = agent_engine::tools::system_skills::read_system_skill_md(slug)
+                .ok_or_else(|| ApiErrorResponse::not_found("File not found"))?;
             Ok(SkillFileResponse {
                 scope: scope.as_str().to_string(),
                 path: format!("/{}", normalized),
-                is_text,
-                size_bytes: bytes.len() as u64,
-                content: is_text.then(|| String::from_utf8_lossy(&bytes).to_string()),
-                content_base64: (!is_text).then(|| STANDARD.encode(bytes)),
+                is_text: true,
+                size_bytes: content.len() as u64,
+                content: Some(content.to_string()),
+                content_base64: None,
             })
         }
         SkillScope::Agent => {
@@ -519,6 +522,14 @@ pub async fn import_agent_skill_bundle(
 
     reject_symlinks(&skill_root).await?;
 
+    let (skill_name, skill_description) = match parse_skill_md_frontmatter(&skill_root).await {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = fs::remove_dir_all(&temp_root).await;
+            return Err(e);
+        }
+    };
+
     let deps = deps::from_app(app_state).db().enc();
     let storage = ResolveDeploymentStorageCommand::new(deployment_id)
         .execute_with_deps(&deps)
@@ -610,6 +621,35 @@ pub async fn import_agent_skill_bundle(
     }
 
     let _ = fs::remove_dir_all(&temp_root).await;
+
+    let storage_prefix = format!(
+        "{}/{}",
+        deployment_skill_root(deployment_id, agent_id),
+        slug
+    );
+    let display_name = skill_name.unwrap_or_else(|| slug.clone());
+    sqlx::query!(
+        r#"
+        INSERT INTO agent_skills
+            (deployment_id, agent_id, slug, name, description, storage_prefix)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (deployment_id, agent_id, slug) DO UPDATE
+            SET name = EXCLUDED.name,
+                description = EXCLUDED.description,
+                storage_prefix = EXCLUDED.storage_prefix,
+                updated_at = NOW()
+        "#,
+        deployment_id,
+        agent_id,
+        slug,
+        display_name,
+        skill_description,
+        storage_prefix,
+    )
+    .execute(app_state.db_router.writer())
+    .await
+    .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;
+
     list_skill_tree(
         app_state,
         deployment_id,
@@ -618,6 +658,32 @@ pub async fn import_agent_skill_bundle(
         format!("/{}", slug),
     )
     .await
+}
+
+async fn parse_skill_md_frontmatter(
+    skill_root: &Path,
+) -> Result<(Option<String>, Option<String>), ApiErrorResponse> {
+    let raw = fs::read_to_string(skill_root.join("SKILL.md"))
+        .await
+        .map_err(|_| ApiErrorResponse::bad_request("skill bundle is missing SKILL.md"))?;
+    let mut lines = raw.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return Ok((None, None));
+    }
+    let mut name = None;
+    let mut description = None;
+    for line in lines {
+        let trimmed = line.trim_end();
+        if trimmed.trim() == "---" {
+            break;
+        }
+        if let Some(rest) = trimmed.strip_prefix("name:") {
+            name = Some(rest.trim().to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("description:") {
+            description = Some(rest.trim().to_string());
+        }
+    }
+    Ok((name, description))
 }
 
 fn parse_skill_slug(value: &str) -> Result<String, ApiErrorResponse> {
@@ -678,6 +744,16 @@ pub async fn delete_agent_skill(
         .execute_with_deps(&deps)
         .await
         .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;
+
+    sqlx::query!(
+        "DELETE FROM agent_skills WHERE deployment_id = $1 AND agent_id = $2 AND slug = $3",
+        deployment_id,
+        agent_id,
+        skill_slug,
+    )
+    .execute(app_state.db_router.writer())
+    .await
+    .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;
 
     Ok(())
 }
