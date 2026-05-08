@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE project_task_board_items\n            SET\n                title = COALESCE($3, title),\n                description = COALESCE($4, description),\n                updated_at = NOW()\n            WHERE id = $1 AND board_id = $2 AND archived_at IS NULL\n            RETURNING id, board_id, task_key, title, description, status,\n                      assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,\n                      schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts\n            ",
+  "query": "\n            UPDATE project_task_board_items\n            SET title = COALESCE($2, title),\n                description = CASE WHEN $4::boolean THEN $3 ELSE description END,\n                status = COALESCE($5, status),\n                completed_at = CASE\n                    WHEN $5 = 'completed' THEN NOW()\n                    WHEN $5 IS NOT NULL AND $5 <> 'completed' THEN NULL\n                    ELSE completed_at\n                END,\n                updated_at = NOW()\n            WHERE id = $1 AND archived_at IS NULL\n            RETURNING id, board_id, task_key, title, description, status,\n                      assigned_thread_id, metadata, completed_at, archived_at,\n                      created_at, updated_at, state_version,\n                      schedule_id, scheduled_for, fired_at,\n                      pending_question, pending_approval, mounts\n            ",
   "describe": {
     "columns": [
       {
@@ -102,8 +102,9 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Int8",
         "Text",
+        "Text",
+        "Bool",
         "Text"
       ]
     },
@@ -129,5 +130,5 @@
       false
     ]
   },
-  "hash": "773836cb7a44bbd4f9f4b775281a4b1de9bf0e6ef05b9b29b0c2f88ec769b3ab"
+  "hash": "f662e944fc6f6c010c94b4fe884445f0bfb673a02567b6856ad9e0722eabf506"
 }

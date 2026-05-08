@@ -1,10 +1,10 @@
 use commands::{
     CreateActorCommand, CreateActorProjectCommand, CreateAgentThreadCommand,
     CreateProjectTaskBoardItemCommand, CreateProjectTaskScheduleCommand,
-    DeleteProjectTaskScheduleByTaskKeyCommand, UpdateProjectTaskBoardItemCommand,
-    UpdateProjectTaskBoardItemMountsCommand, UpdateProjectTaskScheduleCommand,
-    UpsertThreadAgentAssignmentCommand,
+    DeleteProjectTaskScheduleByTaskKeyCommand, UpdateProjectTaskBoardItemMountsCommand,
+    UpdateProjectTaskScheduleCommand, UpsertThreadAgentAssignmentCommand,
 };
+use common::HasDbRouter;
 use common::ReadConsistency;
 use common::error::AppError;
 use dto::json::deployment::{
@@ -1423,6 +1423,9 @@ pub async fn create_project_task_board_item(
             note: None,
             caused_by_event_id: None,
             routing_reason: models::thread_event::routing_reason::TASK_CREATED,
+            previous_status: None,
+            changed_fields: Vec::new(),
+            last_assignment_result_status: None,
         }
         .execute(&mut *tx)
         .await?;
@@ -1497,12 +1500,11 @@ pub async fn update_project_task_board_item(
             "Project task board item not found".to_string(),
         ));
     }
+    let project = GetActorProjectByIdQuery::new(project_id, deployment_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
+        .await?
+        .ok_or_else(|| AppError::NotFound("Project not found".to_string()))?;
 
-    let title = request
-        .title
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty());
-    let description = request.description.map(|v| v.trim().to_string());
     let clear_schedule = request.clear_schedule.unwrap_or(false);
     let schedule = parse_schedule_request(
         request.schedule_kind.as_deref(),
@@ -1517,41 +1519,19 @@ pub async fn update_project_task_board_item(
     let mounts_value = validate_and_serialize_mounts(request.mounts.as_deref())?;
     let requested_mounts = request.mounts.clone();
 
-    let mut current = if title.is_some() || description.is_some() {
-        sqlx::query_as!(
-            ProjectTaskBoardItem,
-            r#"
-            UPDATE project_task_board_items
-            SET
-                title = COALESCE($3, title),
-                description = COALESCE($4, description),
-                updated_at = NOW()
-            WHERE id = $1 AND board_id = $2 AND archived_at IS NULL
-            RETURNING id, board_id, task_key, title, description, status,
-                      assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-                      schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
-            "#,
-            item.id,
-            board.id,
-            title,
-            description,
-        )
-        .fetch_one(app_state.db_router.writer())
-        .await?
-    } else {
-        item.clone()
-    };
-
-    if request.status.is_some() {
-        current = UpdateProjectTaskBoardItemCommand {
-            board_id: board.id,
-            task_key: current.task_key.clone(),
-            status: request.status,
-            metadata: current.metadata.clone(),
-        }
-        .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
-        .await?;
+    let edit_outcome = commands::ApplyBoardItemEditCommand {
+        deployment_id,
+        board_item_id: item.id,
+        coordinator_thread_id: project.coordinator_thread_id,
+        event_log_id: app_state.sf.next_id()? as i64,
+        title: request.title.clone(),
+        description: request.description.clone(),
+        status: request.status.clone(),
+        preempt_summary: "Preempted by task update.",
     }
+    .execute(app_state.db_router.writer_pool())
+    .await?;
+    let mut current = edit_outcome.item;
 
     if let Some(mounts) = mounts_value {
         UpdateProjectTaskBoardItemMountsCommand {
@@ -1617,6 +1597,10 @@ pub async fn update_project_task_board_item(
             )
             .await?;
         }
+    }
+
+    if edit_outcome.routed || edit_outcome.preempted {
+        commands::event_log::nudge_dispatcher(&app_state.nats_client).await;
     }
 
     Ok(current)

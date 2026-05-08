@@ -87,13 +87,13 @@ pub(crate) fn project_tools() -> Vec<(
     vec![
         (
             "create_project_task",
-            "Create a new task in the shared project task board. Available to the coordinator and user-facing conversation threads. The runtime generates a fresh task key automatically. When a user-facing conversation thread creates a task, it is routed to the coordinator automatically. Use this when the user wants durable delegated work, including requests phrased as background work, async follow-up, or separate work that should continue while the current thread stays focused. Optionally attach it as a child of an existing task by `parent_task_key`.",
+            "Create a new task in the shared project task board. Available to the coordinator and user-facing conversation threads. The runtime generates a fresh task key automatically. When a user-facing conversation thread creates a task, it is routed to the coordinator automatically. Use this when the user wants durable delegated work, including requests phrased as background work, async follow-up, or separate work that should continue while the current thread stays focused. The `description` is the brief the worker reads — write it as a direct, sequenced instruction (e.g. \"First do X. Then do Y. Finally Z.\") rather than commentary. Optionally attach it as a child of an existing task by `parent_task_key`.",
             InternalToolType::CreateProjectTask,
             create_project_task_schema(),
         ),
         (
             "update_project_task",
-            "Update an existing shared project task by task key. Use it for status, priority, outputs, and blockers only. Omit unchanged fields.",
+            "Update an existing shared project task by task key. Available to the coordinator (status, schedule, terminal transitions) and to user-facing conversation threads (revise the brief: title/description, optionally cancel). When a conversation thread edits the title or description, any running execution on this task is preempted and the coordinator is re-routed with the new instructions. Write `description` as a direct, sequenced instruction (e.g. \"First do X. Then do Y.\") so the worker can pick it up without translation. Omit unchanged fields.",
             InternalToolType::UpdateProjectTask,
             update_project_task_schema(),
         ),
@@ -176,6 +176,26 @@ pub fn update_project_task_schema() -> Vec<SchemaField> {
             ..Default::default()
         },
         SchemaField {
+            name: "title".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some(
+                "Optional updated task title. Available to user-facing conversation threads when revising the brief. Editing the title preempts any running execution and re-routes the coordinator with the new instructions."
+                    .to_string(),
+            ),
+            required: false,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "description".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some(
+                "Optional updated task description (the brief the worker reads). Available to user-facing conversation threads when revising instructions. Write it as a direct, sequenced instruction (e.g. \"First do X. Then do Y.\") rather than commentary. Editing the description preempts any running execution and re-routes the coordinator."
+                    .to_string(),
+            ),
+            required: false,
+            ..Default::default()
+        },
+        SchemaField {
             name: "status".to_string(),
             field_type: "STRING".to_string(),
             description: Some(
@@ -187,6 +207,7 @@ pub fn update_project_task_schema() -> Vec<SchemaField> {
                 "blocked",
                 "completed",
                 "failed",
+                "cancelled",
                 "waiting_for_children",
             ]),
             required: false,

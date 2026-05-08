@@ -127,7 +127,6 @@ pub struct CreateSkillBundleInput {
     pub replace_existing: bool,
 }
 
-
 fn normalize_virtual_path(path: &str) -> Result<String, ApiErrorResponse> {
     let trimmed = path.trim();
     if trimmed.is_empty() || trimmed == "/" {
@@ -217,8 +216,8 @@ pub async fn list_skill_tree(
                 if rest.is_some() || !specs.iter().any(|s| s.slug == slug) {
                     return Err(ApiErrorResponse::not_found("Path not found"));
                 }
-                let md = agent_engine::tools::system_skills::read_system_skill_md(slug)
-                    .unwrap_or("");
+                let md =
+                    agent_engine::tools::system_skills::read_system_skill_md(slug).unwrap_or("");
                 vec![SkillTreeEntry {
                     name: "SKILL.md".to_string(),
                     path: format!("/{}/SKILL.md", slug),

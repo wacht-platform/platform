@@ -1,5 +1,6 @@
 use super::core::AgentExecutor;
 
+use common::HasDbRouter;
 use common::error::AppError;
 use dto::json::agent_executor::{
     AssignProjectTaskParams, CreateProjectTaskParams, UpdateProjectTaskParams,
@@ -36,7 +37,14 @@ fn create_project_task_metadata() -> ProjectTaskBoardItemMetadata {
 }
 
 fn update_project_task_has_meaningful_mutation(params: &UpdateProjectTaskParams) -> bool {
-    params.status.is_some() || params.schedule.is_some()
+    params.status.is_some()
+        || params.schedule.is_some()
+        || params
+            .title
+            .as_ref()
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false)
+        || params.description.is_some()
 }
 
 fn validate_schedule_params(
@@ -143,6 +151,8 @@ impl AgentExecutor {
             )
             .await?;
 
+        let project_workspace_path = format!("/project_workspace/tasks/{}", board_item.task_key);
+
         Ok(serde_json::json!({
             "success": true,
             "tool": "create_project_task",
@@ -153,6 +163,7 @@ impl AgentExecutor {
             "routed_to_coordinator": true,
             "created_board_item_id": board_item.id.to_string(),
             "board_item_id": board_item.id.to_string(),
+            "project_workspace_path": project_workspace_path,
         }))
     }
 
@@ -162,7 +173,7 @@ impl AgentExecutor {
     ) -> Result<Value, AppError> {
         if !self.can_write_project_task_board_in_current_mode() {
             return Err(AppError::BadRequest(
-                "update_project_task is available only to the coordinator thread or while handling an assignment event".to_string(),
+                "update_project_task is available only to the coordinator thread, while handling an assignment event, or from a user-facing conversation thread".to_string(),
             ));
         }
 
@@ -170,6 +181,10 @@ impl AgentExecutor {
             return Err(AppError::BadRequest(
                 "update_project_task requires at least one meaningful change. If no changes are to be made, this tool is not useful, and should not be called.".to_string(),
             ));
+        }
+
+        if self.is_conversation_thread && !self.effective_is_coordinator_thread() {
+            return self.handle_update_project_task_from_conversation(params).await;
         }
 
         if let Some(next_status) = params.status.as_deref() {
@@ -218,6 +233,82 @@ impl AgentExecutor {
             "task_key": task_key,
             "updated": true,
             "board_item_id": board_item.id.to_string(),
+            "project_workspace_path": format!("/project_workspace/tasks/{}", task_key),
+        }))
+    }
+
+    async fn handle_update_project_task_from_conversation(
+        &mut self,
+        params: UpdateProjectTaskParams,
+    ) -> Result<Value, AppError> {
+        let task_key = params.task_key.trim().to_string();
+        if task_key.is_empty() {
+            return Err(AppError::BadRequest(
+                "update_project_task requires a task_key".to_string(),
+            ));
+        }
+
+        let board_id = self.ensure_project_task_board_id().await?;
+        let board_item = queries::GetProjectTaskBoardItemByTaskKeyQuery::new(board_id, &task_key)
+            .execute_with_db(
+                self.ctx
+                    .app_state
+                    .db_router
+                    .reader(common::ReadConsistency::Strong),
+            )
+            .await?
+            .ok_or_else(|| {
+                AppError::BadRequest(format!("Task `{task_key}` not found on this project board"))
+            })?;
+
+        let project_id = self.ctx.get_thread().await?.project_id;
+        let project = queries::GetActorProjectByIdQuery::new(
+            project_id,
+            self.ctx.agent.deployment_id,
+        )
+        .execute_with_db(
+            self.ctx
+                .app_state
+                .db_router
+                .reader(common::ReadConsistency::Strong),
+        )
+        .await?
+        .ok_or_else(|| {
+            AppError::Internal(format!("Project {project_id} not found for task update"))
+        })?;
+
+        let outcome = commands::ApplyBoardItemEditCommand {
+            deployment_id: self.ctx.agent.deployment_id,
+            board_item_id: board_item.id,
+            coordinator_thread_id: project.coordinator_thread_id,
+            event_log_id: self.ctx.app_state.sf.next_id()? as i64,
+            title: params.title.clone(),
+            description: params.description.clone(),
+            status: params.status.clone(),
+            preempt_summary: "Preempted by user revision from conversation thread.",
+        }
+        .execute(self.ctx.app_state.db_router.writer_pool())
+        .await?;
+
+        if outcome.routed || outcome.preempted {
+            commands::event_log::nudge_dispatcher(&self.ctx.app_state.nats_client).await;
+        }
+        self.refresh_project_task_board_items().await?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "tool": "update_project_task",
+            "task_key": task_key,
+            "updated": !outcome.changed_fields.is_empty(),
+            "board_item_id": outcome.item.id.to_string(),
+            "project_workspace_path": format!("/project_workspace/tasks/{}", task_key),
+            "changed_fields": outcome.changed_fields.iter().map(|c| serde_json::json!({
+                "field": c.field,
+                "from": c.from,
+                "to": c.to,
+            })).collect::<Vec<_>>(),
+            "preempted_running_execution": outcome.preempted,
+            "routed_to_coordinator": outcome.routed,
         }))
     }
 

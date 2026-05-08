@@ -1,5 +1,9 @@
 use common::{HasDbRouter, HasRedisProvider, error::AppError};
 use dto::json::DeploymentAuthSettingsUpdates;
+use models::{
+    FirstFactor,
+    plan_features::{PlanFeature, PlanTier},
+};
 use serde_json::{Map, Value, json};
 
 use super::ClearDeploymentCacheCommand;
@@ -33,6 +37,14 @@ fn enables_phone_auth(updates: &DeploymentAuthSettingsUpdates) -> bool {
             .as_ref()
             .and_then(|factors| factors.phone_otp_enabled)
             == Some(true)
+        || updates.first_factor == Some(FirstFactor::PhoneOtp)
+}
+
+fn product_has_feature(product_id: Option<&str>, feature: PlanFeature) -> bool {
+    product_id
+        .and_then(PlanTier::from_product_id)
+        .map(|tier| tier.has_feature(feature))
+        .unwrap_or(false)
 }
 
 fn build_partial_json<T: serde::Serialize>(data: Option<&T>) -> Option<Value> {
@@ -63,10 +75,12 @@ impl UpdateDeploymentAuthSettingsCommand {
                 r#"
                 SELECT
                     d.mode,
+                    s.product_id,
                     COALESCE(ba.pulse_usage_disabled, false) AS "pulse_usage_disabled!"
                 FROM deployments d
                 JOIN projects p ON p.id = d.project_id
                 JOIN billing_accounts ba ON ba.id = p.billing_account_id
+                LEFT JOIN subscriptions s ON s.billing_account_id = ba.id AND s.status = 'active'
                 WHERE d.id = $1 AND d.deleted_at IS NULL
                 "#,
                 self.deployment_id
@@ -74,6 +88,12 @@ impl UpdateDeploymentAuthSettingsCommand {
             .fetch_optional(writer)
             .await?
             .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
+
+            if !product_has_feature(deployment.product_id.as_deref(), PlanFeature::PhoneAuth) {
+                return Err(AppError::Validation(
+                    "Phone authentication is not available on the current plan".to_string(),
+                ));
+            }
 
             if deployment.mode.eq_ignore_ascii_case("staging") && deployment.pulse_usage_disabled {
                 return Err(AppError::Validation(

@@ -266,6 +266,9 @@ where
         note,
         caused_by_event_id: caused_by_thread_id,
         routing_reason,
+        previous_status: None,
+        changed_fields: Vec::new(),
+        last_assignment_result_status: None,
     }
     .execute(deps.writer_pool())
     .await?;

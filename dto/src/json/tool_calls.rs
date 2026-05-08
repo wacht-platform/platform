@@ -224,6 +224,10 @@ pub struct CreateProjectTaskParams {
 pub struct UpdateProjectTaskParams {
     pub task_key: String,
     #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
     pub status: Option<String>,
     #[serde(default)]
     pub schedule: Option<ProjectTaskScheduleParams>,

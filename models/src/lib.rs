@@ -1,8 +1,8 @@
 pub mod actor;
 pub mod actor_project;
 pub mod agent_session;
-pub mod agent_thread;
 pub mod agent_skill;
+pub mod agent_thread;
 pub mod ai_agent;
 pub mod ai_knowledge_base;
 pub mod ai_tool;

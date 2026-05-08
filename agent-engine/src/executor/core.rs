@@ -477,7 +477,7 @@ impl AgentExecutor {
     }
 
     pub(super) fn can_write_project_task_board_in_current_mode(&self) -> bool {
-        self.effective_is_coordinator_thread()
+        self.effective_is_coordinator_thread() || self.is_conversation_thread
     }
 
     pub(super) fn can_create_project_task_in_current_mode(&self) -> bool {

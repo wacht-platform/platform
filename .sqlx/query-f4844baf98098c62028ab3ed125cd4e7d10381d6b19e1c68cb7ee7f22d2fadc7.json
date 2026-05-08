@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    d.mode,\n                    s.product_id,\n                    COALESCE(ba.pulse_usage_disabled, false) AS \"pulse_usage_disabled!\"\n                FROM deployments d\n                JOIN projects p ON p.id = d.project_id\n                JOIN billing_accounts ba ON ba.id = p.billing_account_id\n                LEFT JOIN subscriptions s ON s.billing_account_id = ba.id AND s.status = 'active'\n                WHERE d.id = $1 AND d.deleted_at IS NULL\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mode",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "product_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "pulse_usage_disabled!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "f4844baf98098c62028ab3ed125cd4e7d10381d6b19e1c68cb7ee7f22d2fadc7"
+}
