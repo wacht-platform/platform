@@ -53,6 +53,7 @@ fn parse_conversation_message_type(value: &str) -> Result<ConversationMessageTyp
         "execution_summary" => Ok(ConversationMessageType::ExecutionSummary),
         "clarification_request" => Ok(ConversationMessageType::ClarificationRequest),
         "clarification_response" => Ok(ConversationMessageType::ClarificationResponse),
+        "task_subscription_notification" => Ok(ConversationMessageType::TaskSubscriptionNotification),
         other => Err(AppError::Internal(format!(
             "Unknown conversation message_type '{}'",
             other
@@ -318,6 +319,87 @@ impl GetCompactionWindowConversationsQuery {
 }
 
 #[derive(Debug)]
+pub struct ListThreadMessagesForUserQuery {
+    pub thread_id: i64,
+    pub limit: i64,
+    pub before_id: Option<i64>,
+    pub after_id: Option<i64>,
+}
+
+impl ListThreadMessagesForUserQuery {
+    pub fn new(thread_id: i64, limit: i64) -> Self {
+        Self {
+            thread_id,
+            limit,
+            before_id: None,
+            after_id: None,
+        }
+    }
+
+    pub fn with_before_id(mut self, before_id: Option<i64>) -> Self {
+        self.before_id = before_id;
+        self
+    }
+
+    pub fn with_after_id(mut self, after_id: Option<i64>) -> Self {
+        self.after_id = after_id;
+        self
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<Vec<ConversationRecord>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let rows = sqlx::query!(
+            r#"
+            SELECT id, thread_id, board_item_id, execution_run_id, timestamp,
+                   content, message_type, created_at, updated_at, metadata
+            FROM conversations
+            WHERE thread_id = $1
+              AND message_type <> 'task_subscription_notification'
+              AND ($2::bigint IS NULL OR id < $2)
+              AND ($3::bigint IS NULL OR id > $3)
+            ORDER BY
+              CASE WHEN $3::bigint IS NOT NULL THEN id END ASC,
+              CASE WHEN $3::bigint IS NULL THEN id END DESC
+            LIMIT $4
+            "#,
+            self.thread_id,
+            self.before_id,
+            self.after_id,
+            self.limit,
+        )
+        .fetch_all(executor)
+        .await
+        .map_err(AppError::from)?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok(ConversationRecord {
+                    id: row.id,
+                    thread_id: row.thread_id,
+                    board_item_id: row.board_item_id,
+                    execution_run_id: row.execution_run_id,
+                    timestamp: row.timestamp,
+                    content: serde_json::from_value(row.content).map_err(|e| {
+                        AppError::Internal(format!(
+                            "Failed to deserialize conversation content: {}",
+                            e
+                        ))
+                    })?,
+                    message_type: parse_conversation_message_type(&row.message_type)?,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                    metadata: row.metadata,
+                })
+            })
+            .collect()
+    }
+}
+
 pub struct ListConversationsForBoardItemQuery {
     pub board_item_id: i64,
     pub limit: i64,

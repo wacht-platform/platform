@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE conversations\n        SET metadata = jsonb_set(\n                COALESCE(metadata, '{}'::jsonb),\n                '{consumed_at}',\n                to_jsonb(NOW()::text)\n            ),\n            updated_at = NOW()\n        WHERE thread_id = $1\n          AND message_type = 'task_subscription_notification'\n          AND COALESCE(metadata->>'consumed_at', '') = ''\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8335d7d80674c7a2e3e434ee85c347c7114552931faafc4f8b8fee9909829385"
+}

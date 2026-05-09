@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO agent_thread_task_subscriptions\n                (deployment_id, thread_id, board_item_id, event_kinds)\n            VALUES ($1, $2, $3, $4)\n            ON CONFLICT (thread_id, board_item_id) DO UPDATE\n                SET event_kinds = EXCLUDED.event_kinds,\n                    updated_at = NOW()\n            RETURNING deployment_id, thread_id, board_item_id, event_kinds,\n                      created_at, updated_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "thread_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "board_item_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "event_kinds",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "105ffff3a377fb89beaf7a02c64593c5e93e21830e8509a1ff4f91fcec8dec2d"
+}

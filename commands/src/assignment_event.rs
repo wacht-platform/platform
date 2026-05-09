@@ -1,6 +1,9 @@
-use common::{HasDbRouter, ReadConsistency, error::AppError};
-use models::{ProjectTaskBoardItem, ProjectTaskBoardItemAssignment};
-use queries::ListProjectTaskBoardItemAssignmentsQuery;
+use chrono::Utc;
+use common::{HasDbRouter, HasIdProvider, ReadConsistency, error::AppError};
+use models::{
+    ProjectTaskBoardItem, ProjectTaskBoardItemAssignment, TaskSubscriptionEventKind,
+};
+use queries::{ListProjectTaskBoardItemAssignmentsQuery, ListSubscribersForBoardItemQuery};
 use serde::Serialize;
 use sqlx::Postgres;
 
@@ -232,11 +235,11 @@ pub struct ApplyBoardItemEditCommand<'a> {
     pub deployment_id: i64,
     pub board_item_id: i64,
     pub coordinator_thread_id: Option<i64>,
-    pub event_log_id: i64,
     pub title: Option<String>,
     pub description: Option<String>,
     pub status: Option<String>,
     pub preempt_summary: &'a str,
+    pub fanout_subscriptions: bool,
 }
 
 pub struct BoardItemEditOutcome {
@@ -244,10 +247,15 @@ pub struct BoardItemEditOutcome {
     pub changed_fields: Vec<TaskRoutingFieldChange>,
     pub preempted: bool,
     pub routed: bool,
+    pub subscribers_notified: usize,
 }
 
 impl<'a> ApplyBoardItemEditCommand<'a> {
-    pub async fn execute(self, pool: &sqlx::PgPool) -> Result<BoardItemEditOutcome, AppError> {
+    pub async fn execute<D>(self, deps: &D) -> Result<BoardItemEditOutcome, AppError>
+    where
+        D: HasDbRouter + HasIdProvider + ?Sized,
+    {
+        let pool = deps.writer_pool();
         let original = sqlx::query_as!(
             ProjectTaskBoardItem,
             r#"
@@ -316,6 +324,7 @@ impl<'a> ApplyBoardItemEditCommand<'a> {
                 changed_fields,
                 preempted: false,
                 routed: false,
+                subscribers_notified: 0,
             });
         }
 
@@ -379,14 +388,15 @@ impl<'a> ApplyBoardItemEditCommand<'a> {
                 "Coordinator received {} signal for task #{} '{}' (status={}).",
                 routing_reason, item.id, item.title, item.status,
             );
+            let routing_event_id = deps.id_provider().next_id()? as i64;
             InsertTaskRoutingEvent {
-                event_log_id: self.event_log_id,
+                event_log_id: routing_event_id,
                 deployment_id: self.deployment_id,
                 coordinator_thread_id,
                 board_item: &item,
                 idempotency_key: format!(
                     "task_routing_{}_{}_{}",
-                    item.id, item.state_version, self.event_log_id
+                    item.id, item.state_version, routing_event_id
                 ),
                 summary,
                 note: None,
@@ -401,6 +411,32 @@ impl<'a> ApplyBoardItemEditCommand<'a> {
             routed = true;
         }
 
+        let mut subscribers_notified = 0usize;
+        if self.fanout_subscriptions {
+            if let Some(kind) = TaskSubscriptionEventKind::from_status(&item.status) {
+                if item.status != original_status {
+                    subscribers_notified = fan_out_task_subscription_notifications(
+                        &mut tx,
+                        deps,
+                        self.deployment_id,
+                        &item,
+                        &original_status,
+                        kind,
+                        Utc::now(),
+                    )
+                    .await?;
+                }
+            }
+        }
+
+        if cancelled_now {
+            crate::DeleteSubscriptionsForBoardItemCommand {
+                board_item_id: item.id,
+            }
+            .execute(&mut *tx)
+            .await?;
+        }
+
         tx.commit().await?;
 
         Ok(BoardItemEditOutcome {
@@ -408,6 +444,145 @@ impl<'a> ApplyBoardItemEditCommand<'a> {
             changed_fields,
             preempted,
             routed,
+            subscribers_notified,
         })
     }
+}
+
+pub const SUBSCRIPTION_DEBOUNCE_SECONDS: i64 = 30;
+
+pub async fn fan_out_task_subscription_notifications<D>(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    deps: &D,
+    deployment_id: i64,
+    board_item: &ProjectTaskBoardItem,
+    from_status: &str,
+    event_kind: TaskSubscriptionEventKind,
+    transitioned_at: chrono::DateTime<Utc>,
+) -> Result<usize, AppError>
+where
+    D: HasIdProvider + ?Sized,
+{
+    let subscribers = ListSubscribersForBoardItemQuery::new(board_item.id, event_kind.as_str())
+        .execute_with_db(&mut **tx)
+        .await?;
+    if subscribers.is_empty() {
+        return Ok(0);
+    }
+
+    let interval = format!("{} seconds", SUBSCRIPTION_DEBOUNCE_SECONDS);
+
+    for sub in &subscribers {
+        let record_id = deps.id_provider().next_id()? as i64;
+        let content = serde_json::json!({
+            "type": "task_subscription_notification",
+            "board_item_id": board_item.id.to_string(),
+            "task_key": board_item.task_key,
+            "task_title": board_item.title,
+            "from_status": from_status,
+            "to_status": board_item.status,
+            "transitioned_at": transitioned_at.to_rfc3339(),
+        });
+        let metadata = serde_json::json!({
+            "subscription_event_kind": event_kind.as_str(),
+            "consumed_at": serde_json::Value::Null,
+        });
+        sqlx::query!(
+            r#"
+            INSERT INTO conversations (
+                id, thread_id, board_item_id, execution_run_id, timestamp,
+                content, message_type, created_at, updated_at, metadata
+            ) VALUES (
+                $1, $2, $3, NULL, NOW(), $4::jsonb, 'task_subscription_notification',
+                NOW(), NOW(), $5::jsonb
+            )
+            "#,
+            record_id,
+            sub.thread_id,
+            board_item.id,
+            content,
+            metadata,
+        )
+        .execute(&mut **tx)
+        .await?;
+
+        let wake_event_id = deps.id_provider().next_id()? as i64;
+        let payload = serde_json::json!({
+            "event_log_id": wake_event_id.to_string(),
+            "deployment_id": deployment_id.to_string(),
+            "thread_id": sub.thread_id.to_string(),
+            "kind": "thread_subscription_delivery",
+            "board_item_id": board_item.id.to_string(),
+        });
+        let idempotency_key = format!(
+            "thread_subscription_delivery_{}_{}",
+            sub.thread_id, wake_event_id
+        );
+
+        sqlx::query!(
+            r#"
+            WITH coalesced AS (
+                UPDATE event_log
+                SET payload = $1::jsonb
+                WHERE aggregate_type = 'thread'
+                  AND aggregate_id = $3
+                  AND event_type = 'thread_subscription_delivery'
+                  AND publish_status = 'pending'
+                  AND deployment_id = $5
+                RETURNING id
+            )
+            INSERT INTO event_log (
+                id, deployment_id,
+                aggregate_type, aggregate_id, event_type, payload, priority,
+                publish_subject, publish_status, next_publish_at,
+                idempotency_key
+            )
+            SELECT
+                $4, $5,
+                'thread', $3, 'thread_subscription_delivery', $1::jsonb, 30,
+                $6, 'pending', NOW() + ($2::text)::interval,
+                $7
+            WHERE NOT EXISTS (SELECT 1 FROM coalesced)
+            ON CONFLICT (idempotency_key) DO NOTHING
+            "#,
+            payload,
+            interval,
+            sub.thread_id,
+            wake_event_id,
+            deployment_id,
+            event_log::EVENT_LOG_WORK_SUBJECT,
+            idempotency_key,
+        )
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    Ok(subscribers.len())
+}
+
+pub async fn mark_subscription_notifications_consumed<'e, E>(
+    executor: E,
+    thread_id: i64,
+) -> Result<u64, AppError>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let res = sqlx::query!(
+        r#"
+        UPDATE conversations
+        SET metadata = jsonb_set(
+                COALESCE(metadata, '{}'::jsonb),
+                '{consumed_at}',
+                to_jsonb(NOW()::text)
+            ),
+            updated_at = NOW()
+        WHERE thread_id = $1
+          AND message_type = 'task_subscription_notification'
+          AND COALESCE(metadata->>'consumed_at', '') = ''
+        "#,
+        thread_id,
+    )
+    .execute(executor)
+    .await?;
+    Ok(res.rows_affected())
 }

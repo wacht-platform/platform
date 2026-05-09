@@ -99,6 +99,8 @@ impl ToolExecutor {
             | ToolCallRequest::UpdateProjectTask { .. }
             | ToolCallRequest::AssignProjectTask { .. }
             | ToolCallRequest::AskUser { .. }
+            | ToolCallRequest::SubscribeToTask { .. }
+            | ToolCallRequest::UnsubscribeFromTask { .. }
             | ToolCallRequest::External(_) => Err(AppError::BadRequest(
                 "Unsupported request kind for internal tool execution".to_string(),
             )),

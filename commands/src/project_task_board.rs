@@ -483,6 +483,40 @@ impl UpdateProjectTaskBoardItemMountsCommand {
     }
 }
 
+pub struct SetProjectTaskBoardItemArchivedCommand {
+    pub board_id: i64,
+    pub item_id: i64,
+    pub archived: bool,
+}
+
+impl SetProjectTaskBoardItemArchivedCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<ProjectTaskBoardItem, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let item = sqlx::query_as!(
+            ProjectTaskBoardItem,
+            r#"
+            UPDATE project_task_board_items
+            SET archived_at = CASE WHEN $3 THEN NOW() ELSE NULL END,
+                updated_at = NOW()
+            WHERE id = $1 AND board_id = $2
+            RETURNING id, board_id, task_key, title, description, status,
+                      assigned_thread_id, metadata, completed_at, archived_at,
+                      created_at, updated_at, state_version,
+                      schedule_id, scheduled_for, fired_at,
+                      pending_question, pending_approval, mounts
+            "#,
+            self.item_id,
+            self.board_id,
+            self.archived,
+        )
+        .fetch_one(executor)
+        .await?;
+        Ok(item)
+    }
+}
+
 pub struct AttachProjectTaskBoardItemScheduleCommand {
     pub board_id: i64,
     pub task_key: String,
@@ -748,6 +782,7 @@ impl CreateProjectTaskBoardItemRelationCommand {
 }
 
 pub struct UpdateProjectTaskBoardItemCommand {
+    pub deployment_id: i64,
     pub board_id: i64,
     pub task_key: String,
     pub status: Option<String>,
@@ -759,9 +794,62 @@ impl UpdateProjectTaskBoardItemCommand {
     where
         D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + HasNatsProvider + ?Sized,
     {
+        let deployment_id = self.deployment_id;
+        let board_id = self.board_id;
+        let task_key = self.task_key.clone();
+        let new_status = self.status.clone();
+
         let mut tx = deps.writer_pool().begin().await?;
+
+        let original_status: Option<String> = sqlx::query_scalar!(
+            r#"SELECT status FROM project_task_board_items
+               WHERE board_id = $1 AND task_key = $2 AND archived_at IS NULL"#,
+            board_id,
+            task_key,
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+
         let item = self.execute_with_db(&mut *tx).await?;
+
+        let mut subscriptions_fired = false;
+        let mut cancelled_now = false;
+        if let (Some(prior), Some(_)) = (original_status.as_deref(), new_status.as_deref()) {
+            if prior != item.status {
+                if let Some(kind) =
+                    models::TaskSubscriptionEventKind::from_status(&item.status)
+                {
+                    let count = crate::fan_out_task_subscription_notifications(
+                        &mut tx,
+                        deps,
+                        deployment_id,
+                        &item,
+                        prior,
+                        kind,
+                        chrono::Utc::now(),
+                    )
+                    .await?;
+                    subscriptions_fired = count > 0;
+                }
+                if item.status == "cancelled" && prior != "cancelled" {
+                    cancelled_now = true;
+                }
+            }
+        }
+
+        if cancelled_now {
+            crate::DeleteSubscriptionsForBoardItemCommand {
+                board_item_id: item.id,
+            }
+            .execute(&mut *tx)
+            .await?;
+        }
+
         tx.commit().await?;
+
+        if subscriptions_fired {
+            event_log::nudge_dispatcher(deps.nats_provider()).await;
+        }
 
         let _ = maybe_ready_parent_after_child_completion_with_deps(deps, &item).await?;
 

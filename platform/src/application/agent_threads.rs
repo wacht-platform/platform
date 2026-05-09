@@ -4,7 +4,6 @@ use commands::{
     DeleteProjectTaskScheduleByTaskKeyCommand, UpdateProjectTaskBoardItemMountsCommand,
     UpdateProjectTaskScheduleCommand, UpsertThreadAgentAssignmentCommand,
 };
-use common::HasDbRouter;
 use common::ReadConsistency;
 use common::error::AppError;
 use dto::json::deployment::{
@@ -330,26 +329,6 @@ fn is_text_like(path: &str, mime_type: &str, body: &[u8]) -> bool {
                 )
             })
             .unwrap_or(false)
-}
-
-fn parse_conversation_message_type(
-    value: &str,
-) -> Result<models::ConversationMessageType, AppError> {
-    match value {
-        "user_message" => Ok(models::ConversationMessageType::UserMessage),
-        "steer" => Ok(models::ConversationMessageType::Steer),
-        "tool_result" => Ok(models::ConversationMessageType::ToolResult),
-        "system_decision" => Ok(models::ConversationMessageType::SystemDecision),
-        "approval_request" => Ok(models::ConversationMessageType::ApprovalRequest),
-        "approval_response" => Ok(models::ConversationMessageType::ApprovalResponse),
-        "execution_summary" => Ok(models::ConversationMessageType::ExecutionSummary),
-        "clarification_request" => Ok(models::ConversationMessageType::ClarificationRequest),
-        "clarification_response" => Ok(models::ConversationMessageType::ClarificationResponse),
-        other => Err(AppError::Internal(format!(
-            "Unknown conversation message_type '{}'",
-            other
-        ))),
-    }
 }
 
 async fn list_workspace_directory(
@@ -931,6 +910,13 @@ pub async fn set_agent_thread_archived(
     )
     .fetch_one(app_state.db_router.writer())
     .await?;
+
+    if archived {
+        commands::DeleteSubscriptionsForThreadCommand { thread_id }
+            .execute(app_state.db_router.writer())
+            .await?;
+    }
+
     Ok(updated)
 }
 
@@ -944,46 +930,13 @@ pub async fn list_thread_messages(
 ) -> Result<(Vec<ConversationRecord>, bool), AppError> {
     get_agent_thread_by_id(app_state, deployment_id, thread_id).await?;
     let limit = normalize_limit(limit, 50, 100);
-    let rows = sqlx::query!(
-        r#"
-        SELECT id, thread_id, board_item_id, execution_run_id, timestamp, content, message_type, created_at, updated_at, metadata
-        FROM conversations
-        WHERE thread_id = $1
-          AND ($2::bigint IS NULL OR id < $2)
-          AND ($3::bigint IS NULL OR id > $3)
-        ORDER BY
-          CASE WHEN $3::bigint IS NOT NULL THEN id END ASC,
-          CASE WHEN $3::bigint IS NULL THEN id END DESC
-        LIMIT $4
-        "#,
-        thread_id,
-        before_id,
-        after_id,
-        limit + 1,
-    )
-    .fetch_all(app_state.db_router.reader(ReadConsistency::Eventual))
-    .await?;
+    let mut data = queries::ListThreadMessagesForUserQuery::new(thread_id, limit + 1)
+        .with_before_id(before_id)
+        .with_after_id(after_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
+        .await?;
 
-    let has_more = rows.len() as i64 > limit;
-    let mut data: Vec<ConversationRecord> = rows
-        .into_iter()
-        .map(|row| {
-            Ok(ConversationRecord {
-                id: row.id,
-                thread_id: row.thread_id,
-                board_item_id: row.board_item_id,
-                execution_run_id: row.execution_run_id,
-                timestamp: row.timestamp,
-                content: serde_json::from_value(row.content).map_err(|e| {
-                    AppError::Internal(format!("Failed to deserialize conversation content: {}", e))
-                })?,
-                message_type: parse_conversation_message_type(&row.message_type)?,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                metadata: row.metadata,
-            })
-        })
-        .collect::<Result<Vec<_>, AppError>>()?;
+    let has_more = data.len() as i64 > limit;
     if has_more {
         data.truncate(limit as usize);
     }
@@ -1402,13 +1355,13 @@ pub async fn create_project_task_board_item(
         }
         .execute_with_db(&mut *tx)
         .await?;
-        item = attach_schedule_mounts_to_board_item(
-            &mut *tx,
-            board.id,
-            &item.task_key,
-            schedule.id,
-            schedule.mounts,
-        )
+        item = commands::AttachProjectTaskBoardItemScheduleCommand {
+            board_id: board.id,
+            task_key: item.task_key.clone(),
+            schedule_id: schedule.id,
+            mounts: schedule.mounts,
+        }
+        .execute_with_db(&mut *tx)
         .await?;
     }
 
@@ -1523,13 +1476,13 @@ pub async fn update_project_task_board_item(
         deployment_id,
         board_item_id: item.id,
         coordinator_thread_id: project.coordinator_thread_id,
-        event_log_id: app_state.sf.next_id()? as i64,
         title: request.title.clone(),
         description: request.description.clone(),
         status: request.status.clone(),
         preempt_summary: "Preempted by task update.",
+        fanout_subscriptions: false,
     }
-    .execute(app_state.db_router.writer_pool())
+    .execute(&common::deps::from_app(app_state).db().nats().id())
     .await?;
     let mut current = edit_outcome.item;
 
@@ -1565,13 +1518,13 @@ pub async fn update_project_task_board_item(
             let schedule = command
                 .execute_with_db(app_state.db_router.writer())
                 .await?;
-            current = attach_schedule_mounts_to_board_item(
-                app_state.db_router.writer(),
-                board.id,
-                &current.task_key,
-                schedule.id,
-                schedule.mounts,
-            )
+            current = commands::AttachProjectTaskBoardItemScheduleCommand {
+                board_id: board.id,
+                task_key: current.task_key.clone(),
+                schedule_id: schedule.id,
+                mounts: schedule.mounts,
+            }
+            .execute_with_db(app_state.db_router.writer())
             .await?;
         } else {
             let schedule = CreateProjectTaskScheduleCommand {
@@ -1588,51 +1541,22 @@ pub async fn update_project_task_board_item(
             }
             .execute_with_db(app_state.db_router.writer())
             .await?;
-            current = attach_schedule_mounts_to_board_item(
-                app_state.db_router.writer(),
-                board.id,
-                &current.task_key,
-                schedule.id,
-                schedule.mounts,
-            )
+            current = commands::AttachProjectTaskBoardItemScheduleCommand {
+                board_id: board.id,
+                task_key: current.task_key.clone(),
+                schedule_id: schedule.id,
+                mounts: schedule.mounts,
+            }
+            .execute_with_db(app_state.db_router.writer())
             .await?;
         }
     }
 
-    if edit_outcome.routed || edit_outcome.preempted {
+    if edit_outcome.routed || edit_outcome.preempted || edit_outcome.subscribers_notified > 0 {
         commands::event_log::nudge_dispatcher(&app_state.nats_client).await;
     }
 
     Ok(current)
-}
-
-async fn attach_schedule_mounts_to_board_item<'e, E>(
-    executor: E,
-    board_id: i64,
-    task_key: &str,
-    schedule_id: i64,
-    mounts: serde_json::Value,
-) -> Result<ProjectTaskBoardItem, AppError>
-where
-    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-{
-    sqlx::query_as::<_, ProjectTaskBoardItem>(
-        r#"
-        UPDATE project_task_board_items
-        SET schedule_id = $3, mounts = $4, updated_at = NOW()
-        WHERE board_id = $1 AND task_key = $2 AND archived_at IS NULL
-        RETURNING id, board_id, task_key, title, description, status,
-                  assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-                  schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
-        "#,
-    )
-    .bind(board_id)
-    .bind(task_key)
-    .bind(schedule_id)
-    .bind(mounts)
-    .fetch_one(executor)
-    .await
-    .map_err(AppError::from)
 }
 
 pub async fn set_project_task_board_item_archived(
@@ -1650,24 +1574,21 @@ pub async fn set_project_task_board_item_archived(
         ));
     }
 
-    let updated = sqlx::query_as!(
-        ProjectTaskBoardItem,
-        r#"
-        UPDATE project_task_board_items
-        SET
-            archived_at = CASE WHEN $3 THEN NOW() ELSE NULL END,
-            updated_at = NOW()
-        WHERE id = $1 AND board_id = $2
-        RETURNING id, board_id, task_key, title, description, status,
-                  assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-                  schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
-        "#,
+    let updated = commands::SetProjectTaskBoardItemArchivedCommand {
+        board_id: board.id,
         item_id,
-        board.id,
         archived,
-    )
-    .fetch_one(app_state.db_router.writer())
+    }
+    .execute_with_db(app_state.db_router.writer())
     .await?;
+
+    if archived {
+        commands::DeleteSubscriptionsForBoardItemCommand {
+            board_item_id: item_id,
+        }
+        .execute(app_state.db_router.writer())
+        .await?;
+    }
 
     Ok(updated)
 }

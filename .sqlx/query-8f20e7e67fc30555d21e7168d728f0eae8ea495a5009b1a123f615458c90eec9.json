@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, content\n            FROM conversations\n            WHERE thread_id = $1\n              AND message_type = 'task_subscription_notification'\n              AND COALESCE(metadata->>'consumed_at', '') = ''\n            ORDER BY created_at ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "content",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "8f20e7e67fc30555d21e7168d728f0eae8ea495a5009b1a123f615458c90eec9"
+}

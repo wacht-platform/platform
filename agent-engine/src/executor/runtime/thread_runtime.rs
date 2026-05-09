@@ -193,12 +193,19 @@ impl AgentExecutor {
             .set_active_board_item_id(thread_event.board_item_id);
 
         let thread_event_message = self.build_thread_event_message(&thread_event).await?;
-        let conversation = self
-            .store_user_message(thread_event_message.clone(), None)
-            .await?;
+        let conversation = if thread_event.event_type
+            == models::thread_event::event_type::THREAD_SUBSCRIPTION_DELIVERY
+        {
+            self.store_subscription_delivery_message(thread_event_message.clone())
+                .await?
+        } else {
+            self.store_user_message(thread_event_message.clone(), None)
+                .await?
+        };
 
         self.user_request = match &conversation.content {
             models::ConversationContent::UserMessage { message, .. } => message.clone(),
+            models::ConversationContent::TaskSubscriptionDelivery { summary } => summary.clone(),
             _ => thread_event_message,
         };
 

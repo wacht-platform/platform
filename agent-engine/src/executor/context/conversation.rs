@@ -191,6 +191,25 @@ impl AgentExecutor {
             .await
     }
 
+    pub(crate) async fn store_subscription_delivery_message(
+        &self,
+        summary: String,
+    ) -> Result<ConversationRecord, AppError> {
+        let mut command = CreateConversationCommand::new(
+            self.ctx.app_state.sf.next_id()? as i64,
+            self.ctx.thread_id,
+            ConversationContent::TaskSubscriptionDelivery { summary },
+            ConversationMessageType::TaskSubscriptionNotification,
+        )
+        .with_execution_run_id(self.ctx.execution_run_id);
+        if let Some(board_item_id) = self.current_board_item_id() {
+            command = command.with_board_item_id(board_item_id);
+        }
+        command
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await
+    }
+
     pub(crate) async fn store_user_message(
         &self,
         message: String,
@@ -529,6 +548,20 @@ impl AgentExecutor {
                 ConversationMessageType::ClarificationResponse => {
                     i += 1;
                 }
+
+                ConversationMessageType::TaskSubscriptionNotification => {
+                    if let ConversationContent::TaskSubscriptionDelivery { summary } =
+                        &conv.content
+                    {
+                        history.push(LlmHistoryEntry::with_content(
+                            "user",
+                            "task_subscription_delivery",
+                            timestamp.clone(),
+                            summary.clone(),
+                        ));
+                    }
+                    i += 1;
+                }
             }
         }
 
@@ -725,6 +758,21 @@ impl AgentExecutor {
                                 "clarification",
                                 timestamp,
                                 tag(text),
+                            ),
+                        ));
+                    }
+                }
+                ConversationMessageType::TaskSubscriptionNotification => {
+                    if let ConversationContent::TaskSubscriptionDelivery { summary } =
+                        &conv.content
+                    {
+                        entries.push((
+                            conv.created_at,
+                            LlmHistoryEntry::with_content(
+                                "user",
+                                "task_subscription_delivery",
+                                Some(conv.created_at.to_rfc3339()),
+                                tag(summary.clone()),
                             ),
                         ));
                     }
@@ -1649,6 +1697,18 @@ Output plain text only — no JSON, no code fences, no surrounding prose."#,
                     compact_json_preview(answers, 4000)
                 )
             }
+            ConversationContent::TaskSubscriptionNotification {
+                task_key,
+                from_status,
+                to_status,
+                ..
+            } => format!(
+                "TASK_SUBSCRIPTION {} {}->{}",
+                task_key, from_status, to_status
+            ),
+            ConversationContent::TaskSubscriptionDelivery { summary } => {
+                format!("TASK_SUBSCRIPTION_DELIVERY {summary}")
+            }
         }
     }
 }
@@ -1709,5 +1769,6 @@ fn conversation_message_type_label(message_type: &ConversationMessageType) -> &'
         ConversationMessageType::ExecutionSummary => "execution_summary",
         ConversationMessageType::ClarificationRequest => "clarification_request",
         ConversationMessageType::ClarificationResponse => "clarification_response",
+        ConversationMessageType::TaskSubscriptionNotification => "task_subscription_notification",
     }
 }

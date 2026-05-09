@@ -80,4 +80,5 @@ pub mod event_type {
     pub const APPROVAL_RESPONSE_RECEIVED: &str = "approval_response_received";
     pub const TASK_ROUTING: &str = "task_routing";
     pub const ASSIGNMENT_EXECUTION: &str = "assignment_execution";
+    pub const THREAD_SUBSCRIPTION_DELIVERY: &str = "thread_subscription_delivery";
 }

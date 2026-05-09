@@ -317,6 +317,8 @@ pub enum InternalToolType {
     TaskGraphFailNode,
     TaskGraphReset,
     AskUser,
+    SubscribeToTask,
+    UnsubscribeFromTask,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

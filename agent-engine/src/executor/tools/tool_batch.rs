@@ -107,6 +107,12 @@ impl AgentExecutor {
             ToolCallRequest::AssignProjectTask { params, .. } => {
                 self.handle_assign_project_task(params).await
             }
+            ToolCallRequest::SubscribeToTask { params, .. } => {
+                self.handle_subscribe_to_task(params).await
+            }
+            ToolCallRequest::UnsubscribeFromTask { params, .. } => {
+                self.handle_unsubscribe_from_task(params).await
+            }
             request => {
                 self.execute_tool_call_direct(&resolved.tool, &request)
                     .await

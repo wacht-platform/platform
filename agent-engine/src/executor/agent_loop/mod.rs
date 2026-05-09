@@ -581,8 +581,74 @@ impl AgentExecutor {
                     ))
                 })
             }
+            models::thread_event::event_type::THREAD_SUBSCRIPTION_DELIVERY => {
+                self.build_thread_subscription_delivery_message().await
+            }
             _ => Ok(Self::describe_non_worker_thread_event(thread_event)),
         }
+    }
+
+    async fn build_thread_subscription_delivery_message(&mut self) -> Result<String, AppError> {
+        let rows = queries::ListPendingSubscriptionNotificationsQuery::new(self.ctx.thread_id)
+            .execute_with_db(
+                self.ctx
+                    .app_state
+                    .db_router
+                    .reader(common::ReadConsistency::Strong),
+            )
+            .await?;
+
+        if rows.is_empty() {
+            return Ok("[Task subscription delivery] No pending notifications.".to_string());
+        }
+
+        use std::collections::BTreeMap;
+        let mut by_task: BTreeMap<String, Vec<&queries::PendingSubscriptionNotification>> =
+            BTreeMap::new();
+        for row in &rows {
+            by_task.entry(row.task_key.clone()).or_default().push(row);
+        }
+
+        let mut sections: Vec<String> = Vec::new();
+        for (_, entries) in by_task.iter() {
+            let first = entries.first().expect("non-empty group");
+            let path: Vec<String> = std::iter::once(first.from_status.clone())
+                .chain(entries.iter().map(|e| e.to_status.clone()))
+                .collect();
+            let coalesce_note = if entries.len() > 1 {
+                format!(" ({} transitions since last reply)", entries.len())
+            } else {
+                String::new()
+            };
+            sections.push(format!(
+                "- {} \"{}\": {}{} (latest at {}). Workspace: /project_workspace/tasks/{}",
+                first.task_key,
+                first.task_title,
+                path.join(" → "),
+                coalesce_note,
+                entries
+                    .last()
+                    .map(|e| e.transitioned_at.as_str())
+                    .unwrap_or(""),
+                first.task_key,
+            ));
+        }
+
+        let consumed = commands::mark_subscription_notifications_consumed(
+            self.ctx.app_state.db_router.writer(),
+            self.ctx.thread_id,
+        )
+        .await?;
+        tracing::info!(
+            thread_id = self.ctx.thread_id,
+            count = consumed,
+            "marked subscription notifications consumed"
+        );
+
+        Ok(format!(
+            "[Task subscription delivery]\nYou are subscribed to status changes on the tasks below. Each task's durable state is at the listed `/project_workspace/tasks/<task_key>` path (read TASK.md, JOURNAL.md, artifacts/ as needed). Decide whether to surface this to the user or take action — only mention items they would care about.\n\n{}",
+            sections.join("\n")
+        ))
     }
 
     async fn handle_ask_user_call(

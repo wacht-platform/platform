@@ -488,6 +488,7 @@ impl AgentExecutor {
         match tool_name {
             "update_project_task" => self.can_write_project_task_board_in_current_mode(),
             "create_project_task" => self.can_create_project_task_in_current_mode(),
+            "subscribe_to_task" | "unsubscribe_from_task" => self.is_conversation_thread,
             _ => true,
         }
     }

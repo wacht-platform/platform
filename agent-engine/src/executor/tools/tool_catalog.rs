@@ -376,6 +376,17 @@ impl AgentExecutor {
                 models::InternalToolType::AskUser => Ok(ToolCallRequest::AskUser {
                     params: Self::parse_tool_params("ask_user", normalized_input)?,
                 }),
+                models::InternalToolType::SubscribeToTask => Ok(ToolCallRequest::SubscribeToTask {
+                    params: Self::parse_tool_params("subscribe_to_task", normalized_input)?,
+                }),
+                models::InternalToolType::UnsubscribeFromTask => {
+                    Ok(ToolCallRequest::UnsubscribeFromTask {
+                        params: Self::parse_tool_params(
+                            "unsubscribe_from_task",
+                            normalized_input,
+                        )?,
+                    })
+                }
                 models::InternalToolType::AppendTaskJournal => Err(AppError::BadRequest(
                     "append_task_journal is not exposed in the runtime".to_string(),
                 )),

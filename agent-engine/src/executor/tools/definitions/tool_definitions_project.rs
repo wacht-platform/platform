@@ -93,7 +93,7 @@ pub(crate) fn project_tools() -> Vec<(
         ),
         (
             "update_project_task",
-            "Update an existing shared project task by task key. Available to the coordinator (status, schedule, terminal transitions) and to user-facing conversation threads (revise the brief: title/description, optionally cancel). When a conversation thread edits the title or description, any running execution on this task is preempted and the coordinator is re-routed with the new instructions. Write `description` as a direct, sequenced instruction (e.g. \"First do X. Then do Y.\") so the worker can pick it up without translation. Omit unchanged fields.",
+            "Update an existing shared project task by task key. Coordinator and execution lanes use this for status, schedule, terminal transitions, etc. User-facing conversation threads only see `title` and `description` here — they revise the brief and never change status (cancel, complete, etc. are coordinator decisions). When a conversation thread edits the title or description, any running execution on this task is preempted and the coordinator is re-routed with the new instructions. Write `description` as a direct, sequenced instruction (e.g. \"First do X. Then do Y.\") so the worker can pick it up without translation. Omit unchanged fields.",
             InternalToolType::UpdateProjectTask,
             update_project_task_schema(),
         ),
@@ -121,7 +121,58 @@ pub(crate) fn project_tools() -> Vec<(
             InternalToolType::UpdateThread,
             update_thread_schema(),
         ),
+        (
+            "subscribe_to_task",
+            "Subscribe this conversation thread to status-change notifications for a specific project task. Available to user-facing conversation threads only. By default subscribes to `completed`, `blocked`, and `cancelled`; pass `event_kinds` to narrow the set. When `create_project_task` is called from a conversation thread, it auto-subscribes unless `auto_subscribe: false` was passed — use this tool only to subscribe to tasks the thread did not create or to broaden the kinds.",
+            InternalToolType::SubscribeToTask,
+            subscribe_to_task_schema(),
+        ),
+        (
+            "unsubscribe_from_task",
+            "Stop receiving status-change notifications for the given project task. Available to user-facing conversation threads only.",
+            InternalToolType::UnsubscribeFromTask,
+            unsubscribe_from_task_schema(),
+        ),
     ]
+}
+
+pub fn subscribe_to_task_schema() -> Vec<SchemaField> {
+    vec![
+        SchemaField {
+            name: "task_key".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Existing task key, e.g. `TASK-123456789`.".to_string()),
+            required: true,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "event_kinds".to_string(),
+            field_type: "ARRAY".to_string(),
+            items_type: Some("STRING".to_string()),
+            items_schema: Some(Box::new(SchemaField {
+                name: "event_kind".to_string(),
+                field_type: "STRING".to_string(),
+                enum_values: string_enum(&["completed", "blocked", "cancelled"]),
+                ..Default::default()
+            })),
+            description: Some(
+                "Optional subset of `completed`, `blocked`, `cancelled`. Defaults to all three when omitted."
+                    .to_string(),
+            ),
+            required: false,
+            ..Default::default()
+        },
+    ]
+}
+
+pub fn unsubscribe_from_task_schema() -> Vec<SchemaField> {
+    vec![SchemaField {
+        name: "task_key".to_string(),
+        field_type: "STRING".to_string(),
+        description: Some("Existing task key the thread is subscribed to.".to_string()),
+        required: true,
+        ..Default::default()
+    }]
 }
 
 pub fn list_threads_schema() -> Vec<SchemaField> {
@@ -160,6 +211,7 @@ pub fn create_project_task_schema() -> Vec<SchemaField> {
         SchemaField { name: "next_run_at".to_string(), field_type: "STRING".to_string(), description: Some("UTC RFC3339 timestamp for the next run.".to_string()), required: true, ..Default::default() },
         SchemaField { name: "interval_seconds".to_string(), field_type: "INTEGER".to_string(), description: Some("Required only for `interval` schedules.".to_string()), minimum: Some(1.0), required: false, ..Default::default() },
     ]), ..Default::default() },
+    SchemaField { name: "auto_subscribe".to_string(), field_type: "BOOLEAN".to_string(), description: Some("When called from a user-facing conversation thread, automatically subscribe this thread to the new task's `completed`, `blocked`, and `cancelled` events. Defaults to true. Pass false when the thread is dispatching the task without intent to track its outcome.".to_string()), required: false, ..Default::default() },
 ]
 }
 

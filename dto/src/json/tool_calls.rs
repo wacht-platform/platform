@@ -218,6 +218,8 @@ pub struct CreateProjectTaskParams {
     pub parent_task_key: Option<String>,
     #[serde(default)]
     pub schedule: Option<ProjectTaskScheduleParams>,
+    #[serde(default)]
+    pub auto_subscribe: Option<bool>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -437,7 +439,25 @@ pub enum ToolCallRequest {
     AskUser {
         params: AskUserParams,
     },
+    SubscribeToTask {
+        params: SubscribeToTaskParams,
+    },
+    UnsubscribeFromTask {
+        params: UnsubscribeFromTaskParams,
+    },
     External(ExternalToolCall),
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct SubscribeToTaskParams {
+    pub task_key: String,
+    #[serde(default)]
+    pub event_kinds: Option<Vec<String>>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct UnsubscribeFromTaskParams {
+    pub task_key: String,
 }
 
 impl ToolCallRequest {
@@ -471,6 +491,8 @@ impl ToolCallRequest {
             Self::TaskGraphFailNode { .. } => "task_graph_fail_node",
             Self::TaskGraphReset { .. } => "task_graph_reset",
             Self::AskUser { .. } => "ask_user",
+            Self::SubscribeToTask { .. } => "subscribe_to_task",
+            Self::UnsubscribeFromTask { .. } => "unsubscribe_from_task",
             Self::External(call) => call.tool_name.as_str(),
         }
     }
@@ -505,6 +527,8 @@ impl ToolCallRequest {
             Self::TaskGraphFailNode { .. } => Some(InternalToolType::TaskGraphFailNode),
             Self::TaskGraphReset { .. } => Some(InternalToolType::TaskGraphReset),
             Self::AskUser { .. } => Some(InternalToolType::AskUser),
+            Self::SubscribeToTask { .. } => Some(InternalToolType::SubscribeToTask),
+            Self::UnsubscribeFromTask { .. } => Some(InternalToolType::UnsubscribeFromTask),
             Self::External(_) => None,
         }
     }
@@ -539,6 +563,8 @@ impl ToolCallRequest {
             Self::TaskGraphFailNode { params, .. } => serde_json::to_value(params),
             Self::TaskGraphReset { params, .. } => serde_json::to_value(params),
             Self::AskUser { params, .. } => serde_json::to_value(params),
+            Self::SubscribeToTask { params, .. } => serde_json::to_value(params),
+            Self::UnsubscribeFromTask { params, .. } => serde_json::to_value(params),
             Self::External(call) => Ok(call.input.clone()),
         }
     }

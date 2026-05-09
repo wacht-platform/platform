@@ -46,6 +46,7 @@ pub enum ConversationMessageType {
     ExecutionSummary,
     ClarificationRequest,
     ClarificationResponse,
+    TaskSubscriptionNotification,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,6 +110,18 @@ pub enum ConversationContent {
         )]
         request_message_id: Option<i64>,
         answers: Value,
+    },
+    TaskSubscriptionNotification {
+        #[serde(with = "crate::utils::serde::i64_as_string")]
+        board_item_id: i64,
+        task_key: String,
+        task_title: String,
+        from_status: String,
+        to_status: String,
+        transitioned_at: DateTime<Utc>,
+    },
+    TaskSubscriptionDelivery {
+        summary: String,
     },
 }
 
@@ -178,6 +191,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
             "execution_summary" => ConversationMessageType::ExecutionSummary,
             "clarification_request" => ConversationMessageType::ClarificationRequest,
             "clarification_response" => ConversationMessageType::ClarificationResponse,
+            "task_subscription_notification" => ConversationMessageType::TaskSubscriptionNotification,
             _ => {
                 return Err(sqlx::Error::ColumnDecode {
                     index: "message_type".to_string(),

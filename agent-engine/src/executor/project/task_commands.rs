@@ -1,12 +1,12 @@
 use super::core::AgentExecutor;
 
-use common::HasDbRouter;
 use common::error::AppError;
 use dto::json::agent_executor::{
-    AssignProjectTaskParams, CreateProjectTaskParams, UpdateProjectTaskParams,
+    AssignProjectTaskParams, CreateProjectTaskParams, SubscribeToTaskParams,
+    UnsubscribeFromTaskParams, UpdateProjectTaskParams,
 };
 use dto::json::ProjectTaskScheduleParams;
-use models::ProjectTaskBoardItemMetadata;
+use models::{ProjectTaskBoardItemMetadata, TaskSubscriptionEventKind};
 use serde_json::Value;
 
 fn create_project_task_resolved_status(params: &CreateProjectTaskParams) -> String {
@@ -139,6 +139,13 @@ impl AgentExecutor {
             .map(validate_schedule_params)
             .transpose()?;
 
+        let auto_subscribe = self.is_conversation_thread && params.auto_subscribe.unwrap_or(true);
+        let subscribe_for_thread_id = if auto_subscribe {
+            Some(self.ctx.thread_id)
+        } else {
+            None
+        };
+
         let board_item = self
             .create_project_task_board_item(
                 board_item_id,
@@ -148,10 +155,12 @@ impl AgentExecutor {
                 parent_task_key.clone(),
                 metadata,
                 schedule,
+                subscribe_for_thread_id,
             )
             .await?;
 
         let project_workspace_path = format!("/project_workspace/tasks/{}", board_item.task_key);
+        let subscribed = subscribe_for_thread_id.is_some();
 
         Ok(serde_json::json!({
             "success": true,
@@ -161,6 +170,7 @@ impl AgentExecutor {
             "parent_task_key": parent_task_key,
             "created": true,
             "routed_to_coordinator": true,
+            "subscribed": subscribed,
             "created_board_item_id": board_item.id.to_string(),
             "board_item_id": board_item.id.to_string(),
             "project_workspace_path": project_workspace_path,
@@ -248,6 +258,16 @@ impl AgentExecutor {
             ));
         }
 
+        if params.status.is_some()
+            || params.schedule.is_some()
+            || params.result_summary.is_some()
+            || params.artifacts.is_some()
+        {
+            return Err(AppError::BadRequest(
+                "update_project_task from a conversation thread can only revise `title` or `description` — status, schedule, result_summary, and artifacts are coordinator-only.".to_string(),
+            ));
+        }
+
         let board_id = self.ensure_project_task_board_id().await?;
         let board_item = queries::GetProjectTaskBoardItemByTaskKeyQuery::new(board_id, &task_key)
             .execute_with_db(
@@ -281,16 +301,16 @@ impl AgentExecutor {
             deployment_id: self.ctx.agent.deployment_id,
             board_item_id: board_item.id,
             coordinator_thread_id: project.coordinator_thread_id,
-            event_log_id: self.ctx.app_state.sf.next_id()? as i64,
             title: params.title.clone(),
             description: params.description.clone(),
-            status: params.status.clone(),
+            status: None,
             preempt_summary: "Preempted by user revision from conversation thread.",
+            fanout_subscriptions: true,
         }
-        .execute(self.ctx.app_state.db_router.writer_pool())
+        .execute(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
         .await?;
 
-        if outcome.routed || outcome.preempted {
+        if outcome.routed || outcome.preempted || outcome.subscribers_notified > 0 {
             commands::event_log::nudge_dispatcher(&self.ctx.app_state.nats_client).await;
         }
         self.refresh_project_task_board_items().await?;
@@ -309,6 +329,129 @@ impl AgentExecutor {
             })).collect::<Vec<_>>(),
             "preempted_running_execution": outcome.preempted,
             "routed_to_coordinator": outcome.routed,
+        }))
+    }
+
+    pub(crate) async fn handle_subscribe_to_task(
+        &mut self,
+        params: SubscribeToTaskParams,
+    ) -> Result<Value, AppError> {
+        if !self.is_conversation_thread {
+            return Err(AppError::BadRequest(
+                "subscribe_to_task is available only to user-facing conversation threads"
+                    .to_string(),
+            ));
+        }
+
+        let task_key = params.task_key.trim().to_string();
+        if task_key.is_empty() {
+            return Err(AppError::BadRequest(
+                "subscribe_to_task requires a task_key".to_string(),
+            ));
+        }
+
+        let board_id = self.ensure_project_task_board_id().await?;
+        let board_item =
+            queries::GetProjectTaskBoardItemByTaskKeyQuery::new(board_id, &task_key)
+                .execute_with_db(
+                    self.ctx
+                        .app_state
+                        .db_router
+                        .reader(common::ReadConsistency::Strong),
+                )
+                .await?
+                .ok_or_else(|| {
+                    AppError::BadRequest(format!(
+                        "Task `{task_key}` not found on this project board"
+                    ))
+                })?;
+
+        let event_kinds = match params.event_kinds.as_ref() {
+            Some(values) if !values.is_empty() => {
+                let mut parsed = Vec::with_capacity(values.len());
+                for raw in values {
+                    let kind = TaskSubscriptionEventKind::from_status(raw.trim()).ok_or_else(
+                        || {
+                            AppError::BadRequest(format!(
+                                "subscribe_to_task: unsupported event_kind `{raw}` (allowed: completed, blocked, cancelled)"
+                            ))
+                        },
+                    )?;
+                    if !parsed.contains(&kind) {
+                        parsed.push(kind);
+                    }
+                }
+                parsed
+            }
+            _ => TaskSubscriptionEventKind::defaults(),
+        };
+
+        let subscription = commands::UpsertAgentThreadTaskSubscriptionCommand {
+            deployment_id: self.ctx.agent.deployment_id,
+            thread_id: self.ctx.thread_id,
+            board_item_id: board_item.id,
+            event_kinds: event_kinds.clone(),
+        }
+        .execute(self.ctx.app_state.db_router.writer())
+        .await?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "tool": "subscribe_to_task",
+            "task_key": task_key,
+            "board_item_id": subscription.board_item_id.to_string(),
+            "event_kinds": event_kinds.iter().map(|k| k.as_str()).collect::<Vec<_>>(),
+            "project_workspace_path": format!("/project_workspace/tasks/{}", task_key),
+        }))
+    }
+
+    pub(crate) async fn handle_unsubscribe_from_task(
+        &mut self,
+        params: UnsubscribeFromTaskParams,
+    ) -> Result<Value, AppError> {
+        if !self.is_conversation_thread {
+            return Err(AppError::BadRequest(
+                "unsubscribe_from_task is available only to user-facing conversation threads"
+                    .to_string(),
+            ));
+        }
+
+        let task_key = params.task_key.trim().to_string();
+        if task_key.is_empty() {
+            return Err(AppError::BadRequest(
+                "unsubscribe_from_task requires a task_key".to_string(),
+            ));
+        }
+
+        let board_id = self.ensure_project_task_board_id().await?;
+        let board_item =
+            queries::GetProjectTaskBoardItemByTaskKeyQuery::new(board_id, &task_key)
+                .execute_with_db(
+                    self.ctx
+                        .app_state
+                        .db_router
+                        .reader(common::ReadConsistency::Strong),
+                )
+                .await?
+                .ok_or_else(|| {
+                    AppError::BadRequest(format!(
+                        "Task `{task_key}` not found on this project board"
+                    ))
+                })?;
+
+        let removed = commands::DeleteAgentThreadTaskSubscriptionCommand {
+            thread_id: self.ctx.thread_id,
+            board_item_id: board_item.id,
+        }
+        .execute(self.ctx.app_state.db_router.writer())
+        .await?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "tool": "unsubscribe_from_task",
+            "task_key": task_key,
+            "board_item_id": board_item.id.to_string(),
+            "removed": removed,
         }))
     }
 

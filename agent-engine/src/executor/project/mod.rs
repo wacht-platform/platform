@@ -135,6 +135,7 @@ impl AgentExecutor {
         parent_task_key: Option<String>,
         metadata: ProjectTaskBoardItemMetadata,
         schedule: Option<(String, chrono::DateTime<chrono::Utc>, Option<i64>)>,
+        subscribe_for_thread_id: Option<i64>,
     ) -> Result<ProjectTaskBoardItem, AppError> {
         let board_id = self.ensure_project_task_board_id().await?;
         let mut tx = self.ctx.app_state.db_router.writer().begin().await?;
@@ -195,6 +196,7 @@ impl AgentExecutor {
                     | "needs_replan"
             ) {
                 UpdateProjectTaskBoardItemCommand {
+                    deployment_id: self.ctx.agent.deployment_id,
                     board_id,
                     task_key: parent_board_item.task_key.clone(),
                     status: Some("waiting_for_children".to_string()),
@@ -231,6 +233,17 @@ impl AgentExecutor {
             .await?;
         }
 
+        if let Some(thread_id) = subscribe_for_thread_id {
+            commands::UpsertAgentThreadTaskSubscriptionCommand {
+                deployment_id: self.ctx.agent.deployment_id,
+                thread_id,
+                board_item_id: item.id,
+                event_kinds: models::TaskSubscriptionEventKind::defaults(),
+            }
+            .execute(&mut *tx)
+            .await?;
+        }
+
         tx.commit().await?;
         ReconcileProjectTaskBoardItemCommand::new(item.id)
             .with_note("Task created; scheduler evaluated initial routing".to_string())
@@ -249,6 +262,7 @@ impl AgentExecutor {
     ) -> Result<ProjectTaskBoardItem, AppError> {
         let board_id = self.ensure_project_task_board_id().await?;
         let mut item = UpdateProjectTaskBoardItemCommand {
+            deployment_id: self.ctx.agent.deployment_id,
             board_id,
             task_key,
             status,

@@ -568,6 +568,31 @@ async fn run_event_log_work(
                 thread_event: None,
             }
         }
+        "thread_subscription_delivery" => {
+            let synthetic_event = ThreadEvent {
+                id: event_log_id,
+                deployment_id,
+                thread_id,
+                board_item_id: payload
+                    .get("board_item_id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<i64>().ok()),
+                event_type: kind.to_string(),
+                payload: payload.clone(),
+                caused_by_thread_id: None,
+            };
+            ExecutionRequest {
+                agent,
+                conversation_id: None,
+                thread_id,
+                event_log_id: Some(event_log_id),
+                execution_run_id,
+                execution_token: execution_token.clone(),
+                watch_key: watch_key.clone(),
+                approval_response: None,
+                thread_event: Some(synthetic_event),
+            }
+        }
         "approval_response_received" => {
             let exec_request: dto::json::AgentExecutionRequest = payload
                 .get("execution_payload")

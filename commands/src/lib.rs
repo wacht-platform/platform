@@ -1,5 +1,6 @@
 pub mod agent_execution;
 pub mod agent_thread_model;
+pub mod agent_thread_task_subscription;
 pub mod ai_agents;
 pub mod ai_knowledge_base;
 pub mod ai_tools;
@@ -98,6 +99,7 @@ pub use workspace_role::*;
 
 pub use agent_execution::*;
 pub use agent_thread_model::*;
+pub use agent_thread_task_subscription::*;
 pub use ai_agents::*;
 pub use ai_knowledge_base::*;
 pub use ai_tools::*;

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO conversations (\n                id, thread_id, board_item_id, execution_run_id, timestamp,\n                content, message_type, created_at, updated_at, metadata\n            ) VALUES (\n                $1, $2, $3, NULL, NOW(), $4::jsonb, 'task_subscription_notification',\n                NOW(), NOW(), $5::jsonb\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Jsonb",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1f1c8e0c4bb4e3bdca1576152ffa3a82b8aabb423c9ae29479fa49fa4aadf9e4"
+}

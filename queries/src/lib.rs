@@ -24,6 +24,7 @@ pub mod workspace;
 
 pub mod agent_skill;
 pub mod agent_thread_model;
+pub mod agent_thread_task_subscription;
 pub mod ai_agent;
 pub mod ai_knowledge_base;
 pub mod ai_tool;
@@ -36,6 +37,7 @@ pub mod thread_agent_assignment;
 pub mod thread_runtime;
 pub use agent_skill::*;
 pub use agent_thread_model::*;
+pub use agent_thread_task_subscription::*;
 pub use ai_agent::*;
 pub use ai_knowledge_base::*;
 pub use b2b::*;
