@@ -90,15 +90,32 @@ fn infer_type_hint(value: &Value, depth: usize) -> String {
                 "number".to_string()
             }
         }
-        Value::String(s) => {
-            if s.contains('T') && s.contains(':') && s.len() > 15 {
-                "datetime".to_string()
-            } else if s.starts_with("http") {
-                "url".to_string()
-            } else {
-                "string".to_string()
-            }
-        }
+        Value::String(s) => infer_string_hint(s, depth),
         Value::Array(_) | Value::Object(_) => infer_schema_recursive(value, depth),
     }
+}
+
+fn infer_string_hint(s: &str, depth: usize) -> String {
+    let trimmed = s.trim_start();
+    if (trimmed.starts_with('{') || trimmed.starts_with('[')) && depth < 5 {
+        if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
+            return format!("json<{}>", infer_schema_recursive(&parsed, depth + 1));
+        }
+    }
+    if is_iso_datetime(s) {
+        return "datetime".to_string();
+    }
+    if s.starts_with("http://") || s.starts_with("https://") {
+        return "url".to_string();
+    }
+    "string".to_string()
+}
+
+fn is_iso_datetime(s: &str) -> bool {
+    if s.len() < 10 || s.len() > 64 {
+        return false;
+    }
+    chrono::DateTime::parse_from_rfc3339(s).is_ok()
+        || chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").is_ok()
+        || chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok()
 }
