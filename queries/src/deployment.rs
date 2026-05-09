@@ -1181,3 +1181,26 @@ impl GetDeploymentChargebeeSubscriptionIdQuery {
         Ok(row.and_then(|r| Some(r.provider_subscription_id)))
     }
 }
+
+pub struct GetDeploymentModeQuery {
+    pub deployment_id: i64,
+}
+
+impl GetDeploymentModeQuery {
+    pub fn new(deployment_id: i64) -> Self {
+        Self { deployment_id }
+    }
+
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Option<String>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let row = sqlx::query!(
+            r#"SELECT mode FROM deployments WHERE id = $1 AND deleted_at IS NULL"#,
+            self.deployment_id,
+        )
+        .fetch_optional(executor)
+        .await?;
+        Ok(row.map(|r| r.mode))
+    }
+}

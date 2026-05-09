@@ -627,24 +627,14 @@ pub async fn import_agent_skill_bundle(
         slug
     );
     let display_name = skill_name.unwrap_or_else(|| slug.clone());
-    sqlx::query!(
-        r#"
-        INSERT INTO agent_skills
-            (deployment_id, agent_id, slug, name, description, storage_prefix)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (deployment_id, agent_id, slug) DO UPDATE
-            SET name = EXCLUDED.name,
-                description = EXCLUDED.description,
-                storage_prefix = EXCLUDED.storage_prefix,
-                updated_at = NOW()
-        "#,
+    commands::UpsertAgentSkillCommand {
         deployment_id,
         agent_id,
-        slug,
-        display_name,
-        skill_description,
+        slug: slug.clone(),
+        name: display_name,
+        description: skill_description,
         storage_prefix,
-    )
+    }
     .execute(app_state.db_router.writer())
     .await
     .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;
@@ -744,12 +734,11 @@ pub async fn delete_agent_skill(
         .await
         .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;
 
-    sqlx::query!(
-        "DELETE FROM agent_skills WHERE deployment_id = $1 AND agent_id = $2 AND slug = $3",
+    commands::DeleteAgentSkillCommand {
         deployment_id,
         agent_id,
-        skill_slug,
-    )
+        slug: skill_slug,
+    }
     .execute(app_state.db_router.writer())
     .await
     .map_err(|e| ApiErrorResponse::internal(e.to_string()))?;

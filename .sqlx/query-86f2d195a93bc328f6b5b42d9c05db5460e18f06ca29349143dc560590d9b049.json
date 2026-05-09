@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, thread_id, board_item_id\n        FROM project_task_board_item_assignments\n        WHERE board_item_id = $1\n          AND thread_id = $2\n          AND status IN ('claimed', 'in_progress')\n        ORDER BY created_at DESC\n        LIMIT 1\n        ",
+  "query": "\n            SELECT id, thread_id, board_item_id\n            FROM project_task_board_item_assignments\n            WHERE board_item_id = $1\n              AND thread_id = $2\n              AND status IN ('claimed', 'in_progress')\n            ORDER BY created_at DESC\n            LIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -31,5 +31,5 @@
       false
     ]
   },
-  "hash": "e90bfcec5d6222e4dd6f40806360366d85ecac5e4ae20fea239484ef005e41fa"
+  "hash": "86f2d195a93bc328f6b5b42d9c05db5460e18f06ca29349143dc560590d9b049"
 }

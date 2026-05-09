@@ -511,3 +511,160 @@ impl UpdateExecutionRunStateCommand {
         Ok(row)
     }
 }
+
+pub struct UpdateActorProjectCommand {
+    pub project_id: i64,
+    pub deployment_id: i64,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub status: Option<String>,
+}
+
+impl UpdateActorProjectCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<models::ActorProject, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query_as!(
+            models::ActorProject,
+            r#"
+            UPDATE actor_projects
+            SET name = COALESCE($3, name),
+                description = COALESCE($4, description),
+                status = COALESCE($5, status),
+                updated_at = NOW()
+            WHERE id = $1 AND deployment_id = $2
+            RETURNING id, deployment_id, actor_id, name, description, status, coordinator_thread_id,
+                      review_thread_id, metadata, created_at, updated_at, archived_at
+            "#,
+            self.project_id,
+            self.deployment_id,
+            self.name,
+            self.description,
+            self.status,
+        )
+        .fetch_one(executor)
+        .await
+        .map_err(AppError::from)
+    }
+}
+
+pub struct SetActorProjectArchivedCommand {
+    pub project_id: i64,
+    pub deployment_id: i64,
+    pub archived: bool,
+}
+
+impl SetActorProjectArchivedCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<models::ActorProject, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query_as!(
+            models::ActorProject,
+            r#"
+            UPDATE actor_projects
+            SET archived_at = CASE WHEN $3 THEN NOW() ELSE NULL END,
+                updated_at = NOW()
+            WHERE id = $1 AND deployment_id = $2
+            RETURNING id, deployment_id, actor_id, name, description, status, coordinator_thread_id,
+                      review_thread_id, metadata, created_at, updated_at, archived_at
+            "#,
+            self.project_id,
+            self.deployment_id,
+            self.archived,
+        )
+        .fetch_one(executor)
+        .await
+        .map_err(AppError::from)
+    }
+}
+
+pub struct SetAgentThreadArchivedCommand {
+    pub thread_id: i64,
+    pub deployment_id: i64,
+    pub archived: bool,
+}
+
+impl SetAgentThreadArchivedCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<models::AgentThread, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query_as!(
+            models::AgentThread,
+            r#"
+            UPDATE agent_threads
+            SET archived_at = CASE WHEN $3 THEN NOW() ELSE NULL END, updated_at = NOW()
+            WHERE id = $1 AND deployment_id = $2
+            RETURNING id, deployment_id, actor_id, project_id,
+                      title, thread_purpose as "thread_kind!", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as "thread_visibility!",
+                      thread_purpose, responsibility,
+                      reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,
+                      execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at, state_version
+            "#,
+            self.thread_id,
+            self.deployment_id,
+            self.archived,
+        )
+        .fetch_one(executor)
+        .await
+        .map_err(AppError::from)
+    }
+}
+
+pub struct ClearThreadPendingQuestionCommand {
+    pub thread_id: i64,
+}
+
+impl ClearThreadPendingQuestionCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query!(
+            r#"
+            UPDATE agent_threads
+            SET execution_state = jsonb_set(
+                COALESCE(execution_state, '{}'::jsonb),
+                '{pending_question}',
+                'null'::jsonb,
+                true
+            )
+            WHERE id = $1
+            "#,
+            self.thread_id,
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+}
+
+pub struct ClearThreadPendingApprovalCommand {
+    pub thread_id: i64,
+}
+
+impl ClearThreadPendingApprovalCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query!(
+            r#"
+            UPDATE agent_threads
+            SET execution_state = jsonb_set(
+                COALESCE(execution_state, '{}'::jsonb),
+                '{pending_approval_request}',
+                'null'::jsonb,
+                true
+            )
+            WHERE id = $1
+            "#,
+            self.thread_id,
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+}

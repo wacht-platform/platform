@@ -156,3 +156,46 @@ impl ConsumeOnceApprovalGrantForThreadCommand {
         Ok(consumed_id)
     }
 }
+
+pub struct InsertApprovalGrantInTxCommand {
+    pub id: i64,
+    pub deployment_id: i64,
+    pub thread_id: i64,
+    pub tool_id: i64,
+    pub mode: ToolApprovalMode,
+}
+
+impl InsertApprovalGrantInTxCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let now = Utc::now();
+        let grant_scope = match self.mode {
+            ToolApprovalMode::AllowOnce => models::approval::grant_scope::ONCE,
+            ToolApprovalMode::AllowAlways => models::approval::grant_scope::THREAD,
+        };
+        sqlx::query!(
+            r#"
+            INSERT INTO approval_grants (
+                id, deployment_id, policy_id, actor_id, project_id, thread_id, tool_id,
+                granted_by_message_id, grant_scope, status, granted_at, expires_at,
+                consumed_at, consumed_by_run_id, metadata
+            ) VALUES (
+                $1, $2, NULL, NULL, NULL, $3, $4, NULL, $5, $6, $7, NULL, NULL, NULL,
+                '{}'::jsonb
+            )
+            "#,
+            self.id,
+            self.deployment_id,
+            self.thread_id,
+            self.tool_id,
+            grant_scope,
+            models::approval::grant_status::ACTIVE,
+            now,
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+}

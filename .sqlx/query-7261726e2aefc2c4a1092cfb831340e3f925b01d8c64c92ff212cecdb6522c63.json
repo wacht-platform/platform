@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT thread_id FROM conversations WHERE id = $1 AND message_type = 'approval_request'",
+  "query": "\n            SELECT thread_id\n            FROM conversations\n            WHERE id = $1 AND message_type = 'approval_request'\n            ",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       true
     ]
   },
-  "hash": "88f7025a471a856f0ca92f7d6f89d69c0ac46c27e33a4727582b9e2fa6067faa"
+  "hash": "7261726e2aefc2c4a1092cfb831340e3f925b01d8c64c92ff212cecdb6522c63"
 }

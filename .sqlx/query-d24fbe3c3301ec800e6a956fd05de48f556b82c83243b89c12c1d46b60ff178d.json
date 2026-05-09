@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE actor_projects\n        SET archived_at = CASE WHEN $3 THEN NOW() ELSE NULL END, updated_at = NOW()\n        WHERE id = $1 AND deployment_id = $2\n        RETURNING id, deployment_id, actor_id, name, description, status, coordinator_thread_id,\n                  review_thread_id, metadata, created_at, updated_at, archived_at\n        ",
+  "query": "\n            UPDATE actor_projects\n            SET archived_at = CASE WHEN $3 THEN NOW() ELSE NULL END,\n                updated_at = NOW()\n            WHERE id = $1 AND deployment_id = $2\n            RETURNING id, deployment_id, actor_id, name, description, status, coordinator_thread_id,\n                      review_thread_id, metadata, created_at, updated_at, archived_at\n            ",
   "describe": {
     "columns": [
       {
@@ -86,5 +86,5 @@
       true
     ]
   },
-  "hash": "f30271a34acc6382ed6114d156670d793fe6b7f6361caf84626b523ba64986b6"
+  "hash": "d24fbe3c3301ec800e6a956fd05de48f556b82c83243b89c12c1d46b60ff178d"
 }

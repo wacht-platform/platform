@@ -668,3 +668,136 @@ impl ListPriorScheduleFiresQuery {
             .collect())
     }
 }
+
+pub struct GetProjectTaskBoardProjectIdQuery {
+    pub board_id: i64,
+}
+
+impl GetProjectTaskBoardProjectIdQuery {
+    pub fn new(board_id: i64) -> Self {
+        Self { board_id }
+    }
+
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Option<i64>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let row = sqlx::query!(
+            r#"SELECT project_id FROM project_task_boards WHERE id = $1"#,
+            self.board_id,
+        )
+        .fetch_optional(executor)
+        .await?;
+        Ok(row.map(|r| r.project_id))
+    }
+}
+
+pub struct AssignmentResumeRow {
+    pub thread_id: i64,
+    pub board_item_id: i64,
+}
+
+pub struct GetAssignmentResumeContextQuery {
+    pub assignment_id: i64,
+}
+
+impl GetAssignmentResumeContextQuery {
+    pub fn new(assignment_id: i64) -> Self {
+        Self { assignment_id }
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<Option<AssignmentResumeRow>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let row = sqlx::query!(
+            r#"
+            SELECT thread_id, board_item_id
+            FROM project_task_board_item_assignments
+            WHERE id = $1
+            "#,
+            self.assignment_id,
+        )
+        .fetch_optional(executor)
+        .await?;
+        Ok(row.map(|r| AssignmentResumeRow {
+            thread_id: r.thread_id,
+            board_item_id: r.board_item_id,
+        }))
+    }
+}
+
+pub struct ActiveAssignmentRow {
+    pub id: i64,
+    pub thread_id: i64,
+    pub board_item_id: i64,
+}
+
+pub struct GetActiveAssignmentForThreadOnItemQuery {
+    pub board_item_id: i64,
+    pub thread_id: i64,
+}
+
+impl GetActiveAssignmentForThreadOnItemQuery {
+    pub fn new(board_item_id: i64, thread_id: i64) -> Self {
+        Self {
+            board_item_id,
+            thread_id,
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<Option<ActiveAssignmentRow>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let row = sqlx::query!(
+            r#"
+            SELECT id, thread_id, board_item_id
+            FROM project_task_board_item_assignments
+            WHERE board_item_id = $1
+              AND thread_id = $2
+              AND status IN ('claimed', 'in_progress')
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+            self.board_item_id,
+            self.thread_id,
+        )
+        .fetch_optional(executor)
+        .await?;
+        Ok(row.map(|r| ActiveAssignmentRow {
+            id: r.id,
+            thread_id: r.thread_id,
+            board_item_id: r.board_item_id,
+        }))
+    }
+}
+
+pub struct GetProjectCoordinatorThreadIdQuery {
+    pub project_id: i64,
+}
+
+impl GetProjectCoordinatorThreadIdQuery {
+    pub fn new(project_id: i64) -> Self {
+        Self { project_id }
+    }
+
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Option<i64>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let row = sqlx::query!(
+            r#"SELECT coordinator_thread_id FROM actor_projects WHERE id = $1"#,
+            self.project_id,
+        )
+        .fetch_optional(executor)
+        .await?;
+        Ok(row.and_then(|r| r.coordinator_thread_id))
+    }
+}

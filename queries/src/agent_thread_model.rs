@@ -446,3 +446,96 @@ impl ListAssignableAgentThreadsQuery {
         Ok(rows)
     }
 }
+
+pub struct SearchActorProjectsQuery {
+    pub deployment_id: i64,
+    pub actor_id: i64,
+    pub like: Option<String>,
+    pub cursor_updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub cursor_id: Option<i64>,
+    pub limit: i64,
+}
+
+impl SearchActorProjectsQuery {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Vec<ActorProject>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query_as!(
+            ActorProject,
+            r#"
+            SELECT id, deployment_id, actor_id, name, description, status, coordinator_thread_id,
+                   review_thread_id, metadata, created_at, updated_at, archived_at
+            FROM actor_projects
+            WHERE deployment_id = $1
+              AND actor_id = $2
+              AND archived_at IS NULL
+              AND ($3::text IS NULL OR LOWER(name) LIKE $3 ESCAPE '\')
+              AND (
+                $4::timestamptz IS NULL OR $5::bigint IS NULL
+                OR updated_at < $4
+                OR (updated_at = $4 AND id < $5)
+              )
+            ORDER BY updated_at DESC, id DESC
+            LIMIT $6
+            "#,
+            self.deployment_id,
+            self.actor_id,
+            self.like,
+            self.cursor_updated_at,
+            self.cursor_id,
+            self.limit,
+        )
+        .fetch_all(executor)
+        .await
+        .map_err(AppError::from)
+    }
+}
+
+pub struct SearchAgentThreadsByActorQuery {
+    pub deployment_id: i64,
+    pub actor_id: i64,
+    pub like: Option<String>,
+    pub cursor_last_activity_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub cursor_id: Option<i64>,
+    pub limit: i64,
+}
+
+impl SearchAgentThreadsByActorQuery {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Vec<AgentThread>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query_as!(
+            AgentThread,
+            r#"
+            SELECT id, deployment_id, actor_id, project_id,
+                   title, thread_purpose as "thread_kind!", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as "thread_visibility!",
+                   thread_purpose, responsibility,
+                   reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,
+                   execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at, state_version
+            FROM agent_threads
+            WHERE deployment_id = $1
+              AND actor_id = $2
+              AND archived_at IS NULL
+              AND ($3::text IS NULL OR LOWER(title) LIKE $3 ESCAPE '\')
+              AND (
+                $4::timestamptz IS NULL OR $5::bigint IS NULL
+                OR last_activity_at < $4
+                OR (last_activity_at = $4 AND id < $5)
+              )
+            ORDER BY last_activity_at DESC, id DESC
+            LIMIT $6
+            "#,
+            self.deployment_id,
+            self.actor_id,
+            self.like,
+            self.cursor_last_activity_at,
+            self.cursor_id,
+            self.limit,
+        )
+        .fetch_all(executor)
+        .await
+        .map_err(AppError::from)
+    }
+}

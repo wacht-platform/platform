@@ -1,4 +1,3 @@
-use chrono::Utc;
 use commands::event_log::{self, EVENT_LOG_WORK_SUBJECT, InsertEventLogCommand};
 use commands::{SetBoardItemPendingApprovalCommand, SetBoardItemPendingQuestionCommand};
 use common::HasDbRouter;
@@ -41,14 +40,11 @@ async fn fetch_item(
         .await?
         .ok_or_else(|| AppError::NotFound("board item not found".to_string()))?;
 
-    let board_row = sqlx::query!(
-        r#"SELECT project_id FROM project_task_boards WHERE id = $1"#,
-        item.board_id,
-    )
-    .fetch_optional(app_state.db_router.writer())
-    .await?
-    .ok_or_else(|| AppError::NotFound("board not found".to_string()))?;
-    if board_row.project_id != project_id {
+    let board_project_id = queries::GetProjectTaskBoardProjectIdQuery::new(item.board_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await?
+        .ok_or_else(|| AppError::NotFound("board not found".to_string()))?;
+    if board_project_id != project_id {
         return Err(AppError::NotFound("board item not found".to_string()));
     }
     Ok(item)
@@ -63,41 +59,15 @@ pub async fn cancel_project_task_board_item(
     if item.status == "cancelled" || item.status == "completed" {
         return Ok(item);
     }
-    let now = Utc::now();
     let mut tx = app_state.db_router.writer_pool().begin().await?;
 
-    sqlx::query!(
-        r#"
-        UPDATE project_task_board_items
-        SET status = 'cancelled',
-            completed_at = $2,
-            pending_question = NULL,
-            pending_approval = NULL,
-            updated_at = $2
-        WHERE id = $1
-        "#,
-        item_id,
-        now,
-    )
-    .execute(&mut *tx)
-    .await?;
+    commands::CancelBoardItemCommand { item_id }
+        .execute_with_db(&mut *tx)
+        .await?;
 
-    sqlx::query!(
-        r#"
-        UPDATE project_task_board_item_assignments
-        SET status = 'cancelled',
-            result_status = 'task_cancelled',
-            result_summary = 'Task cancelled by user.',
-            completed_at = $2,
-            updated_at = $2
-        WHERE board_item_id = $1
-          AND status IN ('pending', 'available', 'blocked', 'claimed', 'in_progress')
-        "#,
-        item_id,
-        now,
-    )
-    .execute(&mut *tx)
-    .await?;
+    commands::CancelAssignmentsForBoardItemCommand { item_id }
+        .execute_with_db(&mut *tx)
+        .await?;
 
     tx.commit().await?;
 
@@ -129,17 +99,10 @@ pub async fn answer_project_task_board_item_question(
         )
     })?;
 
-    let assignment = sqlx::query!(
-        r#"
-        SELECT thread_id, board_item_id, state_version
-        FROM project_task_board_item_assignments
-        WHERE id = $1
-        "#,
-        assignment_id,
-    )
-    .fetch_optional(app_state.db_router.writer())
-    .await?
-    .ok_or_else(|| AppError::NotFound("assignment not found".to_string()))?;
+    let assignment = queries::GetAssignmentResumeContextQuery::new(assignment_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await?
+        .ok_or_else(|| AppError::NotFound("assignment not found".to_string()))?;
 
     let answers_json = serde_json::to_value(&submission.answers)
         .map_err(|e| AppError::Internal(format!("serialize answers: {e}")))?;
@@ -148,7 +111,6 @@ pub async fn answer_project_task_board_item_question(
         answers: answers_json.clone(),
     };
     let conv_id = app_state.sf.next_id()? as i64;
-    let now = Utc::now();
 
     let mut tx = app_state.db_router.writer_pool().begin().await?;
 
@@ -159,41 +121,20 @@ pub async fn answer_project_task_board_item_question(
     .execute_with_db(&mut *tx)
     .await?;
 
-    sqlx::query!(
-        r#"
-        UPDATE agent_threads
-        SET execution_state = jsonb_set(
-            COALESCE(execution_state, '{}'::jsonb),
-            '{pending_question}',
-            'null'::jsonb,
-            true
-        )
-        WHERE id = $1
-        "#,
-        pending.asked_by_thread_id,
-    )
-    .execute(&mut *tx)
+    commands::ClearThreadPendingQuestionCommand {
+        thread_id: pending.asked_by_thread_id,
+    }
+    .execute_with_db(&mut *tx)
     .await?;
 
-    let response_json = serde_json::to_value(&response_content)
-        .map_err(|e| AppError::Internal(format!("serialize response: {e}")))?;
-    sqlx::query!(
-        r#"
-        INSERT INTO conversations (
-            id, thread_id, board_item_id, execution_run_id, timestamp, content, message_type,
-            created_at, updated_at, metadata
-        ) VALUES (
-            $1, $2, $3, NULL, $4, $5::jsonb, 'clarification_response',
-            $4, $4, NULL
-        )
-        "#,
+    commands::CreateConversationCommand::new(
         conv_id,
         pending.asked_by_thread_id,
-        item_id,
-        now,
-        response_json,
+        response_content.clone(),
+        models::ConversationMessageType::ClarificationResponse,
     )
-    .execute(&mut *tx)
+    .with_board_item_id(item_id)
+    .execute_with_db(&mut *tx)
     .await?;
 
     let event_log_id = app_state.sf.next_id()? as i64;
@@ -283,91 +224,57 @@ pub async fn approve_project_task_board_item_tool(
         .request_message_id
         .parse()
         .map_err(|_| AppError::BadRequest("invalid request_message_id".to_string()))?;
-    let request_conv = sqlx::query!(
-        r#"SELECT thread_id FROM conversations WHERE id = $1 AND message_type = 'approval_request'"#,
-        request_message_id_i64,
-    )
-    .fetch_optional(app_state.db_router.writer())
-    .await?
-    .ok_or_else(|| AppError::NotFound("approval request conversation not found".to_string()))?;
-    let asker_thread_id = request_conv
-        .thread_id
-        .ok_or_else(|| AppError::Internal("approval request has no thread_id".to_string()))?;
+    let asker_thread_id = queries::GetApprovalRequestThreadIdQuery::new(request_message_id_i64)
+        .execute_with_db(app_state.db_router.writer())
+        .await?
+        .ok_or_else(|| AppError::NotFound("approval request conversation not found".to_string()))?;
 
-    let assignment = sqlx::query!(
-        r#"
-        SELECT id, thread_id, board_item_id
-        FROM project_task_board_item_assignments
-        WHERE board_item_id = $1
-          AND thread_id = $2
-          AND status IN ('claimed', 'in_progress')
-        ORDER BY created_at DESC
-        LIMIT 1
-        "#,
-        item_id,
-        asker_thread_id,
-    )
-    .fetch_optional(app_state.db_router.writer())
-    .await?
-    .ok_or_else(|| {
-        AppError::NotFound("no active assignment found for the approval request".to_string())
-    })?;
+    let assignment =
+        queries::GetActiveAssignmentForThreadOnItemQuery::new(item_id, asker_thread_id)
+            .execute_with_db(app_state.db_router.writer())
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound(
+                    "no active assignment found for the approval request".to_string(),
+                )
+            })?;
 
-    let now = Utc::now();
     let conv_id = app_state.sf.next_id()? as i64;
-    let response_content = json!({
-        "type": "approval_response",
-        "request_message_id": submission.request_message_id,
-        "approvals": submission.approvals,
-    });
+    let response_content = ConversationContent::ApprovalResponse {
+        request_message_id: Some(request_message_id_i64),
+        approvals: submission
+            .approvals
+            .iter()
+            .map(|a| models::ToolApprovalDecision {
+                tool_name: a.tool_name.clone(),
+                mode: a.mode,
+            })
+            .collect(),
+    };
 
     let mut tx = app_state.db_router.writer_pool().begin().await?;
 
-    sqlx::query!(
-        r#"
-        INSERT INTO conversations (
-            id, thread_id, board_item_id, execution_run_id, timestamp, content, message_type,
-            created_at, updated_at, metadata
-        ) VALUES (
-            $1, $2, $3, NULL, $4, $5::jsonb, 'approval_response',
-            $4, $4, NULL
-        )
-        "#,
+    commands::CreateConversationCommand::new(
         conv_id,
         asker_thread_id,
-        item_id,
-        now,
         response_content,
+        models::ConversationMessageType::ApprovalResponse,
     )
-    .execute(&mut *tx)
+    .with_board_item_id(item_id)
+    .execute_with_db(&mut *tx)
     .await?;
 
     for approval in &submission.approvals {
         let tool_id = tool_id_by_name[&approval.tool_name];
-        let scope = match approval.mode {
-            ToolApprovalMode::AllowOnce => "once",
-            ToolApprovalMode::AllowAlways => "thread",
-        };
         let grant_id = app_state.sf.next_id()? as i64;
-        sqlx::query!(
-            r#"
-            INSERT INTO approval_grants (
-                id, deployment_id, policy_id, actor_id, project_id, thread_id, tool_id,
-                granted_by_message_id, grant_scope, status, granted_at, expires_at,
-                consumed_at, consumed_by_run_id, metadata
-            ) VALUES (
-                $1, $2, NULL, NULL, NULL, $3, $4, NULL, $5, 'active', $6, NULL, NULL, NULL,
-                '{}'::jsonb
-            )
-            "#,
-            grant_id,
+        commands::InsertApprovalGrantInTxCommand {
+            id: grant_id,
             deployment_id,
-            asker_thread_id,
+            thread_id: asker_thread_id,
             tool_id,
-            scope,
-            now,
-        )
-        .execute(&mut *tx)
+            mode: approval.mode,
+        }
+        .execute_with_db(&mut *tx)
         .await?;
     }
 
@@ -378,20 +285,10 @@ pub async fn approve_project_task_board_item_tool(
     .execute_with_db(&mut *tx)
     .await?;
 
-    sqlx::query!(
-        r#"
-        UPDATE agent_threads
-        SET execution_state = jsonb_set(
-            COALESCE(execution_state, '{}'::jsonb),
-            '{pending_approval_request}',
-            'null'::jsonb,
-            true
-        )
-        WHERE id = $1
-        "#,
-        asker_thread_id,
-    )
-    .execute(&mut *tx)
+    commands::ClearThreadPendingApprovalCommand {
+        thread_id: asker_thread_id,
+    }
+    .execute_with_db(&mut *tx)
     .await?;
 
     let event_log_id = app_state.sf.next_id()? as i64;
@@ -457,84 +354,35 @@ pub async fn create_project_task_board_item_comment(
     }
     let item = fetch_item(app_state, project_id, item_id).await?;
 
-    let coordinator_thread_id = sqlx::query!(
-        r#"SELECT coordinator_thread_id FROM actor_projects WHERE id = $1"#,
-        project_id,
-    )
-    .fetch_optional(app_state.db_router.writer())
-    .await?
-    .and_then(|r| r.coordinator_thread_id);
+    let coordinator_thread_id = queries::GetProjectCoordinatorThreadIdQuery::new(project_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await?;
 
     let comment_id = app_state.sf.next_id()? as i64;
-    let now = Utc::now();
-    let metadata = json!({});
 
     let mut tx = app_state.db_router.writer_pool().begin().await?;
 
-    let comment = sqlx::query_as!(
-        ProjectTaskBoardItemComment,
-        r#"
-        INSERT INTO project_task_board_item_comments (
-            id, deployment_id, board_item_id, actor_id, body, metadata,
-            created_at, updated_at, archived_at, resolved_at, resolved_by_thread_id, resolution_summary
-        ) VALUES (
-            $1, $2, $3, $4, $5, $6::jsonb, $7, $7, NULL, NULL, NULL, NULL
-        )
-        RETURNING
-            id AS "id!",
-            deployment_id AS "deployment_id!",
-            board_item_id AS "board_item_id!",
-            actor_id AS "actor_id!",
-            body AS "body!",
-            metadata AS "metadata!",
-            created_at AS "created_at!",
-            updated_at AS "updated_at!",
-            archived_at,
-            resolved_at,
-            resolved_by_thread_id,
-            resolution_summary
-        "#,
-        comment_id,
+    let comment = commands::CreateBoardItemCommentCommand {
+        id: comment_id,
         deployment_id,
-        item_id,
+        board_item_id: item_id,
         actor_id,
         body,
-        metadata,
-        now,
-    )
-    .fetch_one(&mut *tx)
+        metadata: json!({}),
+    }
+    .execute_with_db(&mut *tx)
     .await?;
 
-    sqlx::query!(
-        r#"
-        UPDATE project_task_board_item_assignments
-        SET status = 'cancelled',
-            result_status = 'preempted',
-            completed_at = $2,
-            result_summary = 'Preempted by user comment.',
-            updated_at = $2
-        WHERE board_item_id = $1
-          AND status IN ('claimed', 'in_progress')
-        "#,
+    commands::preempt_active_board_item_assignments(
+        &mut *tx,
         item_id,
-        now,
+        "Preempted by user comment.",
     )
-    .execute(&mut *tx)
     .await?;
 
-    sqlx::query!(
-        r#"
-        UPDATE project_task_board_items
-        SET pending_question = NULL,
-            pending_approval = NULL,
-            updated_at = $2
-        WHERE id = $1
-        "#,
-        item_id,
-        now,
-    )
-    .execute(&mut *tx)
-    .await?;
+    commands::ClearBoardItemPendingFlagsCommand { item_id }
+        .execute_with_db(&mut *tx)
+        .await?;
 
     if let Some(coord_thread_id) = coordinator_thread_id {
         let event_log_id = app_state.sf.next_id()? as i64;

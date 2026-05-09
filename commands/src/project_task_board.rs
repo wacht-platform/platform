@@ -1442,3 +1442,137 @@ impl UpdateProjectTaskBoardItemAssignmentStateCommand {
         Ok(assignment)
     }
 }
+
+pub struct CancelBoardItemCommand {
+    pub item_id: i64,
+}
+
+impl CancelBoardItemCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query!(
+            r#"
+            UPDATE project_task_board_items
+            SET status = 'cancelled',
+                completed_at = NOW(),
+                pending_question = NULL,
+                pending_approval = NULL,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+            self.item_id,
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+}
+
+pub struct CancelAssignmentsForBoardItemCommand {
+    pub item_id: i64,
+}
+
+impl CancelAssignmentsForBoardItemCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query!(
+            r#"
+            UPDATE project_task_board_item_assignments
+            SET status = 'cancelled',
+                result_status = 'task_cancelled',
+                result_summary = 'Task cancelled by user.',
+                completed_at = NOW(),
+                updated_at = NOW()
+            WHERE board_item_id = $1
+              AND status IN ('pending', 'available', 'blocked', 'claimed', 'in_progress')
+            "#,
+            self.item_id,
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+}
+
+pub struct ClearBoardItemPendingFlagsCommand {
+    pub item_id: i64,
+}
+
+impl ClearBoardItemPendingFlagsCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query!(
+            r#"
+            UPDATE project_task_board_items
+            SET pending_question = NULL,
+                pending_approval = NULL,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+            self.item_id,
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+}
+
+pub struct CreateBoardItemCommentCommand {
+    pub id: i64,
+    pub deployment_id: i64,
+    pub board_item_id: i64,
+    pub actor_id: i64,
+    pub body: String,
+    pub metadata: serde_json::Value,
+}
+
+impl CreateBoardItemCommentCommand {
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<models::ProjectTaskBoardItemComment, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let comment = sqlx::query_as!(
+            models::ProjectTaskBoardItemComment,
+            r#"
+            INSERT INTO project_task_board_item_comments (
+                id, deployment_id, board_item_id, actor_id, body, metadata,
+                created_at, updated_at, archived_at, resolved_at, resolved_by_thread_id, resolution_summary
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6::jsonb, NOW(), NOW(), NULL, NULL, NULL, NULL
+            )
+            RETURNING
+                id AS "id!",
+                deployment_id AS "deployment_id!",
+                board_item_id AS "board_item_id!",
+                actor_id AS "actor_id!",
+                body AS "body!",
+                metadata AS "metadata!",
+                created_at AS "created_at!",
+                updated_at AS "updated_at!",
+                archived_at,
+                resolved_at,
+                resolved_by_thread_id,
+                resolution_summary
+            "#,
+            self.id,
+            self.deployment_id,
+            self.board_item_id,
+            self.actor_id,
+            self.body,
+            self.metadata,
+        )
+        .fetch_one(executor)
+        .await
+        .map_err(AppError::from)?;
+        Ok(comment)
+    }
+}

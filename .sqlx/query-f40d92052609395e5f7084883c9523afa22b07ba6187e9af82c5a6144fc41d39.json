@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE project_task_board_item_assignments\n            SET status = 'cancelled',\n                result_status = 'task_cancelled',\n                result_summary = 'Task cancelled by user.',\n                completed_at = NOW(),\n                updated_at = NOW()\n            WHERE board_item_id = $1\n              AND status IN ('pending', 'available', 'blocked', 'claimed', 'in_progress')\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f40d92052609395e5f7084883c9523afa22b07ba6187e9af82c5a6144fc41d39"
+}

@@ -625,3 +625,30 @@ impl GetBoardItemRoutingEventsQuery {
             .collect())
     }
 }
+
+pub struct GetApprovalRequestThreadIdQuery {
+    pub conversation_id: i64,
+}
+
+impl GetApprovalRequestThreadIdQuery {
+    pub fn new(conversation_id: i64) -> Self {
+        Self { conversation_id }
+    }
+
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Option<i64>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let row = sqlx::query!(
+            r#"
+            SELECT thread_id
+            FROM conversations
+            WHERE id = $1 AND message_type = 'approval_request'
+            "#,
+            self.conversation_id,
+        )
+        .fetch_optional(executor)
+        .await?;
+        Ok(row.and_then(|r| r.thread_id))
+    }
+}

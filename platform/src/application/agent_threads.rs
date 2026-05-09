@@ -19,7 +19,7 @@ use models::{
 };
 use queries::{
     GetActorByIdQuery, GetActorProjectByIdQuery, GetAgentThreadByIdQuery, GetAgentThreadStateQuery,
-    GetLatestThreadTaskGraphQuery, GetMcpServerByIdQuery, GetMcpServersQuery,
+    GetLatestThreadTaskGraphQuery, GetMcpServerByIdQuery,
     GetProjectTaskBoardByIdQuery, GetProjectTaskBoardByProjectIdQuery,
     GetProjectTaskBoardItemByIdQuery, GetProjectTaskScheduleByTaskKeyQuery,
     GetThreadTaskGraphByIdQuery, GetThreadTaskGraphSummaryQuery, ListActorProjectsQuery,
@@ -487,32 +487,15 @@ pub async fn search_actor_projects(
         .flatten();
     let like = build_escaped_like_query(&query);
 
-    let rows: Vec<ActorProject> = sqlx::query_as!(
-        ActorProject,
-        r#"
-        SELECT id, deployment_id, actor_id, name, description, status, coordinator_thread_id,
-               review_thread_id, metadata, created_at, updated_at, archived_at
-        FROM actor_projects
-        WHERE deployment_id = $1
-          AND actor_id = $2
-          AND archived_at IS NULL
-          AND ($3::text IS NULL OR LOWER(name) LIKE $3 ESCAPE '\')
-          AND (
-            $4::timestamptz IS NULL OR $5::bigint IS NULL
-            OR updated_at < $4
-            OR (updated_at = $4 AND id < $5)
-          )
-        ORDER BY updated_at DESC, id DESC
-        LIMIT $6
-        "#,
+    let rows = queries::SearchActorProjectsQuery {
         deployment_id,
         actor_id,
         like,
-        cursor.map(|v| v.0),
-        cursor.map(|v| v.1),
-        limit + 1,
-    )
-    .fetch_all(app_state.db_router.reader(ReadConsistency::Eventual))
+        cursor_updated_at: cursor.map(|v| v.0),
+        cursor_id: cursor.map(|v| v.1),
+        limit: limit + 1,
+    }
+    .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
     .await?;
 
     let has_more = rows.len() as i64 > limit;
@@ -712,35 +695,15 @@ pub async fn search_actor_project_threads(
         .flatten();
     let like = build_escaped_like_query(&query);
 
-    let rows: Vec<AgentThread> = sqlx::query_as!(
-        AgentThread,
-        r#"
-        SELECT id, deployment_id, actor_id, project_id,
-               title, thread_purpose as "thread_kind!", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as "thread_visibility!",
-               thread_purpose, responsibility,
-               reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,
-               execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at, state_version
-        FROM agent_threads
-        WHERE deployment_id = $1
-          AND actor_id = $2
-          AND archived_at IS NULL
-          AND ($3::text IS NULL OR LOWER(title) LIKE $3 ESCAPE '\')
-          AND (
-            $4::timestamptz IS NULL OR $5::bigint IS NULL
-            OR last_activity_at < $4
-            OR (last_activity_at = $4 AND id < $5)
-          )
-        ORDER BY last_activity_at DESC, id DESC
-        LIMIT $6
-        "#,
+    let rows = queries::SearchAgentThreadsByActorQuery {
         deployment_id,
         actor_id,
         like,
-        cursor.map(|v| v.0),
-        cursor.map(|v| v.1),
-        limit + 1,
-    )
-    .fetch_all(app_state.db_router.reader(ReadConsistency::Eventual))
+        cursor_last_activity_at: cursor.map(|v| v.0),
+        cursor_id: cursor.map(|v| v.1),
+        limit: limit + 1,
+    }
+    .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
     .await?;
 
     let has_more = rows.len() as i64 > limit;
@@ -782,28 +745,15 @@ pub async fn update_actor_project(
         return Ok(existing);
     }
 
-    let updated = sqlx::query_as!(
-        ActorProject,
-        r#"
-        UPDATE actor_projects
-        SET
-            name = COALESCE($3, name),
-            description = COALESCE($4, description),
-            status = COALESCE($5, status),
-            updated_at = NOW()
-        WHERE id = $1 AND deployment_id = $2
-        RETURNING id, deployment_id, actor_id, name, description, status, coordinator_thread_id,
-                  review_thread_id, metadata, created_at, updated_at, archived_at
-        "#,
+    commands::UpdateActorProjectCommand {
         project_id,
         deployment_id,
         name,
         description,
         status,
-    )
-    .fetch_one(app_state.db_router.writer())
-    .await?;
-    Ok(updated)
+    }
+    .execute_with_db(app_state.db_router.writer())
+    .await
 }
 
 pub async fn set_actor_project_archived(
@@ -813,22 +763,13 @@ pub async fn set_actor_project_archived(
     archived: bool,
 ) -> Result<ActorProject, AppError> {
     get_actor_project_by_id(app_state, deployment_id, project_id).await?;
-    let updated = sqlx::query_as!(
-        ActorProject,
-        r#"
-        UPDATE actor_projects
-        SET archived_at = CASE WHEN $3 THEN NOW() ELSE NULL END, updated_at = NOW()
-        WHERE id = $1 AND deployment_id = $2
-        RETURNING id, deployment_id, actor_id, name, description, status, coordinator_thread_id,
-                  review_thread_id, metadata, created_at, updated_at, archived_at
-        "#,
+    commands::SetActorProjectArchivedCommand {
         project_id,
         deployment_id,
         archived,
-    )
-    .fetch_one(app_state.db_router.writer())
-    .await?;
-    Ok(updated)
+    }
+    .execute_with_db(app_state.db_router.writer())
+    .await
 }
 
 pub async fn update_agent_thread(
@@ -892,23 +833,12 @@ pub async fn set_agent_thread_archived(
         ));
     }
 
-    let updated = sqlx::query_as!(
-        AgentThread,
-        r#"
-        UPDATE agent_threads
-        SET archived_at = CASE WHEN $3 THEN NOW() ELSE NULL END, updated_at = NOW()
-        WHERE id = $1 AND deployment_id = $2
-        RETURNING id, deployment_id, actor_id, project_id,
-                  title, thread_purpose as "thread_kind!", CASE WHEN thread_purpose = 'conversation' THEN 'user_facing' ELSE 'internal' END as "thread_visibility!",
-                  thread_purpose, responsibility,
-                  reusable, accepts_assignments, capability_tags, status, system_instructions, last_activity_at, completed_at,
-                  execution_state, next_event_sequence, metadata, created_at, updated_at, archived_at, state_version
-        "#,
+    let updated = commands::SetAgentThreadArchivedCommand {
         thread_id,
         deployment_id,
         archived,
-    )
-    .fetch_one(app_state.db_router.writer())
+    }
+    .execute_with_db(app_state.db_router.writer())
     .await?;
 
     if archived {
@@ -1054,34 +984,16 @@ pub async fn list_actor_mcp_servers(
     actor_id: i64,
 ) -> Result<Vec<ActorMcpServerSummary>, AppError> {
     get_actor_by_id(app_state, deployment_id, actor_id).await?;
-    let servers = GetMcpServersQuery::new(deployment_id)
+    let entries = queries::GetActorMcpConnectionsQuery::new(deployment_id, actor_id)
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
-    let connections = sqlx::query!(
-        r#"
-        SELECT mcp_server_id, connection_metadata as "connection_metadata!: serde_json::Value"
-        FROM actor_mcp_server_connections
-        WHERE deployment_id = $1 AND actor_id = $2
-        "#,
-        deployment_id,
-        actor_id,
-    )
-    .fetch_all(app_state.db_router.reader(ReadConsistency::Eventual))
-    .await?;
-
-    let by_server: std::collections::HashMap<i64, models::McpConnectionMetadata> = connections
-        .into_iter()
-        .filter_map(|row| {
-            serde_json::from_value::<models::McpConnectionMetadata>(row.connection_metadata)
-                .ok()
-                .map(|meta| (row.mcp_server_id, meta))
-        })
-        .collect();
 
     let now = Utc::now();
-    let result = servers
+    let result = entries
         .into_iter()
-        .map(|server| {
+        .map(|entry| {
+            let server = entry.server;
+            let connection_metadata = entry.connection_metadata;
             let auth_type = match server.config.auth.as_ref() {
                 Some(models::McpAuthConfig::Token { .. }) => "token".to_string(),
                 Some(models::McpAuthConfig::OAuthClientCredentials { .. }) => {
@@ -1113,7 +1025,7 @@ pub async fn list_actor_mcp_servers(
             };
             if requires_user_connection {
                 summary.connection_status = "not_connected".to_string();
-                if let Some(metadata) = by_server.get(&summary.id) {
+                if let Some(metadata) = connection_metadata.as_ref() {
                     summary.connected_at = metadata.connected_at;
                     summary.expires_at = metadata.expires_at;
                     summary.connection_status = if metadata.expires_at.is_some_and(|v| v < now) {
@@ -1206,24 +1118,19 @@ pub async fn build_actor_mcp_server_connect_url(
     let state = generate_random_base64_url(24)?;
     let code_verifier = generate_random_base64_url(32)?;
     let redirect_uri = "https://agentlink.wacht.services/service/mcp/consent/callback".to_string();
-    sqlx::query!(
-        r#"
-        INSERT INTO mcp_oauth_states (
-            state, deployment_id, actor_id, mcp_server_id, code_verifier, client_id, token_url, redirect_uri, resource, expires_at, created_at, updated_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW())
-        "#,
-        &state,
+    commands::CreateMcpOAuthStateCommand {
+        state: state.clone(),
         deployment_id,
         actor_id,
         mcp_server_id,
-        &code_verifier,
-        &client_id,
-        &token_url,
-        &redirect_uri,
-        resource.clone(),
-        Utc::now() + chrono::Duration::minutes(15),
-    )
-    .execute(app_state.db_router.writer())
+        code_verifier: code_verifier.clone(),
+        client_id: client_id.clone(),
+        token_url: token_url.clone(),
+        redirect_uri: redirect_uri.clone(),
+        resource: resource.clone(),
+        expires_at: Utc::now() + chrono::Duration::minutes(15),
+    }
+    .execute_with_db(app_state.db_router.writer())
     .await?;
 
     let mut url = url::Url::parse(&auth_url)
@@ -1255,18 +1162,13 @@ pub async fn disconnect_actor_mcp_server(
     mcp_server_id: i64,
 ) -> Result<(), AppError> {
     get_actor_by_id(app_state, deployment_id, actor_id).await?;
-    sqlx::query!(
-        r#"
-        DELETE FROM actor_mcp_server_connections
-        WHERE deployment_id = $1 AND actor_id = $2 AND mcp_server_id = $3
-        "#,
+    commands::DeleteActorMcpConnectionCommand {
         deployment_id,
         actor_id,
         mcp_server_id,
-    )
-    .execute(app_state.db_router.writer())
-    .await?;
-    Ok(())
+    }
+    .execute_with_db(app_state.db_router.writer())
+    .await
 }
 
 pub async fn execute_agent_thread_async(

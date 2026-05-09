@@ -29,15 +29,9 @@ async fn is_production_deployment(
     app_state: &AppState,
     deployment_id: i64,
 ) -> Result<bool, AppError> {
-    let row = sqlx::query!(
-        r#"SELECT mode FROM deployments WHERE id = $1 AND deleted_at IS NULL"#,
-        deployment_id,
-    )
-    .fetch_optional(app_state.db_router.reader(ReadConsistency::Eventual))
-    .await?;
-
-    let mode = row
-        .map(|r| r.mode)
+    let mode = queries::GetDeploymentModeQuery::new(deployment_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
+        .await?
         .ok_or_else(|| AppError::NotFound(format!("deployment {deployment_id} not found")))?;
     Ok(mode.eq_ignore_ascii_case("production"))
 }

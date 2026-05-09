@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, deployment_id, actor_id, name, description, status, coordinator_thread_id,\n               review_thread_id, metadata, created_at, updated_at, archived_at\n        FROM actor_projects\n        WHERE deployment_id = $1\n          AND actor_id = $2\n          AND archived_at IS NULL\n          AND ($3::text IS NULL OR LOWER(name) LIKE $3 ESCAPE '\\')\n          AND (\n            $4::timestamptz IS NULL OR $5::bigint IS NULL\n            OR updated_at < $4\n            OR (updated_at = $4 AND id < $5)\n          )\n        ORDER BY updated_at DESC, id DESC\n        LIMIT $6\n        ",
+  "query": "\n            SELECT id, deployment_id, actor_id, name, description, status, coordinator_thread_id,\n                   review_thread_id, metadata, created_at, updated_at, archived_at\n            FROM actor_projects\n            WHERE deployment_id = $1\n              AND actor_id = $2\n              AND archived_at IS NULL\n              AND ($3::text IS NULL OR LOWER(name) LIKE $3 ESCAPE '\\')\n              AND (\n                $4::timestamptz IS NULL OR $5::bigint IS NULL\n                OR updated_at < $4\n                OR (updated_at = $4 AND id < $5)\n              )\n            ORDER BY updated_at DESC, id DESC\n            LIMIT $6\n            ",
   "describe": {
     "columns": [
       {
@@ -89,5 +89,5 @@
       true
     ]
   },
-  "hash": "38c8933e5ec9f589bf863f49505d9a1d7dd57e47e6baa73a1a30cd16560baca4"
+  "hash": "42b9bbee3130bd556f30d2ccc69637c170adfc2f33978a318b9d0a9fca4ae8a3"
 }

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE agent_threads\n            SET execution_state = jsonb_set(\n                COALESCE(execution_state, '{}'::jsonb),\n                '{pending_approval_request}',\n                'null'::jsonb,\n                true\n            )\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a418248620fa80dc88bfc08b6d542d17561d3dd05875bb5c549f5ebe3a8c5b52"
+}

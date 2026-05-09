@@ -172,3 +172,74 @@ impl DeleteMcpServerCommand {
         Ok(())
     }
 }
+
+pub struct CreateMcpOAuthStateCommand {
+    pub state: String,
+    pub deployment_id: i64,
+    pub actor_id: i64,
+    pub mcp_server_id: i64,
+    pub code_verifier: String,
+    pub client_id: String,
+    pub token_url: String,
+    pub redirect_uri: String,
+    pub resource: Option<String>,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl CreateMcpOAuthStateCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query!(
+            r#"
+            INSERT INTO mcp_oauth_states (
+                state, deployment_id, actor_id, mcp_server_id, code_verifier,
+                client_id, token_url, redirect_uri, resource, expires_at,
+                created_at, updated_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW())
+            "#,
+            self.state,
+            self.deployment_id,
+            self.actor_id,
+            self.mcp_server_id,
+            self.code_verifier,
+            self.client_id,
+            self.token_url,
+            self.redirect_uri,
+            self.resource,
+            self.expires_at,
+        )
+        .execute(executor)
+        .await
+        .map_err(AppError::Database)?;
+        Ok(())
+    }
+}
+
+pub struct DeleteActorMcpConnectionCommand {
+    pub deployment_id: i64,
+    pub actor_id: i64,
+    pub mcp_server_id: i64,
+}
+
+impl DeleteActorMcpConnectionCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query!(
+            r#"
+            DELETE FROM actor_mcp_server_connections
+            WHERE deployment_id = $1 AND actor_id = $2 AND mcp_server_id = $3
+            "#,
+            self.deployment_id,
+            self.actor_id,
+            self.mcp_server_id,
+        )
+        .execute(executor)
+        .await
+        .map_err(AppError::Database)?;
+        Ok(())
+    }
+}

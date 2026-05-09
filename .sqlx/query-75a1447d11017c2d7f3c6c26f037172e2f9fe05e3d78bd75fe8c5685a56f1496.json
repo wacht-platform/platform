@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT thread_id, board_item_id, state_version\n        FROM project_task_board_item_assignments\n        WHERE id = $1\n        ",
+  "query": "\n            SELECT thread_id, board_item_id\n            FROM project_task_board_item_assignments\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -12,11 +12,6 @@
         "ordinal": 1,
         "name": "board_item_id",
         "type_info": "Int8"
-      },
-      {
-        "ordinal": 2,
-        "name": "state_version",
-        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -26,9 +21,8 @@
     },
     "nullable": [
       false,
-      false,
       false
     ]
   },
-  "hash": "050d2729d9547270fe80866a0b67d9a38b28ea5645c65ecdf44c41bc0e96bfb0"
+  "hash": "75a1447d11017c2d7f3c6c26f037172e2f9fe05e3d78bd75fe8c5685a56f1496"
 }
