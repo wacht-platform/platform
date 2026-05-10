@@ -12,6 +12,10 @@ name = "backend-api"
 path = "src/bin/backend-api.rs"
 
 [[bin]]
+name = "machine-api"
+path = "src/bin/machine-api.rs"
+
+[[bin]]
 name = "oauth-api"
 path = "src/bin/oauth-api.rs"
 
@@ -27,7 +31,7 @@ queries = { path = "../queries" }
 common = { path = "../common" }
 agent-engine = { path = "../agent-engine" }
 templatekit = { path = "../templatekit" }
-wacht = { version = "0.1.0-beta.4", features = ["axum"] }
+wacht = { version = "0.1.0-beta.5", features = ["axum"] }
 axum = { version = "0.8", features = ["macros", "multipart"] }
 tokio = { version = "1.35", features = ["full"] }
 tower = "0.5"

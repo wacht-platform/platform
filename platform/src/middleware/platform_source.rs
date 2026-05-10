@@ -15,3 +15,8 @@ pub async fn mark_backend_platform_source(mut req: Request, next: Next) -> Respo
     req.extensions_mut().insert(PlatformSource::Backend);
     next.run(req).await
 }
+
+pub async fn mark_machine_platform_source(mut req: Request, next: Next) -> Response {
+    req.extensions_mut().insert(PlatformSource::Backend);
+    next.run(req).await
+}

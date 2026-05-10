@@ -19,12 +19,14 @@ mod backend_router;
 mod console_router;
 mod deployment_routes;
 mod frontend_router;
+mod machine_router;
 mod oauth_router;
 mod server_routes;
 
 pub use backend_router::create_backend_router;
 pub use console_router::create_console_router;
 pub use frontend_router::create_frontend_router;
+pub use machine_router::create_machine_router;
 pub use oauth_router::create_oauth_router;
 
 fn cors_layer() -> CorsLayer {

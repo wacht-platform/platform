@@ -30,6 +30,7 @@ COPY common/src/lib.rs common/src/lib.rs
 COPY platform/src/lib.rs platform/src/lib.rs
 COPY platform/src/bin/backend-api.rs platform/src/bin/backend-api.rs
 COPY platform/src/bin/console-api.rs platform/src/bin/console-api.rs
+COPY platform/src/bin/machine-api.rs platform/src/bin/machine-api.rs
 COPY platform/src/bin/oauth-api.rs platform/src/bin/oauth-api.rs
 COPY platform/src/bin/gateway-api.rs platform/src/bin/gateway-api.rs
 COPY worker/src/main.rs worker/src/main.rs
@@ -58,7 +59,7 @@ COPY templatekit/ ./templatekit/
 
 # Build only the binaries this image serves.
 RUN cargo build --release --locked \
-    -p platform --bin backend-api --bin console-api --bin oauth-api --bin gateway-api \
+    -p platform --bin backend-api --bin console-api --bin machine-api --bin oauth-api --bin gateway-api \
     -p platform-worker --bin worker
 
 FROM debian:bookworm-slim
@@ -75,6 +76,7 @@ RUN (curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/insta
 
 COPY --from=builder /app/target/release/backend-api /app/backend
 COPY --from=builder /app/target/release/console-api /app/console
+COPY --from=builder /app/target/release/machine-api /app/machine
 COPY --from=builder /app/target/release/oauth-api /app/oauth-api
 COPY --from=builder /app/target/release/gateway-api /app/gateway
 COPY --from=builder /app/target/release/worker /app/worker
