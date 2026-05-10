@@ -63,14 +63,23 @@ pub struct EnterpriseConnection {
     pub organization_id: i64,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
-    #[serde(with = "crate::utils::serde::i64_as_string_option")]
-    pub domain_id: Option<i64>,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub domain_id: i64,
 
     #[sqlx(try_from = "String")]
     pub protocol: EnterpriseConnectionProtocol,
     pub idp_entity_id: Option<String>,
     pub idp_sso_url: Option<String>,
     pub idp_certificate: Option<String>,
+
+    pub oidc_client_id: Option<String>,
+    #[serde(skip_serializing)]
+    pub oidc_client_secret: Option<String>,
+    pub oidc_issuer_url: Option<String>,
+    pub oidc_scopes: Option<String>,
+
+    pub jit_enabled: bool,
+    pub attribute_mapping: serde_json::Value,
 
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

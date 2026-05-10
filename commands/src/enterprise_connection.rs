@@ -7,11 +7,17 @@ use serde::{Deserialize, Serialize};
 pub struct CreateEnterpriseConnectionRequest {
     #[serde(default)]
     pub organization_id: i64,
-    pub domain_id: Option<i64>,
+    pub domain_id: i64,
     pub protocol: EnterpriseConnectionProtocol,
     pub idp_entity_id: Option<String>,
     pub idp_sso_url: Option<String>,
     pub idp_certificate: Option<String>,
+    pub oidc_client_id: Option<String>,
+    pub oidc_client_secret: Option<String>,
+    pub oidc_issuer_url: Option<String>,
+    pub oidc_scopes: Option<String>,
+    pub jit_enabled: Option<bool>,
+    pub attribute_mapping: Option<serde_json::Value>,
 }
 
 pub struct CreateEnterpriseConnectionCommand {
@@ -49,11 +55,45 @@ impl CreateEnterpriseConnectionCommand {
 impl CreateEnterpriseConnectionCommand {
     pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<EnterpriseConnection, AppError>
     where
-        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres> + Copy,
     {
         let connection_id = self
             .connection_id
             .ok_or_else(|| AppError::Validation("connection_id is required".to_string()))?;
+
+        if self.request.domain_id == 0 {
+            return Err(AppError::Validation(
+                "domain_id is required; an enterprise connection must be bound to a verified organization domain"
+                    .to_string(),
+            ));
+        }
+
+        let domain_ok = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM organization_domains
+                WHERE id = $1 AND organization_id = $2 AND deployment_id = $3 AND verified = true
+            ) as "exists!"
+            "#,
+            self.request.domain_id,
+            self.request.organization_id,
+            self.deployment_id,
+        )
+        .fetch_one(executor)
+        .await?;
+
+        if !domain_ok {
+            return Err(AppError::Validation(
+                "Domain must be verified for this organization before configuring SSO".to_string(),
+            ));
+        }
+
+        let jit_enabled = self.request.jit_enabled.unwrap_or(true);
+        let attribute_mapping = self
+            .request
+            .attribute_mapping
+            .unwrap_or_else(|| serde_json::json!({}));
+
         let now = Utc::now();
         let connection = sqlx::query_as::<_, EnterpriseConnection>(
             r#"
@@ -66,10 +106,16 @@ impl CreateEnterpriseConnectionCommand {
                 idp_entity_id,
                 idp_sso_url,
                 idp_certificate,
+                oidc_client_id,
+                oidc_client_secret,
+                oidc_issuer_url,
+                oidc_scopes,
+                jit_enabled,
+                attribute_mapping,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             RETURNING *
             "#,
         )
@@ -81,6 +127,12 @@ impl CreateEnterpriseConnectionCommand {
         .bind(self.request.idp_entity_id)
         .bind(self.request.idp_sso_url)
         .bind(self.request.idp_certificate)
+        .bind(self.request.oidc_client_id)
+        .bind(self.request.oidc_client_secret)
+        .bind(self.request.oidc_issuer_url)
+        .bind(self.request.oidc_scopes)
+        .bind(jit_enabled)
+        .bind(attribute_mapping)
         .bind(now)
         .bind(now)
         .fetch_one(executor)
@@ -125,9 +177,16 @@ pub struct UpdateEnterpriseConnectionRequest {
     pub organization_id: i64,
     #[serde(default)]
     pub connection_id: i64,
+    pub domain_id: Option<i64>,
     pub idp_entity_id: Option<String>,
     pub idp_sso_url: Option<String>,
     pub idp_certificate: Option<String>,
+    pub oidc_client_id: Option<String>,
+    pub oidc_client_secret: Option<String>,
+    pub oidc_issuer_url: Option<String>,
+    pub oidc_scopes: Option<String>,
+    pub jit_enabled: Option<bool>,
+    pub attribute_mapping: Option<serde_json::Value>,
 }
 
 pub struct UpdateEnterpriseConnectionCommand {
@@ -157,23 +216,65 @@ impl UpdateEnterpriseConnectionCommand {
 impl UpdateEnterpriseConnectionCommand {
     pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<EnterpriseConnection, AppError>
     where
-        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres> + Copy,
     {
+        if let Some(domain_id) = self.request.domain_id {
+            if domain_id == 0 {
+                return Err(AppError::Validation(
+                    "domain_id cannot be cleared; an enterprise connection must remain bound to a verified domain"
+                        .to_string(),
+                ));
+            }
+            let domain_ok = sqlx::query_scalar!(
+                r#"
+                SELECT EXISTS (
+                    SELECT 1 FROM organization_domains
+                    WHERE id = $1 AND organization_id = $2 AND deployment_id = $3 AND verified = true
+                ) as "exists!"
+                "#,
+                domain_id,
+                self.request.organization_id,
+                self.deployment_id,
+            )
+            .fetch_one(executor)
+            .await?;
+            if !domain_ok {
+                return Err(AppError::Validation(
+                    "Domain must be verified for this organization before configuring SSO"
+                        .to_string(),
+                ));
+            }
+        }
+
         let connection = sqlx::query_as::<_, EnterpriseConnection>(
             r#"
             UPDATE enterprise_connections
             SET
-                idp_entity_id = COALESCE($1, idp_entity_id),
-                idp_sso_url = COALESCE($2, idp_sso_url),
-                idp_certificate = COALESCE($3, idp_certificate),
-                updated_at = $4
-            WHERE id = $5 AND organization_id = $6 AND deployment_id = $7
+                domain_id = COALESCE($1, domain_id),
+                idp_entity_id = COALESCE($2, idp_entity_id),
+                idp_sso_url = COALESCE($3, idp_sso_url),
+                idp_certificate = COALESCE($4, idp_certificate),
+                oidc_client_id = COALESCE($5, oidc_client_id),
+                oidc_client_secret = COALESCE($6, oidc_client_secret),
+                oidc_issuer_url = COALESCE($7, oidc_issuer_url),
+                oidc_scopes = COALESCE($8, oidc_scopes),
+                jit_enabled = COALESCE($9, jit_enabled),
+                attribute_mapping = COALESCE($10, attribute_mapping),
+                updated_at = $11
+            WHERE id = $12 AND organization_id = $13 AND deployment_id = $14
             RETURNING *
             "#,
         )
+        .bind(self.request.domain_id)
         .bind(self.request.idp_entity_id)
         .bind(self.request.idp_sso_url)
         .bind(self.request.idp_certificate)
+        .bind(self.request.oidc_client_id)
+        .bind(self.request.oidc_client_secret)
+        .bind(self.request.oidc_issuer_url)
+        .bind(self.request.oidc_scopes)
+        .bind(self.request.jit_enabled)
+        .bind(self.request.attribute_mapping)
         .bind(Utc::now())
         .bind(self.request.connection_id)
         .bind(self.request.organization_id)

@@ -37,6 +37,7 @@ pub async fn machine_deployment_middleware(
 
     let method = req.method().as_str().to_string();
     let resource = req.uri().path().to_string();
+    let required_permission = required_machine_permission(&method);
     let response = wacht_client
         .gateway()
         .check_authz_with_principal_type(
@@ -44,7 +45,10 @@ pub async fn machine_deployment_middleware(
             access_token,
             &method,
             &resource,
-            GatewayAuthzOptions::default(),
+            GatewayAuthzOptions {
+                required_permissions: Some(vec![required_permission.to_string()]),
+                ..GatewayAuthzOptions::default()
+            },
         )
         .await
         .map_err(|_| ApiErrorResponse::unauthorized("Authentication failed"))?;
@@ -90,6 +94,13 @@ pub async fn machine_deployment_middleware(
 fn deployment_id_from_path(path: &str) -> Option<i64> {
     let rest = path.strip_prefix("/deployments/")?;
     rest.split('/').next()?.parse().ok()
+}
+
+fn required_machine_permission(method: &str) -> &'static str {
+    match method {
+        "GET" | "HEAD" | "OPTIONS" => "read",
+        _ => "write",
+    }
 }
 
 fn auth_context_from_oauth_response(

@@ -79,6 +79,14 @@ pub(super) fn console_specific_routes() -> Router<AppState> {
                 .post(api::enterprise_sso::generate_scim_token_handler)
                 .delete(api::enterprise_sso::revoke_scim_token_handler),
         )
+        .route(
+            "/organizations/{org_id}/connections/test",
+            post(api::enterprise_sso::test_connection_config_handler),
+        )
+        .route(
+            "/organizations/{org_id}/connections/{connection_id}/test",
+            post(api::enterprise_sso::test_connection_handler),
+        )
 }
 
 pub(super) fn backend_specific_routes() -> Router<AppState> {

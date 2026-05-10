@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT EXISTS (\n                    SELECT 1 FROM organization_domains\n                    WHERE id = $1 AND organization_id = $2 AND deployment_id = $3 AND verified = true\n                ) as \"exists!\"\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "01afc7b72ed3b3a9f2e7a31ad1f0aac7b9be1f8725917fe71512670b821c52da"
+}

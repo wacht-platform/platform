@@ -210,6 +210,79 @@ impl ListEnterpriseConnectionsQueryBuilder {
     }
 }
 
+pub struct GetEnterpriseConnectionQuery {
+    deployment_id: i64,
+    organization_id: i64,
+    connection_id: i64,
+}
+
+#[derive(Default)]
+pub struct GetEnterpriseConnectionQueryBuilder {
+    deployment_id: Option<i64>,
+    organization_id: Option<i64>,
+    connection_id: Option<i64>,
+}
+
+impl GetEnterpriseConnectionQuery {
+    pub fn builder() -> GetEnterpriseConnectionQueryBuilder {
+        GetEnterpriseConnectionQueryBuilder::default()
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Option<EnterpriseConnection>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let connection = sqlx::query_as::<_, EnterpriseConnection>(
+            r#"
+            SELECT *
+            FROM enterprise_connections
+            WHERE id = $1 AND organization_id = $2 AND deployment_id = $3
+            "#,
+        )
+        .bind(self.connection_id)
+        .bind(self.organization_id)
+        .bind(self.deployment_id)
+        .fetch_optional(executor)
+        .await?;
+
+        Ok(connection)
+    }
+}
+
+impl GetEnterpriseConnectionQueryBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn organization_id(mut self, organization_id: i64) -> Self {
+        self.organization_id = Some(organization_id);
+        self
+    }
+
+    pub fn connection_id(mut self, connection_id: i64) -> Self {
+        self.connection_id = Some(connection_id);
+        self
+    }
+
+    pub fn build(self) -> Result<GetEnterpriseConnectionQuery, AppError> {
+        Ok(GetEnterpriseConnectionQuery {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+            organization_id: self
+                .organization_id
+                .ok_or_else(|| AppError::Validation("organization_id is required".to_string()))?,
+            connection_id: self
+                .connection_id
+                .ok_or_else(|| AppError::Validation("connection_id is required".to_string()))?,
+        })
+    }
+}
+
 pub struct GetScimTokenQuery {
     deployment_id: i64,
     organization_id: i64,

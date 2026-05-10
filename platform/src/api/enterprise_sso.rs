@@ -24,9 +24,10 @@ use std::collections::HashMap;
 
 use crate::api::pagination::paginate_results;
 use crate::application::enterprise_sso::{
-    ListInput, create_connection, create_domain, delete_connection, delete_domain,
-    generate_scim_token, get_scim_token, list_connections, list_domains, revoke_scim_token,
-    update_connection, verify_domain,
+    ListInput, TestConnectionResult, TestEnterpriseConnectionConfig, create_connection,
+    create_domain, delete_connection, delete_domain, generate_scim_token, get_scim_token,
+    list_connections, list_domains, revoke_scim_token, test_connection_config,
+    test_existing_connection, update_connection, verify_domain,
 };
 use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::RequireDeployment;
@@ -274,4 +275,25 @@ pub async fn revoke_scim_token_handler(
 
     revoke_scim_token(&app_state, deployment_id, req).await?;
     Ok(().into())
+}
+
+pub async fn test_connection_config_handler(
+    State(_app_state): State<AppState>,
+    RequireDeployment(_deployment_id): RequireDeployment,
+    Path(_params): Path<OrganizationParams>,
+    Json(req): Json<TestEnterpriseConnectionConfig>,
+) -> ApiResult<TestConnectionResult> {
+    let result = test_connection_config(req).await;
+    Ok(result.into())
+}
+
+pub async fn test_connection_handler(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<ConnectionParams>,
+) -> ApiResult<TestConnectionResult> {
+    let result =
+        test_existing_connection(&app_state, deployment_id, params.org_id, params.connection_id)
+            .await?;
+    Ok(result.into())
 }
