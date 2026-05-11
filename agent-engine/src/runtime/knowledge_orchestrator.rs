@@ -1,9 +1,7 @@
 use crate::filesystem::knowledge_base_mount_name;
 use commands::GenerateEmbeddingCommand;
+use common::error::AppError;
 use common::state::AppState;
-use common::{
-    error::AppError, search_full_text_in_table, search_hybrid_in_table, search_vector_in_table,
-};
 use dto::json::agent_executor::{
     ContextChunkMatch, ContextHints, LocalKnowledgeSearchType, RecommendedFile, SearchConclusion,
 };
@@ -268,17 +266,11 @@ impl KnowledgeOrchestrator {
         query: &str,
         max_results: usize,
     ) -> Result<Vec<ContextSearchResult>, AppError> {
-        let Some(table) = self.ctx.get_kb_table().await? else {
-            return Ok(Vec::new());
-        };
-        let results = search_full_text_in_table(
-            &table,
-            kb_ids,
-            query,
-            max_results,
-            self.ctx.provider_keys.embedding_dimension,
-        )
-        .await?;
+        let results = self
+            .ctx
+            .vector_store
+            .search_kb_full_text(kb_ids, query, max_results)
+            .await?;
 
         Ok(results
             .into_iter()
@@ -308,17 +300,11 @@ impl KnowledgeOrchestrator {
         query_embedding: &[f32],
         max_results: usize,
     ) -> Result<Vec<ContextSearchResult>, AppError> {
-        let Some(table) = self.ctx.get_kb_table().await? else {
-            return Ok(Vec::new());
-        };
-        let results = search_vector_in_table(
-            &table,
-            kb_ids,
-            query_embedding,
-            max_results,
-            self.ctx.provider_keys.embedding_dimension,
-        )
-        .await?;
+        let results = self
+            .ctx
+            .vector_store
+            .search_kb_vector(kb_ids, query_embedding, max_results)
+            .await?;
 
         Ok(results
             .into_iter()
@@ -357,18 +343,11 @@ impl KnowledgeOrchestrator {
             query_text = format!("{} {}", query_text, keywords.join(" "));
         }
 
-        let Some(table) = self.ctx.get_kb_table().await? else {
-            return Ok(Vec::new());
-        };
-        let results = search_hybrid_in_table(
-            &table,
-            kb_ids,
-            &query_text,
-            query_embedding,
-            max_results,
-            self.ctx.provider_keys.embedding_dimension,
-        )
-        .await?;
+        let results = self
+            .ctx
+            .vector_store
+            .search_kb_hybrid(kb_ids, &query_text, query_embedding, max_results)
+            .await?;
 
         Ok(results
             .into_iter()

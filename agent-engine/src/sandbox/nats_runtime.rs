@@ -27,6 +27,16 @@ impl NatsSandboxRuntime {
 
 #[async_trait]
 impl SandboxRuntime for NatsSandboxRuntime {
+    #[tracing::instrument(
+        name = "sandbox.ensure_thread",
+        skip(self, spec),
+        fields(
+            deployment_id = %spec.deployment_id,
+            thread_id = %spec.thread_id,
+            project_id = ?spec.project_id,
+            agent_id = ?spec.agent_id,
+        ),
+    )]
     async fn ensure_thread_sandbox(
         &self,
         spec: ThreadSandboxSpec,
@@ -52,6 +62,16 @@ impl SandboxRuntime for NatsSandboxRuntime {
         Ok(Box::new(NatsSandboxHandleAdapter { inner: handle }))
     }
 
+    #[tracing::instrument(
+        name = "sandbox.ensure_task",
+        skip(self, spec),
+        fields(
+            deployment_id = %spec.deployment_id,
+            project_id = %spec.project_id,
+            task_key = %spec.task_key,
+            mount_count = spec.mounts.len(),
+        ),
+    )]
     async fn ensure_task_sandbox(
         &self,
         spec: TaskSandboxSpec,
@@ -97,6 +117,18 @@ impl SandboxHandle for NatsSandboxHandleAdapter {
         self.inner.sandbox_id()
     }
 
+    #[tracing::instrument(
+        name = "sandbox.exec",
+        skip(self, request),
+        fields(
+            sandbox_id = self.id(),
+            cmd0 = request.command.first().map(String::as_str).unwrap_or(""),
+            argc = request.command.len(),
+            cwd = ?request.cwd,
+            exec_id = ?request.exec_id,
+            timeout_secs = request.timeout.unwrap_or(DEFAULT_EXEC_TIMEOUT).as_secs(),
+        ),
+    )]
     async fn exec(&self, request: ExecRequest) -> SandboxResult<ExecResult> {
         let in_guest_timeout = request.timeout.unwrap_or(DEFAULT_EXEC_TIMEOUT);
         let nats_timeout = in_guest_timeout + EXEC_REQUEST_BUFFER;

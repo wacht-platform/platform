@@ -1,44 +1,35 @@
-pub mod executor;
-pub mod filesystem;
+pub(crate) mod executor;
+pub(crate) mod filesystem;
 mod json_schema;
-pub mod llm;
-pub mod runtime;
-pub mod sandbox;
+pub(crate) mod llm;
+mod runtime;
+pub(crate) mod sandbox;
 pub mod tools;
 
-pub use executor::{AgentExecutor, ResumeContext};
-pub use llm::{
-    GeminiClient, LlmClient, PromptCacheRequest, StructuredGenerationOutput,
-    StructuredGenerationRequest,
+// Stable public surface — consumed by the worker.
+pub use runtime::{
+    AgentHandler, ExecutionRequest, LanceDbVectorStore, LanceDbVectorStoreFactory,
+    SecretsProvider, SettingsSecretsProvider, VectorStore, VectorStoreFactory,
 };
-pub use runtime::{AgentHandler, ExecutionRequest, KnowledgeOrchestrator, ThreadExecutionContext};
-pub use sandbox::{init_shared_sandbox_runtime, shared_sandbox_runtime};
-pub use tools::ToolExecutor;
+pub use sandbox::init_shared_sandbox_runtime;
 
-use dto::json::StreamEvent;
-use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
+// Crate-internal re-exports for sibling modules that import via `crate::*`.
+pub(crate) use executor::{AgentExecutor, ResumeContext};
 
-#[derive(Clone)]
-pub enum StreamChannel {
-    Nats(mpsc::Sender<StreamEvent>),
-    Memory(Arc<Mutex<Vec<StreamEvent>>>),
-}
+use std::sync::OnceLock;
 
-impl StreamChannel {
-    pub async fn send(&self, event: StreamEvent) -> Result<(), String> {
-        match self {
-            StreamChannel::Nats(sender) => sender
-                .send(event)
-                .await
-                .map_err(|e| format!("Failed to send to NATS channel: {}", e)),
-            StreamChannel::Memory(events) => {
-                events
-                    .lock()
-                    .map_err(|e| format!("Failed to lock memory channel: {}", e))?
-                    .push(event);
-                Ok(())
-            }
+static CONSOLE_DEPLOYMENT_ID: OnceLock<i64> = OnceLock::new();
+
+pub(crate) fn console_deployment_id() -> i64 {
+    *CONSOLE_DEPLOYMENT_ID.get_or_init(|| match std::env::var("CONSOLE_DEPLOYMENT_ID") {
+        Ok(value) => value.parse::<i64>().unwrap_or_else(|err| {
+            tracing::warn!(value = %value, error = %err, "CONSOLE_DEPLOYMENT_ID unparseable; falling back to 0");
+            0
+        }),
+        Err(_) => {
+            tracing::warn!("CONSOLE_DEPLOYMENT_ID not set; falling back to 0");
+            0
         }
-    }
+    })
 }
+

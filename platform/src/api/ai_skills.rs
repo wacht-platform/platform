@@ -73,6 +73,9 @@ pub async fn read_skill_file(
     Ok(response.into())
 }
 
+/// Multipart form fields:
+/// - replace: flag optional — accepts `replace_existing` as an alias
+/// - file: file required
 pub async fn import_agent_skill_bundle(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,

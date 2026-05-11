@@ -70,7 +70,7 @@ impl GetAiAgentsQuery {
                 r#"
                 SELECT
                     a.id, a.created_at, a.updated_at, a.name, a.description,
-                    a.configuration, a.deployment_id,
+                    a.deployment_id,
                     a.strong_model_provider, a.strong_model,
                     a.weak_model_provider, a.weak_model,
                     a.hooks as "hooks!: Json<AgentHooksConfig>",
@@ -111,7 +111,6 @@ impl GetAiAgentsQuery {
                         updated_at: agent.updated_at,
                         name: agent.name,
                         description: agent.description,
-                        configuration: agent.configuration,
                         deployment_id: agent.deployment_id,
                         tools_count: agent.tools_count,
                         knowledge_bases_count: agent.knowledge_bases_count,
@@ -133,7 +132,7 @@ impl GetAiAgentsQuery {
                 r#"
                 SELECT
                     a.id, a.created_at, a.updated_at, a.name, a.description,
-                    a.configuration, a.deployment_id,
+                    a.deployment_id,
                     a.strong_model_provider, a.strong_model,
                     a.weak_model_provider, a.weak_model,
                     a.hooks as "hooks!: Json<AgentHooksConfig>",
@@ -172,7 +171,6 @@ impl GetAiAgentsQuery {
                         updated_at: agent.updated_at,
                         name: agent.name,
                         description: agent.description,
-                        configuration: agent.configuration,
                         deployment_id: agent.deployment_id,
                         tools_count: agent.tools_count,
                         knowledge_bases_count: agent.knowledge_bases_count,
@@ -214,7 +212,7 @@ impl GetAiAgentByIdQuery {
             r#"
             SELECT
                 a.id, a.created_at, a.updated_at, a.name, a.description,
-                a.configuration, a.deployment_id,
+                a.deployment_id,
                 a.strong_model_provider, a.strong_model,
                 a.weak_model_provider, a.weak_model,
                 a.hooks as "hooks!: Json<AgentHooksConfig>",
@@ -248,7 +246,6 @@ impl GetAiAgentByIdQuery {
             updated_at: agent.updated_at,
             name: agent.name,
             description: agent.description,
-            configuration: agent.configuration,
             deployment_id: agent.deployment_id,
             tools_count: agent.tools_count,
             knowledge_bases_count: agent.knowledge_bases_count,
@@ -290,7 +287,7 @@ impl GetAiAgentsByIdsQuery {
             r#"
             SELECT
                 a.id, a.created_at, a.updated_at, a.name, a.description,
-                a.configuration, a.deployment_id,
+                a.deployment_id,
                 a.strong_model_provider, a.strong_model,
                 a.weak_model_provider, a.weak_model,
                 a.hooks as "hooks!: Json<AgentHooksConfig>",
@@ -328,8 +325,7 @@ impl GetAiAgentsByIdsQuery {
                 name: row.name,
                 description: row.description,
                 deployment_id: row.deployment_id,
-                configuration: row.configuration,
-                tools_count: row.tools_count,
+                    tools_count: row.tools_count,
                 knowledge_bases_count: row.knowledge_bases_count,
                 sub_agents,
                 strong_model: build_override(row.strong_model_provider, row.strong_model),
@@ -367,7 +363,6 @@ impl GetAiAgentByIdWithFeatures {
                 a.description,
                 a.name,
                 a.deployment_id,
-                a.configuration,
                 a.strong_model_provider, a.strong_model,
                 a.weak_model_provider, a.weak_model,
                 a.hooks as "hooks!: Json<AgentHooksConfig>",
@@ -443,7 +438,6 @@ impl GetAiAgentByIdWithFeatures {
             description: row.description,
             name: row.name,
             deployment_id: row.deployment_id,
-            configuration: row.configuration,
             tools,
             knowledge_bases,
             sub_agents,

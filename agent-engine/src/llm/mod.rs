@@ -2,6 +2,7 @@ mod client;
 pub mod gemini;
 pub mod openai;
 pub mod openrouter;
+mod provider;
 
 #[allow(unused_imports)]
 pub(crate) mod providers {
@@ -11,11 +12,11 @@ pub(crate) mod providers {
 }
 
 pub use client::{
-    GeneratedToolCall, LlmClient, LlmRole, NativeToolDefinition, PromptCacheRequest, ResolvedLlm,
+    GeneratedToolCall, LlmRole, NativeToolDefinition, PromptCacheRequest, ResolvedLlm,
     SemanticLlmContentBlock, SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest,
-    StructuredGenerationOutput, StructuredGenerationRequest, TextGenerationOutput,
-    ToolCallGenerationOutput,
+    StructuredGenerationOutput, TextGenerationOutput, ToolCallGenerationOutput,
 };
 pub use gemini::{GeminiClient, UsageMetadata};
 pub use openai::OpenAiClient;
 pub use openrouter::OpenRouterClient;
+pub use provider::LlmProvider;

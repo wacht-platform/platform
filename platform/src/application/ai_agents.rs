@@ -27,7 +27,6 @@ pub struct AgentDetailsResponse {
     pub deployment_id: i64,
     pub name: String,
     pub description: Option<String>,
-    pub configuration: serde_json::Value,
     pub tools_count: i64,
     pub knowledge_bases_count: i64,
     pub tools: Vec<serde_json::Value>,
@@ -60,14 +59,12 @@ pub async fn create_ai_agent(
     request: CreateAgentRequest,
 ) -> Result<AiAgent, AppError> {
     let db_deps = deps::from_app(app_state).db();
-    let configuration = request.configuration.unwrap_or(serde_json::json!({}));
     let agent_id = app_state.sf.next_id()? as i64;
     let mut command = CreateAiAgentCommand::new(
         agent_id,
         deployment_id,
         request.name,
         request.description,
-        configuration,
     );
 
     if let Some(sub_agents) = request.sub_agents {
@@ -127,7 +124,6 @@ pub async fn get_ai_agent_details(
         deployment_id: agent.deployment_id,
         name: agent.name,
         description: agent.description,
-        configuration: agent.configuration,
         tools_count: agent.tools_count,
         knowledge_bases_count: agent.knowledge_bases_count,
         tools: vec![],
@@ -150,9 +146,6 @@ pub async fn update_ai_agent(
     }
     if let Some(description) = request.description {
         command = command.with_description(Some(description));
-    }
-    if let Some(configuration) = request.configuration {
-        command = command.with_configuration(configuration);
     }
     if let Some(tool_ids) = request.tool_ids {
         command = command.with_tool_ids(tool_ids.into_iter().map(i64::from).collect());

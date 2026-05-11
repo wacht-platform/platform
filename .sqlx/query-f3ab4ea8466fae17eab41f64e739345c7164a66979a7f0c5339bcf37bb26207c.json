@@ -1,0 +1,114 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ai_agents\n            SET\n                updated_at = $1,\n                name = COALESCE($2, name),\n                description = COALESCE($3, description),\n                strong_model_provider = CASE\n                    WHEN $6::bool THEN NULL\n                    WHEN $7::text IS NOT NULL THEN $7\n                    ELSE strong_model_provider\n                END,\n                strong_model = CASE\n                    WHEN $6::bool THEN NULL\n                    WHEN $8::text IS NOT NULL THEN $8\n                    ELSE strong_model\n                END,\n                weak_model_provider = CASE\n                    WHEN $9::bool THEN NULL\n                    WHEN $10::text IS NOT NULL THEN $10\n                    ELSE weak_model_provider\n                END,\n                weak_model = CASE\n                    WHEN $9::bool THEN NULL\n                    WHEN $11::text IS NOT NULL THEN $11\n                    ELSE weak_model\n                END,\n                hooks = COALESCE($12, hooks),\n                require_approval_mcp = COALESCE($13, require_approval_mcp),\n                require_approval_virtual = COALESCE($14, require_approval_virtual),\n                tool_approval_rules = COALESCE($15, tool_approval_rules)\n            WHERE id = $4 AND deployment_id = $5\n            RETURNING id, created_at, updated_at, name, description, deployment_id,\n                      strong_model_provider, strong_model,\n                      weak_model_provider, weak_model,\n                      hooks as \"hooks!: Json<AgentHooksConfig>\",\n                      require_approval_mcp,\n                      require_approval_virtual,\n                      tool_approval_rules as \"tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "strong_model_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "strong_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "weak_model_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "weak_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "hooks!: Json<AgentHooksConfig>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 11,
+        "name": "require_approval_mcp",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "require_approval_virtual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 13,
+        "name": "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Bool",
+        "Bool",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f3ab4ea8466fae17eab41f64e739345c7164a66979a7f0c5339bcf37bb26207c"
+}

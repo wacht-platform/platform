@@ -63,19 +63,6 @@ impl GeminiClient {
             .unwrap_or(false)
     }
 
-    pub fn new(api_key: String, model: String) -> Self {
-        Self {
-            api_key,
-            model,
-            client: reqwest::Client::new(),
-            deployment_id: None,
-            thread_id: None,
-            redis_client: None,
-            nats_client: None,
-            is_byok: false,
-        }
-    }
-
     pub fn new_byok(api_key: String, model: String) -> Self {
         Self {
             api_key,
@@ -97,11 +84,6 @@ impl GeminiClient {
 
     pub fn with_nats(mut self, nats_client: async_nats::Client) -> Self {
         self.nats_client = Some(nats_client);
-        self
-    }
-
-    pub fn with_byok(mut self, is_byok: bool) -> Self {
-        self.is_byok = is_byok;
         self
     }
 
@@ -127,27 +109,6 @@ impl GeminiClient {
         Err(AppError::BadRequest(
             "Gemini API key is not configured for this deployment".to_string(),
         ))
-    }
-
-    pub async fn generate_structured_content<T>(&self, request_body: String) -> Result<T, AppError>
-    where
-        T: for<'de> Deserialize<'de> + Serialize,
-    {
-        let output = self
-            .generate_structured_content_with_usage::<T>(request_body)
-            .await?;
-        Ok(output.value)
-    }
-
-    pub async fn generate_structured_content_with_usage<T>(
-        &self,
-        request_body: String,
-    ) -> Result<StructuredContentOutput<T>, AppError>
-    where
-        T: for<'de> Deserialize<'de> + Serialize,
-    {
-        self.generate_structured_content_with_usage_and_cache::<T>(request_body, None)
-            .await
     }
 
     pub async fn generate_structured_content_with_usage_and_cache<T>(
@@ -361,14 +322,10 @@ impl GeminiClient {
             generation_config.insert("maxOutputTokens".to_string(), json!(max_output_tokens));
         }
         if let Some(ref reasoning_effort) = prompt.reasoning_effort {
-            // Gemini 2.5 uses thinkingBudget (integer); Gemini 3+ uses thinkingLevel (string).
-            // Detect by whether the value parses as an integer.
-            let thinking_config = if let Ok(budget) = reasoning_effort.parse::<i64>() {
-                json!({ "thinkingBudget": budget })
-            } else {
-                json!({ "thinkingLevel": reasoning_effort })
-            };
-            generation_config.insert("thinkingConfig".to_string(), thinking_config);
+            generation_config.insert(
+                "thinkingConfig".to_string(),
+                thinking_config_for(reasoning_effort),
+            );
         }
 
         let mut body = serde_json::Map::new();
@@ -515,5 +472,115 @@ impl GeminiClient {
         let final_delay = (capped_delay + jitter).max(0.0) as u64;
 
         Duration::from_millis(final_delay)
+    }
+}
+
+fn serialize_gemini_structured_request(prompt: &SemanticLlmRequest) -> Result<String, AppError> {
+    serialize_gemini_request_inner(prompt, true)
+}
+
+fn serialize_gemini_text_request(prompt: &SemanticLlmRequest) -> Result<String, AppError> {
+    serialize_gemini_request_inner(prompt, false)
+}
+
+fn serialize_gemini_request_inner(
+    prompt: &SemanticLlmRequest,
+    include_response_schema: bool,
+) -> Result<String, AppError> {
+    use crate::llm::SemanticLlmContentBlock;
+    let contents = prompt
+        .messages
+        .iter()
+        .map(|message| {
+            let parts = message
+                .content_blocks
+                .iter()
+                .map(|block| match block {
+                    SemanticLlmContentBlock::Text { text } => json!({ "text": text }),
+                    SemanticLlmContentBlock::InlineData { mime_type, data } => {
+                        json!({ "inline_data": { "mime_type": mime_type, "data": data } })
+                    }
+                })
+                .collect::<Vec<_>>();
+            json!({ "role": message.role, "parts": parts })
+        })
+        .collect::<Vec<_>>();
+
+    let mut generation_config = serde_json::Map::new();
+    if include_response_schema {
+        generation_config.insert("responseMimeType".to_string(), json!("application/json"));
+        generation_config.insert(
+            "responseSchema".to_string(),
+            prompt.response_json_schema.clone(),
+        );
+    }
+    if let Some(temperature) = prompt.temperature {
+        generation_config.insert("temperature".to_string(), json!(temperature));
+    }
+    if let Some(max_output_tokens) = prompt.max_output_tokens {
+        generation_config.insert("maxOutputTokens".to_string(), json!(max_output_tokens));
+    }
+    if let Some(reasoning_effort) = prompt.reasoning_effort.as_ref() {
+        generation_config.insert(
+            "thinkingConfig".to_string(),
+            thinking_config_for(reasoning_effort),
+        );
+    }
+
+    serde_json::to_string(&json!({
+        "system_instruction": { "parts": [{ "text": prompt.system_prompt }] },
+        "contents": contents,
+        "generationConfig": generation_config,
+    }))
+    .map_err(|e| AppError::Internal(format!("Failed to serialize LLM request: {e}")))
+}
+
+// Gemini 2.5 uses thinkingBudget (integer); Gemini 3+ uses thinkingLevel (string).
+// Detect by whether the value parses as an integer.
+fn thinking_config_for(reasoning_effort: &str) -> Value {
+    if let Ok(budget) = reasoning_effort.parse::<i64>() {
+        json!({ "thinkingBudget": budget })
+    } else {
+        json!({ "thinkingLevel": reasoning_effort })
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::llm::LlmProvider for GeminiClient {
+    fn provider_label(&self) -> &'static str {
+        "gemini"
+    }
+
+    async fn generate_structured(
+        &self,
+        prompt: SemanticLlmRequest,
+        cache: Option<PromptCacheRequest>,
+    ) -> Result<crate::llm::StructuredGenerationOutput<Value>, AppError> {
+        let body = serialize_gemini_structured_request(&prompt)?;
+        let output = self
+            .generate_structured_content_with_usage_and_cache::<Value>(body, cache.map(Into::into))
+            .await?;
+        Ok(crate::llm::StructuredGenerationOutput {
+            value: output.value,
+            usage_metadata: output.usage_metadata,
+            cache_state: output.cache_state,
+        })
+    }
+
+    async fn generate_tool_calls(
+        &self,
+        prompt: SemanticLlmRequest,
+        tools: Vec<NativeToolDefinition>,
+        cache: Option<PromptCacheRequest>,
+    ) -> Result<ToolCallGenerationOutput, AppError> {
+        GeminiClient::generate_tool_calls(self, prompt, tools, cache).await
+    }
+
+    async fn generate_text(
+        &self,
+        prompt: SemanticLlmRequest,
+    ) -> Result<crate::llm::TextGenerationOutput, AppError> {
+        let body = serialize_gemini_text_request(&prompt)?;
+        GeminiClient::generate_text(self, body).await
     }
 }

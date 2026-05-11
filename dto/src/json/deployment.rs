@@ -9,7 +9,6 @@ use models::{
 pub struct CreateAgentRequest {
     pub name: String,
     pub description: Option<String>,
-    pub configuration: Option<serde_json::Value>,
     pub tool_ids: Option<Vec<FlexibleI64>>,
     pub knowledge_base_ids: Option<Vec<FlexibleI64>>,
     /// Agent IDs this agent can spawn as sub-agents
@@ -27,7 +26,6 @@ pub struct UpdateAgentRequest {
     pub name: Option<String>,
     pub description: Option<String>,
     pub status: Option<String>,
-    pub configuration: Option<serde_json::Value>,
     pub tool_ids: Option<Vec<FlexibleI64>>,
     pub knowledge_base_ids: Option<Vec<FlexibleI64>>,
     pub sub_agents: Option<Vec<FlexibleI64>>,

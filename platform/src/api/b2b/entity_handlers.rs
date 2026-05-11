@@ -84,6 +84,12 @@ async fn parse_entity_multipart(
     Ok(data)
 }
 
+/// Multipart form fields:
+/// - name: string optional
+/// - description: string optional
+/// - public_metadata: json optional
+/// - private_metadata: json optional
+/// - organization_image: file optional
 pub async fn create_organization(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -108,6 +114,12 @@ pub async fn create_organization(
     Ok(organization.into())
 }
 
+/// Multipart form fields:
+/// - name: string optional
+/// - description: string optional
+/// - public_metadata: json optional
+/// - private_metadata: json optional
+/// - workspace_image: file optional
 pub async fn create_workspace_for_organization(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -134,6 +146,13 @@ pub async fn create_workspace_for_organization(
     Ok(workspace.into())
 }
 
+/// Multipart form fields:
+/// - name: string optional
+/// - description: string optional
+/// - public_metadata: json optional
+/// - private_metadata: json optional
+/// - remove_image: flag optional
+/// - workspace_image: file optional
 pub async fn update_workspace(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -160,6 +179,13 @@ pub async fn update_workspace(
     Ok(workspace.into())
 }
 
+/// Multipart form fields:
+/// - name: string optional
+/// - description: string optional
+/// - public_metadata: json optional
+/// - private_metadata: json optional
+/// - remove_image: flag optional
+/// - organization_image: file optional
 pub async fn update_organization(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,

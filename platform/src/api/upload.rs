@@ -21,6 +21,8 @@ pub struct UploadPathParams {
     pub image_type: String,
 }
 
+/// Multipart form fields:
+/// - image: file required — first file field in the request, any name accepted
 pub async fn upload_image(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,

@@ -1,14 +1,12 @@
 use common::error::AppError;
 use models::PromptCacheState;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
+use std::sync::Arc;
 
-use super::{
-    gemini::{ExplicitCacheRequest, GeminiClient},
-    openai::OpenAiClient,
-    openrouter::OpenRouterClient,
-    UsageMetadata,
-};
+use super::{gemini::ExplicitCacheRequest, provider::LlmProvider, UsageMetadata};
+
+pub type LlmClient = Arc<dyn LlmProvider>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LlmRole {
@@ -23,12 +21,6 @@ pub struct PromptCacheRequest {
     pub live_tail_count: usize,
     pub prior_state: Option<PromptCacheState>,
     pub reuse_only: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct StructuredGenerationRequest {
-    pub request_body: String,
-    pub cache: Option<PromptCacheRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,17 +135,19 @@ pub struct TextGenerationOutput {
     pub usage_metadata: Option<UsageMetadata>,
 }
 
-#[derive(Debug, Clone)]
-pub enum LlmClient {
-    Gemini(GeminiClient),
-    OpenAi(OpenAiClient),
-    OpenRouter(OpenRouterClient),
-}
-
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ResolvedLlm {
     client: LlmClient,
     model_name: String,
+}
+
+impl std::fmt::Debug for ResolvedLlm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResolvedLlm")
+            .field("provider", &self.client.provider_label())
+            .field("model_name", &self.model_name)
+            .finish()
+    }
 }
 
 impl ResolvedLlm {
@@ -168,6 +162,10 @@ impl ResolvedLlm {
         &self.model_name
     }
 
+    pub fn provider_label(&self) -> &'static str {
+        self.client.provider_label()
+    }
+
     pub async fn generate_structured_from_prompt<T>(
         &self,
         prompt: SemanticLlmRequest,
@@ -176,61 +174,22 @@ impl ResolvedLlm {
     where
         T: for<'de> Deserialize<'de> + Serialize,
     {
-        self.client
-            .generate_structured_from_prompt(prompt, cache)
-            .await
-    }
-
-    pub async fn generate_tool_calls(
-        &self,
-        prompt: SemanticLlmRequest,
-        tools: Vec<NativeToolDefinition>,
-        cache: Option<PromptCacheRequest>,
-    ) -> Result<ToolCallGenerationOutput, AppError> {
-        self.client.generate_tool_calls(prompt, tools, cache).await
-    }
-
-    pub async fn generate_text_from_prompt(
-        &self,
-        prompt: SemanticLlmRequest,
-    ) -> Result<TextGenerationOutput, AppError> {
-        self.client.generate_text_from_prompt(prompt).await
-    }
-}
-
-impl LlmClient {
-    pub async fn generate_structured_from_prompt<T>(
-        &self,
-        prompt: SemanticLlmRequest,
-        cache: Option<PromptCacheRequest>,
-    ) -> Result<StructuredGenerationOutput<T>, AppError>
-    where
-        T: for<'de> Deserialize<'de> + Serialize,
-    {
-        match self {
-            Self::Gemini(client) => {
-                let output = client
-                    .generate_structured_content_with_usage_and_cache::<T>(
-                        serialize_gemini_request(&prompt)?,
-                        cache.map(Into::into),
-                    )
-                    .await?;
-                Ok(StructuredGenerationOutput {
-                    value: output.value,
-                    usage_metadata: output.usage_metadata,
-                    cache_state: output.cache_state,
-                })
-            }
-            Self::OpenAi(client) => client.generate_structured_from_prompt(prompt, cache).await,
-            Self::OpenRouter(client) => client.generate_structured_from_prompt(prompt, cache).await,
-        }
+        let raw = self.client.generate_structured(prompt, cache).await?;
+        let value: T = serde_json::from_value(raw.value).map_err(|e| {
+            AppError::Internal(format!("Failed to deserialize structured output: {e}"))
+        })?;
+        Ok(StructuredGenerationOutput {
+            value,
+            usage_metadata: raw.usage_metadata,
+            cache_state: raw.cache_state,
+        })
     }
 
     #[tracing::instrument(
         name = "llm.generate_tool_calls",
         skip(self, prompt, tools, cache),
         fields(
-            provider = self.provider_label(),
+            provider = self.client.provider_label(),
             tool_count = tools.len(),
             empty_response = tracing::field::Empty,
             tool_call_count = tracing::field::Empty,
@@ -242,11 +201,7 @@ impl LlmClient {
         tools: Vec<NativeToolDefinition>,
         cache: Option<PromptCacheRequest>,
     ) -> Result<ToolCallGenerationOutput, AppError> {
-        let result = match self {
-            Self::Gemini(client) => client.generate_tool_calls(prompt, tools, cache).await,
-            Self::OpenAi(client) => client.generate_tool_calls(prompt, tools, cache).await,
-            Self::OpenRouter(client) => client.generate_tool_calls(prompt, tools, cache).await,
-        };
+        let result = self.client.generate_tool_calls(prompt, tools, cache).await;
         if let Ok(output) = &result {
             let span = tracing::Span::current();
             span.record("tool_call_count", output.calls.len());
@@ -263,27 +218,11 @@ impl LlmClient {
         result
     }
 
-    fn provider_label(&self) -> &'static str {
-        match self {
-            Self::Gemini(_) => "gemini",
-            Self::OpenAi(_) => "openai",
-            Self::OpenRouter(_) => "openrouter",
-        }
-    }
-
     pub async fn generate_text_from_prompt(
         &self,
         prompt: SemanticLlmRequest,
     ) -> Result<TextGenerationOutput, AppError> {
-        match self {
-            Self::Gemini(client) => {
-                client
-                    .generate_text(serialize_gemini_text_request(&prompt)?)
-                    .await
-            }
-            Self::OpenAi(client) => client.generate_text_from_prompt(prompt).await,
-            Self::OpenRouter(client) => client.generate_text_from_prompt(prompt).await,
-        }
+        self.client.generate_text(prompt).await
     }
 }
 
@@ -299,103 +238,3 @@ impl From<PromptCacheRequest> for ExplicitCacheRequest {
     }
 }
 
-fn serialize_gemini_request(prompt: &SemanticLlmRequest) -> Result<String, AppError> {
-    let contents = prompt
-        .messages
-        .iter()
-        .map(|message| {
-            let parts = message
-                .content_blocks
-                .iter()
-                .map(|block| match block {
-                    SemanticLlmContentBlock::Text { text } => {
-                        json!({ "text": text })
-                    }
-                    SemanticLlmContentBlock::InlineData { mime_type, data } => {
-                        json!({ "inline_data": { "mime_type": mime_type, "data": data } })
-                    }
-                })
-                .collect::<Vec<_>>();
-            json!({
-                "role": message.role,
-                "parts": parts,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    let mut generation_config = serde_json::Map::new();
-    generation_config.insert("responseMimeType".to_string(), json!("application/json"));
-    generation_config.insert(
-        "responseSchema".to_string(),
-        prompt.response_json_schema.clone(),
-    );
-    if let Some(temperature) = prompt.temperature {
-        generation_config.insert("temperature".to_string(), json!(temperature));
-    }
-    if let Some(max_output_tokens) = prompt.max_output_tokens {
-        generation_config.insert("maxOutputTokens".to_string(), json!(max_output_tokens));
-    }
-    if let Some(reasoning_effort) = prompt.reasoning_effort.as_ref() {
-        generation_config.insert(
-            "thinkingConfig".to_string(),
-            json!({ "thinkingLevel": reasoning_effort }),
-        );
-    }
-
-    serde_json::to_string(&json!({
-        "system_instruction": {
-            "parts": [{ "text": prompt.system_prompt }]
-        },
-        "contents": contents,
-        "generationConfig": generation_config,
-    }))
-    .map_err(|e| AppError::Internal(format!("Failed to serialize LLM request: {e}")))
-}
-
-fn serialize_gemini_text_request(prompt: &SemanticLlmRequest) -> Result<String, AppError> {
-    let contents = prompt
-        .messages
-        .iter()
-        .map(|message| {
-            let parts = message
-                .content_blocks
-                .iter()
-                .map(|block| match block {
-                    SemanticLlmContentBlock::Text { text } => {
-                        json!({ "text": text })
-                    }
-                    SemanticLlmContentBlock::InlineData { mime_type, data } => {
-                        json!({ "inline_data": { "mime_type": mime_type, "data": data } })
-                    }
-                })
-                .collect::<Vec<_>>();
-            json!({
-                "role": message.role,
-                "parts": parts,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    let mut generation_config = serde_json::Map::new();
-    if let Some(temperature) = prompt.temperature {
-        generation_config.insert("temperature".to_string(), json!(temperature));
-    }
-    if let Some(max_output_tokens) = prompt.max_output_tokens {
-        generation_config.insert("maxOutputTokens".to_string(), json!(max_output_tokens));
-    }
-    if let Some(reasoning_effort) = prompt.reasoning_effort.as_ref() {
-        generation_config.insert(
-            "thinkingConfig".to_string(),
-            json!({ "thinkingLevel": reasoning_effort }),
-        );
-    }
-
-    serde_json::to_string(&json!({
-        "system_instruction": {
-            "parts": [{ "text": prompt.system_prompt }]
-        },
-        "contents": contents,
-        "generationConfig": generation_config,
-    }))
-    .map_err(|e| AppError::Internal(format!("Failed to serialize LLM request: {e}")))
-}

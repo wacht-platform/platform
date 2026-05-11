@@ -1,6 +1,6 @@
 use crate::runtime::thread_execution_context::ThreadExecutionContext;
 use common::state::AppState;
-use common::{error::AppError, get_startup_memories_in_table};
+use common::error::AppError;
 use models::{ImmediateContext, MemoryRecord, TaskRoutingEvent, TaskThreadMeta};
 use queries::{
     GetBoardItemConversationHistoryQuery, GetBoardItemRoutingEventsQuery,
@@ -89,19 +89,10 @@ async fn load_startup_memories(
         return Ok(cached);
     }
     let thread = ctx.get_thread().await?;
-    let Some(table) = ctx.get_memory_table().await? else {
-        write_cached_startup_memories(&ctx.app_state, ctx.thread_id, &[]).await;
-        return Ok(Vec::new());
-    };
-    let memories = get_startup_memories_in_table(
-        &table,
-        ctx.agent.deployment_id,
-        ctx.thread_id,
-        thread.actor_id,
-        limit,
-        ctx.provider_keys.embedding_dimension,
-    )
-    .await?;
+    let memories = ctx
+        .vector_store
+        .get_startup_memories(ctx.thread_id, thread.actor_id, limit)
+        .await?;
     write_cached_startup_memories(&ctx.app_state, ctx.thread_id, &memories).await;
     Ok(memories)
 }

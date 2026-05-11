@@ -1,9 +1,9 @@
-pub mod approval;
+pub(crate) mod approval;
 mod code_runner;
 pub mod external;
 mod internal;
 pub mod internal_specs;
-pub mod mcp;
+pub(crate) mod mcp;
 mod platform;
 mod result_shape;
 pub mod system_skills;
@@ -92,6 +92,16 @@ impl ToolExecutor {
         serde_json::to_value(result).map_err(AppError::from)
     }
 
+    #[tracing::instrument(
+        name = "tool.execute_from_input",
+        skip(self, tool, execution_params, filesystem, _shell),
+        fields(
+            tool_id = tool.id,
+            tool_name = %tool.name,
+            thread_id = self.thread_id(),
+            deployment_id = self.agent().deployment_id,
+        ),
+    )]
     async fn execute_tool_from_input(
         &self,
         tool: &AiTool,
@@ -277,6 +287,16 @@ impl ToolExecutor {
         Ok(final_result)
     }
 
+    #[tracing::instrument(
+        name = "tool.execute_request",
+        skip(self, tool, request, filesystem, shell),
+        fields(
+            tool_id = tool.id,
+            tool_name = %tool.name,
+            thread_id = self.thread_id(),
+            deployment_id = self.agent().deployment_id,
+        ),
+    )]
     pub async fn execute_tool_request(
         &self,
         tool: &AiTool,

@@ -467,15 +467,6 @@ impl AgentExecutor {
 }
 
 impl AgentExecutor {
-    pub async fn new(
-        ctx: std::sync::Arc<crate::runtime::thread_execution_context::ThreadExecutionContext>,
-        channel: tokio::sync::mpsc::Sender<StreamEvent>,
-        sandbox_handle: std::sync::Arc<dyn crate::sandbox::SandboxHandle>,
-    ) -> Result<Self, AppError> {
-        let prepared = AgentExecutorBuilder::prepare(ctx, None).await?;
-        AgentExecutorBuilder::finalize(prepared, sandbox_handle, channel)
-    }
-
     pub(super) fn can_write_project_task_board_in_current_mode(&self) -> bool {
         self.effective_is_coordinator_thread() || self.is_conversation_thread
     }

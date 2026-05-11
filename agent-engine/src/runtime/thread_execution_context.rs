@@ -1,12 +1,7 @@
 use std::sync::Arc;
 
-use commands::ResolveDeploymentStorageCommand;
 use common::error::AppError;
 use common::state::AppState;
-use common::{
-    connect_vector_store, open_knowledge_base_table_in_connection, open_memory_table_in_connection,
-};
-use lancedb::{Connection, Table};
 use models::{
     default_embedding_dimension, is_supported_embedding_dimension, AgentThreadState,
     AiAgentWithFeatures, DeploymentAiSettings,
@@ -14,7 +9,8 @@ use models::{
 use queries::GetAgentThreadStateQuery;
 use tokio::sync::RwLock;
 
-use crate::llm::{GeminiClient, LlmClient, LlmRole, OpenAiClient, OpenRouterClient, ResolvedLlm};
+use crate::llm::{GeminiClient, LlmRole, OpenAiClient, OpenRouterClient, ResolvedLlm};
+use crate::runtime::vector_store::VectorStore;
 
 #[derive(Debug, Clone, Default)]
 pub struct DeploymentProviderKeys {
@@ -81,10 +77,8 @@ pub struct ThreadExecutionContext {
     pub actor_id: i64,
     pub execution_run_id: i64,
     pub provider_keys: DeploymentProviderKeys,
+    pub vector_store: Arc<dyn VectorStore>,
     cached_thread: RwLock<Option<AgentThreadState>>,
-    cached_kb_connection: RwLock<Option<Connection>>,
-    cached_kb_table: RwLock<Option<Table>>,
-    cached_memory_table: RwLock<Option<Table>>,
 }
 
 impl ThreadExecutionContext {
@@ -116,30 +110,35 @@ impl ThreadExecutionContext {
         if let Some(over) = self.agent_override_for(role) {
             return over.model.as_str();
         }
-        match role {
-            LlmRole::Strong => self
-                .provider_keys
-                .strong_model
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| match self.llm_provider(role) {
-                    "openrouter" => "nvidia/nemotron-3-super-120b-a12b:free",
-                    "openai" => "gpt-5.1",
-                    _ => "gemini-3.1-pro-preview",
-                }),
-            LlmRole::Weak => self
-                .provider_keys
-                .weak_model
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| match self.llm_provider(role) {
-                    "openrouter" => "nvidia/nemotron-3-super-120b-a12b:free",
-                    "openai" => "gpt-5-mini",
-                    _ => "gemini-3-flash-preview",
-                }),
+        let deployment_default = match role {
+            LlmRole::Strong => self.provider_keys.strong_model.as_deref(),
+            LlmRole::Weak => self.provider_keys.weak_model.as_deref(),
+        };
+        if let Some(value) = deployment_default.filter(|v| !v.trim().is_empty()) {
+            return value;
         }
+        let provider = self.llm_provider(role);
+        let fallback = match (role, provider) {
+            (LlmRole::Strong, "openrouter") | (LlmRole::Weak, "openrouter") => {
+                "nvidia/nemotron-3-super-120b-a12b:free"
+            }
+            (LlmRole::Strong, "openai") => "gpt-5.1",
+            (LlmRole::Weak, "openai") => "gpt-5-mini",
+            (LlmRole::Strong, _) => "gemini-3.1-pro-preview",
+            (LlmRole::Weak, _) => "gemini-3-flash-preview",
+        };
+        tracing::warn!(
+            deployment_id = self.agent.deployment_id,
+            agent_id = self.agent.id,
+            role = ?role,
+            provider,
+            fallback,
+            "LLM model not configured (no agent override, no deployment default); using hardcoded fallback",
+        );
+        fallback
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_thread(
         app_state: AppState,
         agent: AiAgentWithFeatures,
@@ -147,6 +146,7 @@ impl ThreadExecutionContext {
         actor_id: i64,
         execution_run_id: i64,
         provider_keys: DeploymentProviderKeys,
+        vector_store: Arc<dyn VectorStore>,
         cached_thread: Option<AgentThreadState>,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -156,10 +156,8 @@ impl ThreadExecutionContext {
             actor_id,
             execution_run_id,
             provider_keys,
+            vector_store,
             cached_thread: RwLock::new(cached_thread),
-            cached_kb_connection: RwLock::new(None),
-            cached_kb_table: RwLock::new(None),
-            cached_memory_table: RwLock::new(None),
         })
     }
 
@@ -176,10 +174,8 @@ impl ThreadExecutionContext {
             actor_id: self.actor_id,
             execution_run_id: self.execution_run_id,
             provider_keys: self.provider_keys.clone(),
+            vector_store: self.vector_store.clone(),
             cached_thread: RwLock::new(carried_thread),
-            cached_kb_connection: RwLock::new(None),
-            cached_kb_table: RwLock::new(None),
-            cached_memory_table: RwLock::new(None),
         })
     }
 
@@ -221,19 +217,24 @@ impl ThreadExecutionContext {
 
     pub async fn create_llm(&self, role: LlmRole) -> Result<ResolvedLlm, AppError> {
         let model = self.resolve_model_name(role);
-        if self.llm_provider(role) == "openrouter" {
-            let client = OpenRouterClient::from_api_key(
-                self.provider_keys.openrouter_api_key.clone(),
-                model,
-                self.provider_keys.openrouter_require_parameters,
-            )?;
-            return Ok(ResolvedLlm::new(LlmClient::OpenRouter(client), model));
-        }
-
-        if self.llm_provider(role) == "openai" {
-            let client =
-                OpenAiClient::from_api_key(self.provider_keys.openai_api_key.clone(), model)?;
-            return Ok(ResolvedLlm::new(LlmClient::OpenAi(client), model));
+        let provider = self.llm_provider(role);
+        match provider {
+            "openrouter" => {
+                let client = OpenRouterClient::from_api_key(
+                    self.provider_keys.openrouter_api_key.clone(),
+                    model,
+                    self.provider_keys.openrouter_require_parameters,
+                )?;
+                return Ok(ResolvedLlm::new(Arc::new(client), model));
+            }
+            "openai" => {
+                let client = OpenAiClient::from_api_key(
+                    self.provider_keys.openai_api_key.clone(),
+                    model,
+                )?;
+                return Ok(ResolvedLlm::new(Arc::new(client), model));
+            }
+            _ => {}
         }
 
         let client = GeminiClient::from_api_key(
@@ -244,7 +245,7 @@ impl ThreadExecutionContext {
             self.app_state.redis_client.clone(),
             self.app_state.nats_client.clone(),
         )?;
-        Ok(ResolvedLlm::new(LlmClient::Gemini(client), model))
+        Ok(ResolvedLlm::new(Arc::new(client), model))
     }
 
     pub async fn get_thread_by_id(&self, thread_id: i64) -> Result<AgentThreadState, AppError> {
@@ -253,64 +254,4 @@ impl ThreadExecutionContext {
             .await
     }
 
-    pub async fn get_kb_connection(&self) -> Result<Connection, AppError> {
-        {
-            let cache = self.cached_kb_connection.read().await;
-            if let Some(conn) = cache.as_ref() {
-                return Ok(conn.clone());
-            }
-        }
-
-        let storage = ResolveDeploymentStorageCommand::new(self.agent.deployment_id)
-            .execute_with_deps(&common::deps::from_app(&self.app_state).db().enc())
-            .await?;
-        let config = storage.vector_store_config();
-
-        let conn = connect_vector_store(&config).await?;
-
-        {
-            let mut cache = self.cached_kb_connection.write().await;
-            *cache = Some(conn.clone());
-        }
-
-        Ok(conn)
-    }
-
-    pub async fn get_kb_table(&self) -> Result<Option<Table>, AppError> {
-        {
-            let cache = self.cached_kb_table.read().await;
-            if let Some(table) = cache.as_ref() {
-                return Ok(Some(table.clone()));
-            }
-        }
-
-        let conn = self.get_kb_connection().await?;
-        let table = open_knowledge_base_table_in_connection(&conn).await?;
-
-        if let Some(table) = table.as_ref() {
-            let mut cache = self.cached_kb_table.write().await;
-            *cache = Some(table.clone());
-        }
-
-        Ok(table)
-    }
-
-    pub async fn get_memory_table(&self) -> Result<Option<Table>, AppError> {
-        {
-            let cache = self.cached_memory_table.read().await;
-            if let Some(table) = cache.as_ref() {
-                return Ok(Some(table.clone()));
-            }
-        }
-
-        let conn = self.get_kb_connection().await?;
-        let table = open_memory_table_in_connection(&conn).await?;
-
-        if let Some(table) = table.as_ref() {
-            let mut cache = self.cached_memory_table.write().await;
-            *cache = Some(table.clone());
-        }
-
-        Ok(table)
-    }
 }

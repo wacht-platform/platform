@@ -54,6 +54,15 @@ pub async fn get_user_details(
     Ok(user_details.into())
 }
 
+/// Multipart form fields:
+/// - first_name: string required
+/// - last_name: string required
+/// - email_address: string optional
+/// - phone_number: string optional
+/// - username: string optional
+/// - password: string optional
+/// - skip_password_check: flag optional
+/// - profile_image: file optional
 pub async fn create_user(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -97,6 +106,15 @@ pub async fn create_user(
     Ok(user.into())
 }
 
+/// Multipart form fields:
+/// - first_name: string optional
+/// - last_name: string optional
+/// - username: string optional
+/// - public_metadata: json optional
+/// - private_metadata: json optional
+/// - disabled: flag optional
+/// - remove_profile_image: flag optional
+/// - profile_image: file optional
 pub async fn update_user(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,

@@ -1,3 +1,7 @@
+mod ask_user;
+mod notify_user;
+mod resolve_user_feedback;
+
 use crate::llm::NativeToolDefinition;
 use serde_json::json;
 
@@ -197,10 +201,6 @@ pub fn abort_tool() -> NativeToolDefinition {
         input_schema: json!({
             "type": "object",
             "properties": {
-                "reasoning": {
-                    "type": "string",
-                    "description": "Why the assignment cannot continue."
-                },
                 "outcome": {
                     "type": "string",
                     "enum": ["blocked", "return_to_coordinator"],
@@ -209,11 +209,11 @@ pub fn abort_tool() -> NativeToolDefinition {
                 },
                 "reason": {
                     "type": "string",
-                    "description": "Concise explanation of why the assignment is being aborted, \
-                        suitable for the task log."
+                    "description": "Explanation of why the assignment cannot continue. \
+                        Concrete enough for the task log and the coordinator to act on."
                 }
             },
-            "required": ["reasoning", "outcome", "reason"]
+            "required": ["outcome", "reason"]
         }),
     }
 }

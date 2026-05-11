@@ -102,6 +102,15 @@ pub async fn list_oauth_apps(
     Ok(apps.into())
 }
 
+/// Multipart form fields:
+/// - slug: string required
+/// - name: string required
+/// - description: string optional
+/// - fqdn: string optional — alias `domain` accepted
+/// - supported_scopes: string optional — comma-separated list
+/// - scope_definitions: json optional — JSON array of scope definitions
+/// - allow_dynamic_client_registration: flag optional
+/// - logo: file optional
 pub async fn create_oauth_app(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,

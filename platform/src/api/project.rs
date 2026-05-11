@@ -25,6 +25,9 @@ pub async fn get_projects(
     Ok(PaginatedResponse::from(projects).into())
 }
 
+/// Multipart form fields:
+/// - name: string required
+/// - methods: string_list required — repeated form field, one entry per auth method
 pub async fn create_project(
     State(app_state): State<AppState>,
     RequireAuth(auth): RequireAuth,

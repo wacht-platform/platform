@@ -16,7 +16,6 @@ pub struct CreateAiAgentCommand {
     pub deployment_id: i64,
     pub name: String,
     pub description: Option<String>,
-    pub configuration: serde_json::Value,
     pub tool_ids: Option<Vec<i64>>,
     pub knowledge_base_ids: Option<Vec<i64>>,
     pub sub_agents: Option<Vec<i64>>,
@@ -34,14 +33,12 @@ impl CreateAiAgentCommand {
         deployment_id: i64,
         name: String,
         description: Option<String>,
-        configuration: serde_json::Value,
     ) -> Self {
         Self {
             id,
             deployment_id,
             name,
             description,
-            configuration,
             tool_ids: None,
             knowledge_base_ids: None,
             sub_agents: None,
@@ -110,7 +107,6 @@ impl CreateAiAgentCommand {
         let tool_ids = self.tool_ids.unwrap_or_default();
         let knowledge_base_ids = self.knowledge_base_ids.unwrap_or_default();
         let sub_agent_ids = self.sub_agents.unwrap_or_default();
-        let sanitized_configuration = sanitize_configuration(self.configuration);
 
         validate_model_override("strong_model", self.strong_model.as_ref())?;
         validate_model_override("weak_model", self.weak_model.as_ref())?;
@@ -147,13 +143,12 @@ impl CreateAiAgentCommand {
             r#"
             INSERT INTO ai_agents (
                 id, created_at, updated_at, name, description, deployment_id,
-                configuration, strong_model_provider, strong_model,
+                strong_model_provider, strong_model,
                 weak_model_provider, weak_model, hooks,
                 require_approval_mcp, require_approval_virtual, tool_approval_rules
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             RETURNING id, created_at, updated_at, name, description, deployment_id,
-                      configuration,
                       strong_model_provider, strong_model,
                       weak_model_provider, weak_model,
                       hooks as "hooks!: Json<AgentHooksConfig>",
@@ -167,7 +162,6 @@ impl CreateAiAgentCommand {
             self.name,
             self.description,
             self.deployment_id,
-            sanitized_configuration,
             strong_provider,
             strong_model,
             weak_provider,
@@ -200,7 +194,6 @@ impl CreateAiAgentCommand {
             name: agent.name,
             description: agent.description,
             deployment_id: agent.deployment_id,
-            configuration: agent.configuration,
             sub_agents: Some(sub_agent_ids),
             strong_model: build_override(agent.strong_model_provider, agent.strong_model),
             weak_model: build_override(agent.weak_model_provider, agent.weak_model),
@@ -217,7 +210,6 @@ pub struct UpdateAiAgentCommand {
     pub agent_id: i64,
     pub name: Option<String>,
     pub description: Option<String>,
-    pub configuration: Option<serde_json::Value>,
     pub tool_ids: Option<Vec<i64>>,
     pub knowledge_base_ids: Option<Vec<i64>>,
     pub sub_agents: Option<Vec<i64>>,
@@ -238,7 +230,6 @@ impl UpdateAiAgentCommand {
             agent_id,
             name: None,
             description: None,
-            configuration: None,
             tool_ids: None,
             knowledge_base_ids: None,
             sub_agents: None,
@@ -260,11 +251,6 @@ impl UpdateAiAgentCommand {
 
     pub fn with_description(mut self, description: Option<String>) -> Self {
         self.description = description;
-        self
-    }
-
-    pub fn with_configuration(mut self, configuration: serde_json::Value) -> Self {
-        self.configuration = Some(configuration);
         self
     }
 
@@ -336,8 +322,6 @@ impl UpdateAiAgentCommand {
         let now = Utc::now();
         let agent_id = self.agent_id;
         let deployment_id = self.deployment_id;
-        let configuration = self.configuration.map(sanitize_configuration);
-
         validate_model_override("strong_model", self.strong_model.as_ref())?;
         validate_model_override("weak_model", self.weak_model.as_ref())?;
         if self.clear_strong_model && self.strong_model.is_some() {
@@ -386,34 +370,32 @@ impl UpdateAiAgentCommand {
                 updated_at = $1,
                 name = COALESCE($2, name),
                 description = COALESCE($3, description),
-                configuration = COALESCE($4, configuration),
                 strong_model_provider = CASE
-                    WHEN $7::bool THEN NULL
-                    WHEN $8::text IS NOT NULL THEN $8
+                    WHEN $6::bool THEN NULL
+                    WHEN $7::text IS NOT NULL THEN $7
                     ELSE strong_model_provider
                 END,
                 strong_model = CASE
-                    WHEN $7::bool THEN NULL
-                    WHEN $9::text IS NOT NULL THEN $9
+                    WHEN $6::bool THEN NULL
+                    WHEN $8::text IS NOT NULL THEN $8
                     ELSE strong_model
                 END,
                 weak_model_provider = CASE
-                    WHEN $10::bool THEN NULL
-                    WHEN $11::text IS NOT NULL THEN $11
+                    WHEN $9::bool THEN NULL
+                    WHEN $10::text IS NOT NULL THEN $10
                     ELSE weak_model_provider
                 END,
                 weak_model = CASE
-                    WHEN $10::bool THEN NULL
-                    WHEN $12::text IS NOT NULL THEN $12
+                    WHEN $9::bool THEN NULL
+                    WHEN $11::text IS NOT NULL THEN $11
                     ELSE weak_model
                 END,
-                hooks = COALESCE($13, hooks),
-                require_approval_mcp = COALESCE($14, require_approval_mcp),
-                require_approval_virtual = COALESCE($15, require_approval_virtual),
-                tool_approval_rules = COALESCE($16, tool_approval_rules)
-            WHERE id = $5 AND deployment_id = $6
+                hooks = COALESCE($12, hooks),
+                require_approval_mcp = COALESCE($13, require_approval_mcp),
+                require_approval_virtual = COALESCE($14, require_approval_virtual),
+                tool_approval_rules = COALESCE($15, tool_approval_rules)
+            WHERE id = $4 AND deployment_id = $5
             RETURNING id, created_at, updated_at, name, description, deployment_id,
-                      configuration,
                       strong_model_provider, strong_model,
                       weak_model_provider, weak_model,
                       hooks as "hooks!: Json<AgentHooksConfig>",
@@ -424,7 +406,6 @@ impl UpdateAiAgentCommand {
             now,
             self.name,
             self.description,
-            configuration,
             agent_id,
             deployment_id,
             self.clear_strong_model,
@@ -463,7 +444,6 @@ impl UpdateAiAgentCommand {
             name: agent.name,
             description: agent.description,
             deployment_id: agent.deployment_id,
-            configuration: agent.configuration,
             sub_agents: self.sub_agents,
             strong_model: build_override(agent.strong_model_provider, agent.strong_model),
             weak_model: build_override(agent.weak_model_provider, agent.weak_model),
@@ -996,14 +976,6 @@ async fn replace_agent_sub_agents(
     }
 
     Ok(())
-}
-
-fn sanitize_configuration(mut configuration: serde_json::Value) -> serde_json::Value {
-    if let Some(object) = configuration.as_object_mut() {
-        object.remove("tool_ids");
-        object.remove("knowledge_base_ids");
-    }
-    configuration
 }
 
 async fn validate_tool_ids(

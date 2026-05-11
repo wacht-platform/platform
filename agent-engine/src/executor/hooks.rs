@@ -10,36 +10,77 @@ use common::error::AppError;
 
 const HOOK_STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum HookKind {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LifecyclePhase {
     ExecutionStart,
+    BeforeLlm,
+    AfterLlm,
+    BeforeTool,
+    AfterTool,
+    OnBudgetExhausted,
     ExecutionEnd,
 }
 
-impl HookKind {
-    fn as_str(self) -> &'static str {
+impl LifecyclePhase {
+    pub fn as_str(self) -> &'static str {
         match self {
-            HookKind::ExecutionStart => "execution_start",
-            HookKind::ExecutionEnd => "execution_end",
+            Self::ExecutionStart => "execution_start",
+            Self::BeforeLlm => "before_llm",
+            Self::AfterLlm => "after_llm",
+            Self::BeforeTool => "before_tool",
+            Self::AfterTool => "after_tool",
+            Self::OnBudgetExhausted => "on_budget_exhausted",
+            Self::ExecutionEnd => "execution_end",
         }
     }
+}
 
-    fn webhook_event(self, status: HookStepStatus) -> &'static str {
-        match (self, status) {
-            (HookKind::ExecutionStart, HookStepStatus::Succeeded) => {
-                "agent.execution_start_hook.succeeded"
-            }
-            (HookKind::ExecutionStart, HookStepStatus::Failed) => {
-                "agent.execution_start_hook.failed"
-            }
-            (HookKind::ExecutionStart, HookStepStatus::Skipped) => {
-                "agent.execution_start_hook.skipped"
-            }
-            (HookKind::ExecutionEnd, HookStepStatus::Succeeded) => {
-                "agent.execution_end_hook.succeeded"
-            }
-            (HookKind::ExecutionEnd, HookStepStatus::Failed) => "agent.execution_end_hook.failed",
-            (HookKind::ExecutionEnd, HookStepStatus::Skipped) => "agent.execution_end_hook.skipped",
+fn hook_webhook_event(phase: LifecyclePhase, status: HookStepStatus) -> &'static str {
+    match (phase, status) {
+        (LifecyclePhase::ExecutionStart, HookStepStatus::Succeeded) => {
+            "agent.execution_start_hook.succeeded"
+        }
+        (LifecyclePhase::ExecutionStart, HookStepStatus::Failed) => {
+            "agent.execution_start_hook.failed"
+        }
+        (LifecyclePhase::ExecutionStart, HookStepStatus::Skipped) => {
+            "agent.execution_start_hook.skipped"
+        }
+        (LifecyclePhase::BeforeLlm, HookStepStatus::Succeeded) => {
+            "agent.before_llm_hook.succeeded"
+        }
+        (LifecyclePhase::BeforeLlm, HookStepStatus::Failed) => "agent.before_llm_hook.failed",
+        (LifecyclePhase::BeforeLlm, HookStepStatus::Skipped) => "agent.before_llm_hook.skipped",
+        (LifecyclePhase::AfterLlm, HookStepStatus::Succeeded) => "agent.after_llm_hook.succeeded",
+        (LifecyclePhase::AfterLlm, HookStepStatus::Failed) => "agent.after_llm_hook.failed",
+        (LifecyclePhase::AfterLlm, HookStepStatus::Skipped) => "agent.after_llm_hook.skipped",
+        (LifecyclePhase::BeforeTool, HookStepStatus::Succeeded) => {
+            "agent.before_tool_hook.succeeded"
+        }
+        (LifecyclePhase::BeforeTool, HookStepStatus::Failed) => "agent.before_tool_hook.failed",
+        (LifecyclePhase::BeforeTool, HookStepStatus::Skipped) => "agent.before_tool_hook.skipped",
+        (LifecyclePhase::AfterTool, HookStepStatus::Succeeded) => {
+            "agent.after_tool_hook.succeeded"
+        }
+        (LifecyclePhase::AfterTool, HookStepStatus::Failed) => "agent.after_tool_hook.failed",
+        (LifecyclePhase::AfterTool, HookStepStatus::Skipped) => "agent.after_tool_hook.skipped",
+        (LifecyclePhase::OnBudgetExhausted, HookStepStatus::Succeeded) => {
+            "agent.on_budget_exhausted_hook.succeeded"
+        }
+        (LifecyclePhase::OnBudgetExhausted, HookStepStatus::Failed) => {
+            "agent.on_budget_exhausted_hook.failed"
+        }
+        (LifecyclePhase::OnBudgetExhausted, HookStepStatus::Skipped) => {
+            "agent.on_budget_exhausted_hook.skipped"
+        }
+        (LifecyclePhase::ExecutionEnd, HookStepStatus::Succeeded) => {
+            "agent.execution_end_hook.succeeded"
+        }
+        (LifecyclePhase::ExecutionEnd, HookStepStatus::Failed) => {
+            "agent.execution_end_hook.failed"
+        }
+        (LifecyclePhase::ExecutionEnd, HookStepStatus::Skipped) => {
+            "agent.execution_end_hook.skipped"
         }
     }
 }
@@ -67,16 +108,26 @@ enum HookStepOutcome {
 }
 
 impl AgentExecutor {
-    pub(crate) async fn run_hooks(&mut self, kind: HookKind) {
+    pub(crate) async fn run_hooks(&mut self, kind: LifecyclePhase, extra: Value) {
         let steps: Vec<AgentHookStep> = match kind {
-            HookKind::ExecutionStart => self.ctx.agent.hooks.execution_start.clone(),
-            HookKind::ExecutionEnd => self.ctx.agent.hooks.execution_end.clone(),
+            LifecyclePhase::ExecutionStart => self.ctx.agent.hooks.execution_start.clone(),
+            LifecyclePhase::BeforeLlm => self.ctx.agent.hooks.before_llm.clone(),
+            LifecyclePhase::AfterLlm => self.ctx.agent.hooks.after_llm.clone(),
+            LifecyclePhase::BeforeTool => self.ctx.agent.hooks.before_tool.clone(),
+            LifecyclePhase::AfterTool => self.ctx.agent.hooks.after_tool.clone(),
+            LifecyclePhase::OnBudgetExhausted => self.ctx.agent.hooks.on_budget_exhausted.clone(),
+            LifecyclePhase::ExecutionEnd => self.ctx.agent.hooks.execution_end.clone(),
         };
         if steps.is_empty() {
             return;
         }
 
-        let runtime_context = self.hook_runtime_context();
+        let mut runtime_context = self.hook_runtime_context();
+        if let (Value::Object(target), Value::Object(extra_map)) = (&mut runtime_context, extra) {
+            for (k, v) in extra_map {
+                target.insert(k, v);
+            }
+        }
 
         for (index, step) in steps.into_iter().enumerate() {
             let merged_input = merge_runtime_context(&step.args, &runtime_context);
@@ -219,13 +270,15 @@ impl AgentExecutor {
 
     async fn fire_hook_webhook(
         &self,
-        kind: HookKind,
+        kind: LifecyclePhase,
         status: HookStepStatus,
         step_index: usize,
         tool_name: &str,
         extra: Value,
     ) {
         use commands::webhook_trigger::TriggerWebhookEventCommand;
+
+        let event_name = hook_webhook_event(kind, status);
 
         let mut payload = json!({
             "agent_id": self.ctx.agent.id.to_string(),
@@ -244,15 +297,12 @@ impl AgentExecutor {
             }
         }
 
-        let console_id = std::env::var("CONSOLE_DEPLOYMENT_ID")
-            .unwrap_or_else(|_| "0".to_string())
-            .parse()
-            .unwrap_or(0);
+        let console_id = crate::console_deployment_id();
 
         let trigger = TriggerWebhookEventCommand::new(
             console_id,
             self.ctx.agent.deployment_id.to_string(),
-            kind.webhook_event(status).to_string(),
+            event_name.to_string(),
             payload,
         );
 

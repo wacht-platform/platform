@@ -38,80 +38,6 @@ impl AgentExecutor {
         )))
     }
 
-    async fn handle_notify_user_call(
-        &mut self,
-        call: &crate::llm::GeneratedToolCall,
-    ) -> Result<bool, AppError> {
-        let args: dto::json::agent_executor::NotifyUserParams =
-            serde_json::from_value(call.arguments.clone())
-                .map_err(|e| AppError::BadRequest(format!("notify_user params malformed: {e}")))?;
-        let message = args.message.trim();
-        if message.is_empty() {
-            return Err(AppError::BadRequest(
-                "notify_user requires a non-empty message".to_string(),
-            ));
-        }
-        let safe_message = Self::sanitize_user_facing_message(message, "Posted a status update.");
-        self.store_conversation(
-            ConversationContent::Steer {
-                message: safe_message,
-                further_actions_required: false,
-                reasoning: "Terminal text response — no further tool calls emitted.".to_string(),
-                attachments: None,
-            },
-            ConversationMessageType::Steer,
-        )
-        .await?;
-
-        UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
-            .with_execution_state(self.build_execution_state_snapshot(None))
-            .with_status(models::AgentThreadStatus::Idle)
-            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
-            .await?;
-
-        Ok(false)
-    }
-
-    async fn handle_resolve_user_feedback_call(
-        &mut self,
-        call: &crate::llm::GeneratedToolCall,
-    ) -> Result<(), AppError> {
-        let args: dto::json::agent_executor::ResolveUserFeedbackParams =
-            serde_json::from_value(call.arguments.clone()).map_err(|e| {
-                AppError::BadRequest(format!("resolve_user_feedback params malformed: {e}"))
-            })?;
-        let resolution = args.resolution.trim().to_string();
-        if resolution.is_empty() {
-            return Err(AppError::BadRequest(
-                "resolve_user_feedback requires a non-empty resolution summary".to_string(),
-            ));
-        }
-        let Some(board_item_id) = self.current_board_item_id() else {
-            return Err(AppError::BadRequest(
-                "resolve_user_feedback can only be called when a board item is active".to_string(),
-            ));
-        };
-        let comment_ids: Vec<i64> = args
-            .comment_ids
-            .iter()
-            .filter_map(|s| s.parse::<i64>().ok())
-            .collect();
-        if comment_ids.is_empty() {
-            return Err(AppError::BadRequest(
-                "resolve_user_feedback requires at least one valid comment_id".to_string(),
-            ));
-        }
-        commands::ResolveBoardItemCommentsCommand {
-            board_item_id,
-            comment_ids,
-            resolved_by_thread_id: self.ctx.thread_id,
-            resolution_summary: resolution,
-        }
-        .execute_with_db(self.ctx.app_state.db_router.writer())
-        .await?;
-        Ok(())
-    }
-
     async fn load_prior_fires_for_board_item(
         &self,
         board_item_id: i64,
@@ -651,102 +577,6 @@ impl AgentExecutor {
         ))
     }
 
-    async fn handle_ask_user_call(
-        &mut self,
-        call: &crate::llm::GeneratedToolCall,
-    ) -> Result<bool, AppError> {
-        use dto::json::ask_user::{validate_question_set, AskUserParams};
-
-        let params: AskUserParams = serde_json::from_value(call.arguments.clone())
-            .map_err(|e| AppError::BadRequest(format!("ask_user params malformed: {e}")))?;
-
-        if let Err(e) = validate_question_set(&params.questions) {
-            return Err(AppError::BadRequest(format!("ask_user invalid: {e}")));
-        }
-
-        self.invalidate_stale_pending_question();
-        if self.pending_question.is_some() || self.board_item_has_pending_question().await? {
-            self.store_transient_steer(
-                "ask_user_blocked_by_pending_question",
-                "ask_user blocked: active pending question already on this thread/task. Wait for user answer before asking new.".to_string(),
-            );
-            return Ok(true);
-        }
-
-        let assignment_id = self
-            .active_thread_event
-            .as_ref()
-            .and_then(|event| event.assignment_execution_payload())
-            .map(|payload| payload.assignment_id);
-        let pending = models::PendingQuestion {
-            questions: params.questions.clone(),
-            context: params.context.clone(),
-            asked_at: chrono::Utc::now(),
-            asked_by_thread_id: self.ctx.thread_id,
-            asked_by_assignment_id: assignment_id,
-        };
-
-        self.store_conversation(
-            ConversationContent::ClarificationRequest {
-                questions: serde_json::to_value(&params.questions).unwrap_or_default(),
-                context: params.context.clone(),
-            },
-            ConversationMessageType::ClarificationRequest,
-        )
-        .await?;
-
-        if let Some(board_item_id) = self.current_board_item_id() {
-            commands::SetBoardItemPendingQuestionCommand {
-                board_item_id,
-                pending_question: Some(pending.clone()),
-            }
-            .execute_with_db(self.ctx.app_state.db_router.writer())
-            .await?;
-        }
-
-        self.pending_question = Some(pending);
-
-        let execution_state = self.build_execution_state_snapshot(None);
-        self.apply_thread_status(
-            UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
-                .with_execution_state(execution_state),
-            models::AgentThreadStatus::WaitingForInput,
-        )
-        .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
-        .await?;
-
-        Ok(false)
-    }
-
-    fn invalidate_stale_pending_question(&mut self) {
-        let Some(pending) = self.pending_question.as_ref() else {
-            return;
-        };
-        let active_assignment_id = self
-            .active_thread_event
-            .as_ref()
-            .and_then(|event| event.assignment_execution_payload())
-            .map(|payload| payload.assignment_id);
-        if pending.asked_by_assignment_id != active_assignment_id {
-            self.pending_question = None;
-        }
-    }
-
-    async fn board_item_has_pending_question(&self) -> Result<bool, AppError> {
-        let Some(board_item_id) = self.current_board_item_id() else {
-            return Ok(false);
-        };
-        let item = queries::GetProjectTaskBoardItemByIdQuery::new(board_item_id)
-            .execute_with_db(
-                self.ctx
-                    .app_state
-                    .db_router
-                    .reader(common::ReadConsistency::Strong),
-            )
-            .await?;
-        Ok(item.and_then(|i| i.pending_question).is_some())
-    }
-
     async fn load_schedule_info_for_prompt(
         &self,
         schedule_id: Option<i64>,
@@ -814,11 +644,13 @@ impl AgentExecutor {
         )
     )]
     pub(super) async fn repl(&mut self) -> Result<(), AppError> {
-        use super::hooks::HookKind;
+        use super::hooks::LifecyclePhase;
         self.reconcile_agent_skills().await;
-        self.run_hooks(HookKind::ExecutionStart).await;
+        self.run_hooks(LifecyclePhase::ExecutionStart, serde_json::Value::Null)
+            .await;
         let result = self.repl_inner().await;
-        self.run_hooks(HookKind::ExecutionEnd).await;
+        self.run_hooks(LifecyclePhase::ExecutionEnd, serde_json::Value::Null)
+            .await;
         result
     }
 
@@ -901,6 +733,11 @@ impl AgentExecutor {
                 "budget exhausted: {}",
                 exhausted.reason()
             );
+            self.run_hooks(
+                super::hooks::LifecyclePhase::OnBudgetExhausted,
+                serde_json::json!({ "reason": exhausted.reason() }),
+            )
+            .await;
             if self.can_abort_current_assignment_execution() {
                 let reason = format!(
                     "Run preempted by budget cap: {}. Coordinator should decide whether to extend, retry with a tighter brief, or mark the task `failed`.",
@@ -944,9 +781,19 @@ impl AgentExecutor {
 
         let llm = self.create_strong_llm().await?;
         let cache_request = self.build_prompt_cache_request().await;
+        self.run_hooks(
+            super::hooks::LifecyclePhase::BeforeLlm,
+            serde_json::Value::Null,
+        )
+        .await;
         let output = llm
             .generate_tool_calls(request, native_tools, cache_request)
             .await?;
+        self.run_hooks(
+            super::hooks::LifecyclePhase::AfterLlm,
+            serde_json::Value::Null,
+        )
+        .await;
         let raw_output_snapshot = serde_json::to_string(&output).unwrap_or_default();
         self.budget.tick_llm();
         self.budget.tick_tools(output.calls.len());
@@ -1186,7 +1033,17 @@ impl AgentExecutor {
             }
         }
 
+        self.run_hooks(
+            super::hooks::LifecyclePhase::BeforeTool,
+            serde_json::Value::Null,
+        )
+        .await;
         let outcome = self.execute_requested_actions(tool_requests).await?;
+        self.run_hooks(
+            super::hooks::LifecyclePhase::AfterTool,
+            serde_json::Value::Null,
+        )
+        .await;
         self.finalize_action_execution_outcome(outcome).await
     }
 

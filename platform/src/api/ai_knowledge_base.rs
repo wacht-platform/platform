@@ -144,6 +144,10 @@ pub async fn delete_ai_knowledge_base(
     Ok(().into())
 }
 
+/// Multipart form fields:
+/// - title: string optional
+/// - description: string optional
+/// - file: file required
 pub async fn upload_knowledge_base_document(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,

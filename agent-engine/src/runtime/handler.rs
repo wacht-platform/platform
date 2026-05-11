@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use crate::executor::core::AgentExecutorBuilder;
-use crate::runtime::thread_execution_context::DeploymentProviderKeys;
+use crate::runtime::secrets_provider::{SecretsProvider, SettingsSecretsProvider};
+use crate::runtime::vector_store::{LanceDbVectorStoreFactory, VectorStoreFactory};
 use crate::sandbox::{
     SandboxHandle, SandboxMount, SandboxMountMode, SandboxRuntimeFactory, TaskSandboxSpec,
     ThreadSandboxSpec,
@@ -18,6 +19,8 @@ use models::ThreadEvent;
 pub struct AgentHandler {
     app_state: AppState,
     sandbox_factory: Arc<SandboxRuntimeFactory>,
+    secrets_provider: Arc<dyn SecretsProvider>,
+    vector_store_factory: Arc<dyn VectorStoreFactory>,
 }
 
 enum ExecutionMode {
@@ -124,11 +127,31 @@ pub struct ExecutionRequest {
 
 impl AgentHandler {
     pub fn new(app_state: AppState) -> Self {
+        let secrets_provider: Arc<dyn SecretsProvider> = Arc::new(
+            SettingsSecretsProvider::new(app_state.encryption_service.clone()),
+        );
+        let vector_store_factory: Arc<dyn VectorStoreFactory> =
+            Arc::new(LanceDbVectorStoreFactory::new(app_state.clone()));
         let sandbox_factory = build_sandbox_factory(&app_state);
         Self {
             app_state,
             sandbox_factory,
+            secrets_provider,
+            vector_store_factory,
         }
+    }
+
+    pub fn with_secrets_provider(mut self, secrets_provider: Arc<dyn SecretsProvider>) -> Self {
+        self.secrets_provider = secrets_provider;
+        self
+    }
+
+    pub fn with_vector_store_factory(
+        mut self,
+        vector_store_factory: Arc<dyn VectorStoreFactory>,
+    ) -> Self {
+        self.vector_store_factory = vector_store_factory;
+        self
     }
 
     async fn resolve_sandbox_handle(
@@ -211,6 +234,20 @@ impl AgentHandler {
         }))
     }
 
+    #[tracing::instrument(
+        name = "agent_handler.execute_streaming",
+        skip(self, request),
+        fields(
+            deployment_id = request.agent.deployment_id,
+            agent_id = request.agent.id,
+            thread_id = request.thread_id,
+            execution_run_id = request.execution_run_id,
+            conversation_id = ?request.conversation_id,
+            event_log_id = ?request.event_log_id,
+            has_approvals = request.approval_response.is_some(),
+            has_thread_event = request.thread_event.is_some(),
+        ),
+    )]
     pub async fn execute_agent_streaming(&self, request: ExecutionRequest) -> Result<(), AppError> {
         let (sender, receiver) = tokio::sync::mpsc::channel::<StreamEvent>(100);
         let thread_key = request.thread_id.to_string();
@@ -228,10 +265,14 @@ impl AgentHandler {
         let thread_state = thread_result?;
         let task_sandbox_ref = task_ref_result?;
 
-        let provider_keys = DeploymentProviderKeys::from_settings(
-            deployment_ai_settings.as_ref(),
-            &self.app_state.encryption_service,
-        )?;
+        let provider_keys = self
+            .secrets_provider
+            .resolve_provider_keys(deployment_ai_settings.as_ref())
+            .await?;
+
+        let vector_store = self
+            .vector_store_factory
+            .create(deployment_id, provider_keys.embedding_dimension);
 
         let execution_context =
             crate::runtime::thread_execution_context::ThreadExecutionContext::new_with_thread(
@@ -241,6 +282,7 @@ impl AgentHandler {
                 thread_state.actor_id,
                 request.execution_run_id,
                 provider_keys,
+                vector_store,
                 Some(thread_state.clone()),
             );
 
@@ -309,15 +351,12 @@ impl AgentHandler {
         .await;
 
         if !request.execution_token.is_empty() {
-            if let Err(e) = clear_execution_token_if_current(
+            let _ = clear_execution_token_if_current(
                 &request.watch_key,
                 &request.execution_token,
                 &self.app_state,
             )
-            .await
-            {
-                let _ = e;
-            }
+            .await;
         }
 
         execution_result
@@ -636,10 +675,7 @@ async fn publish_stream_event(
         "timestamp": chrono::Utc::now(),
     });
 
-    let console_id = std::env::var("CONSOLE_DEPLOYMENT_ID")
-        .unwrap_or_else(|_| "0".to_string())
-        .parse()
-        .unwrap_or(0);
+    let console_id = crate::console_deployment_id();
 
     let trigger_command = TriggerWebhookEventCommand::new(
         console_id,
@@ -648,14 +684,9 @@ async fn publish_stream_event(
         webhook_payload,
     );
 
-    if let Err(e) = trigger_command
+    let _ = trigger_command
         .execute_with_deps(&common::deps::from_app(app_state).db().redis().nats().id())
-        .await
-    {
-        if !e.to_string().contains("Resource not found") {
-            let _ = e;
-        }
-    }
+        .await;
 
     Ok(())
 }

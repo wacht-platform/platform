@@ -566,3 +566,34 @@ impl OpenAiClient {
         }
     }
 }
+
+#[async_trait::async_trait]
+impl crate::llm::LlmProvider for OpenAiClient {
+    fn provider_label(&self) -> &'static str {
+        "openai"
+    }
+
+    async fn generate_structured(
+        &self,
+        prompt: SemanticLlmRequest,
+        cache: Option<PromptCacheRequest>,
+    ) -> Result<StructuredGenerationOutput<Value>, AppError> {
+        OpenAiClient::generate_structured_from_prompt::<Value>(self, prompt, cache).await
+    }
+
+    async fn generate_tool_calls(
+        &self,
+        prompt: SemanticLlmRequest,
+        tools: Vec<NativeToolDefinition>,
+        cache: Option<PromptCacheRequest>,
+    ) -> Result<ToolCallGenerationOutput, AppError> {
+        OpenAiClient::generate_tool_calls(self, prompt, tools, cache).await
+    }
+
+    async fn generate_text(
+        &self,
+        prompt: SemanticLlmRequest,
+    ) -> Result<crate::llm::TextGenerationOutput, AppError> {
+        OpenAiClient::generate_text_from_prompt(self, prompt).await
+    }
+}

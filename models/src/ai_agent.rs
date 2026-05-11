@@ -25,6 +25,16 @@ pub struct AgentHooksConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub execution_start: Vec<AgentHookStep>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub before_llm: Vec<AgentHookStep>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub after_llm: Vec<AgentHookStep>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub before_tool: Vec<AgentHookStep>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub after_tool: Vec<AgentHookStep>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub on_budget_exhausted: Vec<AgentHookStep>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub execution_end: Vec<AgentHookStep>,
 }
 
@@ -38,7 +48,6 @@ pub struct AiAgent {
     pub description: Option<String>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
-    pub configuration: serde_json::Value,
     /// Agents this agent can spawn as sub-agents (empty = can only fork itself)
     pub sub_agents: Option<Vec<i64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -65,7 +74,6 @@ pub struct AiAgentWithDetails {
     pub description: Option<String>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
-    pub configuration: serde_json::Value,
     pub tools_count: i64,
     pub knowledge_bases_count: i64,
     /// Agents this agent can spawn as sub-agents
@@ -94,7 +102,6 @@ pub struct AiAgentWithFeatures {
     pub description: Option<String>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
-    pub configuration: serde_json::Value,
     pub tools: Vec<AiTool>,
     pub knowledge_bases: Vec<AiKnowledgeBase>,
     /// Agents this agent can spawn as sub-agents
