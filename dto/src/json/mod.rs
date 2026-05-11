@@ -6,6 +6,7 @@ pub mod ask_user;
 pub mod b2b;
 pub mod context_orchestrator;
 pub mod context_search;
+pub mod credentials;
 pub mod deployment;
 pub mod deployment_settings;
 pub mod flexible_i64;

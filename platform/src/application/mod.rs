@@ -21,6 +21,7 @@ pub mod billing_webhook;
 pub mod board_item_actions;
 pub mod composio;
 pub mod connection;
+pub mod credentials;
 pub mod enterprise_sso;
 mod error;
 pub mod mcp_servers;

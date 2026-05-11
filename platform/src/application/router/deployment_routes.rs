@@ -12,7 +12,15 @@ pub(super) fn base_deployment_routes() -> Router<AppState> {
         .merge(settings_routes())
         .merge(segments_routes())
         .merge(analytics_routes())
+        .merge(credentials_routes())
         .merge(super::api_auth_routes::api_auth_routes())
+}
+
+fn credentials_routes() -> Router<AppState> {
+    Router::new().route(
+        "/credentials",
+        post(api::credentials::create_deployment_credentials),
+    )
 }
 
 fn user_management_routes() -> Router<AppState> {

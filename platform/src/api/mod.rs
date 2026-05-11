@@ -12,6 +12,7 @@ pub mod billing;
 pub mod billing_webhook;
 pub mod composio;
 pub mod connection;
+pub mod credentials;
 pub mod enterprise_sso;
 pub mod health;
 pub mod mcp_servers;
