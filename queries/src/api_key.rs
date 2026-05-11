@@ -421,11 +421,12 @@ pub struct WorkspaceMembershipPermissions {
 
 pub struct GetOrganizationMembershipPermissionsQuery {
     pub membership_id: i64,
+    pub organization_id: i64,
 }
 
 impl GetOrganizationMembershipPermissionsQuery {
-    pub fn new(membership_id: i64) -> Self {
-        Self { membership_id }
+    pub fn new(membership_id: i64, organization_id: i64) -> Self {
+        Self { membership_id, organization_id }
     }
 
     pub async fn execute_with_db<'e, E>(
@@ -447,10 +448,11 @@ impl GetOrganizationMembershipPermissionsQuery {
             LEFT JOIN organization_membership_roles omr ON omr.organization_membership_id = om.id
             LEFT JOIN organization_roles orole ON omr.organization_role_id = orole.id
             LEFT JOIN LATERAL unnest(COALESCE(orole.permissions, ARRAY[]::text[])) perm ON true
-            WHERE om.id = $1 AND om.deleted_at IS NULL
+            WHERE om.id = $1 AND om.organization_id = $2 AND om.deleted_at IS NULL
             GROUP BY om.organization_id
             "#,
-            self.membership_id
+            self.membership_id,
+            self.organization_id
         )
         .fetch_optional(executor)
         .await?;
@@ -464,11 +466,12 @@ impl GetOrganizationMembershipPermissionsQuery {
 
 pub struct GetWorkspaceMembershipPermissionsQuery {
     pub membership_id: i64,
+    pub workspace_id: i64,
 }
 
 impl GetWorkspaceMembershipPermissionsQuery {
-    pub fn new(membership_id: i64) -> Self {
-        Self { membership_id }
+    pub fn new(membership_id: i64, workspace_id: i64) -> Self {
+        Self { membership_id, workspace_id }
     }
 
     pub async fn execute_with_db<'e, E>(
@@ -491,10 +494,11 @@ impl GetWorkspaceMembershipPermissionsQuery {
             LEFT JOIN workspace_membership_roles wmr ON wmr.workspace_membership_id = wm.id
             LEFT JOIN workspace_roles wrole ON wmr.workspace_role_id = wrole.id
             LEFT JOIN LATERAL unnest(COALESCE(wrole.permissions, ARRAY[]::text[])) perm ON true
-            WHERE wm.id = $1 AND wm.deleted_at IS NULL
+            WHERE wm.id = $1 AND wm.workspace_id = $2 AND wm.deleted_at IS NULL
             GROUP BY wm.organization_id, wm.workspace_id
             "#,
-            self.membership_id
+            self.membership_id,
+            self.workspace_id
         )
         .fetch_optional(executor)
         .await?;

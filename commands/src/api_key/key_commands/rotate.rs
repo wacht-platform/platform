@@ -108,7 +108,12 @@ impl RotateApiKeyCommand {
         let mut workspace_role_permissions: Vec<String> = vec![];
 
         if let Some(org_membership_id) = org_membership_id {
-            let org_perm = GetOrganizationMembershipPermissionsQuery::new(org_membership_id)
+            let app_org_id = app_context.organization_id.ok_or_else(|| {
+                AppError::BadRequest(
+                    "organization_id required when org membership resolved".to_string(),
+                )
+            })?;
+            let org_perm = GetOrganizationMembershipPermissionsQuery::new(org_membership_id, app_org_id)
                 .execute_with_db(&mut *tx)
                 .await?
                 .ok_or_else(|| {
@@ -120,8 +125,13 @@ impl RotateApiKeyCommand {
         }
 
         if let Some(workspace_membership_id) = workspace_membership_id {
+            let app_workspace_id = app_context.workspace_id.ok_or_else(|| {
+                AppError::BadRequest(
+                    "workspace_id required when workspace membership resolved".to_string(),
+                )
+            })?;
             let workspace_perm =
-                GetWorkspaceMembershipPermissionsQuery::new(workspace_membership_id)
+                GetWorkspaceMembershipPermissionsQuery::new(workspace_membership_id, app_workspace_id)
                     .execute_with_db(&mut *tx)
                     .await?
                     .ok_or_else(|| {

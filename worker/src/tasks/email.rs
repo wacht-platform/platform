@@ -529,7 +529,7 @@ pub async fn send_deployment_invite_impl(
     let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
     let workspace_name = if let Some(ws_id) = workspace_id {
-        fetch_workspace_name(&app_state, ws_id)
+        fetch_workspace_name(&app_state, ws_id, deployment_id)
             .await
             .unwrap_or_else(|_| "Workspace".to_string())
     } else {
@@ -659,9 +659,13 @@ async fn fetch_deployment_invitation(
         .map_err(|e| format!("Failed to fetch deployment invitation: {}", e))
 }
 
-async fn fetch_workspace_name(app_state: &AppState, workspace_id: u64) -> Result<String, String> {
+async fn fetch_workspace_name(
+    app_state: &AppState,
+    workspace_id: u64,
+    deployment_id: u64,
+) -> Result<String, String> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
-    GetWorkspaceNameQuery::new(workspace_id as i64)
+    GetWorkspaceNameQuery::new(workspace_id as i64, deployment_id as i64)
         .execute_with_db(reader)
         .await
         .map_err(|e| format!("Failed to fetch workspace name: {}", e))

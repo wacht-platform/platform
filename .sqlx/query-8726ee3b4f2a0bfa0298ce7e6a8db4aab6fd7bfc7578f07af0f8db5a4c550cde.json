@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT name FROM organizations WHERE id = $1",
+  "query": "SELECT name FROM workspaces WHERE id = $1 AND deployment_id = $2",
   "describe": {
     "columns": [
       {
@@ -11,6 +11,7 @@
     ],
     "parameters": {
       "Left": [
+        "Int8",
         "Int8"
       ]
     },
@@ -18,5 +19,5 @@
       false
     ]
   },
-  "hash": "bf4232817fec0c59ee085722e7c801fb1bac81c732e4a870813b16fa02adec46"
+  "hash": "8726ee3b4f2a0bfa0298ce7e6a8db4aab6fd7bfc7578f07af0f8db5a4c550cde"
 }

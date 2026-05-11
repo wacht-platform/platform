@@ -140,9 +140,10 @@ impl CreateUserCommand {
             .await?;
 
             sqlx::query!(
-                "UPDATE users SET primary_email_address_id = $1 WHERE id = $2",
+                "UPDATE users SET primary_email_address_id = $1 WHERE id = $2 AND deployment_id = $3",
                 email_id,
-                user_id
+                user_id,
+                self.deployment_id
             )
             .execute(&mut *tx)
             .await?;
@@ -177,9 +178,10 @@ impl CreateUserCommand {
             .await?;
 
             sqlx::query!(
-                "UPDATE users SET primary_phone_number_id = $1 WHERE id = $2",
+                "UPDATE users SET primary_phone_number_id = $1 WHERE id = $2 AND deployment_id = $3",
                 phone_id,
-                user_id
+                user_id,
+                self.deployment_id
             )
             .execute(&mut *tx)
             .await?;

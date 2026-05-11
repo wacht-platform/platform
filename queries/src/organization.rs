@@ -2,11 +2,12 @@ use common::error::AppError;
 
 pub struct GetOrganizationNameQuery {
     organization_id: i64,
+    deployment_id: i64,
 }
 
 impl GetOrganizationNameQuery {
-    pub fn new(organization_id: i64) -> Self {
-        Self { organization_id }
+    pub fn new(organization_id: i64, deployment_id: i64) -> Self {
+        Self { organization_id, deployment_id }
     }
 
     pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<String, AppError>
@@ -14,8 +15,9 @@ impl GetOrganizationNameQuery {
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let row = sqlx::query!(
-            "SELECT name FROM organizations WHERE id = $1",
-            self.organization_id
+            "SELECT name FROM organizations WHERE id = $1 AND deployment_id = $2",
+            self.organization_id,
+            self.deployment_id
         )
         .fetch_one(executor)
         .await?;
