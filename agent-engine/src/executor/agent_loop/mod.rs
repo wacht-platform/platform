@@ -1194,14 +1194,14 @@ impl AgentExecutor {
                     format!(
                         "Internal context for next turn only: {hint}.\n\
                          \n\
-                         Act on it directly — emit the tool call(s) that address it, or terminate cleanly if you cannot.\n\
+                         Decide: can you name a concrete tool call that closes a concrete gap this hint points at? If yes, emit it. If the hint is vague, already addressed, or you can't translate it into one specific action, terminate cleanly — a forced extra turn produces filler, not progress.\n\
                          \n\
                          Forbidden in your output:\n\
                          - Restating, quoting, or referring to this hint or any \"reviewer\".\n\
                          - Saying things like \"I noticed…\", \"there's an unaddressed…\", \"let me address…\".\n\
                          - Apologizing or acknowledging.\n\
                          \n\
-                         The user never sees this message. Just do the work or stop."
+                         The user never sees this message. Either do one concrete thing or stop."
                     ),
                 );
                 return Ok(true);
