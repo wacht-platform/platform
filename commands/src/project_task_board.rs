@@ -987,6 +987,11 @@ impl ReconcileProjectTaskBoardItemCommand {
             return Ok(());
         }
 
+        if board_item.exclusive_owner_agent_id.is_some() {
+            auto_complete_agent_owned_task(deps, &board_item, &assignments).await?;
+            return Ok(());
+        }
+
         enqueue_board_item_to_coordinator_with_deps(
             deps,
             &board_item,
@@ -1000,6 +1005,96 @@ impl ReconcileProjectTaskBoardItemCommand {
 
         Ok(())
     }
+}
+
+async fn auto_complete_agent_owned_task<D>(
+    deps: &D,
+    board_item: &ProjectTaskBoardItem,
+    assignments: &[ProjectTaskBoardItemAssignment],
+) -> Result<(), AppError>
+where
+    D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + HasNatsProvider + ?Sized,
+{
+    let latest = assignments
+        .iter()
+        .filter(|a| {
+            matches!(
+                a.status.as_str(),
+                "completed" | "blocked" | "cancelled" | "rejected"
+            )
+        })
+        .max_by_key(|a| a.updated_at);
+
+    let new_status = match latest.map(|a| a.status.as_str()) {
+        Some("completed") => "completed",
+        Some("blocked") => "blocked",
+        Some("cancelled") | Some("rejected") => "cancelled",
+        _ => "completed",
+    };
+
+    if board_item.status == new_status {
+        return Ok(());
+    }
+
+    let deployment_id: i64 = sqlx::query_scalar!(
+        r#"SELECT deployment_id FROM project_task_boards WHERE id = $1"#,
+        board_item.board_id,
+    )
+    .fetch_one(deps.writer_pool())
+    .await?;
+
+    let original_status = board_item.status.clone();
+    let mut tx = deps.writer_pool().begin().await?;
+    let updated = sqlx::query_as!(
+        ProjectTaskBoardItem,
+        r#"
+        UPDATE project_task_board_items
+        SET status = $2,
+            completed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE completed_at END,
+            updated_at = NOW()
+        WHERE id = $1 AND archived_at IS NULL
+        RETURNING id, board_id, task_key, title, description, status,
+                  assigned_thread_id, metadata, completed_at, archived_at,
+                  created_at, updated_at, state_version,
+                  schedule_id, scheduled_for, fired_at,
+                  pending_question, pending_approval, mounts, exclusive_owner_agent_id
+        "#,
+        board_item.id,
+        new_status,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let mut subscriptions_fired = false;
+    if let Some(kind) = models::TaskSubscriptionEventKind::from_status(&updated.status) {
+        let count = crate::fan_out_task_subscription_notifications(
+            &mut tx,
+            deps,
+            deployment_id,
+            &updated,
+            &original_status,
+            kind,
+            Utc::now(),
+        )
+        .await?;
+        subscriptions_fired = count > 0;
+    }
+
+    if new_status == "cancelled" {
+        crate::DeleteSubscriptionsForBoardItemCommand {
+            board_item_id: updated.id,
+        }
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+
+    if subscriptions_fired {
+        event_log::nudge_dispatcher(deps.nats_provider()).await;
+    }
+
+    Ok(())
 }
 
 pub struct CreateProjectTaskBoardItemAssignmentCommand {

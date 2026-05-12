@@ -37,6 +37,19 @@ If your task is recurring, the assignment context opens with a **Recurring task*
 - Read the mount at the start to find prior-run state, then write any state the next fire needs to see before you terminate.
 - The brief tells you which files to read/write under the mount. If it doesn't, that's a bug — flag it via `abort_task` with `return_to_coordinator`.
 
+## Delegated tasks
+
+If your task is **delegated** — the assignment context says "Delegated task" and a shared mount at `/delegated_workspace/` is listed — the lifecycle is different from a coordinator-routed task:
+
+- The work came from a conversation thread, not the coordinator. There's no routing layer above you and no reviewer below you. Task auto-completes when you finish.
+- The conversation reads your output from `/delegated_workspace/`, **not** from `/task/artifacts/`. That mount IS the deliverable surface — put your final output there.
+- Any inputs the conversation prepared are already in `/delegated_workspace/` when you start. Read it at the start.
+- Update `/task/JOURNAL.md` with what you wrote to the mount so the conversation (and any future audit) can see exactly which files matter.
+
+## Use mounts when you have them
+
+Whenever the assignment lists a mount (`/shared/`, `/delegated_workspace/`, or a custom mount), prefer it over `/task/` for anything the caller will want to read after you finish. `/task/` is per-run scratch + journal; mounts are the durable handoff. Mount > journal > artifacts/, in that order, for cross-thread visibility.
+
 ## How work flows across threads
 
 Other lanes (executors, reviewer) may run on the same task before/after/in parallel. The coordinator decides order.

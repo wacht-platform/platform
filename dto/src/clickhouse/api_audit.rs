@@ -19,7 +19,6 @@ pub struct ApiKeyVerificationEvent {
     pub key_id: i64,
     pub key_name: String,
     pub outcome: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub blocked_by_rule: Option<String>,
     pub client_ip: String,
     pub path: String,

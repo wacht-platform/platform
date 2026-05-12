@@ -411,6 +411,32 @@ impl AgentExecutor {
                     .as_ref()
                     .and_then(|item| item.schedule_id)
                     .is_some();
+                let is_delegated = board_item
+                    .as_ref()
+                    .map(|item| item.exclusive_owner_agent_id.is_some())
+                    .unwrap_or(false);
+                let delegated_by_thread_id = board_item.as_ref().and_then(|item| {
+                    item.metadata
+                        .get("delegated_by_thread_id")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                });
+                let delegated_workspace_mount = if is_delegated {
+                    board_item.as_ref().and_then(|item| {
+                        item.mounts.as_array().and_then(|arr| {
+                            arr.iter().find_map(|m| {
+                                let path = m.get("mount_path").and_then(|v| v.as_str())?;
+                                if path == "/delegated_workspace" {
+                                    Some(path.to_string())
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                    })
+                } else {
+                    None
+                };
                 let carryover = board_item
                     .as_ref()
                     .and_then(|item| item.typed_metadata().schedule_carryover);
@@ -493,6 +519,9 @@ impl AgentExecutor {
                         "task_journal_tail": task_journal_tail,
                         "parent_task_key": parent_task_key,
                         "is_recurring": is_recurring,
+                        "is_delegated": is_delegated,
+                        "delegated_by_thread_id": delegated_by_thread_id,
+                        "delegated_workspace_mount": delegated_workspace_mount,
                         "task_mounts": task_mounts,
                         "task_schedule": task_schedule,
                         "schedule_scheduled_for": schedule_scheduled_for,
