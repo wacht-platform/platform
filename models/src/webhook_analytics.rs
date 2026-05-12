@@ -27,6 +27,7 @@ pub struct EventCount {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EndpointPerformance {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub endpoint_id: i64,
     pub endpoint_url: String,
     pub total_attempts: i64,

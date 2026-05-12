@@ -18,6 +18,7 @@ pub struct DeploymentJwtTemplate {
     pub allowed_clock_skew: i64,
     pub custom_signing_key: Option<CustomSigningKey>,
     pub template: Value,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

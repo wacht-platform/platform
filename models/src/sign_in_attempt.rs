@@ -27,8 +27,11 @@ pub struct SignInAttempt {
     pub id: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub user_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub identifier_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub session_id: i64,
     pub method: SignInMethod,
     pub sso_provider: Option<String>,

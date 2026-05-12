@@ -21,11 +21,16 @@ impl std::fmt::Display for AgentSessionIdentifier {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct AgentSession {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub session_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub identifier: String,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub actor_id: i64,
+    #[serde(with = "crate::utils::serde::vec_i64_as_string")]
     pub agent_ids: Vec<i64>,
     pub expires_at: Option<DateTime<Utc>>,
 }

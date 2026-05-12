@@ -65,6 +65,7 @@ impl Default for AgentThreadStatus {
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct ThreadExecutionState {
     #[serde(default)]
+    #[serde(with = "crate::utils::serde::vec_i64_as_string")]
     pub loaded_external_tool_ids: Vec<i64>,
     #[serde(default)]
     pub virtual_tool_cache_snapshot: Vec<crate::AiTool>,

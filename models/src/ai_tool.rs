@@ -94,6 +94,7 @@ pub enum AiToolConfiguration {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct McpToolConfiguration {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub mcp_server_id: i64,
     pub remote_tool_name: String,
     pub input_schema: Option<serde_json::Value>,
@@ -332,6 +333,7 @@ pub struct InternalToolConfiguration {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AuthorizationConfiguration {
     pub authorize_as_user: bool,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub jwt_template_id: Option<i64>,
     pub custom_headers: Option<Vec<SchemaField>>,
 }

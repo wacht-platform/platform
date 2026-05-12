@@ -12,7 +12,9 @@ pub struct EmailTemplate {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct DeploymentEmailTemplate {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub organization_invite_template: EmailTemplate,
     pub verification_code_template: EmailTemplate,

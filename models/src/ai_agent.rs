@@ -49,6 +49,7 @@ pub struct AiAgent {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     /// Agents this agent can spawn as sub-agents (empty = can only fork itself)
+    #[serde(default, with = "crate::utils::serde::option_vec_i64_as_string")]
     pub sub_agents: Option<Vec<i64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strong_model: Option<AgentModelOverride>,
@@ -77,6 +78,7 @@ pub struct AiAgentWithDetails {
     pub tools_count: i64,
     pub knowledge_bases_count: i64,
     /// Agents this agent can spawn as sub-agents
+    #[serde(default, with = "crate::utils::serde::option_vec_i64_as_string")]
     pub sub_agents: Option<Vec<i64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strong_model: Option<AgentModelOverride>,
@@ -105,6 +107,7 @@ pub struct AiAgentWithFeatures {
     pub tools: Vec<AiTool>,
     pub knowledge_bases: Vec<AiKnowledgeBase>,
     /// Agents this agent can spawn as sub-agents
+    #[serde(default, with = "crate::utils::serde::option_vec_i64_as_string")]
     pub sub_agents: Option<Vec<i64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strong_model: Option<AgentModelOverride>,

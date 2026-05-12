@@ -34,7 +34,9 @@ pub struct ContextRetrievalStrategy {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateConversationRequest {
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub id: i64,
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub thread_id: i64,
     pub content: ConversationContent,
     pub message_type: ConversationMessageType,
@@ -68,6 +70,7 @@ impl MemoryCategory {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateCitationMetricsRequest {
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub item_id: i64,
     pub item_type: CitationItemType,
     pub relevance_delta: f64,
@@ -90,7 +93,9 @@ pub struct BatchCreateConversationsRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationResponse {
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub id: i64,
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub thread_id: i64,
     pub timestamp: String,
     pub content: ConversationContent,
@@ -101,6 +106,7 @@ pub struct ConversationResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryResponse {
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub id: i64,
     pub content: String,
     pub memory_category: String,
@@ -114,6 +120,7 @@ pub struct MemoryResponse {
 pub struct MemorySearchQuery {
     pub query: String,
     pub memory_categories: Option<Vec<MemoryCategory>>,
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
     pub thread_id: Option<i64>,
     pub limit: Option<i32>,
     pub min_confidence: Option<f64>,
@@ -121,6 +128,7 @@ pub struct MemorySearchQuery {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationHistoryQuery {
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub thread_id: i64,
     pub limit: Option<i32>,
     pub offset: Option<i32>,

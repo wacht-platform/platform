@@ -177,6 +177,7 @@ pub struct TriggerWebhookEventRequest {
 
 #[derive(Debug, Serialize)]
 pub struct TriggerWebhookEventResponse {
+    #[serde(with = "models::utils::serde::vec_i64_as_string")]
     pub delivery_ids: Vec<i64>,
     pub filtered_count: usize,
     pub delivered_count: usize,
@@ -230,6 +231,7 @@ pub struct ReplayTaskStatusResponse {
     pub processed: i64,
     pub replayed_count: i64,
     pub failed_count: i64,
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
     pub last_delivery_id: Option<i64>,
 }
 
@@ -243,6 +245,7 @@ pub struct ReplayTaskListResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct ReactivateEndpointRequest {
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub endpoint_id: i64,
 }
 
@@ -275,7 +278,9 @@ pub struct TestWebhookEndpointResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct WebhookAnalyticsQuery {
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
     pub app_id: Option<i64>,
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
     pub endpoint_id: Option<i64>,
     pub start_date: Option<DateTime<Utc>>,
     pub end_date: Option<DateTime<Utc>>,
@@ -283,7 +288,9 @@ pub struct WebhookAnalyticsQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct WebhookTimeseriesQuery {
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
     pub app_id: Option<i64>,
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
     pub endpoint_id: Option<i64>,
     #[serde(default = "default_interval")]
     pub interval: models::webhook_analytics::TimeseriesInterval,
@@ -323,9 +330,12 @@ pub struct DeliveryListQuery {
 
 #[derive(Debug, Serialize)]
 pub struct WebhookDeliveryItem {
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub delivery_id: i64,
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub app_slug: String,
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub endpoint_id: i64,
     pub event_name: String,
     pub status: String,
@@ -338,6 +348,7 @@ pub struct WebhookDeliveryItem {
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookDeliveriesQuery {
     pub app_name: Option<String>,
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
     pub endpoint_id: Option<i64>,
     pub event_name: Option<String>,
     pub status: Option<String>,
@@ -350,6 +361,7 @@ pub struct GetWebhookDeliveriesQuery {
 // For app-specific deliveries endpoint where app_name comes from path
 #[derive(Debug, Deserialize)]
 pub struct GetAppWebhookDeliveriesQuery {
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
     pub endpoint_id: Option<i64>,
     pub event_name: Option<String>,
     pub status: Option<String>,

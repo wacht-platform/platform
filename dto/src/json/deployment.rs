@@ -143,6 +143,7 @@ pub struct UpdateProjectTaskBoardItemRequest {
 
 #[derive(Deserialize)]
 pub struct SearchActorProjectsRequest {
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub actor_id: i64,
     pub q: Option<String>,
     pub limit: Option<i64>,
@@ -151,6 +152,7 @@ pub struct SearchActorProjectsRequest {
 
 #[derive(Deserialize)]
 pub struct SearchActorProjectThreadsRequest {
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub actor_id: i64,
     pub q: Option<String>,
     pub limit: Option<i64>,

@@ -36,6 +36,7 @@ pub struct GetDocumentsQuery {
 pub struct SearchKnowledgeBaseQuery {
     pub query: String,
     pub limit: Option<u64>,
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
     pub knowledge_base_id: Option<i64>,
     pub sort_by_relevance: Option<bool>,
 }

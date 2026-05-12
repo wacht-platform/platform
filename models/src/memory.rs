@@ -12,13 +12,21 @@ pub mod scope {
 /// Memory record used for retrieval
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryRecord {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub actor_id: Option<i64>,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub project_id: Option<i64>,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub thread_id: Option<i64>,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub execution_run_id: Option<i64>,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub owner_agent_id: Option<i64>,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub recorded_by_agent_id: Option<i64>,
     pub memory_scope: String,
     pub content: String,
@@ -58,6 +66,7 @@ pub struct TaskRoutingEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskThreadMeta {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub thread_id: i64,
     pub title: String,
     pub thread_purpose: String,

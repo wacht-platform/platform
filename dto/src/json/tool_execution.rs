@@ -38,6 +38,7 @@ pub struct KnowledgeBaseToolResult {
     pub success: bool,
     pub tool: String,
     pub query: String,
+    #[serde(with = "models::utils::serde::vec_i64_as_string")]
     pub knowledge_base_ids: Vec<i64>,
     pub results: Vec<ToolKnowledgeBaseSearchResult>,
     pub total_results: usize,

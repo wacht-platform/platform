@@ -211,6 +211,7 @@ pub struct OAuthConsentSubmitRequest {
     pub resource: Option<String>,
     pub granted_resource: Option<String>,
     pub scope: Option<String>,
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub user_id: i64,
 }
 

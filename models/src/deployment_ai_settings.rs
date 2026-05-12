@@ -99,7 +99,9 @@ pub struct UpdateDeploymentStorageSettingsRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct DeploymentAiSettings {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub strong_llm_provider: String,
     pub weak_llm_provider: String,

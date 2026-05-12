@@ -4,7 +4,9 @@ use sqlx::FromRow;
 
 #[derive(FromRow, Serialize, Deserialize, Clone, Debug)]
 pub struct DocumentChunkSearchResult {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub document_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub knowledge_base_id: i64,
     pub content: String,
     pub score: f64,

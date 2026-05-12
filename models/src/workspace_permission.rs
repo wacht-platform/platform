@@ -7,6 +7,7 @@ pub struct WorkspacePermission {
     pub id: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub workspace_role_id: i64,
     pub permission: String,
 }

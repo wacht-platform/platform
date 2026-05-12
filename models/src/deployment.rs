@@ -38,6 +38,7 @@ pub struct DomainVerificationRecords {
 pub struct EmailVerificationRecords {
     pub dkim_records: Vec<DnsRecord>,
     pub return_path_records: Vec<DnsRecord>,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub postmark_domain_id: Option<i64>,
 }
 

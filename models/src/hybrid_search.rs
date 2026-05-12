@@ -4,7 +4,9 @@ use sqlx::FromRow;
 /// Result from hybrid search for knowledge base chunks
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct HybridSearchKbResult {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub document_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub knowledge_base_id: i64,
     pub chunk_index: i32,
     pub content: String,
@@ -18,7 +20,9 @@ pub struct HybridSearchKbResult {
 /// Result from full-text search
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct FullTextSearchResult {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub document_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub knowledge_base_id: i64,
     pub chunk_index: i32,
     pub content: String,

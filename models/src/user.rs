@@ -137,11 +137,16 @@ pub struct User {
     pub profile_picture_url: String,
     pub schema_version: SchemaVersion,
     pub disabled: bool,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub primary_email_address_id: Option<i64>,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub primary_phone_number_id: Option<i64>,
     pub second_factor_policy: SecondFactorPolicy,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub active_organization_membership_id: Option<i64>,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub active_workspace_membership_id: Option<i64>,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub public_metadata: Value,
     pub private_metadata: Value,

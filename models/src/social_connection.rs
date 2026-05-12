@@ -9,7 +9,9 @@ pub struct SocialConnection {
     pub id: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub user_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub user_email_address_id: i64,
     pub provider: SocialConnectionProvider,
     pub email_address: String,

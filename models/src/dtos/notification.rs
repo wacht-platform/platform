@@ -37,6 +37,7 @@ pub enum NotificationEvent {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NotificationWebSocketMessage {
     pub event: NotificationEvent,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub user_id: i64,
     pub timestamp: DateTime<Utc>,
 }

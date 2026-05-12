@@ -19,5 +19,6 @@ pub struct Session {
     pub id: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub active_signin_id: Option<i64>,
 }
