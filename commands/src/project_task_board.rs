@@ -354,7 +354,7 @@ where
         RETURNING
             id, board_id, task_key, title, description, status,
             assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
         "#,
     )
     .bind(parent_item.id)
@@ -505,7 +505,7 @@ impl SetProjectTaskBoardItemArchivedCommand {
                       assigned_thread_id, metadata, completed_at, archived_at,
                       created_at, updated_at, state_version,
                       schedule_id, scheduled_for, fired_at,
-                      pending_question, pending_approval, mounts
+                      pending_question, pending_approval, mounts, exclusive_owner_agent_id
             "#,
             self.item_id,
             self.board_id,
@@ -537,7 +537,7 @@ impl AttachProjectTaskBoardItemScheduleCommand {
             RETURNING
                 id, board_id, task_key, title, description, status,
                 assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
+                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
             "#,
         )
         .bind(self.board_id)
@@ -560,6 +560,7 @@ pub struct CreateProjectTaskBoardItemCommand {
     pub assigned_thread_id: Option<i64>,
     pub metadata: serde_json::Value,
     pub mounts: serde_json::Value,
+    pub exclusive_owner_agent_id: Option<i64>,
 }
 
 impl CreateProjectTaskBoardItemCommand {
@@ -574,7 +575,7 @@ impl CreateProjectTaskBoardItemCommand {
             INSERT INTO project_task_board_items (
                 id, board_id, task_key, title, description, status,
                 assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
             ) VALUES (
                 $1, $2, $3, $4, $5, $6,
                 $7, $8,
@@ -585,12 +586,12 @@ impl CreateProjectTaskBoardItemCommand {
                 NULL,
                 $9, $9, 0,
                 NULL, NULL, NULL, NULL, NULL,
-                $10
+                $10, $11
             )
             RETURNING
                 id, board_id, task_key, title, description, status,
                 assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
             "#,
         )
         .bind(self.id)
@@ -603,6 +604,7 @@ impl CreateProjectTaskBoardItemCommand {
         .bind(self.metadata)
         .bind(now)
         .bind(self.mounts)
+        .bind(self.exclusive_owner_agent_id)
         .fetch_one(executor)
         .await?;
 
@@ -642,7 +644,7 @@ impl CreateProjectTaskBoardItemRelationCommand {
             SELECT
                 id, board_id, task_key, title, description, status,
                 assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
             FROM project_task_board_items
             WHERE id = $1 AND archived_at IS NULL
             LIMIT 1
@@ -658,7 +660,7 @@ impl CreateProjectTaskBoardItemRelationCommand {
             SELECT
                 id, board_id, task_key, title, description, status,
                 assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
             FROM project_task_board_items
             WHERE id = $1 AND archived_at IS NULL
             LIMIT 1
@@ -879,7 +881,7 @@ impl UpdateProjectTaskBoardItemCommand {
             RETURNING
                 id, board_id, task_key, title, description, status,
                 assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
             "#,
         )
         .bind(self.board_id)

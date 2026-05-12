@@ -643,6 +643,17 @@ pub async fn cancel_project_task_board_item(
     Ok(item.into())
 }
 
+pub async fn delegate_project_task(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(project_id): Path<i64>,
+    Json(request): Json<board_actions_app::DelegateTaskRequest>,
+) -> ApiResult<board_actions_app::DelegateTaskResponse> {
+    let response =
+        board_actions_app::delegate_task(&app_state, deployment_id, project_id, request).await?;
+    Ok(response.into())
+}
+
 pub async fn answer_project_task_board_item_question(
     State(app_state): State<AppState>,
     RequireDeployment(_deployment_id): RequireDeployment,

@@ -973,10 +973,18 @@ impl AgentExecutor {
             let tool = match available_tools.iter().find(|t| t.name == call.tool_name) {
                 Some(t) => t,
                 None => {
+                    let available_names = available_tools
+                        .iter()
+                        .map(|t| t.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     self.record_invalid_tool_call(
                         &call.tool_name,
                         &call.arguments,
-                        &format!("Model selected unknown tool '{}'", call.tool_name),
+                        &format!(
+                            "Unknown tool '{}'. Not in this turn's allowed set. Available tools: [{}]. Pick one of these by exact name, or respond with text if none fit.",
+                            call.tool_name, available_names
+                        ),
                     )
                     .await?;
                     continue;

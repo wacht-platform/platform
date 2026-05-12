@@ -263,7 +263,7 @@ impl<'a> ApplyBoardItemEditCommand<'a> {
                    assigned_thread_id, metadata, completed_at, archived_at,
                    created_at, updated_at, state_version,
                    schedule_id, scheduled_for, fired_at,
-                   pending_question, pending_approval, mounts
+                   pending_question, pending_approval, mounts, exclusive_owner_agent_id
             FROM project_task_board_items
             WHERE id = $1 AND archived_at IS NULL
             "#,
@@ -358,7 +358,7 @@ impl<'a> ApplyBoardItemEditCommand<'a> {
                       assigned_thread_id, metadata, completed_at, archived_at,
                       created_at, updated_at, state_version,
                       schedule_id, scheduled_for, fired_at,
-                      pending_question, pending_approval, mounts
+                      pending_question, pending_approval, mounts, exclusive_owner_agent_id
             "#,
             self.board_item_id,
             title_param,

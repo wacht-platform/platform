@@ -133,6 +133,21 @@ pub(crate) fn project_tools() -> Vec<(
             InternalToolType::UnsubscribeFromTask,
             unsubscribe_from_task_schema(),
         ),
+        (
+            "delegate_task",
+            "Hand a discrete piece of work to an existing execution lane in the current project. Conversation threads only; the assigned agent on the target lane will own this task exclusively (the coordinator and reviewer do not see it). The lane's task sandbox is mounted with a shared folder rooted in this conversation's workspace at `/workspace/delegate/<task_key>/` and visible to the lane at `/delegated_workspace/`. Both sides read and write the same S3-backed prefix, so put any inputs the lane needs in that folder before delegating and read outputs from the same place after the lane reports completion. You are auto-subscribed to status updates on the new task.",
+            InternalToolType::DelegateTask,
+            delegate_task_schema(),
+        ),
+    ]
+}
+
+pub fn delegate_task_schema() -> Vec<SchemaField> {
+    vec![
+        SchemaField { name: "target_lane_thread_id".to_string(), field_type: "STRING".to_string(), description: Some("Thread ID of an existing EXECUTION lane in this project to receive the task. Obtain it from `list_threads` or `create_thread`.".to_string()), required: true, ..Default::default() },
+        SchemaField { name: "title".to_string(), field_type: "STRING".to_string(), description: Some("Short, specific task title (one line).".to_string()), required: true, ..Default::default() },
+        SchemaField { name: "description".to_string(), field_type: "STRING".to_string(), description: Some("What needs to be done. Be concrete about success criteria and the expected deliverable. Mention any files placed in the shared workspace folder.".to_string()), required: false, ..Default::default() },
+        SchemaField { name: "capability_tags".to_string(), field_type: "ARRAY".to_string(), items_type: Some("STRING".to_string()), description: Some("Optional matching hints carried on the task. Stable role labels like `research`, `review`, `analysis`.".to_string()), min_items: Some(1), required: false, ..Default::default() },
     ]
 }
 

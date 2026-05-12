@@ -56,6 +56,7 @@ pub(crate) async fn load_project_task_board_state(
 ) -> Result<(i64, Vec<ProjectTaskBoardPromptItem>), AppError> {
     let board_id = lookup_or_create_project_task_board_id(ctx).await?;
     let rows = ListProjectTaskBoardItemsQuery::new(board_id)
+        .include_agent_owned()
         .execute_with_schedules(ctx.app_state.db_router.writer())
         .await?;
     let relations = ListProjectTaskBoardRelationsQuery::new(board_id)
@@ -165,6 +166,7 @@ impl AgentExecutor {
             assigned_thread_id: None,
             metadata: serde_json::to_value(metadata)?,
             mounts: serde_json::json!([]),
+            exclusive_owner_agent_id: None,
         }
         .execute_with_db(&mut *tx)
         .await?;

@@ -1,5 +1,9 @@
 use commands::event_log::{self, EVENT_LOG_WORK_SUBJECT, InsertEventLogCommand};
-use commands::{SetBoardItemPendingApprovalCommand, SetBoardItemPendingQuestionCommand};
+use commands::{
+    CreateProjectTaskBoardItemAssignmentCommand, CreateProjectTaskBoardItemCommand,
+    EnsureProjectTaskBoardCommand, SetBoardItemPendingApprovalCommand,
+    SetBoardItemPendingQuestionCommand,
+};
 use common::HasDbRouter;
 use common::error::AppError;
 use dto::json::ask_user::{AnswerSubmission, validate_answers};
@@ -7,7 +11,10 @@ use models::{
     ConversationContent, ProjectTaskBoardItem, ProjectTaskBoardItemComment, ToolApprovalMode,
     ToolApprovalRequestState,
 };
-use queries::{GetProjectTaskBoardItemByIdQuery, ListProjectTaskBoardItemCommentsQuery};
+use queries::{
+    GetAgentThreadStateQuery, GetProjectTaskBoardByProjectIdQuery, GetProjectTaskBoardItemByIdQuery,
+    ListProjectTaskBoardItemCommentsQuery, ResolveThreadExecutionAgentQuery,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -417,4 +424,152 @@ pub async fn create_project_task_board_item_comment(
     }
 
     Ok(comment)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DelegateTaskRequest {
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub target_lane_thread_id: i64,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub capability_tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DelegateTaskResponse {
+    pub task_key: String,
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub board_item_id: i64,
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub target_lane_thread_id: i64,
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub assigned_agent_id: i64,
+}
+
+pub async fn delegate_task(
+    app_state: &AppState,
+    deployment_id: i64,
+    project_id: i64,
+    request: DelegateTaskRequest,
+) -> Result<DelegateTaskResponse, AppError> {
+    let title = request.title.trim().to_string();
+    if title.is_empty() {
+        return Err(AppError::BadRequest(
+            "delegate_task requires a non-empty title".to_string(),
+        ));
+    }
+
+    let lane = GetAgentThreadStateQuery::new(request.target_lane_thread_id, deployment_id)
+        .execute_with_db(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await?;
+    if lane.project_id != project_id {
+        return Err(AppError::BadRequest(
+            "delegate_task: target lane is not in this project".to_string(),
+        ));
+    }
+    if lane.thread_purpose != models::agent_thread::purpose::EXECUTION {
+        return Err(AppError::BadRequest(format!(
+            "delegate_task: target thread {} is not an execution lane (purpose={})",
+            request.target_lane_thread_id, lane.thread_purpose
+        )));
+    }
+
+    let lane_agent_id = ResolveThreadExecutionAgentQuery::new(
+        request.target_lane_thread_id,
+        deployment_id,
+    )
+    .execute_with_db(
+        app_state
+            .db_router
+            .reader(common::db_router::ReadConsistency::Strong),
+    )
+    .await?
+    .ok_or_else(|| {
+        AppError::BadRequest(format!(
+            "delegate_task: lane thread {} has no assigned agent",
+            request.target_lane_thread_id
+        ))
+    })?;
+
+    let project_thread = GetAgentThreadStateQuery::new(lane.id, deployment_id)
+        .execute_with_db(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await?;
+    let actor_id = project_thread.actor_id;
+
+    let board = GetProjectTaskBoardByProjectIdQuery::new(project_id, deployment_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await?;
+    let board = match board {
+        Some(board) => board,
+        None => {
+            EnsureProjectTaskBoardCommand::new(
+                app_state.sf.next_id()? as i64,
+                deployment_id,
+                actor_id,
+                project_id,
+                format!("Project {} Task Board", project_id),
+                "active".to_string(),
+            )
+            .execute_with_db(app_state.db_router.writer())
+            .await?
+        }
+    };
+
+    let board_item_id = app_state.sf.next_id()? as i64;
+    let task_key = format!("DELEGATE-{board_item_id}");
+
+    let mut tx = app_state.db_router.writer().begin().await?;
+    let board_item = CreateProjectTaskBoardItemCommand {
+        id: board_item_id,
+        board_id: board.id,
+        task_key: task_key.clone(),
+        title,
+        description: request.description.clone(),
+        status: "pending".to_string(),
+        assigned_thread_id: Some(request.target_lane_thread_id),
+        metadata: json!({
+            "kind": "delegated_task",
+            "source": "backend_api",
+            "capability_tags": request.capability_tags.clone().unwrap_or_default(),
+        }),
+        mounts: json!([]),
+        exclusive_owner_agent_id: Some(lane_agent_id),
+    }
+    .execute_with_db(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    let assignment_id = app_state.sf.next_id()? as i64;
+    let deps = common::deps::from_app(app_state).db().nats().id();
+    CreateProjectTaskBoardItemAssignmentCommand {
+        id: assignment_id,
+        board_item_id: board_item.id,
+        thread_id: request.target_lane_thread_id,
+        assignment_role: models::project_task_board::assignment_role::EXECUTOR.to_string(),
+        status: models::project_task_board::assignment_status::AVAILABLE.to_string(),
+        instructions: request.description,
+        metadata: json!({
+            "kind": "delegated_task_assignment",
+            "source": "backend_api",
+        }),
+    }
+    .execute_with_deps(&deps)
+    .await?;
+
+    Ok(DelegateTaskResponse {
+        task_key: board_item.task_key,
+        board_item_id: board_item.id,
+        target_lane_thread_id: request.target_lane_thread_id,
+        assigned_agent_id: lane_agent_id,
+    })
 }

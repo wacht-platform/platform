@@ -93,6 +93,7 @@ impl GetProjectTaskBoardByIdQuery {
 
 pub struct ListProjectTaskBoardItemsQuery {
     pub board_id: i64,
+    pub include_agent_owned: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -112,7 +113,15 @@ pub struct ProjectTaskBoardItemWithSchedule {
 
 impl ListProjectTaskBoardItemsQuery {
     pub fn new(board_id: i64) -> Self {
-        Self { board_id }
+        Self {
+            board_id,
+            include_agent_owned: false,
+        }
+    }
+
+    pub fn include_agent_owned(mut self) -> Self {
+        self.include_agent_owned = true;
+        self
     }
 
     pub async fn execute_with_db<'e, E>(
@@ -127,13 +136,15 @@ impl ListProjectTaskBoardItemsQuery {
             SELECT
                 id, board_id, task_key, title, description, status,
                 assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
+                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
             FROM project_task_board_items
             WHERE board_id = $1 AND archived_at IS NULL
+              AND ($2::boolean OR exclusive_owner_agent_id IS NULL)
             ORDER BY created_at ASC
             "#,
         )
         .bind(self.board_id)
+        .bind(self.include_agent_owned)
         .fetch_all(executor)
         .await?;
 
@@ -169,6 +180,7 @@ impl ListProjectTaskBoardItemsQuery {
                 i.pending_question  AS "pending_question?",
                 i.pending_approval  AS "pending_approval?",
                 i.mounts            AS "mounts!",
+                i.exclusive_owner_agent_id AS "exclusive_owner_agent_id?",
                 s.schedule_kind     AS "schedule_kind?",
                 s.interval_seconds  AS "schedule_interval_seconds?",
                 s.next_run_at       AS "schedule_next_run_at?",
@@ -178,9 +190,11 @@ impl ListProjectTaskBoardItemsQuery {
             LEFT JOIN project_task_schedules s
                 ON s.board_id = i.board_id AND s.task_key = i.task_key
             WHERE i.board_id = $1 AND i.archived_at IS NULL
+              AND ($2::boolean OR i.exclusive_owner_agent_id IS NULL)
             ORDER BY i.created_at ASC
             "#,
             self.board_id,
+            self.include_agent_owned,
         )
         .fetch_all(executor)
         .await?;
@@ -223,6 +237,7 @@ impl ListProjectTaskBoardItemsQuery {
                 pending_question: row.pending_question,
                 pending_approval: row.pending_approval,
                 mounts: row.mounts,
+                exclusive_owner_agent_id: row.exclusive_owner_agent_id,
             };
             out.push(ProjectTaskBoardItemWithSchedule { item, schedule });
         }
@@ -251,7 +266,7 @@ impl GetProjectTaskBoardItemByIdQuery {
             SELECT
                 id, board_id, task_key, title, description, status,
                 assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
+                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
             FROM project_task_board_items
             WHERE id = $1 AND archived_at IS NULL
             "#,
@@ -325,7 +340,7 @@ impl GetProjectTaskBoardItemByTaskKeyQuery {
             SELECT
                 id, board_id, task_key, title, description, status,
                 assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
+                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
             FROM project_task_board_items
             WHERE board_id = $1 AND task_key = $2 AND archived_at IS NULL
             LIMIT 1

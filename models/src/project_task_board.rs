@@ -55,6 +55,12 @@ pub struct ProjectTaskBoardItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_approval: Option<serde_json::Value>,
     pub mounts: serde_json::Value,
+    #[serde(
+        default,
+        serialize_with = "crate::utils::serde::serialize_option_i64_as_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub exclusive_owner_agent_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

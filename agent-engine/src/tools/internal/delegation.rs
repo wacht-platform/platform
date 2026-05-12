@@ -1,10 +1,12 @@
 use super::ToolExecutor;
 use commands::{
-    CreateAgentThreadCommand, UpdateAgentThreadCommand, UpsertThreadAgentAssignmentCommand,
+    CreateAgentThreadCommand, CreateProjectTaskBoardItemAssignmentCommand,
+    CreateProjectTaskBoardItemCommand, UpdateAgentThreadCommand,
+    UpsertAgentThreadTaskSubscriptionCommand, UpsertThreadAgentAssignmentCommand,
 };
 use common::error::AppError;
 use dto::json::agent_executor::{
-    CreateThreadParams, ListThreadsParams, SleepParams, UpdateThreadParams,
+    CreateThreadParams, DelegateTaskParams, ListThreadsParams, SleepParams, UpdateThreadParams,
 };
 use models::AiTool;
 use serde_json::Value;
@@ -259,20 +261,105 @@ impl ToolExecutor {
         }))
     }
 
+    async fn require_caller_is_project_coordinator_or_sub_agent(
+        &self,
+        current_thread: &models::AgentThreadState,
+    ) -> Result<(), AppError> {
+        let deployment_id = self.agent().deployment_id;
+        let project = queries::GetActorProjectByIdQuery::new(
+            current_thread.project_id,
+            deployment_id,
+        )
+        .execute_with_db(
+            self.app_state()
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await?
+        .ok_or_else(|| {
+            AppError::Internal(format!(
+                "Project {} not found for thread {}",
+                current_thread.project_id, current_thread.id
+            ))
+        })?;
+
+        let Some(coordinator_thread_id) = project.coordinator_thread_id else {
+            return Err(AppError::BadRequest(
+                "create_thread: project has no coordinator thread configured".to_string(),
+            ));
+        };
+
+        let coordinator_agent_id = queries::ResolveThreadExecutionAgentQuery::new(
+            coordinator_thread_id,
+            deployment_id,
+        )
+        .execute_with_db(
+            self.app_state()
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await?
+        .ok_or_else(|| {
+            AppError::Internal(format!(
+                "Coordinator thread {coordinator_thread_id} has no assigned agent"
+            ))
+        })?;
+
+        let caller_id = self.agent().id;
+        if caller_id == coordinator_agent_id {
+            return Ok(());
+        }
+
+        let coordinator_agents = queries::GetAiAgentsByIdsQuery::new(
+            deployment_id,
+            vec![coordinator_agent_id],
+        )
+        .execute_with_db(
+            self.app_state()
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await?;
+
+        let is_sub_agent = coordinator_agents
+            .first()
+            .and_then(|agent| agent.sub_agents.as_ref())
+            .map(|subs| subs.contains(&caller_id))
+            .unwrap_or(false);
+
+        if !is_sub_agent {
+            return Err(AppError::BadRequest(
+                "create_thread: conversation threads may only spawn lanes when the calling agent is the project's coordinator or one of its sub-agents"
+                    .to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     pub(super) async fn execute_create_thread(
         &self,
         tool: &AiTool,
         params: CreateThreadParams,
     ) -> Result<Value, AppError> {
         let current_thread = self.ctx.get_thread().await?;
-        if !thread_identity_is_coordinator(
+        let is_coordinator = thread_identity_is_coordinator(
             &current_thread.title,
             &current_thread.thread_purpose,
             current_thread.responsibility.as_deref(),
-        ) {
+        );
+        let is_conversation =
+            current_thread.thread_purpose == models::agent_thread::purpose::CONVERSATION;
+
+        if !is_coordinator && !is_conversation {
             return Err(AppError::BadRequest(
-                "create_thread is only available to coordinator threads".to_string(),
+                "create_thread is only available to coordinator or conversation threads".to_string(),
             ));
+        }
+
+        if is_conversation && !is_coordinator {
+            self.require_caller_is_project_coordinator_or_sub_agent(&current_thread)
+                .await?;
         }
 
         let title = params.title.trim().to_string();
@@ -557,6 +644,144 @@ impl ToolExecutor {
                 "reusable": updated.reusable,
                 "capability_tags": updated.capability_tags,
             }
+        }))
+    }
+
+    pub(super) async fn execute_delegate_task(
+        &self,
+        tool: &AiTool,
+        params: DelegateTaskParams,
+    ) -> Result<Value, AppError> {
+        let current_thread = self.ctx.get_thread().await?;
+        if current_thread.thread_purpose != models::agent_thread::purpose::CONVERSATION {
+            return Err(AppError::BadRequest(
+                "delegate_task is only available to conversation threads".to_string(),
+            ));
+        }
+        self.require_caller_is_project_coordinator_or_sub_agent(&current_thread)
+            .await?;
+
+        let title = params.title.trim().to_string();
+        if title.is_empty() {
+            return Err(AppError::BadRequest(
+                "delegate_task requires a non-empty title".to_string(),
+            ));
+        }
+
+        let target_lane_thread_id: i64 = params.target_lane_thread_id.into();
+        let lane = queries::GetAgentThreadStateQuery::new(
+            target_lane_thread_id,
+            self.agent().deployment_id,
+        )
+        .execute_with_db(
+            self.app_state()
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await?;
+        if lane.project_id != current_thread.project_id {
+            return Err(AppError::BadRequest(
+                "delegate_task: target lane is not in the current project".to_string(),
+            ));
+        }
+        if lane.thread_purpose != models::agent_thread::purpose::EXECUTION {
+            return Err(AppError::BadRequest(format!(
+                "delegate_task: target thread {target_lane_thread_id} is not an execution lane (purpose={})",
+                lane.thread_purpose
+            )));
+        }
+
+        let lane_agent_id = queries::ResolveThreadExecutionAgentQuery::new(
+            target_lane_thread_id,
+            self.agent().deployment_id,
+        )
+        .execute_with_db(
+            self.app_state()
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await?
+        .ok_or_else(|| {
+            AppError::BadRequest(format!(
+                "delegate_task: lane thread {target_lane_thread_id} has no assigned agent"
+            ))
+        })?;
+
+        let conv_thread_id = current_thread.id;
+        let board_item_id = self.app_state().sf.next_id()? as i64;
+        let task_key = format!("DELEGATE-{board_item_id}");
+        let mount_s3_key =
+            format!("persistent/{conv_thread_id}/workspace/delegate/{task_key}");
+        let mounts = serde_json::json!([{
+            "mount_path": "/delegated_workspace",
+            "s3_relative_key": mount_s3_key,
+            "mode": "rw",
+        }]);
+
+        let board_id =
+            crate::executor::project::lookup_or_create_project_task_board_id(&self.ctx)
+                .await?;
+
+        let mut tx = self.app_state().db_router.writer().begin().await?;
+
+        let board_item = CreateProjectTaskBoardItemCommand {
+            id: board_item_id,
+            board_id,
+            task_key: task_key.clone(),
+            title: title.clone(),
+            description: params.description.clone(),
+            status: "pending".to_string(),
+            assigned_thread_id: Some(target_lane_thread_id),
+            metadata: serde_json::json!({
+                "kind": "delegated_task",
+                "delegated_by_thread_id": conv_thread_id.to_string(),
+                "delegated_by_agent_id": self.agent().id.to_string(),
+                "capability_tags": params.capability_tags.clone().unwrap_or_default(),
+            }),
+            mounts: mounts.clone(),
+            exclusive_owner_agent_id: Some(lane_agent_id),
+        }
+        .execute_with_db(&mut *tx)
+        .await?;
+
+        UpsertAgentThreadTaskSubscriptionCommand {
+            deployment_id: self.agent().deployment_id,
+            thread_id: conv_thread_id,
+            board_item_id: board_item.id,
+            event_kinds: models::TaskSubscriptionEventKind::defaults(),
+        }
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        let assignment_id = self.app_state().sf.next_id()? as i64;
+        let deps = common::deps::from_app(self.app_state()).db().nats().id();
+        CreateProjectTaskBoardItemAssignmentCommand {
+            id: assignment_id,
+            board_item_id: board_item.id,
+            thread_id: target_lane_thread_id,
+            assignment_role: models::project_task_board::assignment_role::EXECUTOR.to_string(),
+            status: models::project_task_board::assignment_status::AVAILABLE.to_string(),
+            instructions: params.description.clone(),
+            metadata: serde_json::json!({
+                "kind": "delegated_task_assignment",
+                "delegated_by_thread_id": conv_thread_id.to_string(),
+            }),
+        }
+        .execute_with_deps(&deps)
+        .await?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "tool": tool.name,
+            "task_key": board_item.task_key,
+            "board_item_id": board_item.id.to_string(),
+            "target_lane_thread_id": target_lane_thread_id.to_string(),
+            "assigned_agent_id": lane_agent_id.to_string(),
+            "shared_workspace_path_in_conversation": format!("/workspace/delegate/{}", board_item.task_key),
+            "shared_workspace_path_in_lane": "/delegated_workspace",
+            "subscribed": true,
         }))
     }
 }

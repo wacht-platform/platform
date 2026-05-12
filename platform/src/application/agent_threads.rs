@@ -1238,6 +1238,7 @@ pub async fn create_project_task_board_item(
         assigned_thread_id,
         metadata: serde_json::json!({}),
         mounts: mounts_value,
+        exclusive_owner_agent_id: None,
     }
     .execute_with_db(&mut *tx)
     .await?;

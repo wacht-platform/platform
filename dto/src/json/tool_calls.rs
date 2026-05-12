@@ -445,7 +445,20 @@ pub enum ToolCallRequest {
     UnsubscribeFromTask {
         params: UnsubscribeFromTaskParams,
     },
+    DelegateTask {
+        params: DelegateTaskParams,
+    },
     External(ExternalToolCall),
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct DelegateTaskParams {
+    pub target_lane_thread_id: FlexibleI64,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub capability_tags: Option<Vec<String>>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -493,6 +506,7 @@ impl ToolCallRequest {
             Self::AskUser { .. } => "ask_user",
             Self::SubscribeToTask { .. } => "subscribe_to_task",
             Self::UnsubscribeFromTask { .. } => "unsubscribe_from_task",
+            Self::DelegateTask { .. } => "delegate_task",
             Self::External(call) => call.tool_name.as_str(),
         }
     }
@@ -529,6 +543,7 @@ impl ToolCallRequest {
             Self::AskUser { .. } => Some(InternalToolType::AskUser),
             Self::SubscribeToTask { .. } => Some(InternalToolType::SubscribeToTask),
             Self::UnsubscribeFromTask { .. } => Some(InternalToolType::UnsubscribeFromTask),
+            Self::DelegateTask { .. } => Some(InternalToolType::DelegateTask),
             Self::External(_) => None,
         }
     }
@@ -565,6 +580,7 @@ impl ToolCallRequest {
             Self::AskUser { params, .. } => serde_json::to_value(params),
             Self::SubscribeToTask { params, .. } => serde_json::to_value(params),
             Self::UnsubscribeFromTask { params, .. } => serde_json::to_value(params),
+            Self::DelegateTask { params, .. } => serde_json::to_value(params),
             Self::External(call) => Ok(call.input.clone()),
         }
     }

@@ -126,7 +126,7 @@ where
             id, board_id, task_key, title, description, status,
             assigned_thread_id, metadata, completed_at, archived_at,
             created_at, updated_at, state_version,
-            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts
+            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
         "#,
         stale_before,
     )

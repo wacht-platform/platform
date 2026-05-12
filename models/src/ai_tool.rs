@@ -319,6 +319,7 @@ pub enum InternalToolType {
     AskUser,
     SubscribeToTask,
     UnsubscribeFromTask,
+    DelegateTask,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

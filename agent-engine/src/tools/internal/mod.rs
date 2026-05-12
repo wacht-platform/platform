@@ -71,6 +71,9 @@ impl ToolExecutor {
             ToolCallRequest::UpdateThread { params, .. } => {
                 self.execute_update_thread(tool, params.clone()).await
             }
+            ToolCallRequest::DelegateTask { params, .. } => {
+                self.execute_delegate_task(tool, params.clone()).await
+            }
             ToolCallRequest::TaskGraphAddNode { params, .. } => {
                 self.execute_task_graph_add_node(tool, params.clone()).await
             }

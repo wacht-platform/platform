@@ -245,6 +245,10 @@ pub(super) fn ai_routes() -> Router<AppState> {
                 .post(api::agent_threads::create_project_task_board_item_comment),
         )
         .route(
+            "/ai/actor-projects/{project_id}/board/items/delegate",
+            post(api::agent_threads::delegate_project_task),
+        )
+        .route(
             "/ai/actor-projects/{project_id}/threads",
             get(api::agent_threads::list_agent_threads)
                 .post(api::agent_threads::create_agent_thread),
