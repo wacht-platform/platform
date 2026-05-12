@@ -649,9 +649,27 @@ impl AgentExecutor {
         self.run_hooks(LifecyclePhase::ExecutionStart, serde_json::Value::Null)
             .await;
         let result = self.repl_inner().await;
+        if result.is_err() {
+            if let Err(e) = self.force_thread_idle_on_error_exit().await {
+                tracing::error!(
+                    thread_id = self.ctx.thread_id,
+                    execution_run_id = self.ctx.execution_run_id,
+                    error = ?e,
+                    "failed to mark thread idle on error exit; thread may be stuck running"
+                );
+            }
+        }
         self.run_hooks(LifecyclePhase::ExecutionEnd, serde_json::Value::Null)
             .await;
         result
+    }
+
+    async fn force_thread_idle_on_error_exit(&self) -> Result<(), AppError> {
+        UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
+            .with_execution_state(self.build_execution_state_snapshot(None))
+            .with_status(AgentThreadStatus::Idle)
+            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
+            .await
     }
 
     async fn reconcile_agent_skills(&self) {

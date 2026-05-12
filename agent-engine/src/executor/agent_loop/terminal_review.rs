@@ -26,7 +26,7 @@ pub enum TerminalReviewChoice {
 const CONTINUE_TOOL: &str = "mark_continue";
 const COMPLETE_TOOL: &str = "mark_complete";
 
-const REVIEW_SYSTEM_PROMPT: &str = "\
+const REVIEW_SYSTEM_PROMPT_BASE: &str = "\
 You are an honest reviewer. Read the recent execution history and the agent's most recent text-only response. Decide whether the agent should continue or complete by calling exactly one of the two tools.
 
 Call `mark_continue` ONLY when there is a concrete, retryable failure where the *justification for retrying is clear from the visible history*. Specifically:
@@ -49,6 +49,41 @@ When calling `mark_continue`, `hint` is a 5-12 word observation describing *what
 
 Call exactly one tool. Do not emit any free-form text. Output the function name exactly as defined — do NOT prepend `default_api.` or any other namespace prefix. Ensure all string values in arguments are properly JSON-escaped.";
 
+const ROLE_CONTEXT_CONVERSATION: &str = "\
+\n\nThe agent is a CONVERSATION thread talking to a user. Terminal text IS the user-facing reply — it is by design. Default to complete:\n\
+- A reply to the user, a clarifying question, a status update, a standby (\"I'll keep checking\") — all are valid terminal states; conversations idle and resume when the user replies.\n\
+- Only continue when the agent's own text explicitly promised a tool call it then failed to emit (\"I'll save this\", \"creating the task now\") AND the call is missing from the recent tool history.\n\
+- Do not continue because the answer could be \"more thorough\" or because you'd have phrased it differently.";
+
+const ROLE_CONTEXT_COORDINATOR: &str = "\
+\n\nThe agent is a COORDINATOR thread. Terminal text is an internal log entry, not user-facing. The thread idles between routing events. Default to complete:\n\
+- A routing decision was made and the board reflects it → complete.\n\
+- Only continue when the agent visibly attempted but did not complete a routing transition (created brief but didn't assign, said \"routing to X\" but no assign_project_task call followed).\n\
+- Do not continue because the brief could be more detailed or because a different routing would be \"better\" — coordinators commit and move on.";
+
+const ROLE_CONTEXT_EXECUTOR: &str = "\
+\n\nThe agent is an EXECUTOR (service) thread working a single assignment. Terminal text is an internal log. Default to complete:\n\
+- Slice deliverable was produced and journaled → complete.\n\
+- Agent called abort_task → complete (it's already escalating).\n\
+- Only continue when the agent explicitly promised a tool call it didn't emit (\"writing journal entry\", \"saving the artifact\") AND that call is missing.\n\
+- Do not continue because the journal could be richer or because the slice could be more thorough — reviewers catch quality; you catch missed mechanics.";
+
+const ROLE_CONTEXT_REVIEWER: &str = "\
+\n\nThe agent is a REVIEWER thread judging executor work. Terminal text states accept/revise/reject. Default to complete:\n\
+- A decision was stated and journaled → complete.\n\
+- Only continue when the agent claimed to verify a criterion but the corresponding verification tool call is missing from history.\n\
+- Do not continue to second-guess the verdict — the coordinator handles disagreement.";
+
+fn role_context(role: crate::executor::project::status_machine::ThreadRole) -> &'static str {
+    use crate::executor::project::status_machine::ThreadRole;
+    match role {
+        ThreadRole::Conversation => ROLE_CONTEXT_CONVERSATION,
+        ThreadRole::Coordinator => ROLE_CONTEXT_COORDINATOR,
+        ThreadRole::Executor => ROLE_CONTEXT_EXECUTOR,
+        ThreadRole::Reviewer => ROLE_CONTEXT_REVIEWER,
+    }
+}
+
 const REVIEW_HISTORY_LIMIT: usize = 40;
 
 impl AgentExecutor {
@@ -59,6 +94,11 @@ impl AgentExecutor {
         const MAX_REVIEW_ATTEMPTS: usize = 2;
         let history = self.build_terminal_review_messages(prior_text);
         let tools = review_tools();
+        let system_prompt = format!(
+            "{}{}",
+            REVIEW_SYSTEM_PROMPT_BASE,
+            role_context(self.current_thread_role())
+        );
 
         let mut last_error: Option<AppError> = None;
         for attempt in 1..=MAX_REVIEW_ATTEMPTS {
@@ -69,7 +109,7 @@ impl AgentExecutor {
                 reasoning_effort: None,
             };
             let mut request = SemanticLlmRequest::from_config(
-                REVIEW_SYSTEM_PROMPT.to_string(),
+                system_prompt.clone(),
                 history.clone(),
                 config,
             );
