@@ -10,6 +10,7 @@ use dto::json::session_ticket::CreateSessionTicketRequest;
 pub struct CreateSessionTicketResponse {
     pub ticket: String,
     pub expires_at: i64,
+    pub url: String,
 }
 
 /// Console: actor_id is always the deployment_id regardless of what the caller sends.
@@ -25,6 +26,7 @@ pub async fn create_session_ticket(
     Ok(CreateSessionTicketResponse {
         ticket: resp.ticket,
         expires_at: resp.expires_at,
+        url: resp.url,
     }
     .into())
 }
@@ -41,6 +43,7 @@ pub async fn create_backend_session_ticket(
     Ok(CreateSessionTicketResponse {
         ticket: resp.ticket,
         expires_at: resp.expires_at,
+        url: resp.url,
     }
     .into())
 }

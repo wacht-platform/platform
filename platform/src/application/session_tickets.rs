@@ -1,10 +1,38 @@
 use commands::session_ticket::{AgentSessionIdentifier, SessionTicketType};
 use commands::{CreateActorCommand, GenerateSessionTicketCommand};
 use dto::json::session_ticket::{AgentSessionIdentifierDto, CreateSessionTicketRequest};
-use queries::GetActorByIdQuery;
+use queries::{GetActorByIdQuery, GetDeploymentWithSettingsQuery};
 
 use crate::application::{AppError, AppState};
-use common::deps;
+use common::{db_router::ReadConsistency, deps};
+
+pub struct CreatedSessionTicket {
+    pub ticket: String,
+    pub expires_at: i64,
+    pub url: String,
+}
+
+fn vanity_url(
+    ticket_type: &SessionTicketType,
+    ticket: &str,
+    backend_host: &str,
+    frontend_host: &str,
+) -> String {
+    match ticket_type {
+        SessionTicketType::AgentAccess => {
+            format!("https://{backend_host}/vanity/agents?ticket={ticket}")
+        }
+        SessionTicketType::ApiAuthAccess => {
+            format!("https://{backend_host}/vanity/api-auth?ticket={ticket}")
+        }
+        SessionTicketType::WebhookAppAccess => {
+            format!("https://{backend_host}/vanity/webhook?ticket={ticket}")
+        }
+        SessionTicketType::Impersonation => {
+            format!("https://{frontend_host}/sign-in?ticket={ticket}")
+        }
+    }
+}
 
 const DEBUG_ACTOR_SUBJECT_TYPE: &str = "debug_actor";
 
@@ -214,7 +242,7 @@ pub async fn create_session_ticket(
     mut request: CreateSessionTicketRequest,
     always_use_deployment_id: bool,
     auto_create_actor: bool,
-) -> Result<commands::session_ticket::GenerateSessionTicketResponse, AppError> {
+) -> Result<CreatedSessionTicket, AppError> {
     let session_deps = deps::from_app(app_state).redis().id();
     let ticket_type = parse_ticket_type(&request.ticket_type)?;
     let command_deployment_id = if always_use_deployment_id {
@@ -251,5 +279,22 @@ pub async fn create_session_ticket(
         command = command.expires_in(expires_in);
     }
 
-    command.build()?.execute_with_deps(&session_deps).await
+    let generated = command.build()?.execute_with_deps(&session_deps).await?;
+
+    let deployment = GetDeploymentWithSettingsQuery::new(deployment_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
+        .await?;
+
+    let url = vanity_url(
+        &ticket_type,
+        &generated.ticket,
+        &deployment.backend_host,
+        &deployment.frontend_host,
+    );
+
+    Ok(CreatedSessionTicket {
+        ticket: generated.ticket,
+        expires_at: generated.expires_at,
+        url,
+    })
 }
