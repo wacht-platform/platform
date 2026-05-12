@@ -7,7 +7,8 @@ use serde_json::{json, Value};
 
 impl AgentExecutor {
     pub(super) fn sanitize_user_facing_message(raw: &str, fallback: &str) -> String {
-        let cleaned = raw.trim();
+        let stripped = Self::strip_leading_time_prefix(raw);
+        let cleaned = stripped.trim();
         if cleaned.is_empty() {
             return fallback.to_string();
         }
@@ -19,6 +20,57 @@ impl AgentExecutor {
         }
 
         cleaned.to_string()
+    }
+
+    fn strip_leading_time_prefix(text: &str) -> &str {
+        let trimmed = text.trim_start();
+        if !trimmed.starts_with('[') {
+            return text;
+        }
+        let close = match trimmed[1..].find(']') {
+            Some(idx) => idx + 1,
+            None => return text,
+        };
+        if close > 60 {
+            return text;
+        }
+        let inner = trimmed[1..close].trim();
+        if !Self::looks_like_time_token(inner) {
+            return text;
+        }
+        let after = &trimmed[close + 1..];
+        after.trim_start()
+    }
+
+    fn looks_like_time_token(s: &str) -> bool {
+        if s == "just now" {
+            return true;
+        }
+        if let Some(rest) = s.strip_prefix("in ") {
+            return Self::is_time_unit_token(rest);
+        }
+        if let Some(rest) = s.strip_suffix(" ago") {
+            return Self::is_time_unit_token(rest);
+        }
+        let bytes = s.as_bytes();
+        bytes.len() >= 10
+            && bytes[0..4].iter().all(|b| b.is_ascii_digit())
+            && bytes[4] == b'-'
+            && bytes[5..7].iter().all(|b| b.is_ascii_digit())
+            && bytes[7] == b'-'
+    }
+
+    fn is_time_unit_token(s: &str) -> bool {
+        if s.is_empty() {
+            return false;
+        }
+        let bytes = s.as_bytes();
+        let last = bytes[bytes.len() - 1];
+        if !matches!(last, b's' | b'm' | b'h' | b'd') {
+            return false;
+        }
+        let digits = &bytes[..bytes.len() - 1];
+        !digits.is_empty() && digits.iter().all(|b| b.is_ascii_digit())
     }
 
     pub(super) fn looks_like_hallucinated_tool_render(text: &str) -> bool {
@@ -100,14 +152,7 @@ impl AgentExecutor {
             "success"
         };
 
-        let mut data = result.cloned().unwrap_or(serde_json::Value::Null);
-        let structure_hint = data
-            .get("structure_hint")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        if let Some(obj) = data.as_object_mut() {
-            obj.remove("structure_hint");
-        }
+        let data = result.cloned().unwrap_or(serde_json::Value::Null);
         let truncated = result
             .and_then(|r| r.get("truncated"))
             .and_then(|v| v.as_bool())
@@ -137,7 +182,6 @@ impl AgentExecutor {
             "data": data,
             "meta": {
                 "truncated": truncated,
-                "structure_hint": structure_hint,
                 "size_bytes": size_bytes,
                 "saved_output_path": saved_output_path,
                 "generated_at": chrono::Utc::now().to_rfc3339(),

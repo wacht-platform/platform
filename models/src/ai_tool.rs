@@ -320,6 +320,7 @@ pub enum InternalToolType {
     SubscribeToTask,
     UnsubscribeFromTask,
     DelegateTask,
+    GetProjectTask,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

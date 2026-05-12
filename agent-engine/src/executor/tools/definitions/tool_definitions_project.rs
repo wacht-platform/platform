@@ -139,7 +139,23 @@ pub(crate) fn project_tools() -> Vec<(
             InternalToolType::DelegateTask,
             delegate_task_schema(),
         ),
+        (
+            "get_project_task",
+            "Get the current status, schedule, and most recent assignment outcome for a project task on this project's board. Use this as the authoritative source for \"is the task running?\", \"when does it next fire?\", \"did the last run succeed?\" — never infer task state from filesystem listings. For recurring tasks, returns the schedule's next_run_at and last_fired_at so you can answer recency questions accurately.",
+            InternalToolType::GetProjectTask,
+            get_project_task_schema(),
+        ),
     ]
+}
+
+pub fn get_project_task_schema() -> Vec<SchemaField> {
+    vec![SchemaField {
+        name: "task_key".to_string(),
+        field_type: "STRING".to_string(),
+        description: Some("Existing task key, e.g. `TASK-123456789`.".to_string()),
+        required: true,
+        ..Default::default()
+    }]
 }
 
 pub fn delegate_task_schema() -> Vec<SchemaField> {

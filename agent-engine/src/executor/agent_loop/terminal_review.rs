@@ -163,7 +163,10 @@ impl AgentExecutor {
     }
 
     fn build_terminal_review_messages(&self, prior_text: &str) -> Vec<SemanticLlmMessage> {
+        use crate::executor::context::conversation::format_relative_time_rfc3339;
+
         let mut entries: Vec<SemanticLlmMessage> = Vec::new();
+        let now = chrono::Utc::now();
         let conversations = self
             .conversations
             .iter()
@@ -172,17 +175,18 @@ impl AgentExecutor {
             .collect::<Vec<_>>();
 
         for conv in conversations.into_iter().rev() {
+            let ago = format_relative_time_rfc3339(&conv.created_at.to_rfc3339(), now);
             match &conv.content {
                 ConversationContent::UserMessage { message, .. } => {
                     entries.push(SemanticLlmMessage::text(
                         "user",
-                        &format!("USER: {message}"),
+                        &format!("[{ago}] USER: {message}"),
                     ));
                 }
                 ConversationContent::Steer { message, .. } => {
                     entries.push(SemanticLlmMessage::text(
                         "user",
-                        &format!("AGENT_TEXT: {message}"),
+                        &format!("[{ago}] AGENT_TEXT: {message}"),
                     ));
                 }
                 ConversationContent::ToolResult {
@@ -197,23 +201,32 @@ impl AgentExecutor {
                         .unwrap_or_default();
                     entries.push(SemanticLlmMessage::text(
                         "user",
-                        &format!("TOOL: {tool_name} status={status}{error_part}"),
+                        &format!("[{ago}] TOOL: {tool_name} status={status}{error_part}"),
                     ));
                 }
                 ConversationContent::ClarificationRequest { .. } => {
                     entries.push(SemanticLlmMessage::text(
                         "user",
-                        "AGENT_ASKED_USER_QUESTION",
+                        &format!("[{ago}] AGENT_ASKED_USER_QUESTION"),
                     ));
                 }
                 ConversationContent::ClarificationResponse { .. } => {
-                    entries.push(SemanticLlmMessage::text("user", "USER_ANSWERED_QUESTION"));
+                    entries.push(SemanticLlmMessage::text(
+                        "user",
+                        &format!("[{ago}] USER_ANSWERED_QUESTION"),
+                    ));
                 }
                 ConversationContent::ApprovalRequest { .. } => {
-                    entries.push(SemanticLlmMessage::text("user", "AGENT_REQUESTED_APPROVAL"));
+                    entries.push(SemanticLlmMessage::text(
+                        "user",
+                        &format!("[{ago}] AGENT_REQUESTED_APPROVAL"),
+                    ));
                 }
                 ConversationContent::ApprovalResponse { .. } => {
-                    entries.push(SemanticLlmMessage::text("user", "USER_RESPONDED_APPROVAL"));
+                    entries.push(SemanticLlmMessage::text(
+                        "user",
+                        &format!("[{ago}] USER_RESPONDED_APPROVAL"),
+                    ));
                 }
                 _ => {}
             }
@@ -221,7 +234,7 @@ impl AgentExecutor {
 
         entries.push(SemanticLlmMessage::text(
             "user",
-            &format!("LATEST_AGENT_TEXT_ONLY: {prior_text}"),
+            &format!("[just now] LATEST_AGENT_TEXT_ONLY: {prior_text}"),
         ));
         entries.push(SemanticLlmMessage::text(
             "user",

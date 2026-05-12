@@ -40,6 +40,8 @@ Specific query wins. "oauth refresh token rotation" beats "auth".
 
 ## Entry format
 
+This format is for the **content you pass to `save_memory`**, not for turn output. Never emit `Why:` / `How to apply:` as labels in your conversational reply — they belong inside saved memory entries only.
+
 Three parts in order:
 
 1. Fact or procedure — one line, readable outside this thread.

@@ -448,7 +448,15 @@ pub enum ToolCallRequest {
     DelegateTask {
         params: DelegateTaskParams,
     },
+    GetProjectTask {
+        params: GetProjectTaskParams,
+    },
     External(ExternalToolCall),
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct GetProjectTaskParams {
+    pub task_key: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -507,6 +515,7 @@ impl ToolCallRequest {
             Self::SubscribeToTask { .. } => "subscribe_to_task",
             Self::UnsubscribeFromTask { .. } => "unsubscribe_from_task",
             Self::DelegateTask { .. } => "delegate_task",
+            Self::GetProjectTask { .. } => "get_project_task",
             Self::External(call) => call.tool_name.as_str(),
         }
     }
@@ -544,6 +553,7 @@ impl ToolCallRequest {
             Self::SubscribeToTask { .. } => Some(InternalToolType::SubscribeToTask),
             Self::UnsubscribeFromTask { .. } => Some(InternalToolType::UnsubscribeFromTask),
             Self::DelegateTask { .. } => Some(InternalToolType::DelegateTask),
+            Self::GetProjectTask { .. } => Some(InternalToolType::GetProjectTask),
             Self::External(_) => None,
         }
     }
@@ -581,6 +591,7 @@ impl ToolCallRequest {
             Self::SubscribeToTask { params, .. } => serde_json::to_value(params),
             Self::UnsubscribeFromTask { params, .. } => serde_json::to_value(params),
             Self::DelegateTask { params, .. } => serde_json::to_value(params),
+            Self::GetProjectTask { params, .. } => serde_json::to_value(params),
             Self::External(call) => Ok(call.input.clone()),
         }
     }

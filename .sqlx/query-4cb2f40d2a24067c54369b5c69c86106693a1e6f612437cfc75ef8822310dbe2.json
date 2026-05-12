@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT deployment_id, thread_id, board_item_id, event_kinds,\n                   created_at, updated_at\n            FROM agent_thread_task_subscriptions\n            WHERE board_item_id = $1\n              AND event_kinds @> to_jsonb($2::text)\n            ",
+  "query": "\n            SELECT s.deployment_id, s.thread_id, s.board_item_id, s.event_kinds,\n                   s.created_at, s.updated_at\n            FROM agent_thread_task_subscriptions s\n            LEFT JOIN project_task_board_items current ON current.id = $1\n            LEFT JOIN project_task_board_items subscribed ON subscribed.id = s.board_item_id\n            WHERE s.event_kinds @> to_jsonb($2::text)\n              AND (\n                s.board_item_id = $1\n                OR (current.schedule_id IS NOT NULL\n                    AND subscribed.schedule_id = current.schedule_id)\n              )\n            ",
   "describe": {
     "columns": [
       {
@@ -49,5 +49,5 @@
       false
     ]
   },
-  "hash": "20429766e4c16ee7d6cd59d35f3a9547af0d1f9998b179e42a65876dde94e465"
+  "hash": "4cb2f40d2a24067c54369b5c69c86106693a1e6f612437cfc75ef8822310dbe2"
 }

@@ -78,11 +78,17 @@ impl ListSubscribersForBoardItemQuery {
     {
         let rows = sqlx::query!(
             r#"
-            SELECT deployment_id, thread_id, board_item_id, event_kinds,
-                   created_at, updated_at
-            FROM agent_thread_task_subscriptions
-            WHERE board_item_id = $1
-              AND event_kinds @> to_jsonb($2::text)
+            SELECT s.deployment_id, s.thread_id, s.board_item_id, s.event_kinds,
+                   s.created_at, s.updated_at
+            FROM agent_thread_task_subscriptions s
+            LEFT JOIN project_task_board_items current ON current.id = $1
+            LEFT JOIN project_task_board_items subscribed ON subscribed.id = s.board_item_id
+            WHERE s.event_kinds @> to_jsonb($2::text)
+              AND (
+                s.board_item_id = $1
+                OR (current.schedule_id IS NOT NULL
+                    AND subscribed.schedule_id = current.schedule_id)
+              )
             "#,
             self.board_item_id,
             self.event_kind,

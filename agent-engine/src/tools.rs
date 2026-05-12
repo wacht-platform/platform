@@ -31,6 +31,23 @@ const COMPLEXITY_MAX_DEPTH: usize = 4;
 const COMPLEXITY_MAX_LEAVES: usize = 150;
 const COMPLEXITY_MAX_OBJECT_ARRAY_LEN: usize = 20;
 
+fn compute_shape_hint(value: &Value) -> String {
+    if let Some(obj) = value.as_object() {
+        for key in ["data", "result", "stdout"] {
+            if let Some(s) = obj.get(key).and_then(|v| v.as_str()) {
+                if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+                    return format!(
+                        "(key '{}' contains parsed JSON) {}",
+                        key,
+                        result_shape::infer_schema_hint(&parsed)
+                    );
+                }
+            }
+        }
+    }
+    result_shape::infer_schema_hint(value)
+}
+
 impl ToolExecutor {
     pub fn new(
         ctx: std::sync::Arc<crate::runtime::thread_execution_context::ThreadExecutionContext>,
@@ -159,30 +176,7 @@ impl ToolExecutor {
         mut final_result: Value,
         filesystem: &AgentFilesystem,
     ) -> Result<Value, AppError> {
-        if final_result.is_object() && final_result.get("structure_hint").is_none() {
-            let mut special_hint = None;
-            for key in ["data", "result", "stdout"] {
-                if let Some(val) = final_result.get(key) {
-                    if let Some(s) = val.as_str() {
-                        if let Ok(parsed) = serde_json::from_str::<Value>(s) {
-                            special_hint = Some(format!(
-                                "(key '{}' contains parsed JSON) {}",
-                                key,
-                                result_shape::infer_schema_hint(&parsed)
-                            ));
-                            break;
-                        }
-                    }
-                }
-            }
-
-            let hint =
-                special_hint.unwrap_or_else(|| result_shape::infer_schema_hint(&final_result));
-
-            if let Some(obj) = final_result.as_object_mut() {
-                obj.insert("structure_hint".to_string(), serde_json::json!(hint));
-            }
-        }
+        let hint = compute_shape_hint(&final_result);
 
         let result_str = serde_json::to_string_pretty(&final_result)?;
         let char_count = result_str.chars().count();
@@ -215,12 +209,6 @@ impl ToolExecutor {
         let size_bytes = result_str.len();
 
         if char_count > threshold || too_complex_for_inline {
-            let structure_hint = final_result
-                .get("structure_hint")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string();
-
             let reason = if char_count > threshold {
                 format!("Output is larger than {} chars", threshold)
             } else {
@@ -233,7 +221,7 @@ impl ToolExecutor {
             return Ok(serde_json::json!({
                 "truncated": true,
                 "data_omitted": true,
-                "structure_hint": structure_hint,
+                "saved_output_shape": hint,
                 "original_stats": {
                     "size_bytes": size_bytes,
                     "lines": lines,
@@ -264,6 +252,7 @@ impl ToolExecutor {
                     "saved_output_path".to_string(),
                     serde_json::json!(scratch_path),
                 );
+                obj.insert("saved_output_shape".to_string(), serde_json::json!(hint));
             } else if let Some(error) = scratch_write_error.as_ref() {
                 obj.insert("persistence_error".to_string(), serde_json::json!(error));
             }
@@ -277,6 +266,7 @@ impl ToolExecutor {
                         "saved_output_path".to_string(),
                         serde_json::json!(scratch_path),
                     );
+                    obj.insert("saved_output_shape".to_string(), serde_json::json!(hint));
                 } else if let Some(error) = scratch_write_error.as_ref() {
                     obj.insert("persistence_error".to_string(), serde_json::json!(error));
                 }

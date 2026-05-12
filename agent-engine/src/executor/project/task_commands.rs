@@ -2,7 +2,7 @@ use super::core::AgentExecutor;
 
 use common::error::AppError;
 use dto::json::agent_executor::{
-    AssignProjectTaskParams, CreateProjectTaskParams, SubscribeToTaskParams,
+    AssignProjectTaskParams, CreateProjectTaskParams, GetProjectTaskParams, SubscribeToTaskParams,
     UnsubscribeFromTaskParams, UpdateProjectTaskParams,
 };
 use dto::json::ProjectTaskScheduleParams;
@@ -452,6 +452,112 @@ impl AgentExecutor {
             "task_key": task_key,
             "board_item_id": board_item.id.to_string(),
             "removed": removed,
+        }))
+    }
+
+    pub(crate) async fn handle_get_project_task(
+        &mut self,
+        params: GetProjectTaskParams,
+    ) -> Result<Value, AppError> {
+        let task_key = params.task_key.trim().to_string();
+        if task_key.is_empty() {
+            return Err(AppError::BadRequest(
+                "get_project_task requires a task_key".to_string(),
+            ));
+        }
+
+        let board_id = self.ensure_project_task_board_id().await?;
+        let reader = self
+            .ctx
+            .app_state
+            .db_router
+            .reader(common::ReadConsistency::Strong);
+        let board_item = queries::GetProjectTaskBoardItemByTaskKeyQuery::new(board_id, &task_key)
+            .execute_with_db(reader)
+            .await?
+            .ok_or_else(|| {
+                AppError::BadRequest(format!("Task `{task_key}` not found on this project board"))
+            })?;
+
+        let schedule = if let Some(sid) = board_item.schedule_id {
+            queries::GetProjectTaskScheduleByIdQuery::new(sid)
+                .execute_with_db(
+                    self.ctx
+                        .app_state
+                        .db_router
+                        .reader(common::ReadConsistency::Strong),
+                )
+                .await?
+        } else {
+            None
+        };
+
+        let assignments = queries::ListProjectTaskBoardItemAssignmentsQuery::new(board_item.id)
+            .execute_with_db(
+                self.ctx
+                    .app_state
+                    .db_router
+                    .reader(common::ReadConsistency::Strong),
+            )
+            .await?;
+        let latest_assignment = assignments.into_iter().max_by_key(|a| a.updated_at);
+
+        let subscription = queries::GetAgentThreadTaskSubscriptionQuery::new(
+            self.ctx.thread_id,
+            board_item.id,
+        )
+        .execute_with_db(
+            self.ctx
+                .app_state
+                .db_router
+                .reader(common::ReadConsistency::Strong),
+        )
+        .await?;
+
+        let schedule_json = schedule.as_ref().map(|s| {
+            serde_json::json!({
+                "kind": s.schedule_kind,
+                "interval_seconds": s.interval_seconds,
+                "next_run_at": s.next_run_at.to_rfc3339(),
+                "last_fired_at": s.last_fired_at.map(|t| t.to_rfc3339()),
+                "overlap_policy": s.overlap_policy,
+            })
+        });
+
+        let latest_assignment_json = latest_assignment.as_ref().map(|a| {
+            serde_json::json!({
+                "status": a.status,
+                "role": a.assignment_role,
+                "thread_id": a.thread_id.to_string(),
+                "result_status": a.result_status,
+                "result_summary": a.result_summary,
+                "updated_at": a.updated_at.to_rfc3339(),
+            })
+        });
+
+        let subscribed_event_kinds = subscription
+            .as_ref()
+            .map(|s| s.event_kinds.iter().map(|k| k.as_str()).collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        Ok(serde_json::json!({
+            "success": true,
+            "tool": "get_project_task",
+            "task_key": board_item.task_key,
+            "title": board_item.title,
+            "description": board_item.description,
+            "status": board_item.status,
+            "board_item_id": board_item.id.to_string(),
+            "is_recurring": board_item.schedule_id.is_some(),
+            "schedule": schedule_json,
+            "fired_at": board_item.fired_at.map(|t| t.to_rfc3339()),
+            "completed_at": board_item.completed_at.map(|t| t.to_rfc3339()),
+            "created_at": board_item.created_at.to_rfc3339(),
+            "updated_at": board_item.updated_at.to_rfc3339(),
+            "latest_assignment": latest_assignment_json,
+            "subscribed": subscription.is_some(),
+            "subscribed_event_kinds": subscribed_event_kinds,
+            "project_workspace_path": format!("/project_workspace/tasks/{}", board_item.task_key),
         }))
     }
 

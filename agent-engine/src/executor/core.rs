@@ -357,6 +357,7 @@ impl AgentExecutorBuilder {
                     | "create_project_task"
                     | "update_project_task"
                     | "assign_project_task"
+                    | "get_project_task"
                     | "read_file"
                     | "write_file"
                     | "append_file"

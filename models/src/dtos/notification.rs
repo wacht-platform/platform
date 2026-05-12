@@ -5,9 +5,13 @@ use serde_json::Value as JsonValue;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateNotificationRequest {
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub user_id: Option<i64>,
+    #[serde(default, with = "crate::utils::serde::option_vec_i64_as_string")]
     pub user_ids: Option<Vec<i64>>,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub organization_id: Option<i64>,
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
     pub workspace_id: Option<i64>,
     pub title: String,
     pub body: String,

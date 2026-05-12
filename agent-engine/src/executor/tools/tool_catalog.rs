@@ -390,6 +390,9 @@ impl AgentExecutor {
                 models::InternalToolType::DelegateTask => Ok(ToolCallRequest::DelegateTask {
                     params: Self::parse_tool_params("delegate_task", normalized_input)?,
                 }),
+                models::InternalToolType::GetProjectTask => Ok(ToolCallRequest::GetProjectTask {
+                    params: Self::parse_tool_params("get_project_task", normalized_input)?,
+                }),
                 models::InternalToolType::AppendTaskJournal => Err(AppError::BadRequest(
                     "append_task_journal is not exposed in the runtime".to_string(),
                 )),
