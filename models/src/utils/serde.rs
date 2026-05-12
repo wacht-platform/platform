@@ -1,5 +1,47 @@
+use std::fmt;
+
+use serde::de::{self, Deserializer, Unexpected, Visitor};
+
+/// Accepts a JSON integer (number) or string and returns `i64`. Used by all
+/// `i64_as_string*` deserializers so the same struct can read old rows where
+/// the column stored a raw integer, or new payloads where it serialized as a
+/// string. Serialization is always string.
+fn deserialize_i64_lenient<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct I64OrString;
+
+    impl<'de> Visitor<'de> for I64OrString {
+        type Value = i64;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("an integer or a string containing an integer")
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+            Ok(v)
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+            i64::try_from(v).map_err(|_| E::invalid_value(Unexpected::Unsigned(v), &self))
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            v.parse::<i64>()
+                .map_err(|_| E::invalid_value(Unexpected::Str(v), &self))
+        }
+
+        fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
+            self.visit_str(&v)
+        }
+    }
+
+    deserializer.deserialize_any(I64OrString)
+}
+
 pub mod i64_as_string {
-    use serde::{Deserialize, Deserializer, Serializer};
+    use serde::{Deserializer, Serializer};
 
     pub fn serialize<S>(value: &i64, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -12,8 +54,7 @@ pub mod i64_as_string {
     where
         D: Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        Ok(s.parse::<i64>().map_err(serde::de::Error::custom)?)
+        super::deserialize_i64_lenient(deserializer)
     }
 }
 
@@ -36,10 +77,21 @@ pub mod i64_as_string_option {
     where
         D: Deserializer<'de>,
     {
-        let opt = Option::<String>::deserialize(deserializer)?;
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Either {
+            Number(i64),
+            String(String),
+        }
+
+        let opt = Option::<Either>::deserialize(deserializer)?;
         match opt {
-            Some(s) => s.parse::<i64>().map(Some).map_err(serde::de::Error::custom),
             None => Ok(None),
+            Some(Either::Number(n)) => Ok(Some(n)),
+            Some(Either::String(s)) => s
+                .parse::<i64>()
+                .map(Some)
+                .map_err(serde::de::Error::custom),
         }
     }
 }
@@ -59,10 +111,20 @@ pub mod vec_i64_as_string {
     where
         D: Deserializer<'de>,
     {
-        let string_vec = Vec::<String>::deserialize(deserializer)?;
-        string_vec
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Either {
+            Number(i64),
+            String(String),
+        }
+
+        let items = Vec::<Either>::deserialize(deserializer)?;
+        items
             .into_iter()
-            .map(|s| s.parse::<i64>().map_err(serde::de::Error::custom))
+            .map(|item| match item {
+                Either::Number(n) => Ok(n),
+                Either::String(s) => s.parse::<i64>().map_err(serde::de::Error::custom),
+            })
             .collect()
     }
 }
@@ -87,16 +149,24 @@ pub mod option_vec_i64_as_string {
     where
         D: Deserializer<'de>,
     {
-        let opt = Option::<Vec<String>>::deserialize(deserializer)?;
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Either {
+            Number(i64),
+            String(String),
+        }
+
+        let opt = Option::<Vec<Either>>::deserialize(deserializer)?;
         match opt {
-            Some(string_vec) => {
-                let result: Result<Vec<i64>, _> = string_vec
-                    .into_iter()
-                    .map(|s| s.parse::<i64>().map_err(serde::de::Error::custom))
-                    .collect();
-                result.map(Some)
-            }
             None => Ok(None),
+            Some(items) => items
+                .into_iter()
+                .map(|item| match item {
+                    Either::Number(n) => Ok(n),
+                    Either::String(s) => s.parse::<i64>().map_err(serde::de::Error::custom),
+                })
+                .collect::<Result<Vec<i64>, _>>()
+                .map(Some),
         }
     }
 }
