@@ -1,5 +1,9 @@
 use super::*;
 
+fn is_oidc_standard_scope(scope: &str) -> bool {
+    matches!(scope, "openid" | "profile" | "email" | "offline_access")
+}
+
 pub struct CreateOAuthClientGrantCommand {
     pub grant_id: Option<i64>,
     pub deployment_id: i64,
@@ -102,11 +106,11 @@ impl CreateOAuthClientGrantCommand {
                     NOW(),
                     NOW()
                 FROM client
-                WHERE jsonb_array_length((SELECT supported_scopes FROM client)) > 0
-                  AND NOT EXISTS (
+                WHERE NOT EXISTS (
                     SELECT 1
                     FROM jsonb_array_elements_text($6::jsonb) req(scope)
                     WHERE NOT ((SELECT supported_scopes FROM client) ? req.scope)
+                      AND req.scope NOT IN ('openid', 'profile', 'email', 'offline_access')
                   )
                 RETURNING id
             )
@@ -132,16 +136,12 @@ impl CreateOAuthClientGrantCommand {
         }
 
         let supported_scopes: Vec<String> = json_default(row.supported_scopes);
-        if supported_scopes.is_empty() {
-            return Err(AppError::Validation(
-                "OAuth app has no supported scopes configured".to_string(),
-            ));
-        }
-
         let invalid_scopes: Vec<String> = self
             .scopes
             .iter()
-            .filter(|scope| !supported_scopes.iter().any(|s| s == *scope))
+            .filter(|scope| {
+                !is_oidc_standard_scope(scope) && !supported_scopes.iter().any(|s| s == *scope)
+            })
             .cloned()
             .collect();
         if !invalid_scopes.is_empty() {
