@@ -68,16 +68,115 @@ pub async fn oauth_consent_submit(
                 .execute_with_db(app_state.db_router.writer())
                 .await?;
 
-            let oauth_grant_id = ensure_or_create_grant_coverage(
-                app_state,
-                claims.deployment_id,
-                claims.oauth_client_id,
-                app_slug.clone(),
-                approved_scopes.clone(),
-                selected_resource.clone(),
-                request.user_id,
-            )
-            .await?;
+            // OIDC `prompt=none`: don't create a new grant if one doesn't
+            // already cover the request — that would silently auto-consent on
+            // a no-UI request, which violates the spec. Lookup-only, redirect
+            // with `error=consent_required` on miss so the RP can prompt
+            // explicitly via a follow-up /authorize without prompt=none.
+            let prompt_none = claims
+                .prompt
+                .as_deref()
+                .map(|p| p.split_whitespace().any(|t| t == "none"))
+                .unwrap_or(false);
+
+            let oauth_grant_id = if prompt_none {
+                let coverage = find_existing_grant_coverage(
+                    app_state,
+                    claims.deployment_id,
+                    claims.oauth_client_id,
+                    app_slug.clone(),
+                    approved_scopes.clone(),
+                    selected_resource.clone(),
+                )
+                .await?;
+                match coverage {
+                    Some(id) => id,
+                    None => {
+                        let redirect_uri = build_consent_redirect_uri(
+                            claims.redirect_uri,
+                            claims.state,
+                            &issuer,
+                            &[
+                                ("error", "consent_required".to_string()),
+                                (
+                                    "error_description",
+                                    "No existing consent covers the requested scopes".to_string(),
+                                ),
+                            ],
+                        );
+                        return Ok(Redirect::to(&redirect_uri));
+                    }
+                }
+            } else {
+                ensure_or_create_grant_coverage(
+                    app_state,
+                    claims.deployment_id,
+                    claims.oauth_client_id,
+                    app_slug.clone(),
+                    approved_scopes.clone(),
+                    selected_resource.clone(),
+                    request.user_id,
+                )
+                .await?
+            };
+
+            // Session resolution order: consent-token claim → frontend-api
+            // payload → most-recently-active session lookup (legacy fallback).
+            let session_id = if claims.session_id.is_some() {
+                claims.session_id
+            } else if request.session_id.is_some() {
+                request.session_id
+            } else {
+                queries::GetActiveSessionForUserQuery::new(
+                    claims.deployment_id,
+                    request.user_id,
+                )
+                .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
+                .await?
+            };
+
+            // OIDC `auth_time` per spec is the End-User authentication moment
+            // (signins.created_at), not the /authorize timestamp.
+            let auth_time = if let Some(sid) = session_id {
+                queries::GetSigninAuthTimeQuery::new(sid, request.user_id)
+                    .execute_with_db(
+                        app_state.db_router.reader(ReadConsistency::Strong),
+                    )
+                    .await?
+                    .or(claims.auth_time)
+            } else {
+                claims.auth_time
+            };
+
+            // OIDC `max_age` enforcement: refuse to issue a code when the
+            // user's last authentication is older than the RP asked for.
+            // The frontend would ideally re-auth the user first, but until
+            // that's wired up we bail here with a redirect-style error so
+            // the RP can decide to send the user back through /authorize.
+            if let Some(max_age) = claims.max_age
+                && let Some(authenticated_at) = auth_time
+            {
+                let elapsed = chrono::Utc::now()
+                    .signed_duration_since(authenticated_at)
+                    .num_seconds();
+                if elapsed > max_age {
+                    let redirect_uri = build_consent_redirect_uri(
+                        claims.redirect_uri,
+                        claims.state,
+                        &issuer,
+                        &[
+                            ("error", "login_required".to_string()),
+                            (
+                                "error_description",
+                                format!(
+                                    "End-User authentication is older than max_age={max_age}s (elapsed {elapsed}s)"
+                                ),
+                            ),
+                        ],
+                    );
+                    return Ok(Redirect::to(&redirect_uri));
+                }
+            }
 
             let issued = IssueOAuthAuthorizationCode {
                 code_id: Some(
@@ -96,6 +195,9 @@ pub async fn oauth_consent_submit(
                 scopes: approved_scopes,
                 resource: claims.resource,
                 granted_resource: Some(selected_resource),
+                nonce: claims.nonce.clone(),
+                auth_time,
+                session_id,
             }
             .execute_with_db(app_state.db_router.writer())
             .await?;
@@ -161,12 +263,23 @@ async fn authorize_impl(
             .into());
     }
     validate_public_client_pkce(&client.client_auth_method, &request)?;
+    validate_oidc_authorize_params(&request)?;
 
     let final_scopes = parse_scope_string(request.scope.as_deref());
     let active_scopes = oauth_app.active_scopes();
     let unsupported_scopes: Vec<String> = final_scopes
         .iter()
-        .filter(|scope| !active_scopes.iter().any(|s| s == *scope))
+        .filter(|scope| {
+            // OIDC standard scopes are spec-defined and claims-driven, not
+            // permission-driven, so they're implicitly supported on every
+            // OAuth app regardless of the operator's scope catalog. This
+            // mirrors what /.well-known/openid-configuration already
+            // advertises and avoids a discovery-vs-authorize contradiction.
+            if is_oidc_standard_scope(scope) {
+                return false;
+            }
+            !active_scopes.iter().any(|s| s == *scope)
+        })
         .cloned()
         .collect();
     if !unsupported_scopes.is_empty() {
@@ -211,6 +324,19 @@ async fn authorize_impl(
         state: request.state,
         code_challenge: request.code_challenge,
         code_challenge_method: request.code_challenge_method,
+        nonce: request.nonce,
+        // /authorize-time placeholder; consent_submit overrides with the
+        // signin's created_at (the spec-correct End-User auth time).
+        auth_time: Some(chrono::Utc::now()),
+        // Set at consent time from the live Wacht cookie.
+        session_id: None,
+        prompt: request
+            .prompt
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned),
+        max_age: request.max_age,
     };
     let request_token = sign_oauth_consent_request_token(&claims)?;
     let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
@@ -236,6 +362,8 @@ async fn authorize_impl(
         state: claims.state,
         expires_at: claims.exp,
         client_name: client.client_name,
+        prompt: claims.prompt.clone(),
+        max_age: claims.max_age,
     };
 
     let mut redis_conn = app_state
@@ -429,6 +557,65 @@ fn resolve_scope_definitions(
                 })
         })
         .collect()
+}
+
+/// Validate the OIDC `/authorize` parameters. Spec values that we honor (or
+/// will honor downstream in the consent flow) are accepted; unknowns are
+/// rejected so RPs fail loudly. Errors are mapped to OIDC error codes by
+/// `oidc_authorize_error_code` and surfaced as redirects to `redirect_uri`.
+fn validate_oidc_authorize_params(
+    request: &OAuthAuthorizeRequest,
+) -> Result<(), ApiErrorResponse> {
+    if let Some(mode) = request
+        .response_mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        && mode != "query"
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("Unsupported response_mode `{mode}`; only `query` is advertised"),
+        )
+            .into());
+    }
+
+    if let Some(prompt_value) = request.prompt.as_deref() {
+        for prompt in prompt_value.split_whitespace() {
+            match prompt {
+                // Always-show-UI is our default; these are no-ops.
+                "login" | "consent" => {}
+                // The consent flow can branch on these (skip UI / show picker)
+                // once frontend-api wires the prompt through. Until then they
+                // pass through and behave like the default.
+                "none" | "select_account" => {}
+                other => {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        format!("Unknown prompt value `{other}`"),
+                    )
+                        .into());
+                }
+            }
+        }
+    }
+
+    if let Some(max_age) = request.max_age
+        && max_age < 0
+    {
+        return Err((StatusCode::BAD_REQUEST, "max_age must be non-negative").into());
+    }
+
+    Ok(())
+}
+
+/// The four OIDC-standard scopes that every OAuth app supports implicitly.
+/// `openid` triggers id_token issuance; `profile`/`email` gate claims inside
+/// `build_id_token` and `/userinfo`; `offline_access` signals refresh-token
+/// intent. None of them grant permissions, so they don't belong in an app's
+/// curated scope catalog.
+fn is_oidc_standard_scope(scope: &str) -> bool {
+    matches!(scope, "openid" | "profile" | "email" | "offline_access")
 }
 
 fn required_authorize_param<'a>(

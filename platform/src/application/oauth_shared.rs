@@ -42,6 +42,8 @@ pub fn map_oauth_client_response_with_secret(
     let grant_types = c.grant_types_vec();
     let redirect_uris = c.redirect_uris_vec();
     let contacts = c.contacts_vec();
+    let post_logout_redirect_uris = c.post_logout_redirect_uris_vec();
+    let id_token_signing_alg = c.id_token_signing_alg.clone();
 
     OAuthClientResponse {
         id: c.id,
@@ -63,6 +65,8 @@ pub fn map_oauth_client_response_with_secret(
         jwks: c.jwks,
         public_key_pem: c.public_key_pem,
         is_active: c.is_active,
+        post_logout_redirect_uris,
+        id_token_signing_alg,
         created_at: c.created_at,
         updated_at: c.updated_at,
         client_secret,

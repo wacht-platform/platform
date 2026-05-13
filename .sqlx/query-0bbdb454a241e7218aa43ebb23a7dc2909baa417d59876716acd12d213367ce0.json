@@ -1,0 +1,84 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                rt.id,\n                rt.oauth_grant_id,\n                rt.app_slug,\n                rt.replaced_by_token_id,\n                rt.revoked_at,\n                rt.expires_at,\n                rt.scopes,\n                rt.resource,\n                rt.granted_resource,\n                rt.session_id,\n                s.deleted_at AS \"session_deleted_at: chrono::DateTime<chrono::Utc>\"\n            FROM oauth_refresh_tokens rt\n            LEFT JOIN sessions s ON s.id = rt.session_id\n            WHERE rt.deployment_id = $1\n              AND rt.oauth_client_id = $2\n              AND rt.token_hash = $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "oauth_grant_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "app_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "replaced_by_token_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "scopes",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "resource",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "granted_resource",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "session_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "session_deleted_at: chrono::DateTime<chrono::Utc>",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "0bbdb454a241e7218aa43ebb23a7dc2909baa417d59876716acd12d213367ce0"
+}

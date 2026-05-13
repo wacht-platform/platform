@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT s.id AS \"id!\"\n              FROM sessions s\n              JOIN signins si ON si.session_id = s.id\n             WHERE si.user_id = $1\n               AND s.deleted_at IS NULL\n               AND si.deleted_at IS NULL\n               AND (s.deployment_id IS NULL OR s.deployment_id = $2)\n             ORDER BY s.updated_at DESC\n             LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8fd9a3a422f4cb28a434bf0a8dd3e1e2efbeac2d043a1359f8bbb136d2162fd1"
+}

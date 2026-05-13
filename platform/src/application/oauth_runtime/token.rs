@@ -321,6 +321,16 @@ async fn handle_authorization_code_grant(
 
     let oauth_grant_id = code_row.oauth_grant_id.ok_or_else(invalid_grant_error)?;
     let scope = code_row.scopes.join(" ");
+
+    let scopes_for_id_token = code_row.scopes.clone();
+    let wants_openid = scopes_for_id_token.iter().any(|s| s == "openid");
+    let oidc_user_id = code_row.user_id;
+    let oidc_nonce = code_row.nonce.clone();
+    let oidc_auth_time = code_row
+        .auth_time
+        .map(|t| t.timestamp())
+        .unwrap_or_else(|| chrono::Utc::now().timestamp());
+
     let access_token_id = app_state
         .sf
         .next_id()
@@ -341,6 +351,7 @@ async fn handle_authorization_code_grant(
         scopes: code_row.scopes,
         resource: code_row.resource,
         granted_resource: code_row.granted_resource,
+        session_id: code_row.session_id,
     }
     .execute_with_db(app_state.db_router.writer())
     .await
@@ -353,12 +364,75 @@ async fn handle_authorization_code_grant(
         oauth_grant_id,
     );
 
+    // openid → id_token is mandatory per OIDC. On signing failure revoke the
+    // pair we just persisted so the store doesn't accumulate orphans (auth
+    // code stays consumed per RFC 6749 §10.5 — client must redo /authorize).
+    let id_token = if wants_openid {
+        if let Some(user_id) = oidc_user_id {
+            let issuer = crate::api::oauth_runtime::helpers::resolve_issuer_from_oauth_app(
+                &context.oauth_app,
+            )
+            .map_err(map_token_app_error)?;
+            let ctx = super::oidc::IdTokenBuildContext {
+                issuer,
+                client_id: context.client.client_id.clone(),
+                deployment_id: context.oauth_app.deployment_id,
+                user_id,
+                session_id: code_row.session_id,
+                auth_time: oidc_auth_time,
+                nonce: oidc_nonce,
+                access_token: tokens.access_token.clone(),
+                scopes: scopes_for_id_token,
+            };
+            match super::oidc::build_id_token(&app_state, context.oauth_app.id, ctx).await {
+                Ok(t) => Some(t),
+                Err(err) => {
+                    tracing::error!(
+                        oauth_app_id = context.oauth_app.id,
+                        "id_token issuance failed; rolling back issued token pair"
+                    );
+                    let access_hash =
+                        crate::api::oauth_runtime::helpers::hash_value(&tokens.access_token);
+                    let refresh_hash =
+                        crate::api::oauth_runtime::helpers::hash_value(&tokens.refresh_token);
+                    let writer = app_state.db_router.writer();
+                    let _ = commands::oauth_runtime::RevokeOAuthAccessTokenByHash {
+                        deployment_id: context.oauth_app.deployment_id,
+                        oauth_client_id: context.client.id,
+                        token_hash: access_hash,
+                    }
+                    .execute_with_db(writer)
+                    .await;
+                    let _ = commands::oauth_runtime::RevokeOAuthRefreshTokenByHash {
+                        deployment_id: context.oauth_app.deployment_id,
+                        oauth_client_id: context.client.id,
+                        token_hash: refresh_hash,
+                    }
+                    .execute_with_db(writer)
+                    .await;
+                    return Err(
+                        crate::api::oauth_runtime::token_handlers::oauth_token_error(
+                            err.status_code,
+                            "server_error",
+                            err.errors.first().map(|e| e.message.as_str()),
+                        ),
+                    );
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     Ok(Json(OAuthTokenResponse {
         access_token: tokens.access_token,
         token_type: "Bearer".to_string(),
         expires_in: tokens.access_expires_in,
         refresh_token: tokens.refresh_token,
         scope,
+        id_token,
     }))
 }
 
@@ -379,26 +453,33 @@ async fn handle_refresh_token_grant(
     .ok_or_else(invalid_grant_error)?;
 
     let now = chrono::Utc::now();
-    let is_active_refresh = refresh_row.revoked_at.is_none() && refresh_row.expires_at > now;
-    if !is_active_refresh {
-        if refresh_row.replaced_by_token_id.is_some() {
-            let revoked_count = RevokeOAuthRefreshTokenFamily {
-                deployment_id: context.oauth_app.deployment_id,
-                oauth_client_id: context.client.id,
-                root_refresh_token_id: refresh_row.id,
-            }
-            .execute_with_db(app_state.db_router.writer())
-            .await
-            .map_err(map_token_app_error)?;
-            tracing::warn!(
-                event = "oauth.refresh_token_reuse_detected",
-                deployment_id = context.oauth_app.deployment_id,
-                oauth_client_id = context.client.id,
-                refresh_token_id = refresh_row.id,
-                revoked_refresh_tokens = revoked_count,
-                "Refresh token replay detected; refresh token family revoked",
-            );
+    // RFC 6749 §10.4 replay detection: if the token has a successor, it has
+    // already been rotated out — using it now is a captured-copy replay.
+    // Must run before liveness checks (the row is by definition revoked once
+    // rotation has happened).
+    if refresh_row.replaced_by_token_id.is_some() {
+        let revoked_count = RevokeOAuthRefreshTokenFamily {
+            deployment_id: context.oauth_app.deployment_id,
+            oauth_client_id: context.client.id,
+            root_refresh_token_id: refresh_row.id,
         }
+        .execute_with_db(app_state.db_router.writer())
+        .await
+        .map_err(map_token_app_error)?;
+        tracing::warn!(
+            event = "oauth.refresh_token_reuse_detected",
+            deployment_id = context.oauth_app.deployment_id,
+            oauth_client_id = context.client.id,
+            refresh_token_id = refresh_row.id,
+            revoked_refresh_tokens = revoked_count,
+            "Refresh token replay detected; refresh token family revoked",
+        );
+        return Err(invalid_grant_error());
+    }
+    if refresh_row.revoked_at.is_some() || refresh_row.expires_at <= now {
+        return Err(invalid_grant_error());
+    }
+    if refresh_row.session_deleted_at.is_some() {
         return Err(invalid_grant_error());
     }
 
@@ -468,6 +549,9 @@ async fn handle_refresh_token_grant(
         scopes: effective_scopes.clone(),
         resource: refresh_row.resource.clone(),
         granted_resource: refresh_row.granted_resource.clone(),
+        // OIDC: carry session linkage forward through refresh chains so the
+        // logout cascade still reaches tokens minted from a refresh grant.
+        session_id: refresh_row.session_id,
     }
     .execute_with_db(app_state.db_router.writer())
     .await
@@ -494,6 +578,10 @@ async fn handle_refresh_token_grant(
         expires_in: tokens.access_expires_in,
         refresh_token: tokens.refresh_token,
         scope: effective_scopes.join(" "),
+        // OIDC id_token: refresh-grant path will populate this once we wire
+        // the id_token issuance helper. For now (and for non-OIDC clients)
+        // it stays absent.
+        id_token: None,
     }))
 }
 

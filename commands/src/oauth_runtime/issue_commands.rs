@@ -15,6 +15,14 @@ pub struct IssueOAuthAuthorizationCode {
     pub scopes: Vec<String>,
     pub resource: Option<String>,
     pub granted_resource: Option<String>,
+    /// OIDC: nonce supplied at /authorize, replayed into id_token later.
+    pub nonce: Option<String>,
+    /// OIDC: timestamp of the user's last actual authentication (replayed
+    /// into `auth_time` id_token claim and used for `max_age` checks).
+    pub auth_time: Option<chrono::DateTime<chrono::Utc>>,
+    /// OIDC: session id at code-issuance time. Inherited by tokens minted
+    /// from this code for cascade-revocation on logout.
+    pub session_id: Option<i64>,
 }
 
 pub struct OAuthAuthorizationCodeIssued {
@@ -42,7 +50,7 @@ impl IssueOAuthAuthorizationCode {
         let code_hash = hash_value(&code);
         let expires_at = Utc::now() + Duration::minutes(10);
 
-        sqlx::query(
+        sqlx::query!(
             r#"
             INSERT INTO oauth_authorization_codes (
                 id,
@@ -58,23 +66,32 @@ impl IssueOAuthAuthorizationCode {
                 resource,
                 granted_resource,
                 expires_at,
+                nonce,
+                auth_time,
+                session_id,
                 created_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                $14, $15, $16, NOW()
+            )
             "#,
+            code_id,
+            self.deployment_id,
+            self.oauth_client_id,
+            self.oauth_grant_id,
+            self.app_slug,
+            code_hash,
+            self.redirect_uri,
+            self.code_challenge,
+            self.code_challenge_method,
+            serde_json::to_value(&self.scopes)?,
+            self.resource,
+            self.granted_resource,
+            expires_at,
+            self.nonce,
+            self.auth_time,
+            self.session_id,
         )
-        .bind(code_id)
-        .bind(self.deployment_id)
-        .bind(self.oauth_client_id)
-        .bind(self.oauth_grant_id)
-        .bind(&self.app_slug)
-        .bind(code_hash)
-        .bind(&self.redirect_uri)
-        .bind(&self.code_challenge)
-        .bind(&self.code_challenge_method)
-        .bind(serde_json::to_value(&self.scopes)?)
-        .bind(&self.resource)
-        .bind(&self.granted_resource)
-        .bind(expires_at)
         .execute(executor)
         .await?;
 
@@ -119,6 +136,9 @@ pub struct IssueOAuthTokenPair {
     pub scopes: Vec<String>,
     pub resource: Option<String>,
     pub granted_resource: Option<String>,
+    /// OIDC: session id inherited from the auth code, persisted on both
+    /// tokens so RP-initiated logout can cascade-revoke them by `session_id`.
+    pub session_id: Option<i64>,
 }
 
 pub struct OAuthTokenPairIssued {
@@ -154,7 +174,7 @@ impl IssueOAuthTokenPair {
         let access_hash = hash_value(&access_token);
         let refresh_hash = hash_value(&refresh_token);
 
-        sqlx::query(
+        sqlx::query!(
             r#"
             WITH inserted_access AS (
                 INSERT INTO oauth_access_tokens (
@@ -169,8 +189,11 @@ impl IssueOAuthTokenPair {
                     resource,
                     granted_resource,
                     expires_at,
+                    session_id,
                     created_at
-                ) VALUES ($1,$2,$3,$4,$5,$6,'user_oauth',$7,$8,$9,$10,NOW())
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, 'user_oauth', $7, $8, $9, $10, $14, NOW()
+                )
             )
             INSERT INTO oauth_refresh_tokens (
                 id,
@@ -183,23 +206,27 @@ impl IssueOAuthTokenPair {
                 resource,
                 granted_resource,
                 expires_at,
+                session_id,
                 created_at
-            ) VALUES ($11,$2,$3,$4,$5,$12,$7,$8,$9,$13,NOW())
+            ) VALUES (
+                $11, $2, $3, $4, $5, $12, $7, $8, $9, $13, $14, NOW()
+            )
             "#,
+            access_token_id,
+            self.deployment_id,
+            self.oauth_client_id,
+            self.oauth_grant_id,
+            self.app_slug,
+            access_hash,
+            serde_json::to_value(&self.scopes)?,
+            self.resource,
+            self.granted_resource,
+            Utc::now() + Duration::hours(1),
+            refresh_token_id,
+            refresh_hash,
+            Utc::now() + Duration::days(30),
+            self.session_id,
         )
-        .bind(access_token_id)
-        .bind(self.deployment_id)
-        .bind(self.oauth_client_id)
-        .bind(self.oauth_grant_id)
-        .bind(&self.app_slug)
-        .bind(access_hash)
-        .bind(serde_json::to_value(&self.scopes)?)
-        .bind(&self.resource)
-        .bind(&self.granted_resource)
-        .bind(Utc::now() + Duration::hours(1))
-        .bind(refresh_token_id)
-        .bind(refresh_hash)
-        .bind(Utc::now() + Duration::days(30))
         .execute(executor)
         .await?;
 

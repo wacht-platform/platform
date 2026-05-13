@@ -212,7 +212,9 @@ impl GetRuntimeOAuthClientByClientIdQuery {
                 software_id,
                 software_version,
                 is_active,
-                created_at
+                created_at,
+                post_logout_redirect_uris,
+                id_token_signing_alg
             FROM oauth_clients
             WHERE oauth_app_id = $1
               AND client_id = $2
@@ -245,6 +247,8 @@ impl GetRuntimeOAuthClientByClientIdQuery {
             software_version: r.get("software_version"),
             is_active: r.get("is_active"),
             created_at: r.get("created_at"),
+            post_logout_redirect_uris: json_default(r.get("post_logout_redirect_uris")),
+            id_token_signing_alg: r.get("id_token_signing_alg"),
         }))
     }
 }
@@ -321,43 +325,134 @@ impl GetRuntimeAuthorizationCodeForExchangeQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
             SELECT
-                id,
-                oauth_grant_id,
-                app_slug,
-                redirect_uri,
-                pkce_code_challenge,
-                pkce_code_challenge_method,
-                scopes,
-                resource,
-                granted_resource
-            FROM oauth_authorization_codes
-            WHERE deployment_id = $1
-              AND oauth_client_id = $2
-              AND code_hash = $3
-              AND consumed_at IS NULL
-              AND expires_at > NOW()
+                c.id,
+                c.oauth_grant_id,
+                c.app_slug,
+                c.redirect_uri,
+                c.pkce_code_challenge,
+                c.pkce_code_challenge_method,
+                c.scopes,
+                c.resource,
+                c.granted_resource,
+                c.nonce,
+                c.auth_time,
+                c.session_id,
+                g.granted_by_user_id AS "user_id?: i64"
+            FROM oauth_authorization_codes c
+            LEFT JOIN oauth_client_grants g ON g.id = c.oauth_grant_id
+            WHERE c.deployment_id = $1
+              AND c.oauth_client_id = $2
+              AND c.code_hash = $3
+              AND c.consumed_at IS NULL
+              AND c.expires_at > NOW()
             "#,
+            self.deployment_id,
+            self.oauth_client_id,
+            self.code_hash,
         )
-        .bind(self.deployment_id)
-        .bind(self.oauth_client_id)
-        .bind(&self.code_hash)
         .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| RuntimeAuthorizationCodeData {
-            id: r.get("id"),
-            oauth_grant_id: r.get("oauth_grant_id"),
-            app_slug: r.get("app_slug"),
-            redirect_uri: r.get("redirect_uri"),
-            pkce_code_challenge: r.get("pkce_code_challenge"),
-            pkce_code_challenge_method: r.get("pkce_code_challenge_method"),
-            scopes: json_default(r.get("scopes")),
-            resource: r.get("resource"),
-            granted_resource: r.get("granted_resource"),
+            id: r.id,
+            oauth_grant_id: r.oauth_grant_id,
+            app_slug: r.app_slug,
+            redirect_uri: r.redirect_uri,
+            pkce_code_challenge: r.pkce_code_challenge,
+            pkce_code_challenge_method: r.pkce_code_challenge_method,
+            scopes: json_default(r.scopes),
+            resource: r.resource,
+            granted_resource: r.granted_resource,
+            nonce: r.nonce,
+            auth_time: r.auth_time,
+            session_id: r.session_id,
+            user_id: r.user_id,
         }))
+    }
+}
+
+/// Returns `signins.created_at` for the (session, user) pair — the value the
+/// OIDC `auth_time` claim is supposed to reflect.
+pub struct GetSigninAuthTimeQuery {
+    pub session_id: i64,
+    pub user_id: i64,
+}
+
+impl GetSigninAuthTimeQuery {
+    pub fn new(session_id: i64, user_id: i64) -> Self {
+        Self {
+            session_id,
+            user_id,
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Option<chrono::DateTime<chrono::Utc>>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let row = sqlx::query!(
+            r#"
+            SELECT created_at
+              FROM signins
+             WHERE session_id = $1
+               AND user_id = $2
+               AND deleted_at IS NULL
+             ORDER BY created_at DESC
+             LIMIT 1
+            "#,
+            self.session_id,
+            self.user_id,
+        )
+        .fetch_optional(executor)
+        .await?;
+        Ok(row.map(|r| r.created_at))
+    }
+}
+
+/// onto the auth code we're about to issue. Returns `None` if the user has
+/// no active session — typical for service flows or expired sessions.
+pub struct GetActiveSessionForUserQuery {
+    pub deployment_id: i64,
+    pub user_id: i64,
+}
+
+impl GetActiveSessionForUserQuery {
+    pub fn new(deployment_id: i64, user_id: i64) -> Self {
+        Self {
+            deployment_id,
+            user_id,
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Option<i64>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let row = sqlx::query!(
+            r#"
+            SELECT s.id AS "id!"
+              FROM sessions s
+              JOIN signins si ON si.session_id = s.id
+             WHERE si.user_id = $1
+               AND s.deleted_at IS NULL
+               AND si.deleted_at IS NULL
+               AND (s.deployment_id IS NULL OR s.deployment_id = $2)
+             ORDER BY s.updated_at DESC
+             LIMIT 1
+            "#,
+            self.user_id,
+            self.deployment_id,
+        )
+        .fetch_optional(executor)
+        .await?;
+
+        Ok(row.map(|r| r.id))
     }
 }
 
@@ -383,42 +478,50 @@ impl GetRuntimeRefreshTokenForExchangeQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query(
+        // Intentionally surface revoked / expired / dead-session rows so the
+        // application layer can detect refresh-token replay (RFC 6749 §10.4 /
+        // OAuth 2.1 §6.1). Filtering revoked rows here would hide the very
+        // case where replay matters: a stolen refresh token that's already
+        // been rotated. Application layer checks status fields below.
+        let row = sqlx::query!(
             r#"
             SELECT
-                id,
-                oauth_grant_id,
-                app_slug,
-                replaced_by_token_id,
-                revoked_at,
-                expires_at,
-                scopes,
-                resource,
-                granted_resource
-            FROM oauth_refresh_tokens
-            WHERE deployment_id = $1
-              AND oauth_client_id = $2
-              AND token_hash = $3
-              AND revoked_at IS NULL
-              AND expires_at > NOW()
+                rt.id,
+                rt.oauth_grant_id,
+                rt.app_slug,
+                rt.replaced_by_token_id,
+                rt.revoked_at,
+                rt.expires_at,
+                rt.scopes,
+                rt.resource,
+                rt.granted_resource,
+                rt.session_id,
+                s.deleted_at AS "session_deleted_at: chrono::DateTime<chrono::Utc>"
+            FROM oauth_refresh_tokens rt
+            LEFT JOIN sessions s ON s.id = rt.session_id
+            WHERE rt.deployment_id = $1
+              AND rt.oauth_client_id = $2
+              AND rt.token_hash = $3
             "#,
+            self.deployment_id,
+            self.oauth_client_id,
+            self.token_hash,
         )
-        .bind(self.deployment_id)
-        .bind(self.oauth_client_id)
-        .bind(&self.token_hash)
         .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| RuntimeRefreshTokenData {
-            id: r.get("id"),
-            oauth_grant_id: r.get("oauth_grant_id"),
-            app_slug: r.get("app_slug"),
-            replaced_by_token_id: r.get("replaced_by_token_id"),
-            revoked_at: r.get("revoked_at"),
-            expires_at: r.get("expires_at"),
-            scopes: json_default(r.get("scopes")),
-            resource: r.get("resource"),
-            granted_resource: r.get("granted_resource"),
+            id: r.id,
+            oauth_grant_id: r.oauth_grant_id,
+            app_slug: r.app_slug,
+            replaced_by_token_id: r.replaced_by_token_id,
+            revoked_at: r.revoked_at,
+            expires_at: r.expires_at,
+            scopes: json_default(r.scopes),
+            resource: r.resource,
+            granted_resource: r.granted_resource,
+            session_id: r.session_id,
+            session_deleted_at: r.session_deleted_at,
         }))
     }
 }

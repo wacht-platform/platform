@@ -185,6 +185,8 @@ impl GetSessionWithSignInsQuery {
                 s.created_at AS session_created_at,
                 s.updated_at AS session_updated_at,
                 s.active_signin_id,
+                s.deployment_id AS session_deployment_id,
+                s.deleted_at AS session_deleted_at,
                 si.id AS signin_id,
                 si.created_at AS signin_created_at,
                 si.updated_at AS signin_updated_at,
@@ -223,6 +225,8 @@ impl GetSessionWithSignInsQuery {
             created_at: first.get("session_created_at"),
             updated_at: first.get("session_updated_at"),
             active_signin_id: first.get("active_signin_id"),
+            deployment_id: first.try_get("session_deployment_id").ok(),
+            deleted_at: first.try_get("session_deleted_at").ok(),
         };
 
         let signins: Vec<SignIn> = rows

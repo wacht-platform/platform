@@ -63,6 +63,103 @@ impl GetRuntimeAccessTokenByHashQuery {
     }
 }
 
+/// OIDC userinfo helper: resolve an access token hash to the user it
+/// represents, plus its scopes, expiry, and revocation status. Joins through
+/// the grant to find `granted_by_user_id` (the user who consented).
+pub struct GetRuntimeAccessTokenUserQuery {
+    pub deployment_id: i64,
+    pub token_hash: String,
+}
+
+pub struct AccessTokenUserData {
+    /// May be None if the grant has no `granted_by_user_id` (e.g. client-credentials
+    /// flow). Callers that require a user (userinfo, id_token) should treat
+    /// None as "no user behind this token" and reject.
+    pub user_id: Option<i64>,
+    pub oauth_client_id: i64,
+    /// OAuth app the token's client belongs to. Userinfo uses this to confirm
+    /// the bearer token was issued by the same OAuth app handling the request
+    /// (defense against cross-app token substitution).
+    pub oauth_app_id: i64,
+    pub scopes: Vec<String>,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Wacht session that approved consent. Allows userinfo to refuse
+    /// claims after RP-initiated logout has soft-deleted the session.
+    pub session_id: Option<i64>,
+    /// `active`, `revoked`, etc. Userinfo rejects anything but `active`.
+    pub grant_status: String,
+    pub grant_expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Mirrors `sessions.deleted_at`. Non-None means the session was
+    /// logged out and downstream callers should refuse the token.
+    pub session_deleted_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl GetRuntimeAccessTokenUserQuery {
+    pub fn new(deployment_id: i64, token_hash: String) -> Self {
+        Self {
+            deployment_id,
+            token_hash,
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Option<AccessTokenUserData>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        // Userinfo (RFC 6750 / OIDC Core 5.3) requires the same liveness
+        // guarantees as introspection: the token must exist, not be revoked
+        // or expired, AND its backing grant + session must still be alive.
+        // Surface the extra columns so the application layer can reject in a
+        // single round-trip rather than chaining queries.
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                t.oauth_client_id,
+                c.oauth_app_id,
+                t.scopes,
+                t.expires_at,
+                t.revoked_at,
+                t.session_id,
+                g.granted_by_user_id AS user_id,
+                g.status AS grant_status,
+                g.expires_at AS grant_expires_at,
+                s.deleted_at AS "session_deleted_at: chrono::DateTime<chrono::Utc>"
+            FROM oauth_access_tokens t
+            INNER JOIN oauth_clients c
+              ON c.id = t.oauth_client_id
+            INNER JOIN oauth_client_grants g
+              ON g.id = t.oauth_grant_id
+            LEFT JOIN sessions s
+              ON s.id = t.session_id
+            WHERE t.deployment_id = $1
+              AND t.token_hash = $2
+            LIMIT 1
+            "#,
+            self.deployment_id,
+            self.token_hash,
+        )
+        .fetch_optional(executor)
+        .await?;
+
+        Ok(row.map(|r| AccessTokenUserData {
+            user_id: r.user_id,
+            oauth_client_id: r.oauth_client_id,
+            oauth_app_id: r.oauth_app_id,
+            scopes: json_default(r.scopes),
+            expires_at: r.expires_at,
+            revoked_at: r.revoked_at,
+            session_id: r.session_id,
+            grant_status: r.grant_status,
+            grant_expires_at: r.grant_expires_at,
+            session_deleted_at: r.session_deleted_at,
+        }))
+    }
+}
+
 pub struct GetRuntimeIntrospectionDataQuery {
     pub deployment_id: i64,
     pub oauth_client_id: i64,

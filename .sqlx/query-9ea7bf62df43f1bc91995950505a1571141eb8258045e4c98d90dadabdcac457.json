@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE oauth_app_signing_keys\n               SET status = 'compromised', retired_at = NOW()\n             WHERE oauth_app_id = $1\n               AND kid = $2\n               AND status <> 'compromised'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9ea7bf62df43f1bc91995950505a1571141eb8258045e4c98d90dadabdcac457"
+}

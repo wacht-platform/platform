@@ -97,6 +97,22 @@ pub async fn create_oauth_app(
     .execute_with_deps(&deps)
     .await?;
 
+    // OIDC: provision the initial RSA-2048 signing key up front so the
+    // Signing Keys tab is non-empty from day one and id_token issuance never
+    // has to do a slow first-request key generation. Idempotent — re-runs are
+    // no-ops thanks to the unique index on (oauth_app_id) WHERE status='active'.
+    if let Err(_e) = crate::application::oauth_runtime::ensure_active_signing_key(
+        app_state,
+        created.id,
+    )
+    .await
+    {
+        tracing::warn!(
+            oauth_app_id = created.id,
+            "initial OIDC signing key provision failed; will be lazy-provisioned on first JWKS/id_token request"
+        );
+    }
+
     Ok(map_oauth_app_response(created))
 }
 

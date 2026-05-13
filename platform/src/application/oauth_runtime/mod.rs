@@ -33,7 +33,7 @@ use crate::{
     api::oauth_runtime::{
         helpers::{
             append_oauth_redirect_params, authenticate_client, client_secret_expires_at_for_method,
-            derive_shared_secret, ensure_or_create_grant_coverage,
+            derive_shared_secret, ensure_or_create_grant_coverage, find_existing_grant_coverage,
             ensure_registration_access_token, generate_prefixed_token,
             generate_registration_access_token, hash_value, is_valid_granted_resource_indicator,
             is_valid_resource_indicator, oauth_consent_backend_base_url,
@@ -54,11 +54,18 @@ use common::deps;
 
 mod authorize;
 mod metadata;
+mod oidc;
 mod registration;
 mod token;
 
 pub use authorize::{oauth_authorize_get, oauth_consent_submit};
 pub use metadata::{oauth_protected_resource_metadata, oauth_server_metadata};
+pub use oidc::{
+    build_id_token, compromise_app_signing_key, jwks, list_app_signing_keys,
+    logout as oauth_logout, openid_configuration, rotate_app_signing_key, userinfo,
+    IdTokenBuildContext, UserInfoError,
+};
+pub(crate) use oidc::ensure_active_signing_key;
 pub use registration::{
     oauth_delete_registered_client, oauth_get_registered_client, oauth_register_client,
     oauth_update_registered_client,

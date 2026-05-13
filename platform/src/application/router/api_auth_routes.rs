@@ -110,4 +110,17 @@ pub(super) fn api_auth_routes() -> Router<AppState> {
             "/oauth/apps/{oauth_app_slug}/clients/{oauth_client_id}/grants/{grant_id}/revoke",
             post(api::oauth::revoke_oauth_grant),
         )
+        // OIDC signing-key admin
+        .route(
+            "/oauth/apps/{oauth_app_slug}/signing-keys",
+            get(api::oauth::list_signing_keys),
+        )
+        .route(
+            "/oauth/apps/{oauth_app_slug}/signing-keys/rotate",
+            post(api::oauth::rotate_signing_key),
+        )
+        .route(
+            "/oauth/apps/{oauth_app_slug}/signing-keys/{kid}/compromise",
+            post(api::oauth::compromise_signing_key),
+        )
 }

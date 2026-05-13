@@ -287,6 +287,11 @@ pub struct CreateOAuthClientRequest {
     pub jwks_uri: Option<String>,
     pub jwks: Option<JwksDocument>,
     pub public_key_pem: Option<String>,
+    /// OIDC: RP-initiated logout allowlist.
+    #[serde(default)]
+    pub post_logout_redirect_uris: Vec<String>,
+    /// OIDC: id_token signing alg (RSA-family only).
+    pub id_token_signing_alg: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -306,6 +311,10 @@ pub struct UpdateOAuthClientRequest {
     pub jwks_uri: Option<String>,
     pub jwks: Option<JwksDocument>,
     pub public_key_pem: Option<String>,
+    /// OIDC: replaces the entire allowlist when present.
+    pub post_logout_redirect_uris: Option<Vec<String>>,
+    /// OIDC: id_token signing alg (RSA-family only).
+    pub id_token_signing_alg: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -354,6 +363,8 @@ pub struct OAuthClientResponse {
     pub jwks: Option<JwksDocument>,
     pub public_key_pem: Option<String>,
     pub is_active: bool,
+    pub post_logout_redirect_uris: Vec<String>,
+    pub id_token_signing_alg: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]

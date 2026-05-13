@@ -43,6 +43,8 @@ impl ListOAuthClientsByOAuthAppQuery {
                 software_version,
                 pkce_required,
                 is_active,
+                post_logout_redirect_uris as "post_logout_redirect_uris: serde_json::Value",
+                id_token_signing_alg,
                 created_at,
                 updated_at
             FROM oauth_clients
@@ -83,6 +85,8 @@ impl ListOAuthClientsByOAuthAppQuery {
                     software_version: r.software_version,
                     pkce_required: r.pkce_required,
                     is_active: r.is_active,
+                    post_logout_redirect_uris: r.post_logout_redirect_uris,
+                    id_token_signing_alg: r.id_token_signing_alg,
                     created_at: r.created_at,
                     updated_at: r.updated_at,
                 }
@@ -136,6 +140,8 @@ impl GetOAuthClientByIdQuery {
                 software_version,
                 pkce_required,
                 is_active,
+                post_logout_redirect_uris as "post_logout_redirect_uris: serde_json::Value",
+                id_token_signing_alg,
                 created_at,
                 updated_at
             FROM oauth_clients
@@ -175,6 +181,8 @@ impl GetOAuthClientByIdQuery {
                 software_version: r.software_version,
                 pkce_required: r.pkce_required,
                 is_active: r.is_active,
+                post_logout_redirect_uris: r.post_logout_redirect_uris,
+                id_token_signing_alg: r.id_token_signing_alg,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
             }

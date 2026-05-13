@@ -49,40 +49,47 @@ fn validate_optional_url(field_name: &str, value: Option<&str>) -> Result<(), Ap
     Ok(())
 }
 
+/// Shared web-URL list validator for OAuth client metadata: trimmed, valid
+/// URL, http or https only, no fragment. `field` names the caller's parameter
+/// for error messages.
+fn validate_web_uri_list(uris: &[String], field: &str) -> Result<(), AppError> {
+    for uri in uris {
+        let trimmed = uri.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::Validation(format!(
+                "{field} must not contain empty values"
+            )));
+        }
+        let parsed = url::Url::parse(trimmed)
+            .map_err(|_| AppError::Validation(format!("{field} must contain valid URLs")))?;
+        if parsed.scheme() != "http" && parsed.scheme() != "https" {
+            return Err(AppError::Validation(format!(
+                "{field} must use http or https"
+            )));
+        }
+        if parsed.fragment().is_some() {
+            return Err(AppError::Validation(format!(
+                "{field} must not include fragments"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn validate_redirect_uris(
     redirect_uris: &[String],
     grant_types: &[String],
 ) -> Result<(), AppError> {
-    let requires_redirect = grant_types.iter().any(|g| g == "authorization_code");
-    if requires_redirect && redirect_uris.is_empty() {
+    if grant_types.iter().any(|g| g == "authorization_code") && redirect_uris.is_empty() {
         return Err(AppError::Validation(
             "redirect_uris must include at least one URI for authorization_code".to_string(),
         ));
     }
+    validate_web_uri_list(redirect_uris, "redirect_uris")
+}
 
-    for uri in redirect_uris {
-        let trimmed = uri.trim();
-        if trimmed.is_empty() {
-            return Err(AppError::Validation(
-                "redirect_uris must not contain empty values".to_string(),
-            ));
-        }
-        let parsed = url::Url::parse(trimmed).map_err(|_| {
-            AppError::Validation("redirect_uris must contain valid URLs".to_string())
-        })?;
-        if parsed.scheme() != "http" && parsed.scheme() != "https" {
-            return Err(AppError::Validation(
-                "redirect_uris must use http or https".to_string(),
-            ));
-        }
-        if parsed.fragment().is_some() {
-            return Err(AppError::Validation(
-                "redirect_uris must not include fragments".to_string(),
-            ));
-        }
-    }
-
-    Ok(())
+pub(super) fn validate_post_logout_redirect_uris(uris: &[String]) -> Result<(), AppError> {
+    validate_web_uri_list(uris, "post_logout_redirect_uris")
 }
 
 fn validate_oauth_client_grant_types(grant_types: &[String]) -> Result<(), AppError> {

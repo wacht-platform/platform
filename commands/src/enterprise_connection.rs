@@ -3,6 +3,74 @@ use common::error::AppError;
 use models::enterprise_connection::{EnterpriseConnection, EnterpriseConnectionProtocol};
 use serde::{Deserialize, Serialize};
 
+/// Trim `Some("   ")` down to `None` so partial-update COALESCE logic can
+/// reliably distinguish "leave field untouched" from "client sent whitespace".
+fn normalize_trimmed(value: Option<String>) -> Option<String> {
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+/// Parse + canonicalise an OIDC issuer URL. Spec requires http/https only.
+/// Returns the trimmed form with no trailing slash so all rows store the same
+/// canonical value (matters when frontend-api compares stored issuer against
+/// the `iss` claim on an id_token).
+fn normalize_oidc_issuer_url(raw: &str) -> Result<String, AppError> {
+    let parsed = url::Url::parse(raw.trim())
+        .map_err(|e| AppError::Validation(format!("oidc_issuer_url is not a valid URL: {e}")))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => {
+            return Err(AppError::Validation(format!(
+                "oidc_issuer_url scheme `{other}` is not supported; must be http or https"
+            )));
+        }
+    }
+    let canonical = parsed.as_str().trim_end_matches('/').to_string();
+    Ok(canonical)
+}
+
+/// Shared validator for the OIDC fields on enterprise SSO connections.
+/// Mutates the option fields in place so the caller binds the normalized
+/// values into SQL. Called from both create and update paths.
+///
+/// `require_all` is true on create (with Oidc protocol) — both issuer_url +
+/// client_id MUST be present. On update we call it with `require_all=false`
+/// because the existing row may already supply them; the merge check happens
+/// in the update command separately.
+fn validate_and_normalize_oidc_fields(
+    protocol: &EnterpriseConnectionProtocol,
+    oidc_issuer_url: &mut Option<String>,
+    oidc_client_id: &mut Option<String>,
+    oidc_client_secret: &mut Option<String>,
+    require_all: bool,
+) -> Result<(), AppError> {
+    *oidc_issuer_url = normalize_trimmed(oidc_issuer_url.take());
+    *oidc_client_id = normalize_trimmed(oidc_client_id.take());
+    *oidc_client_secret = normalize_trimmed(oidc_client_secret.take());
+
+    if let Some(url) = oidc_issuer_url.as_ref() {
+        *oidc_issuer_url = Some(normalize_oidc_issuer_url(url)?);
+    }
+
+    if *protocol == EnterpriseConnectionProtocol::Oidc && require_all {
+        if oidc_issuer_url.is_none() {
+            return Err(AppError::Validation(
+                "oidc_issuer_url is required for OIDC enterprise connections".to_string(),
+            ));
+        }
+        if oidc_client_id.is_none() {
+            return Err(AppError::Validation(
+                "oidc_client_id is required for OIDC enterprise connections".to_string(),
+            ));
+        }
+        // oidc_client_secret stays optional — public OIDC clients are valid.
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateEnterpriseConnectionRequest {
     #[serde(default)]
@@ -61,12 +129,21 @@ impl CreateEnterpriseConnectionCommand {
             .connection_id
             .ok_or_else(|| AppError::Validation("connection_id is required".to_string()))?;
 
-        if self.request.domain_id == 0 {
+        let mut request = self.request;
+        if request.domain_id == 0 {
             return Err(AppError::Validation(
                 "domain_id is required; an enterprise connection must be bound to a verified organization domain"
                     .to_string(),
             ));
         }
+
+        validate_and_normalize_oidc_fields(
+            &request.protocol,
+            &mut request.oidc_issuer_url,
+            &mut request.oidc_client_id,
+            &mut request.oidc_client_secret,
+            /* require_all = */ true,
+        )?;
 
         let domain_ok = sqlx::query_scalar!(
             r#"
@@ -75,8 +152,8 @@ impl CreateEnterpriseConnectionCommand {
                 WHERE id = $1 AND organization_id = $2 AND deployment_id = $3 AND verified = true
             ) as "exists!"
             "#,
-            self.request.domain_id,
-            self.request.organization_id,
+            request.domain_id,
+            request.organization_id,
             self.deployment_id,
         )
         .fetch_one(executor)
@@ -88,9 +165,8 @@ impl CreateEnterpriseConnectionCommand {
             ));
         }
 
-        let jit_enabled = self.request.jit_enabled.unwrap_or(true);
-        let attribute_mapping = self
-            .request
+        let jit_enabled = request.jit_enabled.unwrap_or(true);
+        let attribute_mapping = request
             .attribute_mapping
             .unwrap_or_else(|| serde_json::json!({}));
 
@@ -120,17 +196,17 @@ impl CreateEnterpriseConnectionCommand {
             "#,
         )
         .bind(connection_id)
-        .bind(self.request.organization_id)
+        .bind(request.organization_id)
         .bind(self.deployment_id)
-        .bind(self.request.domain_id)
-        .bind(self.request.protocol)
-        .bind(self.request.idp_entity_id)
-        .bind(self.request.idp_sso_url)
-        .bind(self.request.idp_certificate)
-        .bind(self.request.oidc_client_id)
-        .bind(self.request.oidc_client_secret)
-        .bind(self.request.oidc_issuer_url)
-        .bind(self.request.oidc_scopes)
+        .bind(request.domain_id)
+        .bind(request.protocol)
+        .bind(request.idp_entity_id)
+        .bind(request.idp_sso_url)
+        .bind(request.idp_certificate)
+        .bind(request.oidc_client_id)
+        .bind(request.oidc_client_secret)
+        .bind(request.oidc_issuer_url)
+        .bind(request.oidc_scopes)
         .bind(jit_enabled)
         .bind(attribute_mapping)
         .bind(now)
@@ -218,7 +294,35 @@ impl UpdateEnterpriseConnectionCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres> + Copy,
     {
-        if let Some(domain_id) = self.request.domain_id {
+        let mut request = self.request;
+        // Read the existing protocol so we know whether OIDC field semantics
+        // apply. Missing values in the payload are fine on update — the
+        // existing row already supplies them — so we only validate URL shape
+        // / non-empty for whatever the caller did send.
+        let existing_protocol: Option<EnterpriseConnectionProtocol> = sqlx::query_scalar!(
+            r#"
+            SELECT protocol as "protocol!: String"
+            FROM enterprise_connections
+            WHERE id = $1 AND organization_id = $2 AND deployment_id = $3
+            "#,
+            request.connection_id,
+            request.organization_id,
+            self.deployment_id,
+        )
+        .fetch_optional(executor)
+        .await?
+        .and_then(|raw| EnterpriseConnectionProtocol::try_from(raw).ok());
+        let protocol_for_validation = existing_protocol
+            .unwrap_or(EnterpriseConnectionProtocol::Oidc);
+        validate_and_normalize_oidc_fields(
+            &protocol_for_validation,
+            &mut request.oidc_issuer_url,
+            &mut request.oidc_client_id,
+            &mut request.oidc_client_secret,
+            /* require_all = */ false,
+        )?;
+
+        if let Some(domain_id) = request.domain_id {
             if domain_id == 0 {
                 return Err(AppError::Validation(
                     "domain_id cannot be cleared; an enterprise connection must remain bound to a verified domain"
@@ -233,7 +337,7 @@ impl UpdateEnterpriseConnectionCommand {
                 ) as "exists!"
                 "#,
                 domain_id,
-                self.request.organization_id,
+                request.organization_id,
                 self.deployment_id,
             )
             .fetch_one(executor)
@@ -265,19 +369,19 @@ impl UpdateEnterpriseConnectionCommand {
             RETURNING *
             "#,
         )
-        .bind(self.request.domain_id)
-        .bind(self.request.idp_entity_id)
-        .bind(self.request.idp_sso_url)
-        .bind(self.request.idp_certificate)
-        .bind(self.request.oidc_client_id)
-        .bind(self.request.oidc_client_secret)
-        .bind(self.request.oidc_issuer_url)
-        .bind(self.request.oidc_scopes)
-        .bind(self.request.jit_enabled)
-        .bind(self.request.attribute_mapping)
+        .bind(request.domain_id)
+        .bind(request.idp_entity_id)
+        .bind(request.idp_sso_url)
+        .bind(request.idp_certificate)
+        .bind(request.oidc_client_id)
+        .bind(request.oidc_client_secret)
+        .bind(request.oidc_issuer_url)
+        .bind(request.oidc_scopes)
+        .bind(request.jit_enabled)
+        .bind(request.attribute_mapping)
         .bind(Utc::now())
-        .bind(self.request.connection_id)
-        .bind(self.request.organization_id)
+        .bind(request.connection_id)
+        .bind(request.organization_id)
         .bind(self.deployment_id)
         .fetch_one(executor)
         .await?;

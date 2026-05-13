@@ -44,6 +44,12 @@ pub async fn create_oauth_client(
     let oauth_app = get_oauth_app_by_slug(app_state, deployment_id, oauth_app_slug).await?;
     let deps = deps::from_app(app_state).db().enc();
 
+    // OIDC: only RSA-family signing algs are supported because per-app keys
+    // are RSA. Fail at write time, not at first id_token mint.
+    if let Some(alg) = request.id_token_signing_alg.as_deref() {
+        crate::api::oauth_runtime::helpers::validate_id_token_signing_alg(alg)?;
+    }
+
     let created = CreateOAuthClientCommand {
         client_record_id: Some(app_state.sf.next_id()? as i64),
         deployment_id,
@@ -63,6 +69,8 @@ pub async fn create_oauth_client(
         jwks_uri: request.jwks_uri,
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
+        post_logout_redirect_uris: request.post_logout_redirect_uris,
+        id_token_signing_alg: request.id_token_signing_alg,
     }
     .execute_with_deps(&deps)
     .await?;
@@ -85,6 +93,10 @@ pub async fn update_oauth_client(
     let client =
         get_oauth_client_by_id(app_state, deployment_id, oauth_app.id, oauth_client_id).await?;
 
+    if let Some(alg) = request.id_token_signing_alg.as_deref() {
+        crate::api::oauth_runtime::helpers::validate_id_token_signing_alg(alg)?;
+    }
+
     let updated = UpdateOAuthClientSettings {
         oauth_app_id: oauth_app.id,
         client_id: client.client_id,
@@ -103,6 +115,8 @@ pub async fn update_oauth_client(
         jwks_uri: request.jwks_uri,
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
+        post_logout_redirect_uris: request.post_logout_redirect_uris,
+        id_token_signing_alg: request.id_token_signing_alg,
     }
     .execute_with_db(writer)
     .await?

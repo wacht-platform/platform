@@ -36,6 +36,17 @@ pub async fn oauth_authorize_get(
     oauth_runtime_app::oauth_authorize_get(&app_state, &headers, request).await
 }
 
+/// OIDC Core §3.1.2.1 requires the Authorization Endpoint to accept both GET
+/// and POST. With POST the parameters arrive in an `application/x-www-form-urlencoded`
+/// body. The handler logic is otherwise identical.
+pub async fn oauth_authorize_post(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Form(request): Form<OAuthAuthorizeRequest>,
+) -> Result<Redirect, crate::application::response::ApiErrorResponse> {
+    oauth_runtime_app::oauth_authorize_get(&app_state, &headers, request).await
+}
+
 pub async fn oauth_consent_submit(
     State(app_state): State<AppState>,
     headers: HeaderMap,

@@ -23,3 +23,9 @@ pub(crate) struct OAuthScopePathParams {
     pub(crate) oauth_app_slug: String,
     pub(crate) scope: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct OAuthSigningKeyPathParams {
+    pub(crate) oauth_app_slug: String,
+    pub(crate) kid: String,
+}

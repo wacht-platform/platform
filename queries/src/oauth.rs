@@ -54,6 +54,8 @@ pub struct OAuthClientData {
     pub software_version: Option<String>,
     pub pkce_required: bool,
     pub is_active: bool,
+    pub post_logout_redirect_uris: serde_json::Value,
+    pub id_token_signing_alg: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -69,6 +71,10 @@ impl OAuthClientData {
 
     pub fn contacts_vec(&self) -> Vec<String> {
         json_default(self.contacts.clone())
+    }
+
+    pub fn post_logout_redirect_uris_vec(&self) -> Vec<String> {
+        json_default(self.post_logout_redirect_uris.clone())
     }
 }
 

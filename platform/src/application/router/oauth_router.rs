@@ -18,9 +18,28 @@ pub async fn create_oauth_router(state: AppState) -> Router {
                 "/.well-known/oauth-protected-resource",
                 get(api::oauth_runtime::oauth_protected_resource_metadata),
             )
+            // ---- OIDC extension ----
+            .route(
+                "/.well-known/openid-configuration",
+                get(api::oauth_runtime::openid_configuration),
+            )
+            .route(
+                "/.well-known/jwks.json",
+                get(api::oauth_runtime::jwks),
+            )
+            .route(
+                "/oauth/userinfo",
+                get(api::oauth_runtime::userinfo).post(api::oauth_runtime::userinfo),
+            )
+            .route(
+                "/oauth/logout",
+                get(api::oauth_runtime::oauth_logout)
+                    .post(api::oauth_runtime::oauth_logout_post),
+            )
             .route(
                 "/oauth/authorize",
-                get(api::oauth_runtime::oauth_authorize_get),
+                get(api::oauth_runtime::oauth_authorize_get)
+                    .post(api::oauth_runtime::oauth_authorize_post),
             )
             .route(
                 "/oauth/consent/submit",

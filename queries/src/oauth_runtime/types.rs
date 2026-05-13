@@ -58,6 +58,12 @@ pub struct RuntimeOAuthClientData {
     pub software_version: Option<String>,
     pub is_active: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// OIDC: where the RP can send the user after `/oauth/logout`. Empty Vec
+    /// when no entries are registered (i.e., RP didn't opt into OIDC logout).
+    pub post_logout_redirect_uris: Vec<String>,
+    /// OIDC: signing algorithm for id_tokens minted for this client.
+    /// Defaults to RS256 at the DB layer.
+    pub id_token_signing_alg: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,6 +84,17 @@ pub struct RuntimeAuthorizationCodeData {
     pub scopes: Vec<String>,
     pub resource: Option<String>,
     pub granted_resource: Option<String>,
+    /// OIDC: nonce supplied at /authorize (echoed back in the id_token).
+    pub nonce: Option<String>,
+    /// OIDC: when the user actually authenticated. Replayed into id_token's
+    /// `auth_time` claim. Falls back to code's `created_at` if not set.
+    pub auth_time: Option<chrono::DateTime<chrono::Utc>>,
+    /// OIDC: session id at code-issuance time. Tokens minted from this code
+    /// inherit it for cascade revocation on logout.
+    pub session_id: Option<i64>,
+    /// OIDC: user_id for the grant — used as `sub` in id_tokens. Populated by
+    /// joining `oauth_client_grants.granted_by_user_id` in the exchange query.
+    pub user_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +108,15 @@ pub struct RuntimeRefreshTokenData {
     pub scopes: Vec<String>,
     pub resource: Option<String>,
     pub granted_resource: Option<String>,
+    /// OIDC: session linkage inherited from the original auth code. New
+    /// tokens minted via refresh-grant should carry this forward so the
+    /// logout cascade stays consistent across the chain.
+    pub session_id: Option<i64>,
+    /// Mirrors `sessions.deleted_at` from the join. None when the backing
+    /// session is still alive (or when the refresh token has no session
+    /// linkage); Some when the user has signed out and any refresh attempt
+    /// must be rejected.
+    pub session_deleted_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

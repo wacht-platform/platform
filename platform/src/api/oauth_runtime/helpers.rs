@@ -228,23 +228,17 @@ pub(crate) async fn ensure_or_create_grant_coverage(
     resource: String,
     user_id: i64,
 ) -> Result<i64, AppError> {
-    let reader = app_state.db_router.reader(ReadConsistency::Strong);
-    let resolved = ResolveRuntimeOAuthGrantQuery::by_scope_match(
+    if let Some(grant_id) = find_existing_grant_coverage(
+        app_state,
         deployment_id,
         oauth_client_id,
         app_slug.clone(),
         scopes.clone(),
-        Some(resource.clone()),
+        resource.clone(),
     )
-    .execute_with_db(reader)
-    .await?;
-    if let Some(grant_id) = resolved.active_grant_id {
+    .await?
+    {
         return Ok(grant_id);
-    }
-    if resolved.revoked {
-        return Err(AppError::Forbidden(
-            "Grant is revoked for requested scopes/resource".to_string(),
-        ));
     }
 
     let writer = app_state.db_router.writer();
@@ -266,6 +260,37 @@ pub(crate) async fn ensure_or_create_grant_coverage(
     .execute_with_db(writer)
     .await?;
     Ok(created.id)
+}
+
+/// Lookup-only variant for `prompt=none`: returns the active grant when the
+/// user has already approved these scopes/resource for this client, `None`
+/// when no UI-less satisfaction is possible. Revoked grants short-circuit as
+/// a `Forbidden` so the caller can map that to `consent_required` rather
+/// than silently re-creating.
+pub(crate) async fn find_existing_grant_coverage(
+    app_state: &AppState,
+    deployment_id: i64,
+    oauth_client_id: i64,
+    app_slug: String,
+    scopes: Vec<String>,
+    resource: String,
+) -> Result<Option<i64>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    let resolved = ResolveRuntimeOAuthGrantQuery::by_scope_match(
+        deployment_id,
+        oauth_client_id,
+        app_slug,
+        scopes,
+        Some(resource),
+    )
+    .execute_with_db(reader)
+    .await?;
+    if resolved.revoked {
+        return Err(AppError::Forbidden(
+            "Grant is revoked for requested scopes/resource".to_string(),
+        ));
+    }
+    Ok(resolved.active_grant_id)
 }
 
 pub(super) fn validate_secret_hash(
@@ -520,6 +545,22 @@ pub(super) fn required_permissions_for_resource(
     permissions.sort_unstable();
     permissions.dedup();
     permissions
+}
+
+/// OIDC: id_tokens are signed with the OAuth app's RSA keypair. Today the
+/// signing-key provisioner only generates RS256 keys and the discovery doc
+/// advertises RS256 only, so we narrow validation to match — accepting an
+/// alg we won't actually honor would be misleading. Broader algs can come
+/// back when key generation + discovery both grow to support them.
+pub(crate) fn validate_id_token_signing_alg(alg: &str) -> Result<(), common::error::AppError> {
+    if alg == "RS256" {
+        Ok(())
+    } else {
+        Err(common::error::AppError::BadRequest(format!(
+            "id_token_signing_alg `{}` is not supported. Only RS256 is currently supported.",
+            alg,
+        )))
+    }
 }
 
 pub(crate) fn parse_scope_string(scope: Option<&str>) -> Vec<String> {

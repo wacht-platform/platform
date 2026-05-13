@@ -1,0 +1,96 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                c.id,\n                c.oauth_grant_id,\n                c.app_slug,\n                c.redirect_uri,\n                c.pkce_code_challenge,\n                c.pkce_code_challenge_method,\n                c.scopes,\n                c.resource,\n                c.granted_resource,\n                c.nonce,\n                c.auth_time,\n                c.session_id,\n                g.granted_by_user_id AS \"user_id?: i64\"\n            FROM oauth_authorization_codes c\n            LEFT JOIN oauth_client_grants g ON g.id = c.oauth_grant_id\n            WHERE c.deployment_id = $1\n              AND c.oauth_client_id = $2\n              AND c.code_hash = $3\n              AND c.consumed_at IS NULL\n              AND c.expires_at > NOW()\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "oauth_grant_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "app_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "redirect_uri",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "pkce_code_challenge",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "pkce_code_challenge_method",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "scopes",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "resource",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "granted_resource",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "nonce",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "auth_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "session_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "user_id?: i64",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "87014f9f5fbc9f8785ad6d9bfdf77e73ead88d5104d9e044beb89339d78fbfb2"
+}

@@ -2,6 +2,7 @@ mod app_handlers;
 mod client_handlers;
 mod grant_handlers;
 mod scope_handlers;
+mod signing_key_handlers;
 mod types;
 
 pub use app_handlers::{create_oauth_app, list_oauth_apps};
@@ -13,4 +14,7 @@ pub(crate) use client_handlers::{
 pub(crate) use grant_handlers::{list_oauth_grants, revoke_oauth_grant};
 pub(crate) use scope_handlers::{
     archive_oauth_scope, set_oauth_scope_mapping, unarchive_oauth_scope, update_oauth_scope,
+};
+pub(crate) use signing_key_handlers::{
+    compromise_signing_key, list_signing_keys, rotate_signing_key,
 };

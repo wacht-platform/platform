@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO oauth_authorization_codes (\n                id,\n                deployment_id,\n                oauth_client_id,\n                oauth_grant_id,\n                app_slug,\n                code_hash,\n                redirect_uri,\n                pkce_code_challenge,\n                pkce_code_challenge_method,\n                scopes,\n                resource,\n                granted_resource,\n                expires_at,\n                nonce,\n                auth_time,\n                session_id,\n                created_at\n            ) VALUES (\n                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,\n                $14, $15, $16, NOW()\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Text",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "84ce29fa2444d94a2487ebf47b5bb8fdddee23e1e6e222c3e432d243e2a916c6"
+}

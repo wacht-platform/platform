@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT protocol as \"protocol!: String\"\n            FROM enterprise_connections\n            WHERE id = $1 AND organization_id = $2 AND deployment_id = $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "protocol!: String",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b6589611298d51528b2e710f280ad3c8738dd446fee906af8ad2ada681c3008a"
+}

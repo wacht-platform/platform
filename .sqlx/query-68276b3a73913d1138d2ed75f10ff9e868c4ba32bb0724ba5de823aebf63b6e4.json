@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO oauth_app_signing_keys (\n                id, oauth_app_id, kid, algorithm, public_key_pem, private_key_pem,\n                status, activated_at, created_at\n            ) VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW(), NOW())\n            ON CONFLICT (oauth_app_id) WHERE status = 'active' DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "68276b3a73913d1138d2ed75f10ff9e868c4ba32bb0724ba5de823aebf63b6e4"
+}

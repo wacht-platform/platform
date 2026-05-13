@@ -19,6 +19,11 @@ pub struct CreateOAuthClientCommand {
     pub contacts: Option<Vec<String>>,
     pub software_id: Option<String>,
     pub software_version: Option<String>,
+    /// OIDC: allowlist for RP-initiated logout. Empty by default.
+    pub post_logout_redirect_uris: Vec<String>,
+    /// OIDC: id_token signing alg. None ⇒ DB default (RS256). Caller is
+    /// responsible for validating before calling (only RSA-family allowed).
+    pub id_token_signing_alg: Option<String>,
 }
 
 pub struct OAuthClientWithSecret {
@@ -95,6 +100,7 @@ impl CreateOAuthClientCommand {
         validate_optional_url("tos_uri", self.tos_uri.as_deref())?;
         validate_optional_url("policy_uri", self.policy_uri.as_deref())?;
         validate_redirect_uris(&self.redirect_uris, &self.grant_types)?;
+        super::validate_post_logout_redirect_uris(&self.post_logout_redirect_uris)?;
 
         Ok(())
     }
@@ -233,6 +239,14 @@ impl CreateOAuthClientCommand {
             .filter(|s| !s.is_empty())
             .map(ToOwned::to_owned);
 
+        let post_logout_redirect_uris_json = serde_json::to_value(&self.post_logout_redirect_uris)?;
+        let id_token_signing_alg = self
+            .id_token_signing_alg
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned);
+
         let row = sqlx::query!(
             r#"
             INSERT INTO oauth_clients (
@@ -256,10 +270,15 @@ impl CreateOAuthClientCommand {
                 contacts,
                 software_id,
                 software_version,
+                post_logout_redirect_uris,
+                id_token_signing_alg,
                 pkce_required,
                 is_active
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,true,true)
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                $16, $17, $18, $19, $20, $21, COALESCE($22, 'RS256'), true, true
+            )
             RETURNING
                 id,
                 deployment_id,
@@ -281,6 +300,8 @@ impl CreateOAuthClientCommand {
                 software_version,
                 pkce_required,
                 is_active,
+                post_logout_redirect_uris as "post_logout_redirect_uris: serde_json::Value",
+                id_token_signing_alg,
                 created_at,
                 updated_at
             "#,
@@ -303,7 +324,9 @@ impl CreateOAuthClientCommand {
             policy_uri,
             contacts_json,
             software_id,
-            software_version
+            software_version,
+            post_logout_redirect_uris_json,
+            id_token_signing_alg,
         )
         .fetch_one(writer)
         .await?;
@@ -337,6 +360,8 @@ impl CreateOAuthClientCommand {
                 software_version: row.software_version,
                 pkce_required: row.pkce_required,
                 is_active: row.is_active,
+                post_logout_redirect_uris: row.post_logout_redirect_uris,
+                id_token_signing_alg: row.id_token_signing_alg,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             },

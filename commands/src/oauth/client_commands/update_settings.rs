@@ -18,6 +18,11 @@ pub struct UpdateOAuthClientSettings {
     pub contacts: Option<Vec<String>>,
     pub software_id: Option<String>,
     pub software_version: Option<String>,
+    /// OIDC: replaces the entire allowlist when Some.
+    pub post_logout_redirect_uris: Option<Vec<String>>,
+    /// OIDC: id_token signing alg. Caller must validate (only RSA-family
+    /// allowed); we just persist whatever's provided.
+    pub id_token_signing_alg: Option<String>,
 }
 
 impl UpdateOAuthClientSettings {
@@ -99,6 +104,9 @@ impl UpdateOAuthClientSettings {
             )));
         }
         validate_redirect_uris(&effective_redirect_uris, &effective_grant_types)?;
+        if let Some(uris) = &self.post_logout_redirect_uris {
+            super::validate_post_logout_redirect_uris(uris)?;
+        }
 
         let token_endpoint_auth_signing_alg = self
             .token_endpoint_auth_signing_alg
@@ -238,6 +246,17 @@ impl UpdateOAuthClientSettings {
             .as_ref()
             .map(serde_json::to_value)
             .transpose()?;
+        let post_logout_redirect_uris_json = self
+            .post_logout_redirect_uris
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()?;
+        let id_token_signing_alg = self
+            .id_token_signing_alg
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned);
 
         let row = sqlx::query!(
             r#"
@@ -290,6 +309,14 @@ impl UpdateOAuthClientSettings {
                     WHEN $16::text IS NULL THEN software_version
                     ELSE $16
                 END,
+                post_logout_redirect_uris = CASE
+                    WHEN $17::jsonb IS NULL THEN post_logout_redirect_uris
+                    ELSE $17
+                END,
+                id_token_signing_alg = CASE
+                    WHEN $18::text IS NULL THEN id_token_signing_alg
+                    ELSE $18
+                END,
                 updated_at = NOW()
             WHERE oauth_app_id = $1
               AND client_id = $2
@@ -315,6 +342,8 @@ impl UpdateOAuthClientSettings {
                 software_version,
                 pkce_required,
                 is_active,
+                post_logout_redirect_uris as "post_logout_redirect_uris: serde_json::Value",
+                id_token_signing_alg,
                 created_at,
                 updated_at
             "#,
@@ -333,7 +362,9 @@ impl UpdateOAuthClientSettings {
             policy_uri,
             contacts_json,
             software_id,
-            software_version
+            software_version,
+            post_logout_redirect_uris_json,
+            id_token_signing_alg,
         )
         .fetch_optional(&mut *tx)
         .await?;
@@ -367,6 +398,8 @@ impl UpdateOAuthClientSettings {
                 software_version: r.software_version,
                 pkce_required: r.pkce_required,
                 is_active: r.is_active,
+                post_logout_redirect_uris: r.post_logout_redirect_uris,
+                id_token_signing_alg: r.id_token_signing_alg,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
             }

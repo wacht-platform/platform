@@ -28,6 +28,11 @@ pub async fn oauth_register_client(
         .clone()
         .unwrap_or_else(|| "client_secret_basic".to_string());
 
+    // OIDC: fail fast on an alg we can't sign with (our keys are RSA).
+    if let Some(alg) = request.id_token_signing_alg.as_deref() {
+        crate::api::oauth_runtime::helpers::validate_id_token_signing_alg(alg)?;
+    }
+
     let created = CreateOAuthClientCommand {
         client_record_id: Some(
             app_state
@@ -52,6 +57,8 @@ pub async fn oauth_register_client(
         jwks_uri: request.jwks_uri,
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
+        post_logout_redirect_uris: request.post_logout_redirect_uris.clone(),
+        id_token_signing_alg: request.id_token_signing_alg.clone(),
     }
     .execute_with_deps(&create_deps)
     .await?;
@@ -97,6 +104,11 @@ pub async fn oauth_update_registered_client(
     let (oauth_app, _) =
         resolve_registered_client_with_access(app_state, headers, &params.client_id).await?;
 
+    // OIDC: validate the alg before we touch the DB so the error is precise.
+    if let Some(alg) = request.id_token_signing_alg.as_deref() {
+        crate::api::oauth_runtime::helpers::validate_id_token_signing_alg(alg)?;
+    }
+
     let updated = UpdateOAuthClientSettings {
         oauth_app_id: oauth_app.id,
         client_id: params.client_id.clone(),
@@ -115,6 +127,9 @@ pub async fn oauth_update_registered_client(
         jwks_uri: request.jwks_uri,
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
+        // OIDC: pass through the new fields. Both have been validated above.
+        post_logout_redirect_uris: request.post_logout_redirect_uris,
+        id_token_signing_alg: request.id_token_signing_alg,
     }
     .execute_with_db(writer)
     .await?
@@ -173,6 +188,9 @@ fn map_oauth_client_registration_response(
     let grant_types = client.grant_types_vec();
     let redirect_uris = client.redirect_uris_vec();
 
+    let post_logout_redirect_uris = client.post_logout_redirect_uris_vec();
+    let id_token_signed_response_alg = client.id_token_signing_alg.clone();
+
     OAuthDynamicClientRegistrationResponse {
         client_id: client_id.clone(),
         client_name: client.client_name,
@@ -191,6 +209,8 @@ fn map_oauth_client_registration_response(
         redirect_uris,
         registration_client_uri: format!("{}/oauth/register/{}", issuer, client_id),
         registration_access_token,
+        post_logout_redirect_uris,
+        id_token_signed_response_alg,
     }
 }
 
@@ -200,6 +220,8 @@ fn map_runtime_client_registration_response(
 ) -> OAuthDynamicClientRegistrationResponse {
     let client_id = client.client_id.clone();
     let token_endpoint_auth_method = client.client_auth_method.clone();
+    let post_logout_redirect_uris = client.post_logout_redirect_uris.clone();
+    let id_token_signed_response_alg = client.id_token_signing_alg.clone();
 
     OAuthDynamicClientRegistrationResponse {
         client_id: client_id.clone(),
@@ -219,5 +241,7 @@ fn map_runtime_client_registration_response(
         redirect_uris: client.redirect_uris,
         registration_client_uri: format!("{}/oauth/register/{}", issuer, client_id),
         registration_access_token: None,
+        post_logout_redirect_uris,
+        id_token_signed_response_alg,
     }
 }
