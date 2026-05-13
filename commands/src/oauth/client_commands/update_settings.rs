@@ -130,48 +130,37 @@ impl UpdateOAuthClientSettings {
             .client_name
             .as_deref()
             .map(str::trim)
-            .filter(|s| !s.is_empty())
             .map(ToOwned::to_owned);
         let client_uri = self
             .client_uri
             .as_deref()
             .map(str::trim)
-            .filter(|s| !s.is_empty())
             .map(ToOwned::to_owned);
         let logo_uri = self
             .logo_uri
             .as_deref()
             .map(str::trim)
-            .filter(|s| !s.is_empty())
             .map(ToOwned::to_owned);
         let tos_uri = self
             .tos_uri
             .as_deref()
             .map(str::trim)
-            .filter(|s| !s.is_empty())
             .map(ToOwned::to_owned);
         let policy_uri = self
             .policy_uri
             .as_deref()
             .map(str::trim)
-            .filter(|s| !s.is_empty())
             .map(ToOwned::to_owned);
-        let contacts_json = self
-            .contacts
-            .filter(|items| !items.is_empty())
-            .map(serde_json::to_value)
-            .transpose()?;
+        let contacts_json = self.contacts.map(serde_json::to_value).transpose()?;
         let software_id = self
             .software_id
             .as_deref()
             .map(str::trim)
-            .filter(|s| !s.is_empty())
             .map(ToOwned::to_owned);
         let software_version = self
             .software_version
             .as_deref()
             .map(str::trim)
-            .filter(|s| !s.is_empty())
             .map(ToOwned::to_owned);
 
         let has_jwks_uri = jwks_uri.is_some();
@@ -279,23 +268,23 @@ impl UpdateOAuthClientSettings {
                 END,
                 client_name = CASE
                     WHEN $9::text IS NULL THEN client_name
-                    ELSE $9
+                    ELSE NULLIF($9::text, '')
                 END,
                 client_uri = CASE
                     WHEN $10::text IS NULL THEN client_uri
-                    ELSE $10
+                    ELSE NULLIF($10::text, '')
                 END,
                 logo_uri = CASE
                     WHEN $11::text IS NULL THEN logo_uri
-                    ELSE $11
+                    ELSE NULLIF($11::text, '')
                 END,
                 tos_uri = CASE
                     WHEN $12::text IS NULL THEN tos_uri
-                    ELSE $12
+                    ELSE NULLIF($12::text, '')
                 END,
                 policy_uri = CASE
                     WHEN $13::text IS NULL THEN policy_uri
-                    ELSE $13
+                    ELSE NULLIF($13::text, '')
                 END,
                 contacts = CASE
                     WHEN $14::jsonb IS NULL THEN contacts
@@ -303,11 +292,11 @@ impl UpdateOAuthClientSettings {
                 END,
                 software_id = CASE
                     WHEN $15::text IS NULL THEN software_id
-                    ELSE $15
+                    ELSE NULLIF($15::text, '')
                 END,
                 software_version = CASE
                     WHEN $16::text IS NULL THEN software_version
-                    ELSE $16
+                    ELSE NULLIF($16::text, '')
                 END,
                 post_logout_redirect_uris = CASE
                     WHEN $17::jsonb IS NULL THEN post_logout_redirect_uris
