@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                deployment_id,\n                oauth_app_id,\n                client_id,\n                client_auth_method,\n                grant_types as \"grant_types: serde_json::Value\",\n                redirect_uris as \"redirect_uris: serde_json::Value\",\n                token_endpoint_auth_signing_alg,\n                jwks_uri,\n                jwks as \"jwks: sqlx::types::Json<models::api_key::JwksDocument>\",\n                client_name,\n                client_uri,\n                logo_uri,\n                tos_uri,\n                policy_uri,\n                contacts as \"contacts: serde_json::Value\",\n                software_id,\n                software_version,\n                pkce_required,\n                is_active,\n                post_logout_redirect_uris as \"post_logout_redirect_uris: serde_json::Value\",\n                id_token_signing_alg,\n                created_at,\n                updated_at\n            FROM oauth_clients\n            WHERE deployment_id = $1\n              AND oauth_app_id = $2\n              AND id = $3\n            ",
+  "query": "\n            SELECT\n                id,\n                deployment_id,\n                oauth_app_id,\n                client_id,\n                client_auth_method,\n                grant_types as \"grant_types: serde_json::Value\",\n                redirect_uris as \"redirect_uris: serde_json::Value\",\n                token_endpoint_auth_signing_alg,\n                jwks_uri,\n                jwks as \"jwks: sqlx::types::Json<models::api_key::JwksDocument>\",\n                client_name,\n                client_uri,\n                logo_uri,\n                tos_uri,\n                policy_uri,\n                contacts as \"contacts: serde_json::Value\",\n                software_id,\n                software_version,\n                pkce_required,\n                is_active,\n                post_logout_redirect_uris as \"post_logout_redirect_uris: serde_json::Value\",\n                id_token_signing_alg,\n                access_token_format,\n                access_token_ttl_seconds,\n                skip_consent,\n                created_at,\n                updated_at\n            FROM oauth_clients\n            WHERE deployment_id = $1\n              AND oauth_app_id = $2\n              AND id = $3\n            ",
   "describe": {
     "columns": [
       {
@@ -115,11 +115,26 @@
       },
       {
         "ordinal": 22,
+        "name": "access_token_format",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 23,
+        "name": "access_token_ttl_seconds",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 24,
+        "name": "skip_consent",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 25,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 23,
+        "ordinal": 26,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -155,8 +170,11 @@
       false,
       false,
       false,
+      false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "f1fcac260bc6e2871beca02c01bfed7c18d80856493b97ccc9f88b2bc3ecf0fe"
+  "hash": "b1a038f1aafd0215054df6b8ed2538d038091af422fb72bdf2cfa96ba964a37c"
 }

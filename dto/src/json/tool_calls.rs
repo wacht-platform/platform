@@ -263,8 +263,7 @@ pub struct ListThreadsParams {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CreateThreadParams {
     pub title: String,
-    #[serde(default)]
-    pub assigned_agent_name: Option<String>,
+    pub assigned_agent_name: String,
     #[serde(default)]
     pub responsibility: Option<String>,
     #[serde(default)]

@@ -491,6 +491,74 @@ fn client_allows_post_logout_redirect(
         .any(|registered| registered == uri)
 }
 
+pub struct AccessJwtBuildContext {
+    pub issuer: String,
+    pub client_id: String,
+    /// `sub` claim — typically the user id for user-bound flows. For
+    /// client_credentials-style flows (none today) the caller should pass
+    /// the client_id so `sub` is never empty.
+    pub subject: String,
+    pub session_id: Option<i64>,
+    pub scopes: Vec<String>,
+    /// `aud` claim. When the RP requested a specific resource indicator
+    /// (RFC 8707) we use it as the audience; otherwise we default to the
+    /// client_id so a JWT always carries an `aud`.
+    pub audience: Option<String>,
+    pub ttl_seconds: i32,
+    pub access_token_id: i64,
+}
+
+#[derive(serde::Serialize)]
+struct AccessTokenClaims {
+    iss: String,
+    sub: String,
+    aud: String,
+    exp: i64,
+    iat: i64,
+    /// Snowflake of the access_token; useful as a stable identifier even
+    /// though no DB row exists in JWT mode.
+    jti: String,
+    /// OAuth client that received the token.
+    client_id: String,
+    /// Space-separated scopes per RFC 6749.
+    scope: String,
+    /// Session id propagated from the auth code so server-side cascade
+    /// logout still affects downstream sessions tied to this token.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sid: Option<String>,
+    /// JWT "token use" hint — distinguishes from id_tokens issued by the
+    /// same key. Some libraries (e.g. AWS, Auth0) look for this.
+    token_use: &'static str,
+}
+
+/// Mint a stateless RS256-signed access token using the deployment's
+/// existing OIDC signing key (same key the id_token is signed with, so
+/// customers only need one JWKS). No DB row is written; revocation is
+/// natural-expiry only for JWT-mode clients.
+pub async fn build_access_jwt(
+    app_state: &AppState,
+    oauth_app_id: i64,
+    ctx: AccessJwtBuildContext,
+) -> Result<String, ApiErrorResponse> {
+    let key = ensure_active_signing_key(app_state, oauth_app_id).await?;
+    let now = Utc::now().timestamp();
+    let ttl = ctx.ttl_seconds.max(60) as i64;
+    let claims = AccessTokenClaims {
+        iss: ctx.issuer,
+        sub: ctx.subject,
+        aud: ctx.audience.unwrap_or_else(|| ctx.client_id.clone()),
+        exp: now + ttl,
+        iat: now,
+        jti: ctx.access_token_id.to_string(),
+        client_id: ctx.client_id,
+        scope: ctx.scopes.join(" "),
+        sid: ctx.session_id.map(|id| id.to_string()),
+        token_use: "access_token",
+    };
+    common::utils::jwt::sign_token_with_kid(&claims, &key.algorithm, &key.private_key_pem, &key.kid)
+        .map_err(ApiErrorResponse::from)
+}
+
 pub struct IdTokenBuildContext {
     pub issuer: String,
     pub client_id: String,

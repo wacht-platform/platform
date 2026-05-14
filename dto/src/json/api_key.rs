@@ -292,6 +292,14 @@ pub struct CreateOAuthClientRequest {
     pub post_logout_redirect_uris: Vec<String>,
     /// OIDC: id_token signing alg (RSA-family only).
     pub id_token_signing_alg: Option<String>,
+    /// `opaque` (default) — server-side hashed access tokens, validated at
+    /// our gateway. `jwt` — stateless JWT signed by the deployment OIDC key;
+    /// clients verify against JWKS, no per-request introspection round-trip.
+    pub access_token_format: Option<String>,
+    /// Lifetime of issued access tokens in seconds. 60–86400 (1 min – 1 day).
+    pub access_token_ttl_seconds: Option<i32>,
+    /// First-party shortcut: skip the consent screen for this client.
+    pub skip_consent: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -315,6 +323,12 @@ pub struct UpdateOAuthClientRequest {
     pub post_logout_redirect_uris: Option<Vec<String>>,
     /// OIDC: id_token signing alg (RSA-family only).
     pub id_token_signing_alg: Option<String>,
+    /// `opaque` or `jwt`.
+    pub access_token_format: Option<String>,
+    /// Access-token lifetime in seconds (60–86400).
+    pub access_token_ttl_seconds: Option<i32>,
+    /// First-party shortcut: skip the consent screen for this client.
+    pub skip_consent: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

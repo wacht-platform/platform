@@ -341,21 +341,59 @@ async fn handle_authorization_code_grant(
         .next_id()
         .map_err(|e| map_token_app_error(AppError::Internal(e.to_string())))?
         as i64;
-    let tokens = IssueOAuthTokenPair {
+    let access_token_format = context.client.access_token_format.clone();
+    let access_token_ttl_seconds = context.client.access_token_ttl_seconds;
+    let scopes_for_issue = code_row.scopes.clone();
+    let granted_resource_for_jwt = code_row.granted_resource.clone();
+    let app_slug_for_issue = code_row.app_slug.clone();
+    let mut tokens = IssueOAuthTokenPair {
         access_token_id: Some(access_token_id),
         refresh_token_id: Some(refresh_token_id),
         deployment_id: context.oauth_app.deployment_id,
         oauth_client_id: context.client.id,
         oauth_grant_id,
-        app_slug: code_row.app_slug,
-        scopes: code_row.scopes,
+        app_slug: app_slug_for_issue,
+        scopes: scopes_for_issue.clone(),
         resource: code_row.resource,
         granted_resource: code_row.granted_resource,
         session_id: code_row.session_id,
+        access_token_format: access_token_format.clone(),
+        access_token_ttl_seconds,
     }
     .execute_with_db(app_state.db_router.writer())
     .await
     .map_err(map_token_app_error)?;
+
+    if access_token_format == "jwt" {
+        let issuer = crate::api::oauth_runtime::helpers::resolve_issuer_from_oauth_app(
+            &context.oauth_app,
+        )
+        .map_err(map_token_app_error)?;
+        tokens.access_token = super::oidc::build_access_jwt(
+            &app_state,
+            context.oauth_app.id,
+            super::oidc::AccessJwtBuildContext {
+                issuer,
+                client_id: context.client.client_id.clone(),
+                subject: oidc_user_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| context.client.client_id.clone()),
+                session_id: code_row.session_id,
+                scopes: scopes_for_issue,
+                audience: granted_resource_for_jwt,
+                ttl_seconds: access_token_ttl_seconds,
+                access_token_id,
+            },
+        )
+        .await
+        .map_err(|e| {
+            crate::api::oauth_runtime::token_handlers::oauth_token_error(
+                e.status_code,
+                "server_error",
+                e.errors.first().map(|x| x.message.as_str()),
+            )
+        })?;
+    }
 
     enqueue_grant_last_used(
         app_state.clone(),
@@ -539,23 +577,59 @@ async fn handle_refresh_token_grant(
         .next_id()
         .map_err(|e| map_token_app_error(AppError::Internal(e.to_string())))?
         as i64;
-    let tokens = IssueOAuthTokenPair {
+    let access_token_format = context.client.access_token_format.clone();
+    let access_token_ttl_seconds = context.client.access_token_ttl_seconds;
+    let mut tokens = IssueOAuthTokenPair {
         access_token_id: Some(access_token_id),
         refresh_token_id: Some(refresh_token_id),
         deployment_id: context.oauth_app.deployment_id,
         oauth_client_id: context.client.id,
         oauth_grant_id,
-        app_slug: refresh_row.app_slug,
+        app_slug: refresh_row.app_slug.clone(),
         scopes: effective_scopes.clone(),
         resource: refresh_row.resource.clone(),
         granted_resource: refresh_row.granted_resource.clone(),
         // OIDC: carry session linkage forward through refresh chains so the
         // logout cascade still reaches tokens minted from a refresh grant.
         session_id: refresh_row.session_id,
+        access_token_format: access_token_format.clone(),
+        access_token_ttl_seconds,
     }
     .execute_with_db(app_state.db_router.writer())
     .await
     .map_err(map_token_app_error)?;
+
+    if access_token_format == "jwt" {
+        let issuer = crate::api::oauth_runtime::helpers::resolve_issuer_from_oauth_app(
+            &context.oauth_app,
+        )
+        .map_err(map_token_app_error)?;
+        tokens.access_token = super::oidc::build_access_jwt(
+            &app_state,
+            context.oauth_app.id,
+            super::oidc::AccessJwtBuildContext {
+                issuer,
+                client_id: context.client.client_id.clone(),
+                subject: refresh_row
+                    .user_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| context.client.client_id.clone()),
+                session_id: refresh_row.session_id,
+                scopes: effective_scopes.clone(),
+                audience: refresh_row.granted_resource.clone(),
+                ttl_seconds: access_token_ttl_seconds,
+                access_token_id,
+            },
+        )
+        .await
+        .map_err(|e| {
+            crate::api::oauth_runtime::token_handlers::oauth_token_error(
+                e.status_code,
+                "server_error",
+                e.errors.first().map(|x| x.message.as_str()),
+            )
+        })?;
+    }
 
     SetOAuthRefreshTokenReplacement {
         old_refresh_token_id: refresh_row.id,

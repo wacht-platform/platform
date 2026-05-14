@@ -49,6 +49,20 @@ pub async fn create_oauth_client(
     if let Some(alg) = request.id_token_signing_alg.as_deref() {
         crate::api::oauth_runtime::helpers::validate_id_token_signing_alg(alg)?;
     }
+    if let Some(fmt) = request.access_token_format.as_deref() {
+        if fmt != "opaque" && fmt != "jwt" {
+            return Err(AppError::BadRequest(
+                "access_token_format must be 'opaque' or 'jwt'".to_string(),
+            ));
+        }
+    }
+    if let Some(ttl) = request.access_token_ttl_seconds {
+        if !(60..=86400).contains(&ttl) {
+            return Err(AppError::BadRequest(
+                "access_token_ttl_seconds must be between 60 and 86400".to_string(),
+            ));
+        }
+    }
 
     let created = CreateOAuthClientCommand {
         client_record_id: Some(app_state.sf.next_id()? as i64),
@@ -71,6 +85,9 @@ pub async fn create_oauth_client(
         public_key_pem: request.public_key_pem,
         post_logout_redirect_uris: request.post_logout_redirect_uris,
         id_token_signing_alg: request.id_token_signing_alg,
+        access_token_format: request.access_token_format,
+        access_token_ttl_seconds: request.access_token_ttl_seconds,
+        skip_consent: request.skip_consent,
     }
     .execute_with_deps(&deps)
     .await?;
@@ -96,6 +113,20 @@ pub async fn update_oauth_client(
     if let Some(alg) = request.id_token_signing_alg.as_deref() {
         crate::api::oauth_runtime::helpers::validate_id_token_signing_alg(alg)?;
     }
+    if let Some(fmt) = request.access_token_format.as_deref() {
+        if fmt != "opaque" && fmt != "jwt" {
+            return Err(AppError::BadRequest(
+                "access_token_format must be 'opaque' or 'jwt'".to_string(),
+            ));
+        }
+    }
+    if let Some(ttl) = request.access_token_ttl_seconds {
+        if !(60..=86400).contains(&ttl) {
+            return Err(AppError::BadRequest(
+                "access_token_ttl_seconds must be between 60 and 86400".to_string(),
+            ));
+        }
+    }
 
     let updated = UpdateOAuthClientSettings {
         oauth_app_id: oauth_app.id,
@@ -117,6 +148,9 @@ pub async fn update_oauth_client(
         public_key_pem: request.public_key_pem,
         post_logout_redirect_uris: request.post_logout_redirect_uris,
         id_token_signing_alg: request.id_token_signing_alg,
+        access_token_format: request.access_token_format,
+        access_token_ttl_seconds: request.access_token_ttl_seconds,
+        skip_consent: request.skip_consent,
     }
     .execute_with_db(writer)
     .await?

@@ -214,7 +214,10 @@ impl GetRuntimeOAuthClientByClientIdQuery {
                 is_active,
                 created_at,
                 post_logout_redirect_uris,
-                id_token_signing_alg
+                id_token_signing_alg,
+                access_token_format,
+                access_token_ttl_seconds,
+                skip_consent
             FROM oauth_clients
             WHERE oauth_app_id = $1
               AND client_id = $2
@@ -249,6 +252,9 @@ impl GetRuntimeOAuthClientByClientIdQuery {
             created_at: r.get("created_at"),
             post_logout_redirect_uris: json_default(r.get("post_logout_redirect_uris")),
             id_token_signing_alg: r.get("id_token_signing_alg"),
+            access_token_format: r.get("access_token_format"),
+            access_token_ttl_seconds: r.get("access_token_ttl_seconds"),
+            skip_consent: r.get("skip_consent"),
         }))
     }
 }
@@ -496,9 +502,11 @@ impl GetRuntimeRefreshTokenForExchangeQuery {
                 rt.resource,
                 rt.granted_resource,
                 rt.session_id,
-                s.deleted_at AS "session_deleted_at: chrono::DateTime<chrono::Utc>"
+                s.deleted_at AS "session_deleted_at: chrono::DateTime<chrono::Utc>",
+                g.granted_by_user_id AS "user_id?: i64"
             FROM oauth_refresh_tokens rt
             LEFT JOIN sessions s ON s.id = rt.session_id
+            LEFT JOIN oauth_client_grants g ON g.id = rt.oauth_grant_id
             WHERE rt.deployment_id = $1
               AND rt.oauth_client_id = $2
               AND rt.token_hash = $3
@@ -522,6 +530,7 @@ impl GetRuntimeRefreshTokenForExchangeQuery {
             granted_resource: r.granted_resource,
             session_id: r.session_id,
             session_deleted_at: r.session_deleted_at,
+            user_id: r.user_id,
         }))
     }
 }

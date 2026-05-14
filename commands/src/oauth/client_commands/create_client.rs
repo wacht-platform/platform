@@ -24,6 +24,13 @@ pub struct CreateOAuthClientCommand {
     /// OIDC: id_token signing alg. None ⇒ DB default (RS256). Caller is
     /// responsible for validating before calling (only RSA-family allowed).
     pub id_token_signing_alg: Option<String>,
+    /// `opaque` (default) or `jwt`. When `jwt`, access tokens are signed
+    /// stateless using the deployment OIDC key.
+    pub access_token_format: Option<String>,
+    /// Access-token TTL in seconds. 60–86400. None ⇒ DB default (3600).
+    pub access_token_ttl_seconds: Option<i32>,
+    /// First-party shortcut: skip the consent screen for this client.
+    pub skip_consent: Option<bool>,
 }
 
 pub struct OAuthClientWithSecret {
@@ -272,12 +279,17 @@ impl CreateOAuthClientCommand {
                 software_version,
                 post_logout_redirect_uris,
                 id_token_signing_alg,
+                access_token_format,
+                access_token_ttl_seconds,
+                skip_consent,
                 pkce_required,
                 is_active
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-                $16, $17, $18, $19, $20, $21, COALESCE($22, 'RS256'), true, true
+                $16, $17, $18, $19, $20, $21, COALESCE($22, 'RS256'),
+                COALESCE($23, 'opaque'), COALESCE($24, 3600), COALESCE($25, false),
+                true, true
             )
             RETURNING
                 id,
@@ -302,6 +314,9 @@ impl CreateOAuthClientCommand {
                 is_active,
                 post_logout_redirect_uris as "post_logout_redirect_uris: serde_json::Value",
                 id_token_signing_alg,
+                access_token_format,
+                access_token_ttl_seconds,
+                skip_consent,
                 created_at,
                 updated_at
             "#,
@@ -327,6 +342,9 @@ impl CreateOAuthClientCommand {
             software_version,
             post_logout_redirect_uris_json,
             id_token_signing_alg,
+            self.access_token_format,
+            self.access_token_ttl_seconds,
+            self.skip_consent,
         )
         .fetch_one(writer)
         .await?;
@@ -362,6 +380,9 @@ impl CreateOAuthClientCommand {
                 is_active: row.is_active,
                 post_logout_redirect_uris: row.post_logout_redirect_uris,
                 id_token_signing_alg: row.id_token_signing_alg,
+                access_token_format: row.access_token_format,
+                access_token_ttl_seconds: row.access_token_ttl_seconds,
+                skip_consent: row.skip_consent,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             },

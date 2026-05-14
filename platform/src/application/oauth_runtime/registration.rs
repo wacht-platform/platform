@@ -59,6 +59,9 @@ pub async fn oauth_register_client(
         public_key_pem: request.public_key_pem,
         post_logout_redirect_uris: request.post_logout_redirect_uris.clone(),
         id_token_signing_alg: request.id_token_signing_alg.clone(),
+        access_token_format: None,
+        access_token_ttl_seconds: None,
+        skip_consent: None,
     }
     .execute_with_deps(&create_deps)
     .await?;
@@ -130,6 +133,9 @@ pub async fn oauth_update_registered_client(
         // OIDC: pass through the new fields. Both have been validated above.
         post_logout_redirect_uris: request.post_logout_redirect_uris,
         id_token_signing_alg: request.id_token_signing_alg,
+        access_token_format: None,
+        access_token_ttl_seconds: None,
+        skip_consent: None,
     }
     .execute_with_db(writer)
     .await?

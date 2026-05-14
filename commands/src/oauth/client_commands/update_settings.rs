@@ -23,6 +23,12 @@ pub struct UpdateOAuthClientSettings {
     /// OIDC: id_token signing alg. Caller must validate (only RSA-family
     /// allowed); we just persist whatever's provided.
     pub id_token_signing_alg: Option<String>,
+    /// `opaque` or `jwt`. Caller must validate against this enum.
+    pub access_token_format: Option<String>,
+    /// Access-token TTL in seconds. Caller must validate range.
+    pub access_token_ttl_seconds: Option<i32>,
+    /// First-party shortcut: skip consent screen for this client.
+    pub skip_consent: Option<bool>,
 }
 
 impl UpdateOAuthClientSettings {
@@ -306,6 +312,18 @@ impl UpdateOAuthClientSettings {
                     WHEN $18::text IS NULL THEN id_token_signing_alg
                     ELSE $18
                 END,
+                access_token_format = CASE
+                    WHEN $19::text IS NULL THEN access_token_format
+                    ELSE $19
+                END,
+                access_token_ttl_seconds = CASE
+                    WHEN $20::integer IS NULL THEN access_token_ttl_seconds
+                    ELSE $20
+                END,
+                skip_consent = CASE
+                    WHEN $21::boolean IS NULL THEN skip_consent
+                    ELSE $21
+                END,
                 updated_at = NOW()
             WHERE oauth_app_id = $1
               AND client_id = $2
@@ -333,6 +351,9 @@ impl UpdateOAuthClientSettings {
                 is_active,
                 post_logout_redirect_uris as "post_logout_redirect_uris: serde_json::Value",
                 id_token_signing_alg,
+                access_token_format,
+                access_token_ttl_seconds,
+                skip_consent,
                 created_at,
                 updated_at
             "#,
@@ -354,6 +375,9 @@ impl UpdateOAuthClientSettings {
             software_version,
             post_logout_redirect_uris_json,
             id_token_signing_alg,
+            self.access_token_format,
+            self.access_token_ttl_seconds,
+            self.skip_consent,
         )
         .fetch_optional(&mut *tx)
         .await?;
@@ -389,6 +413,9 @@ impl UpdateOAuthClientSettings {
                 is_active: r.is_active,
                 post_logout_redirect_uris: r.post_logout_redirect_uris,
                 id_token_signing_alg: r.id_token_signing_alg,
+                access_token_format: r.access_token_format,
+                access_token_ttl_seconds: r.access_token_ttl_seconds,
+                skip_consent: r.skip_consent,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
             }

@@ -45,6 +45,9 @@ impl ListOAuthClientsByOAuthAppQuery {
                 is_active,
                 post_logout_redirect_uris as "post_logout_redirect_uris: serde_json::Value",
                 id_token_signing_alg,
+                access_token_format,
+                access_token_ttl_seconds,
+                skip_consent,
                 created_at,
                 updated_at
             FROM oauth_clients
@@ -87,6 +90,9 @@ impl ListOAuthClientsByOAuthAppQuery {
                     is_active: r.is_active,
                     post_logout_redirect_uris: r.post_logout_redirect_uris,
                     id_token_signing_alg: r.id_token_signing_alg,
+                    access_token_format: r.access_token_format,
+                    access_token_ttl_seconds: r.access_token_ttl_seconds,
+                    skip_consent: r.skip_consent,
                     created_at: r.created_at,
                     updated_at: r.updated_at,
                 }
@@ -142,6 +148,9 @@ impl GetOAuthClientByIdQuery {
                 is_active,
                 post_logout_redirect_uris as "post_logout_redirect_uris: serde_json::Value",
                 id_token_signing_alg,
+                access_token_format,
+                access_token_ttl_seconds,
+                skip_consent,
                 created_at,
                 updated_at
             FROM oauth_clients
@@ -183,6 +192,9 @@ impl GetOAuthClientByIdQuery {
                 is_active: r.is_active,
                 post_logout_redirect_uris: r.post_logout_redirect_uris,
                 id_token_signing_alg: r.id_token_signing_alg,
+                access_token_format: r.access_token_format,
+                access_token_ttl_seconds: r.access_token_ttl_seconds,
+                skip_consent: r.skip_consent,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
             }

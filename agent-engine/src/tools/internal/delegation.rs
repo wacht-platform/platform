@@ -373,10 +373,12 @@ impl ToolExecutor {
         let responsibility = Some(validate_lane_responsibility(
             params.responsibility.as_deref(),
         )?);
-        let requested_agent_name = params
-            .assigned_agent_name
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
+        let requested_agent_name = params.assigned_agent_name.trim().to_string();
+        if requested_agent_name.is_empty() {
+            return Err(AppError::BadRequest(
+                "create_thread: `assigned_agent_name` is required and must not be empty — every lane must explicitly name its owner agent.".to_string(),
+            ));
+        }
         let capability_tags = params.capability_tags.unwrap_or_default();
         let reusable = params.reusable.unwrap_or(true);
         let accepts_assignments = params.accepts_assignments.unwrap_or(true);
@@ -423,30 +425,26 @@ impl ToolExecutor {
         } else {
             Vec::new()
         };
-        let (assigned_agent_id, assigned_agent_name) = match requested_agent_name {
-            Some(requested_agent_name) => {
-                if requested_agent_name.eq_ignore_ascii_case(&self.agent().name) {
-                    (self.agent().id, self.agent().name.clone())
-                } else if let Some(agent) = available_sub_agents
+        let (assigned_agent_id, assigned_agent_name) = if requested_agent_name
+            .eq_ignore_ascii_case(&self.agent().name)
+        {
+            (self.agent().id, self.agent().name.clone())
+        } else if let Some(agent) = available_sub_agents
+            .iter()
+            .find(|agent| agent.name.eq_ignore_ascii_case(&requested_agent_name))
+        {
+            (agent.id, agent.name.clone())
+        } else {
+            let mut available_agent_names = vec![self.agent().name.clone()];
+            available_agent_names.extend(
+                available_sub_agents
                     .iter()
-                    .find(|agent| agent.name.eq_ignore_ascii_case(&requested_agent_name))
-                {
-                    (agent.id, agent.name.clone())
-                } else {
-                    let mut available_agent_names = vec![self.agent().name.clone()];
-                    available_agent_names.extend(
-                        available_sub_agents
-                            .iter()
-                            .map(|agent| agent.name.clone())
-                            .collect::<Vec<_>>(),
-                    );
-                    return Err(AppError::BadRequest(format!(
-                        "assigned_agent_name must be the current agent or one of its sub-agents. Available agents: {}",
-                        available_agent_names.join(", ")
-                    )));
-                }
-            }
-            None => (self.agent().id, self.agent().name.clone()),
+                    .map(|agent| agent.name.clone()),
+            );
+            return Err(AppError::BadRequest(format!(
+                "assigned_agent_name must be the current agent or one of its sub-agents. Available agents: {}",
+                available_agent_names.join(", ")
+            )));
         };
 
         let proposed_signature = format!("{} {}", title, responsibility.as_deref().unwrap_or(""));

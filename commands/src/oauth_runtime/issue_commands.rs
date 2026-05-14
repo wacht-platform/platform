@@ -139,6 +139,14 @@ pub struct IssueOAuthTokenPair {
     /// OIDC: session id inherited from the auth code, persisted on both
     /// tokens so RP-initiated logout can cascade-revoke them by `session_id`.
     pub session_id: Option<i64>,
+    /// `opaque` (default) — server-side hashed access_token row written and
+    /// our gateway validates via lookup. `jwt` — the caller is responsible
+    /// for producing a signed JWT; we skip the access_token DB write so
+    /// validation is fully stateless against JWKS.
+    pub access_token_format: String,
+    /// Access-token lifetime in seconds. Used for `expires_in` in the
+    /// response and for the `expires_at` column on the opaque row.
+    pub access_token_ttl_seconds: i32,
 }
 
 pub struct OAuthTokenPairIssued {
@@ -169,72 +177,97 @@ impl IssueOAuthTokenPair {
         let refresh_token_id = self
             .refresh_token_id
             .ok_or_else(|| AppError::Validation("refresh_token_id is required".to_string()))?;
-        let access_token = generate_token("oat", 32);
         let refresh_token = generate_token("ort", 32);
-        let access_hash = hash_value(&access_token);
         let refresh_hash = hash_value(&refresh_token);
+        let ttl_seconds = self.access_token_ttl_seconds.max(60);
+        let access_expires_at = Utc::now() + Duration::seconds(ttl_seconds as i64);
+        let refresh_expires_at = Utc::now() + Duration::days(30);
 
-        sqlx::query!(
-            r#"
-            WITH inserted_access AS (
-                INSERT INTO oauth_access_tokens (
-                    id,
-                    deployment_id,
-                    oauth_client_id,
-                    oauth_grant_id,
-                    app_slug,
-                    token_hash,
-                    principal_type,
-                    scopes,
-                    resource,
-                    granted_resource,
-                    expires_at,
-                    session_id,
-                    created_at
+        let issue_jwt = self.access_token_format == "jwt";
+        // For opaque, we generate the bearer string here and persist its hash.
+        // For JWT, the caller builds and signs the access_token; we skip the
+        // oauth_access_tokens row entirely so verification stays stateless.
+        let access_token = if issue_jwt {
+            String::new()
+        } else {
+            generate_token("oat", 32)
+        };
+        let access_hash = if issue_jwt {
+            None
+        } else {
+            Some(hash_value(&access_token))
+        };
+
+        if issue_jwt {
+            sqlx::query!(
+                r#"
+                INSERT INTO oauth_refresh_tokens (
+                    id, deployment_id, oauth_client_id, oauth_grant_id, app_slug,
+                    token_hash, scopes, resource, granted_resource, expires_at,
+                    session_id, created_at
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, 'user_oauth', $7, $8, $9, $10, $14, NOW()
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()
                 )
+                "#,
+                refresh_token_id,
+                self.deployment_id,
+                self.oauth_client_id,
+                self.oauth_grant_id,
+                self.app_slug,
+                refresh_hash,
+                serde_json::to_value(&self.scopes)?,
+                self.resource,
+                self.granted_resource,
+                refresh_expires_at,
+                self.session_id,
             )
-            INSERT INTO oauth_refresh_tokens (
-                id,
-                deployment_id,
-                oauth_client_id,
-                oauth_grant_id,
-                app_slug,
-                token_hash,
-                scopes,
-                resource,
-                granted_resource,
-                expires_at,
-                session_id,
-                created_at
-            ) VALUES (
-                $11, $2, $3, $4, $5, $12, $7, $8, $9, $13, $14, NOW()
+            .execute(executor)
+            .await?;
+        } else {
+            let access_hash_value = access_hash.expect("opaque branch generates a hash");
+            sqlx::query!(
+                r#"
+                WITH inserted_access AS (
+                    INSERT INTO oauth_access_tokens (
+                        id, deployment_id, oauth_client_id, oauth_grant_id, app_slug,
+                        token_hash, principal_type, scopes, resource, granted_resource,
+                        expires_at, session_id, created_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, 'user_oauth', $7, $8, $9, $10, $14, NOW()
+                    )
+                )
+                INSERT INTO oauth_refresh_tokens (
+                    id, deployment_id, oauth_client_id, oauth_grant_id, app_slug,
+                    token_hash, scopes, resource, granted_resource, expires_at,
+                    session_id, created_at
+                ) VALUES (
+                    $11, $2, $3, $4, $5, $12, $7, $8, $9, $13, $14, NOW()
+                )
+                "#,
+                access_token_id,
+                self.deployment_id,
+                self.oauth_client_id,
+                self.oauth_grant_id,
+                self.app_slug,
+                access_hash_value,
+                serde_json::to_value(&self.scopes)?,
+                self.resource,
+                self.granted_resource,
+                access_expires_at,
+                refresh_token_id,
+                refresh_hash,
+                refresh_expires_at,
+                self.session_id,
             )
-            "#,
-            access_token_id,
-            self.deployment_id,
-            self.oauth_client_id,
-            self.oauth_grant_id,
-            self.app_slug,
-            access_hash,
-            serde_json::to_value(&self.scopes)?,
-            self.resource,
-            self.granted_resource,
-            Utc::now() + Duration::hours(1),
-            refresh_token_id,
-            refresh_hash,
-            Utc::now() + Duration::days(30),
-            self.session_id,
-        )
-        .execute(executor)
-        .await?;
+            .execute(executor)
+            .await?;
+        }
 
         Ok(OAuthTokenPairIssued {
             access_token,
             refresh_token,
             refresh_token_id,
-            access_expires_in: 3600,
+            access_expires_in: ttl_seconds as i64,
         })
     }
 }

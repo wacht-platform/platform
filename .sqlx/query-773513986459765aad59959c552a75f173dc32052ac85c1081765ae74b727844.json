@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                rt.id,\n                rt.oauth_grant_id,\n                rt.app_slug,\n                rt.replaced_by_token_id,\n                rt.revoked_at,\n                rt.expires_at,\n                rt.scopes,\n                rt.resource,\n                rt.granted_resource,\n                rt.session_id,\n                s.deleted_at AS \"session_deleted_at: chrono::DateTime<chrono::Utc>\"\n            FROM oauth_refresh_tokens rt\n            LEFT JOIN sessions s ON s.id = rt.session_id\n            WHERE rt.deployment_id = $1\n              AND rt.oauth_client_id = $2\n              AND rt.token_hash = $3\n            ",
+  "query": "\n            SELECT\n                rt.id,\n                rt.oauth_grant_id,\n                rt.app_slug,\n                rt.replaced_by_token_id,\n                rt.revoked_at,\n                rt.expires_at,\n                rt.scopes,\n                rt.resource,\n                rt.granted_resource,\n                rt.session_id,\n                s.deleted_at AS \"session_deleted_at: chrono::DateTime<chrono::Utc>\",\n                g.granted_by_user_id AS \"user_id?: i64\"\n            FROM oauth_refresh_tokens rt\n            LEFT JOIN sessions s ON s.id = rt.session_id\n            LEFT JOIN oauth_client_grants g ON g.id = rt.oauth_grant_id\n            WHERE rt.deployment_id = $1\n              AND rt.oauth_client_id = $2\n              AND rt.token_hash = $3\n            ",
   "describe": {
     "columns": [
       {
@@ -57,6 +57,11 @@
         "ordinal": 10,
         "name": "session_deleted_at: chrono::DateTime<chrono::Utc>",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "user_id?: i64",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -77,8 +82,9 @@
       true,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "0bbdb454a241e7218aa43ebb23a7dc2909baa417d59876716acd12d213367ce0"
+  "hash": "773513986459765aad59959c552a75f173dc32052ac85c1081765ae74b727844"
 }

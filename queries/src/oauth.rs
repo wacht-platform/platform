@@ -56,6 +56,9 @@ pub struct OAuthClientData {
     pub is_active: bool,
     pub post_logout_redirect_uris: serde_json::Value,
     pub id_token_signing_alg: String,
+    pub access_token_format: String,
+    pub access_token_ttl_seconds: i32,
+    pub skip_consent: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

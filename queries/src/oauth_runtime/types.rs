@@ -64,6 +64,13 @@ pub struct RuntimeOAuthClientData {
     /// OIDC: signing algorithm for id_tokens minted for this client.
     /// Defaults to RS256 at the DB layer.
     pub id_token_signing_alg: String,
+    /// "opaque" (default — server-side hashed lookup) or "jwt" (stateless
+    /// JWT signed by the deployment keypair; clients verify against JWKS).
+    pub access_token_format: String,
+    /// Lifetime of issued access tokens, in seconds.
+    pub access_token_ttl_seconds: i32,
+    /// If true, the consent UI is skipped and grants are auto-approved.
+    pub skip_consent: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,6 +124,7 @@ pub struct RuntimeRefreshTokenData {
     /// linkage); Some when the user has signed out and any refresh attempt
     /// must be rejected.
     pub session_deleted_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub user_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

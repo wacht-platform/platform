@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                WITH inserted_access AS (\n                    INSERT INTO oauth_access_tokens (\n                        id, deployment_id, oauth_client_id, oauth_grant_id, app_slug,\n                        token_hash, principal_type, scopes, resource, granted_resource,\n                        expires_at, session_id, created_at\n                    ) VALUES (\n                        $1, $2, $3, $4, $5, $6, 'user_oauth', $7, $8, $9, $10, $14, NOW()\n                    )\n                )\n                INSERT INTO oauth_refresh_tokens (\n                    id, deployment_id, oauth_client_id, oauth_grant_id, app_slug,\n                    token_hash, scopes, resource, granted_resource, expires_at,\n                    session_id, created_at\n                ) VALUES (\n                    $11, $2, $3, $4, $5, $12, $7, $8, $9, $13, $14, NOW()\n                )\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Int8",
+        "Text",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b5ce2fb6763b9b298d9201f1b7cb55478d4c0dc33607ee6ecc05a9b3b9b72edf"
+}

@@ -11,6 +11,7 @@ pub struct RevokeSessionAndCascadeTokens {
 
 pub struct SessionCascadeResult {
     pub sessions_updated: u64,
+    pub signins_revoked: u64,
     pub refresh_tokens_revoked: u64,
     pub access_tokens_revoked: u64,
 }
@@ -27,6 +28,22 @@ impl RevokeSessionAndCascadeTokens {
             UPDATE sessions
                SET deleted_at = NOW()
              WHERE id = $1
+               AND deleted_at IS NULL
+            "#,
+            self.session_id
+        )
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        // Soft-delete every signin attached to this session so the user-facing
+        // "active sign-ins" dashboard reflects the revocation. The session
+        // delete alone leaves these rows untouched.
+        let signins = sqlx::query!(
+            r#"
+            UPDATE signins
+               SET deleted_at = NOW(), updated_at = NOW()
+             WHERE session_id = $1
                AND deleted_at IS NULL
             "#,
             self.session_id
@@ -65,6 +82,7 @@ impl RevokeSessionAndCascadeTokens {
 
         Ok(SessionCascadeResult {
             sessions_updated: sessions,
+            signins_revoked: signins,
             refresh_tokens_revoked: refresh,
             access_tokens_revoked: access,
         })

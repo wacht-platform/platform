@@ -552,8 +552,28 @@ pub struct OAuthClient {
     pub software_version: Option<String>,
     pub pkce_required: bool,
     pub is_active: bool,
+    /// "opaque" (default — server-side hashed lookup at our gateway) or "jwt"
+    /// (stateless RS256 signed by the deployment keypair; clients verify
+    /// against JWKS, no introspection round-trip).
+    #[serde(default = "default_access_token_format")]
+    pub access_token_format: String,
+    /// Lifetime of issued access tokens, in seconds. Default 3600.
+    #[serde(default = "default_access_token_ttl_seconds")]
+    pub access_token_ttl_seconds: i32,
+    /// If true, skip the consent screen and auto-approve grants for this
+    /// client. Use for first-party apps owned by the deployment.
+    #[serde(default)]
+    pub skip_consent: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+fn default_access_token_format() -> String {
+    "opaque".to_string()
+}
+
+fn default_access_token_ttl_seconds() -> i32 {
+    3600
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
