@@ -1,5 +1,9 @@
 use commands::{
-    CreateUserCommand, DeleteUserCommand, GenerateImpersonationTokenCommand, UpdateUserCommand,
+    CreateUserAuthenticatorCommand, CreateUserAuthenticatorResponse, CreateUserCommand,
+    DeleteUserAuthenticatorCommand, DeleteUserCommand, DeleteUserPasskeyCommand,
+    GenerateImpersonationTokenCommand, MakeUserEmailPrimaryCommand, MakeUserPhonePrimaryCommand,
+    RegenerateUserBackupCodesCommand, RemoveUserPasswordCommand, RenameUserPasskeyCommand,
+    RevokeAllUserSigninsCommand, RevokeUserSigninCommand, UpdateUserCommand,
     UpdateUserPasswordCommand, UpdateUserProfileImageCommand, UploadToCdnCommand,
 };
 use common::db_router::ReadConsistency;
@@ -9,8 +13,15 @@ use dto::{
     json::{CreateUserRequest, UpdatePasswordRequest, UpdateUserRequest},
     query::ActiveUserListQueryParams,
 };
-use models::{UserDetails, UserWithIdentifiers};
-use queries::{DeploymentActiveUserListQuery, GetUserDetailsQuery};
+use models::{
+    SignIn, SocialConnection, UserDetails, UserOrganizationMembership, UserPasskey,
+    UserWithIdentifiers, UserWorkspaceMembership,
+};
+use queries::{
+    DeploymentActiveUserListQuery, GetUserDetailsQuery, GetUserOrganizationMembershipsQuery,
+    GetUserPasskeysQuery, GetUserSigninsQuery, GetUserSocialConnectionsQuery,
+    GetUserWorkspaceMembershipsQuery,
+};
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
 use common::deps;
@@ -41,9 +52,26 @@ pub async fn get_user_details(
     user_id: i64,
 ) -> Result<UserDetails, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
-    GetUserDetailsQuery::new(deployment_id, user_id)
+    let mut details = GetUserDetailsQuery::new(deployment_id, user_id)
         .execute_with_db(reader)
-        .await
+        .await?;
+    decrypt_social_connections(app_state, &mut details.social_connections)?;
+    Ok(details)
+}
+
+fn decrypt_social_connections(
+    app_state: &AppState,
+    connections: &mut [models::SocialConnection],
+) -> Result<(), AppError> {
+    for sc in connections.iter_mut() {
+        if !sc.access_token.is_empty() {
+            sc.access_token = app_state.encryption_service.decrypt(&sc.access_token)?;
+        }
+        if !sc.refresh_token.is_empty() {
+            sc.refresh_token = app_state.encryption_service.decrypt(&sc.refresh_token)?;
+        }
+    }
+    Ok(())
 }
 
 pub async fn create_user(
@@ -158,6 +186,175 @@ pub async fn impersonate_user(
     GenerateImpersonationTokenCommand::new(deployment_id, user_id)
         .execute_with_db(app_state.db_router.writer())
         .await
+}
+
+pub async fn get_user_organization_memberships(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+) -> Result<Vec<UserOrganizationMembership>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    GetUserOrganizationMembershipsQuery::new(deployment_id, user_id)
+        .execute_with_db(reader)
+        .await
+}
+
+pub async fn get_user_workspace_memberships(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+) -> Result<Vec<UserWorkspaceMembership>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    GetUserWorkspaceMembershipsQuery::new(deployment_id, user_id)
+        .execute_with_db(reader)
+        .await
+}
+
+pub async fn get_user_signins(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+    include_expired: bool,
+) -> Result<Vec<SignIn>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    GetUserSigninsQuery::new(deployment_id, user_id)
+        .include_expired(include_expired)
+        .execute_with_db(reader)
+        .await
+}
+
+pub async fn revoke_user_signin(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+    signin_id: i64,
+) -> Result<(), AppError> {
+    RevokeUserSigninCommand::new(deployment_id, user_id, signin_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await
+}
+
+pub async fn revoke_all_user_signins(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+) -> Result<u64, AppError> {
+    RevokeAllUserSigninsCommand::new(deployment_id, user_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await
+}
+
+pub async fn get_user_passkeys(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+) -> Result<Vec<UserPasskey>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    GetUserPasskeysQuery::new(deployment_id, user_id)
+        .execute_with_db(reader)
+        .await
+}
+
+pub async fn rename_user_passkey(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+    passkey_id: i64,
+    new_name: String,
+) -> Result<(), AppError> {
+    RenameUserPasskeyCommand::new(deployment_id, user_id, passkey_id, new_name)
+        .execute_with_db(app_state.db_router.writer())
+        .await
+}
+
+pub async fn delete_user_passkey(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+    passkey_id: i64,
+) -> Result<(), AppError> {
+    DeleteUserPasskeyCommand::new(deployment_id, user_id, passkey_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await
+}
+
+pub async fn create_user_authenticator(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+    secret_base32: String,
+    account_name: Option<String>,
+) -> Result<CreateUserAuthenticatorResponse, AppError> {
+    let authenticator_id = app_state.sf.next_id()? as i64;
+    CreateUserAuthenticatorCommand::new(deployment_id, user_id, authenticator_id, secret_base32)
+        .with_account_name(account_name)
+        .execute_with_pool(app_state.db_router.writer(), &app_state.encryption_service)
+        .await
+}
+
+pub async fn delete_user_authenticator(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+) -> Result<(), AppError> {
+    DeleteUserAuthenticatorCommand::new(deployment_id, user_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await
+}
+
+pub async fn regenerate_user_backup_codes(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+) -> Result<Vec<String>, AppError> {
+    RegenerateUserBackupCodesCommand::new(deployment_id, user_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await
+}
+
+pub async fn remove_user_password(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+) -> Result<(), AppError> {
+    RemoveUserPasswordCommand::new(deployment_id, user_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await
+}
+
+pub async fn make_user_email_primary(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+    email_id: i64,
+) -> Result<(), AppError> {
+    MakeUserEmailPrimaryCommand::new(deployment_id, user_id, email_id)
+        .execute_with_pool(app_state.db_router.writer())
+        .await
+}
+
+pub async fn make_user_phone_primary(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+    phone_id: i64,
+) -> Result<(), AppError> {
+    MakeUserPhonePrimaryCommand::new(deployment_id, user_id, phone_id)
+        .execute_with_pool(app_state.db_router.writer())
+        .await
+}
+
+pub async fn get_user_social_connections(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+) -> Result<Vec<SocialConnection>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    let mut connections = GetUserSocialConnectionsQuery::new(deployment_id, user_id)
+        .execute_with_db(reader)
+        .await?;
+    decrypt_social_connections(app_state, &mut connections)?;
+    Ok(connections)
 }
 
 async fn upload_user_profile_image(

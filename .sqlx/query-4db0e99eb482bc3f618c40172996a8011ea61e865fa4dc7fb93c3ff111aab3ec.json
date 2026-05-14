@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE user_authenticators\n            SET deleted_at = NOW(), updated_at = NOW()\n            FROM users u\n            WHERE user_authenticators.user_id = u.id\n              AND u.deployment_id = $1\n              AND user_authenticators.user_id = $2\n              AND user_authenticators.deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4db0e99eb482bc3f618c40172996a8011ea61e865fa4dc7fb93c3ff111aab3ec"
+}

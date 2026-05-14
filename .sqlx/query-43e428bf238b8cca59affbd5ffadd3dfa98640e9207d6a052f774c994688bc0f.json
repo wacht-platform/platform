@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE user_email_addresses\n            SET is_primary = false, updated_at = NOW()\n            WHERE user_id = $1 AND is_primary = true\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "43e428bf238b8cca59affbd5ffadd3dfa98640e9207d6a052f774c994688bc0f"
+}

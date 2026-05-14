@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT p.verified\n            FROM user_phone_numbers p\n            JOIN users u ON p.user_id = u.id\n            WHERE p.id = $1 AND p.user_id = $2 AND u.deployment_id = $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "verified",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7383676b925a9e77cb70b25b226671db606cc8e977ef2dd0459754fde56fc891"
+}

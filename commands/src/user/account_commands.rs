@@ -398,6 +398,41 @@ impl UpdateUserPasswordCommand {
     }
 }
 
+pub struct RemoveUserPasswordCommand {
+    deployment_id: i64,
+    user_id: i64,
+}
+
+impl RemoveUserPasswordCommand {
+    pub fn new(deployment_id: i64, user_id: i64) -> Self {
+        Self {
+            deployment_id,
+            user_id,
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let result = sqlx::query!(
+            r#"
+            UPDATE users
+            SET password = NULL, updated_at = NOW()
+            WHERE deployment_id = $1 AND id = $2
+            "#,
+            self.deployment_id,
+            self.user_id
+        )
+        .execute(executor)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound("user not found".to_string()));
+        }
+        Ok(())
+    }
+}
+
 pub struct DeleteUserCommand {
     deployment_id: i64,
     user_id: i64,

@@ -14,6 +14,7 @@ pub mod api_key_key;
 pub mod api_key_rate_limit;
 pub mod api_key_shared;
 pub mod b2b_entity;
+pub mod b2b_invitation;
 pub mod b2b_membership;
 pub mod b2b_query;
 pub mod billing;

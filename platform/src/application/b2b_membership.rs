@@ -1,8 +1,10 @@
 use axum::http::StatusCode;
 use commands::{
-    AddOrganizationMemberCommand, AddWorkspaceMemberCommand, CreateOrganizationRoleCommand,
-    CreateWorkspaceRoleCommand, DeleteOrganizationRoleCommand, DeleteWorkspaceRoleCommand,
-    RemoveOrganizationMemberCommand, RemoveWorkspaceMemberCommand, UpdateOrganizationMemberCommand,
+    AddOrganizationMemberCommand, AddOrganizationMemberRoleCommand, AddWorkspaceMemberCommand,
+    AddWorkspaceMemberRoleCommand, CreateOrganizationRoleCommand, CreateWorkspaceRoleCommand,
+    DeleteOrganizationRoleCommand, DeleteWorkspaceRoleCommand, RemoveOrganizationMemberCommand,
+    RemoveOrganizationMemberRoleCommand, RemoveWorkspaceMemberCommand,
+    RemoveWorkspaceMemberRoleCommand, UpdateOrganizationMemberCommand,
     UpdateOrganizationRoleCommand, UpdateWorkspaceMemberCommand, UpdateWorkspaceRoleCommand,
 };
 use common::db_router::ReadConsistency;
@@ -351,6 +353,114 @@ pub async fn remove_workspace_member(
         membership_id,
     }
     .execute_with_db(app_state.db_router.writer())
+    .await?;
+    Ok(())
+}
+
+pub async fn add_organization_member_role(
+    app_state: &AppState,
+    deployment_id: i64,
+    organization_id: i64,
+    membership_id: i64,
+    role_id: i64,
+) -> Result<(), ApiErrorResponse> {
+    AddOrganizationMemberRoleCommand {
+        deployment_id,
+        organization_id,
+        membership_id,
+        role_id,
+    }
+    .execute_with_db(app_state.db_router.writer())
+    .await?;
+
+    publish_task(
+        app_state,
+        "worker.tasks.api_key.sync_org_membership_permissions",
+        "api_key.sync_org_membership_permissions",
+        format!("api-key-org-membership-{}", membership_id),
+        ApiKeyOrgMembershipSyncPayload { membership_id },
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn remove_organization_member_role(
+    app_state: &AppState,
+    deployment_id: i64,
+    organization_id: i64,
+    membership_id: i64,
+    role_id: i64,
+) -> Result<(), ApiErrorResponse> {
+    RemoveOrganizationMemberRoleCommand {
+        deployment_id,
+        organization_id,
+        membership_id,
+        role_id,
+    }
+    .execute_with_db(app_state.db_router.writer())
+    .await?;
+
+    publish_task(
+        app_state,
+        "worker.tasks.api_key.sync_org_membership_permissions",
+        "api_key.sync_org_membership_permissions",
+        format!("api-key-org-membership-{}", membership_id),
+        ApiKeyOrgMembershipSyncPayload { membership_id },
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn add_workspace_member_role(
+    app_state: &AppState,
+    deployment_id: i64,
+    workspace_id: i64,
+    membership_id: i64,
+    role_id: i64,
+) -> Result<(), ApiErrorResponse> {
+    AddWorkspaceMemberRoleCommand {
+        deployment_id,
+        workspace_id,
+        membership_id,
+        role_id,
+    }
+    .execute_with_db(app_state.db_router.writer())
+    .await?;
+
+    publish_task(
+        app_state,
+        "worker.tasks.api_key.sync_workspace_membership_permissions",
+        "api_key.sync_workspace_membership_permissions",
+        format!("api-key-workspace-membership-{}", membership_id),
+        ApiKeyWorkspaceMembershipSyncPayload { membership_id },
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn remove_workspace_member_role(
+    app_state: &AppState,
+    deployment_id: i64,
+    workspace_id: i64,
+    membership_id: i64,
+    role_id: i64,
+) -> Result<(), ApiErrorResponse> {
+    RemoveWorkspaceMemberRoleCommand {
+        deployment_id,
+        workspace_id,
+        membership_id,
+        role_id,
+    }
+    .execute_with_db(app_state.db_router.writer())
+    .await?;
+
+    publish_task(
+        app_state,
+        "worker.tasks.api_key.sync_workspace_membership_permissions",
+        "api_key.sync_workspace_membership_permissions",
+        format!("api-key-workspace-membership-{}", membership_id),
+        ApiKeyWorkspaceMembershipSyncPayload { membership_id },
+    )
     .await?;
     Ok(())
 }

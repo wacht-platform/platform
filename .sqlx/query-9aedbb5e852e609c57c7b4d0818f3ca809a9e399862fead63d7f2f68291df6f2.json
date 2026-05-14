@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE users\n            SET primary_email_address_id = $1, updated_at = NOW()\n            WHERE id = $2 AND deployment_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9aedbb5e852e609c57c7b4d0818f3ca809a9e399862fead63d7f2f68291df6f2"
+}

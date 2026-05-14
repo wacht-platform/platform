@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH ws AS (\n                SELECT id, organization_id FROM workspaces\n                WHERE id = $2 AND deployment_id = $1 AND deleted_at IS NULL\n            ),\n            membership AS (\n                SELECT wm.id, wm.organization_id\n                FROM workspace_memberships wm\n                JOIN ws ON ws.id = wm.workspace_id\n                WHERE wm.id = $3\n                  AND wm.workspace_id = $2\n                  AND wm.deleted_at IS NULL\n            ),\n            role AS (\n                SELECT id FROM workspace_roles\n                WHERE id = $4\n                  AND deployment_id = $1\n                  AND (workspace_id IS NULL OR workspace_id = $2)\n                  AND EXISTS(SELECT 1 FROM ws)\n            ),\n            inserted AS (\n                INSERT INTO workspace_membership_roles (\n                    workspace_membership_id, workspace_role_id, workspace_id, organization_id\n                )\n                SELECT $3, $4, $2, (SELECT organization_id FROM membership)\n                WHERE EXISTS(SELECT 1 FROM membership) AND EXISTS(SELECT 1 FROM role)\n                ON CONFLICT (workspace_membership_id, workspace_role_id) DO NOTHING\n            )\n            SELECT\n                EXISTS(SELECT 1 FROM membership) AS \"membership_exists!\",\n                EXISTS(SELECT 1 FROM role) AS \"role_exists!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "membership_exists!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "role_exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "25fc8b79a0359d7db63787b2f12c42d36a402c333e8f26edd6bfd634f7c3cfc9"
+}

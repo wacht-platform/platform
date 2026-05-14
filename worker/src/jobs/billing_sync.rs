@@ -5,7 +5,7 @@ use commands::billing::{CompleteBillingSyncRunCommand, CreateBillingSyncRunComma
 use common::{DodoClient, ReadConsistency, state::AppState};
 use queries::billing::{GetDeploymentProviderSubscriptionQuery, ProviderSubscriptionInfo};
 use redis::AsyncCommands as _;
-use tracing::error;
+use tracing::{error, warn};
 
 struct MetricConfig {
     event_name: &'static str,
@@ -131,15 +131,20 @@ async fn sync_deployment(
 ) -> Result<i64> {
     let db_redis_deps = common::deps::from_app(app_state).db().redis();
 
-    let subscription_info = GetDeploymentProviderSubscriptionQuery::new(*deployment_id)
+    let subscription_info = match GetDeploymentProviderSubscriptionQuery::new(*deployment_id)
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
         .await?
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Deployment {} has no active subscription - cannot determine billing period",
+    {
+        Some(subscription_info) => subscription_info,
+        None => {
+            warn!(
+                "[BILLING SYNC] removing deployment {} from dirty set because it has no active subscription",
                 deployment_id
-            )
-        })?;
+            );
+            let _: () = redis.zrem(dirty_key, *deployment_id).await?;
+            return Ok(0);
+        }
+    };
 
     let billing_period_timestamp = subscription_info
         .previous_billing_date

@@ -54,6 +54,23 @@ pub struct UpdateOrganizationMemberRequest {
     pub public_metadata: Option<serde_json::Value>,
 }
 
+// Organization invitation request — admin issues a fresh invitation for an
+// email + optional role + optional workspace scope. All snowflake IDs are
+// strings on the wire.
+#[derive(Deserialize)]
+pub struct CreateOrganizationInvitationRequest {
+    pub email: String,
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
+    pub role_id: Option<i64>,
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
+    pub workspace_id: Option<i64>,
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
+    pub workspace_role_id: Option<i64>,
+    /// Days before the invitation token expires. Defaults to 10 (matching
+    /// frontend-api) when omitted.
+    pub expiry_days: Option<i64>,
+}
+
 // Organization role models
 #[derive(Deserialize)]
 pub struct CreateOrganizationRoleRequest {

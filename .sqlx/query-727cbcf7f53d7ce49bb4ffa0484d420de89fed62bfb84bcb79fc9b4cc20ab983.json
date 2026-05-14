@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE users\n            SET password = NULL, updated_at = NOW()\n            WHERE deployment_id = $1 AND id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "727cbcf7f53d7ce49bb4ffa0484d420de89fed62bfb84bcb79fc9b4cc20ab983"
+}

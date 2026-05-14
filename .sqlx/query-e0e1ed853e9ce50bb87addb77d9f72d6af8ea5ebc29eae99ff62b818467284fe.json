@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                EXISTS(\n                    SELECT 1 FROM organization_invitations\n                    WHERE email = $1\n                      AND organization_id = $2\n                      AND workspace_id IS NOT DISTINCT FROM $3\n                      AND deleted_at IS NULL\n                ) AS \"has_pending!\",\n                EXISTS(\n                    SELECT 1 FROM organization_memberships om\n                    JOIN user_email_addresses uea ON uea.user_id = om.user_id\n                    WHERE uea.email_address = $1\n                      AND uea.deployment_id = $4\n                      AND om.organization_id = $2\n                      AND om.deleted_at IS NULL\n                ) AS \"is_member!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "has_pending!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "is_member!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "e0e1ed853e9ce50bb87addb77d9f72d6af8ea5ebc29eae99ff62b818467284fe"
+}

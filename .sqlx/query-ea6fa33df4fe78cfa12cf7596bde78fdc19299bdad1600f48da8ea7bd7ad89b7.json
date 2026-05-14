@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH org AS (\n                SELECT id FROM organizations\n                WHERE id = $2 AND deployment_id = $1 AND deleted_at IS NULL\n            ),\n            membership AS (\n                SELECT id FROM organization_memberships\n                WHERE id = $3\n                  AND organization_id = $2\n                  AND deleted_at IS NULL\n                  AND EXISTS(SELECT 1 FROM org)\n            ),\n            role AS (\n                SELECT id FROM organization_roles\n                WHERE id = $4\n                  AND deployment_id = $1\n                  AND (organization_id IS NULL OR organization_id = $2)\n                  AND EXISTS(SELECT 1 FROM org)\n            ),\n            inserted AS (\n                INSERT INTO organization_membership_roles (\n                    organization_membership_id, organization_role_id, organization_id\n                )\n                SELECT $3, $4, $2\n                WHERE EXISTS(SELECT 1 FROM membership) AND EXISTS(SELECT 1 FROM role)\n                ON CONFLICT (organization_membership_id, organization_role_id) DO NOTHING\n            )\n            SELECT\n                EXISTS(SELECT 1 FROM membership) AS \"membership_exists!\",\n                EXISTS(SELECT 1 FROM role) AS \"role_exists!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "membership_exists!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "role_exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "ea6fa33df4fe78cfa12cf7596bde78fdc19299bdad1600f48da8ea7bd7ad89b7"
+}

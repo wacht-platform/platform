@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE organization_invitations\n            SET deleted_at = NOW(), updated_at = NOW()\n            FROM organizations o\n            WHERE organization_invitations.organization_id = o.id\n              AND o.deployment_id = $1\n              AND organization_invitations.organization_id = $2\n              AND organization_invitations.id = $3\n              AND organization_invitations.deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e394a50c6b8e74cf857cb572cea8746031ef666a144efc4f99aef9486af300b6"
+}

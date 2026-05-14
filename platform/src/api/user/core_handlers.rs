@@ -215,6 +215,15 @@ pub async fn delete_user(
     Ok(().into())
 }
 
+pub async fn remove_user_password(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<UserParams>,
+) -> ApiResult<()> {
+    user_core_app::remove_user_password(&app_state, deployment_id, params.user_id).await?;
+    Ok(().into())
+}
+
 pub async fn impersonate_user(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,

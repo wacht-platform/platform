@@ -45,3 +45,19 @@ pub struct InvitationParams {
     pub rest: HashMap<String, String>,
     pub invitation_id: i64,
 }
+
+#[derive(Deserialize)]
+pub struct UserPasskeyParams {
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
+    pub user_id: i64,
+    pub passkey_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct UserSigninParams {
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
+    pub user_id: i64,
+    pub signin_id: i64,
+}

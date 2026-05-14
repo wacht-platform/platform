@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO user_authenticators (id, created_at, updated_at, user_id, totp_secret, otp_url)\n            VALUES ($1, NOW(), NOW(), $2, $3, $4)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9e19dbe2a4c9dd6036fc2cdcb98f53def4ccee2956bd79310d10e024b5fd6769"
+}

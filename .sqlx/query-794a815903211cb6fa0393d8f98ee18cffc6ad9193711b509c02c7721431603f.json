@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH revoked AS (\n                UPDATE signins\n                SET deleted_at = NOW(), updated_at = NOW()\n                FROM users u\n                WHERE signins.user_id = u.id\n                  AND u.deployment_id = $1\n                  AND signins.user_id = $2\n                  AND signins.id = $3\n                  AND signins.deleted_at IS NULL\n                RETURNING signins.id\n            ),\n            session_clear AS (\n                UPDATE sessions\n                SET active_signin_id = NULL, updated_at = NOW()\n                WHERE active_signin_id IN (SELECT id FROM revoked)\n                  AND deployment_id = $1\n            )\n            SELECT EXISTS(SELECT 1 FROM revoked) AS \"revoked!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "revoked!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "794a815903211cb6fa0393d8f98ee18cffc6ad9193711b509c02c7721431603f"
+}

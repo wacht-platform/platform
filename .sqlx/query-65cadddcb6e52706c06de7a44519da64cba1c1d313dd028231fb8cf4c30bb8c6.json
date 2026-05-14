@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH ws AS (\n                SELECT id FROM workspaces\n                WHERE id = $2 AND deployment_id = $1 AND deleted_at IS NULL\n            ),\n            membership AS (\n                SELECT id FROM workspace_memberships\n                WHERE id = $3\n                  AND workspace_id = $2\n                  AND deleted_at IS NULL\n                  AND EXISTS(SELECT 1 FROM ws)\n            )\n            DELETE FROM workspace_membership_roles\n            WHERE workspace_membership_id = $3\n              AND workspace_role_id = $4\n              AND workspace_id = $2\n              AND EXISTS(SELECT 1 FROM membership)\n            RETURNING workspace_membership_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "workspace_membership_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "65cadddcb6e52706c06de7a44519da64cba1c1d313dd028231fb8cf4c30bb8c6"
+}

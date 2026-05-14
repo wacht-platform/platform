@@ -14,8 +14,9 @@ use dto::json::b2b::{
 use models::{OrganizationMemberDetails, OrganizationRole, WorkspaceMemberDetails, WorkspaceRole};
 
 use super::{
-    OrganizationMemberParams, OrganizationParams, OrganizationRoleParams, WorkspaceMemberParams,
-    WorkspaceParams, WorkspaceRoleParams,
+    OrganizationMemberParams, OrganizationMemberRoleParams, OrganizationParams,
+    OrganizationRoleParams, WorkspaceMemberParams, WorkspaceMemberRoleParams, WorkspaceParams,
+    WorkspaceRoleParams,
 };
 
 pub async fn add_organization_member(
@@ -216,6 +217,70 @@ pub async fn remove_workspace_member(
         deployment_id,
         params.workspace_id,
         params.membership_id,
+    )
+    .await?;
+    Ok(().into())
+}
+
+pub async fn add_organization_member_role(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<OrganizationMemberRoleParams>,
+) -> ApiResult<()> {
+    b2b_membership_app::add_organization_member_role(
+        &app_state,
+        deployment_id,
+        params.organization_id,
+        params.membership_id,
+        params.role_id,
+    )
+    .await?;
+    Ok(().into())
+}
+
+pub async fn remove_organization_member_role(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<OrganizationMemberRoleParams>,
+) -> ApiResult<()> {
+    b2b_membership_app::remove_organization_member_role(
+        &app_state,
+        deployment_id,
+        params.organization_id,
+        params.membership_id,
+        params.role_id,
+    )
+    .await?;
+    Ok(().into())
+}
+
+pub async fn add_workspace_member_role(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<WorkspaceMemberRoleParams>,
+) -> ApiResult<()> {
+    b2b_membership_app::add_workspace_member_role(
+        &app_state,
+        deployment_id,
+        params.workspace_id,
+        params.membership_id,
+        params.role_id,
+    )
+    .await?;
+    Ok(().into())
+}
+
+pub async fn remove_workspace_member_role(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<WorkspaceMemberRoleParams>,
+) -> ApiResult<()> {
+    b2b_membership_app::remove_workspace_member_role(
+        &app_state,
+        deployment_id,
+        params.workspace_id,
+        params.membership_id,
+        params.role_id,
     )
     .await?;
     Ok(().into())

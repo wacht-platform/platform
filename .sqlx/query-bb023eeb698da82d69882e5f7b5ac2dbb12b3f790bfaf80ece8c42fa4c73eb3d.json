@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                COALESCE(NULLIF(dus.app_name, ''), 'Wacht') AS \"issuer!\",\n                COALESCE(\n                    NULLIF(e.email_address, ''),\n                    NULLIF(u.username, ''),\n                    NULLIF(trim(both ' ' from u.first_name || ' ' || u.last_name), ''),\n                    'user-' || u.id::text\n                ) AS \"account!\"\n            FROM users u\n            LEFT JOIN deployment_ui_settings dus\n              ON dus.deployment_id = u.deployment_id\n            LEFT JOIN user_email_addresses e\n              ON e.id = u.primary_email_address_id\n            WHERE u.deployment_id = $1 AND u.id = $2\n            FOR UPDATE OF u\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "issuer!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "account!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "bb023eeb698da82d69882e5f7b5ac2dbb12b3f790bfaf80ece8c42fa4c73eb3d"
+}

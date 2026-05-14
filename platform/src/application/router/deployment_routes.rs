@@ -53,8 +53,61 @@ fn user_management_routes() -> Router<AppState> {
             delete(api::user::delete_user_phone),
         )
         .route(
+            "/users/{user_id}/social-connections",
+            get(api::user::get_user_social_connections),
+        )
+        .route(
             "/users/{user_id}/social-connections/{connection_id}",
             delete(api::user::delete_user_social_connection),
+        )
+        .route(
+            "/users/{user_id}/organization-memberships",
+            get(api::user::get_user_organization_memberships),
+        )
+        .route(
+            "/users/{user_id}/workspace-memberships",
+            get(api::user::get_user_workspace_memberships),
+        )
+        .route(
+            "/users/{user_id}/sessions",
+            get(api::user::get_user_signins),
+        )
+        .route(
+            "/users/{user_id}/sessions/{signin_id}/revoke",
+            post(api::user::revoke_user_signin),
+        )
+        .route(
+            "/users/{user_id}/sessions/revoke-all",
+            post(api::user::revoke_all_user_signins),
+        )
+        .route(
+            "/users/{user_id}/passkeys",
+            get(api::user::get_user_passkeys),
+        )
+        .route(
+            "/users/{user_id}/passkeys/{passkey_id}",
+            patch(api::user::rename_user_passkey).delete(api::user::delete_user_passkey),
+        )
+        .route(
+            "/users/{user_id}/authenticators",
+            post(api::user::create_user_authenticator)
+                .delete(api::user::delete_user_authenticator),
+        )
+        .route(
+            "/users/{user_id}/backup-codes/regenerate",
+            post(api::user::regenerate_user_backup_codes),
+        )
+        .route(
+            "/users/{user_id}/emails/{email_id}/make-primary",
+            post(api::user::make_user_email_primary),
+        )
+        .route(
+            "/users/{user_id}/phones/{phone_id}/make-primary",
+            post(api::user::make_user_phone_primary),
+        )
+        .route(
+            "/users/{user_id}/password",
+            delete(api::user::remove_user_password),
         )
         .route(
             "/invitations",
@@ -97,6 +150,11 @@ fn b2b_routes() -> Router<AppState> {
             delete(api::b2b::remove_workspace_member).patch(api::b2b::update_workspace_member),
         )
         .route(
+            "/workspaces/{workspace_id}/members/{membership_id}/roles/{role_id}",
+            post(api::b2b::add_workspace_member_role)
+                .delete(api::b2b::remove_workspace_member_role),
+        )
+        .route(
             "/organizations",
             get(api::b2b::get_organization_list).post(api::b2b::create_organization),
         )
@@ -120,8 +178,22 @@ fn b2b_routes() -> Router<AppState> {
                 .patch(api::b2b::update_organization_member),
         )
         .route(
+            "/organizations/{organization_id}/members/{membership_id}/roles/{role_id}",
+            post(api::b2b::add_organization_member_role)
+                .delete(api::b2b::remove_organization_member_role),
+        )
+        .route(
             "/organizations/{organization_id}/roles",
             get(api::b2b::get_organization_roles).post(api::b2b::create_organization_role),
+        )
+        .route(
+            "/organizations/{organization_id}/invitations",
+            get(api::b2b::list_organization_invitations)
+                .post(api::b2b::create_organization_invitation),
+        )
+        .route(
+            "/organizations/{organization_id}/invitations/{invitation_id}/discard",
+            post(api::b2b::discard_organization_invitation),
         )
         .route(
             "/organizations/{organization_id}/roles/{role_id}",
