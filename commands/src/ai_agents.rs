@@ -212,7 +212,6 @@ pub struct UpdateAiAgentCommand {
     pub description: Option<String>,
     pub tool_ids: Option<Vec<i64>>,
     pub knowledge_base_ids: Option<Vec<i64>>,
-    pub sub_agents: Option<Vec<i64>>,
     pub strong_model: Option<AgentModelOverride>,
     pub clear_strong_model: bool,
     pub weak_model: Option<AgentModelOverride>,
@@ -232,7 +231,6 @@ impl UpdateAiAgentCommand {
             description: None,
             tool_ids: None,
             knowledge_base_ids: None,
-            sub_agents: None,
             strong_model: None,
             clear_strong_model: false,
             weak_model: None,
@@ -261,11 +259,6 @@ impl UpdateAiAgentCommand {
 
     pub fn with_knowledge_base_ids(mut self, knowledge_base_ids: Vec<i64>) -> Self {
         self.knowledge_base_ids = Some(knowledge_base_ids);
-        self
-    }
-
-    pub fn with_sub_agents(mut self, sub_agents: Vec<i64>) -> Self {
-        self.sub_agents = Some(sub_agents);
         self
     }
 
@@ -431,9 +424,6 @@ impl UpdateAiAgentCommand {
             replace_agent_knowledge_bases(&mut tx, agent_id, deployment_id, &knowledge_base_ids)
                 .await?;
         }
-        if let Some(sub_agent_ids) = self.sub_agents.as_ref() {
-            replace_agent_sub_agents(&mut tx, agent_id, deployment_id, sub_agent_ids).await?;
-        }
 
         tx.commit().await.map_err(AppError::Database)?;
 
@@ -444,7 +434,7 @@ impl UpdateAiAgentCommand {
             name: agent.name,
             description: agent.description,
             deployment_id: agent.deployment_id,
-            sub_agents: self.sub_agents,
+            sub_agents: None,
             strong_model: build_override(agent.strong_model_provider, agent.strong_model),
             weak_model: build_override(agent.weak_model_provider, agent.weak_model),
             hooks: agent.hooks.0,

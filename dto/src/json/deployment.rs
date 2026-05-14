@@ -28,7 +28,6 @@ pub struct UpdateAgentRequest {
     pub status: Option<String>,
     pub tool_ids: Option<Vec<FlexibleI64>>,
     pub knowledge_base_ids: Option<Vec<FlexibleI64>>,
-    pub sub_agents: Option<Vec<FlexibleI64>>,
     pub strong_model: Option<AgentModelOverride>,
     #[serde(default)]
     pub clear_strong_model: bool,

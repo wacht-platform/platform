@@ -154,9 +154,6 @@ pub async fn update_ai_agent(
         command = command
             .with_knowledge_base_ids(knowledge_base_ids.into_iter().map(i64::from).collect());
     }
-    if let Some(sub_agents) = request.sub_agents {
-        command = command.with_sub_agents(sub_agents.into_iter().map(i64::from).collect());
-    }
     if request.clear_strong_model {
         command = command.clearing_strong_model();
     } else if let Some(strong_model) = request.strong_model {

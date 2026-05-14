@@ -357,10 +357,13 @@ from types import SimpleNamespace
 
 
 class _UnavailableClient:
-    def __init__(self, provider):
+    def __init__(self, provider, reason=None):
         self._provider = provider
+        self._reason = reason
 
     def __getattr__(self, name):
+        if self._reason:
+            raise RuntimeError(f"{self._provider} is unavailable: {self._reason}")
         raise RuntimeError(f"{self._provider} is not configured for this deployment")
 
 
@@ -369,22 +372,31 @@ def _build_clients():
 
     openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if openai_key:
-        from openai import OpenAI
-        namespace.openai = OpenAI(api_key=openai_key)
+        try:
+            from openai import OpenAI
+            namespace.openai = OpenAI(api_key=openai_key)
+        except ModuleNotFoundError as exc:
+            namespace.openai = _UnavailableClient("OpenAI", f"Python SDK missing ({exc})")
     else:
         namespace.openai = _UnavailableClient("OpenAI")
 
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if anthropic_key:
-        import anthropic
-        namespace.anthropic = anthropic.Anthropic(api_key=anthropic_key)
+        try:
+            import anthropic
+            namespace.anthropic = anthropic.Anthropic(api_key=anthropic_key)
+        except ModuleNotFoundError as exc:
+            namespace.anthropic = _UnavailableClient("Anthropic", f"Python SDK missing ({exc})")
     else:
         namespace.anthropic = _UnavailableClient("Anthropic")
 
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if gemini_key:
-        from google import genai
-        namespace.gemini = genai.Client(api_key=gemini_key)
+        try:
+            from google import genai
+            namespace.gemini = genai.Client(api_key=gemini_key)
+        except ModuleNotFoundError as exc:
+            namespace.gemini = _UnavailableClient("Gemini", f"Python SDK missing ({exc})")
     else:
         namespace.gemini = _UnavailableClient("Gemini")
 
