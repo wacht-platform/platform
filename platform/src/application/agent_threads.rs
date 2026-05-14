@@ -1529,6 +1529,31 @@ pub async fn list_project_task_board_item_filesystem(
     Ok(listing)
 }
 
+pub async fn get_project_task_board_item_filesystem_file_bytes(
+    app_state: &AppState,
+    deployment_id: i64,
+    project_id: i64,
+    item_id: i64,
+    path: String,
+) -> Result<(Vec<u8>, String, String), AppError> {
+    let item = get_project_task_board_item_by_id(app_state, deployment_id, item_id).await?;
+    let board = get_project_task_board_by_project_id(app_state, deployment_id, project_id).await?;
+    if item.board_id != board.id {
+        return Err(AppError::NotFound(
+            "Project task board item not found".to_string(),
+        ));
+    }
+    let cleaned = sanitize_relative_path(&path)?;
+    let (body, mime_type) = read_workspace_file(
+        app_state,
+        deployment_id,
+        task_workspace_storage_prefix(deployment_id, project_id, &item.task_key),
+        path,
+    )
+    .await?;
+    Ok((body, mime_type, cleaned))
+}
+
 pub async fn get_project_task_board_item_filesystem_file(
     app_state: &AppState,
     deployment_id: i64,

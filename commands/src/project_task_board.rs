@@ -20,6 +20,29 @@ fn board_item_status_is_terminal(status: &str) -> bool {
     matches!(status, "completed" | "cancelled")
 }
 
+fn map_assignment_fk_error(err: sqlx::Error, thread_id: i64, board_item_id: i64) -> AppError {
+    if let sqlx::Error::Database(db_err) = &err {
+        if let Some(constraint) = db_err.constraint() {
+            match constraint {
+                "project_task_board_item_assignments_thread_id_fkey" => {
+                    return AppError::BadRequest(format!(
+                        "thread_id {thread_id} is not a valid thread. List the available \
+                         threads and pick one of those ids before retrying."
+                    ));
+                }
+                "project_task_board_item_assignments_board_item_id_fkey" => {
+                    return AppError::BadRequest(format!(
+                        "task {board_item_id} does not exist. List the current tasks and \
+                         pick a valid task id before retrying."
+                    ));
+                }
+                _ => {}
+            }
+        }
+    }
+    AppError::Database(err)
+}
+
 pub struct ResolveBoardItemCommentsCommand {
     pub board_item_id: i64,
     pub comment_ids: Vec<i64>,
@@ -1146,7 +1169,8 @@ impl CreateProjectTaskBoardItemAssignmentCommand {
             now,
         )
         .fetch_one(&mut *tx)
-        .await?;
+        .await
+        .map_err(|e| map_assignment_fk_error(e, self.thread_id, self.board_item_id))?;
 
         if matches!(
             assignment.status.as_str(),

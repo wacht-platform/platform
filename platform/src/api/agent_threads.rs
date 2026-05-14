@@ -556,6 +556,63 @@ pub async fn get_project_task_board_item_filesystem_file(
     Ok(content.into())
 }
 
+pub async fn download_project_task_board_item_filesystem_file(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path((project_id, item_id)): Path<(i64, i64)>,
+    Query(query): Query<FilesystemQuery>,
+) -> Result<impl IntoResponse, crate::application::response::ApiErrorResponse> {
+    let path = query.path.ok_or_else(|| {
+        crate::application::response::ApiErrorResponse::bad_request(
+            "path query parameter is required",
+        )
+    })?;
+    let (body, mime_type, cleaned_path) =
+        agent_threads_app::get_project_task_board_item_filesystem_file_bytes(
+            &app_state,
+            deployment_id,
+            project_id,
+            item_id,
+            path,
+        )
+        .await
+        .map_err(|err| match err {
+            common::error::AppError::NotFound(message) => {
+                crate::application::response::ApiErrorResponse::new(StatusCode::NOT_FOUND, message)
+            }
+            common::error::AppError::S3(message) | common::error::AppError::Internal(message) => {
+                crate::application::response::ApiErrorResponse::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    message,
+                )
+            }
+            common::error::AppError::Database(message) => {
+                crate::application::response::ApiErrorResponse::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    message.to_string(),
+                )
+            }
+            _ => crate::application::response::ApiErrorResponse::new(
+                StatusCode::BAD_REQUEST,
+                err.to_string(),
+            ),
+        })?;
+    let filename = agent_threads_app::sanitize_download_filename(&cleaned_path);
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str(&mime_type)
+            .unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream")),
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&format!("attachment; filename=\"{}\"", filename))
+            .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
+    );
+    Ok((headers, body))
+}
+
 pub async fn list_project_task_board_item_assignments(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,

@@ -216,6 +216,10 @@ pub(super) fn ai_routes() -> Router<AppState> {
             get(api::agent_threads::get_project_task_board_item_filesystem_file),
         )
         .route(
+            "/ai/actor-projects/{project_id}/board/items/{item_id}/filesystem/download",
+            get(api::agent_threads::download_project_task_board_item_filesystem_file),
+        )
+        .route(
             "/ai/actor-projects/{project_id}/board/items/{item_id}/update",
             post(api::agent_threads::update_project_task_board_item),
         )

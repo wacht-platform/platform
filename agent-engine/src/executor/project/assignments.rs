@@ -196,7 +196,23 @@ impl AgentExecutor {
         assignment: &ProjectTaskBoardAssignmentSpec,
     ) -> Result<i64, AppError> {
         if let Some(thread_id) = assignment.target.thread_id {
-            return Ok(thread_id.into_inner());
+            let id = thread_id.into_inner();
+            let reader = self
+                .ctx
+                .app_state
+                .db_router
+                .reader(common::ReadConsistency::Strong);
+            if queries::GetAgentThreadStateQuery::new(id, self.ctx.agent.deployment_id)
+                .execute_with_db(reader)
+                .await
+                .is_err()
+            {
+                return Err(AppError::BadRequest(format!(
+                    "thread_id {id} is not a valid thread. List the available threads \
+                     and pick one of those ids before retrying."
+                )));
+            }
+            return Ok(id);
         }
 
         let current_thread = self.ctx.get_thread().await?;
