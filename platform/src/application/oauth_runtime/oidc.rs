@@ -270,61 +270,176 @@ impl From<ApiErrorResponse> for UserInfoError {
     }
 }
 
+/// Tight JWT shape sniff. We only need to know whether to try local
+/// verification before falling back to the opaque DB lookup — full validation
+/// happens in `verify_jwt_access_token`.
+fn looks_like_jwt(bearer: &str) -> bool {
+    let parts: Vec<&str> = bearer.split('.').collect();
+    if parts.len() != 3 {
+        return false;
+    }
+    jsonwebtoken::decode_header(bearer).is_ok()
+}
+
+#[derive(Debug, Deserialize)]
+struct AccessTokenJwtClaims {
+    sub: String,
+    iss: String,
+    exp: i64,
+    scope: Option<String>,
+    sid: Option<String>,
+    token_use: Option<String>,
+    client_id: Option<String>,
+}
+
+async fn verify_jwt_access_token(
+    app_state: &AppState,
+    bearer: &str,
+    oauth_app: &queries::oauth_runtime::RuntimeOAuthAppData,
+    expected_issuer: &str,
+) -> Result<(i64, Vec<String>), UserInfoError> {
+    let kid = common::utils::jwt::read_kid(bearer)
+        .map_err(ApiErrorResponse::from)?
+        .ok_or(UserInfoError::InvalidToken("Access token missing kid"))?;
+
+    let reader = app_state
+        .db_router
+        .reader(common::db_router::ReadConsistency::Strong);
+    let candidates = ListOAuthAppPublishableSigningKeysQuery::new(oauth_app.id)
+        .execute_with_db(reader)
+        .await
+        .map_err(ApiErrorResponse::from)?;
+    let key = candidates
+        .iter()
+        .find(|k| k.kid == kid)
+        .ok_or(UserInfoError::InvalidToken(
+            "Access token references an unknown or compromised signing key",
+        ))?;
+
+    let token_data = common::utils::jwt::verify_token::<AccessTokenJwtClaims>(
+        bearer,
+        &key.algorithm,
+        &key.public_key_pem,
+    )
+    .map_err(|_| UserInfoError::InvalidToken("Access token signature verification failed"))?;
+    let claims = token_data.claims;
+
+    if claims.iss != expected_issuer {
+        return Err(UserInfoError::InvalidToken(
+            "Access token issuer does not match this OAuth app",
+        ));
+    }
+    if claims.token_use.as_deref() != Some("access_token") {
+        return Err(UserInfoError::InvalidToken(
+            "Token is not an access_token — refusing to serve userinfo",
+        ));
+    }
+    if claims.exp < Utc::now().timestamp() {
+        return Err(UserInfoError::InvalidToken("Access token expired"));
+    }
+
+    // Logout cascade: a JWT can't be revoked at the DB level, but we can
+    // still honor session liveness — the `sid` claim ties the token to the
+    // Wacht session that authorized it. If the user logged out, we refuse
+    // userinfo even though the JWT signature is still valid.
+    if let Some(sid_str) = claims.sid.as_deref() {
+        if let Ok(sid) = sid_str.parse::<i64>() {
+            let reader = app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong);
+            let deleted: Option<Option<chrono::DateTime<chrono::Utc>>> = sqlx::query_scalar!(
+                r#"SELECT deleted_at AS "deleted_at: chrono::DateTime<chrono::Utc>"
+                   FROM sessions WHERE id = $1"#,
+                sid
+            )
+            .fetch_optional(reader)
+            .await
+            .map_err(|e| ApiErrorResponse::from(common::errors::AppError::from(e)))?;
+            if let Some(Some(_)) = deleted {
+                return Err(UserInfoError::InvalidToken("Backing session was terminated"));
+            }
+        }
+    }
+
+    let _ = claims.client_id; // currently unused; kept for future cross-app substitution checks
+    let user_id: i64 = claims
+        .sub
+        .parse()
+        .map_err(|_| UserInfoError::InvalidToken("Access token sub is not a valid user id"))?;
+    let scopes: Vec<String> = claims
+        .scope
+        .as_deref()
+        .unwrap_or("")
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
+    Ok((user_id, scopes))
+}
+
 pub async fn userinfo(
     app_state: &AppState,
     headers: &HeaderMap,
 ) -> Result<UserInfoResponse, UserInfoError> {
     let bearer = extract_bearer(headers).ok_or(UserInfoError::MissingToken)?;
 
-    let (oauth_app, _issuer) = resolve_oauth_app_and_issuer(app_state, headers).await?;
+    let (oauth_app, issuer) = resolve_oauth_app_and_issuer(app_state, headers).await?;
     let pool = app_state
         .db_router
         .reader(common::db_router::ReadConsistency::Strong);
 
-    let hash = sha256_hex(&bearer);
-    let token = queries::oauth_runtime::GetRuntimeAccessTokenUserQuery::new(
-        oauth_app.deployment_id,
-        hash,
-    )
-    .execute_with_db(pool)
-    .await
-    .map_err(ApiErrorResponse::from)?
-    .ok_or(UserInfoError::InvalidToken("Access token not found"))?;
+    // JWT access tokens are stateless — we deliberately skip the
+    // `oauth_access_tokens` insert at issuance, so a hash lookup would fail.
+    // Detect a JWT bearer and verify it against the app's JWKS instead. The
+    // opaque path below remains the default.
+    let (user_id, scopes) = if looks_like_jwt(&bearer) {
+        verify_jwt_access_token(app_state, &bearer, &oauth_app, &issuer).await?
+    } else {
+        let hash = sha256_hex(&bearer);
+        let token = queries::oauth_runtime::GetRuntimeAccessTokenUserQuery::new(
+            oauth_app.deployment_id,
+            hash,
+        )
+        .execute_with_db(pool)
+        .await
+        .map_err(ApiErrorResponse::from)?
+        .ok_or(UserInfoError::InvalidToken("Access token not found"))?;
 
-    // Cross-app token substitution: bearer was minted by a different OAuth
-    // app in the same deployment.
-    if token.oauth_app_id != oauth_app.id {
-        return Err(UserInfoError::InvalidToken(
-            "Access token belongs to a different OAuth app",
-        ));
-    }
-    if token.revoked_at.is_some() {
-        return Err(UserInfoError::InvalidToken("Access token revoked"));
-    }
-    if token.expires_at < Utc::now() {
-        return Err(UserInfoError::InvalidToken("Access token expired"));
-    }
-    if token.grant_status != "active" {
-        return Err(UserInfoError::InvalidToken("Backing OAuth grant is no longer active"));
-    }
-    if let Some(expires) = token.grant_expires_at {
-        if expires <= Utc::now() {
-            return Err(UserInfoError::InvalidToken("Backing OAuth grant has expired"));
+        if token.oauth_app_id != oauth_app.id {
+            return Err(UserInfoError::InvalidToken(
+                "Access token belongs to a different OAuth app",
+            ));
         }
-    }
-    if token.session_deleted_at.is_some() {
-        return Err(UserInfoError::InvalidToken("Backing session was terminated"));
-    }
-    let scopes: Vec<&str> = token.scopes.iter().map(String::as_str).collect();
-    if !scopes.contains(&"openid") {
+        if token.revoked_at.is_some() {
+            return Err(UserInfoError::InvalidToken("Access token revoked"));
+        }
+        if token.expires_at < Utc::now() {
+            return Err(UserInfoError::InvalidToken("Access token expired"));
+        }
+        if token.grant_status != "active" {
+            return Err(UserInfoError::InvalidToken("Backing OAuth grant is no longer active"));
+        }
+        if let Some(expires) = token.grant_expires_at {
+            if expires <= Utc::now() {
+                return Err(UserInfoError::InvalidToken("Backing OAuth grant has expired"));
+            }
+        }
+        if token.session_deleted_at.is_some() {
+            return Err(UserInfoError::InvalidToken("Backing session was terminated"));
+        }
+        let user_id = token.user_id.ok_or(UserInfoError::InvalidRequest(
+            "Access token has no user subject; service-credential tokens cannot access userinfo",
+        ))?;
+        (user_id, token.scopes)
+    };
+
+    let scope_refs: Vec<&str> = scopes.iter().map(String::as_str).collect();
+    if !scope_refs.contains(&"openid") {
         return Err(UserInfoError::InsufficientScope {
             required: "openid",
             message: "userinfo requires the `openid` scope",
         });
     }
-    let user_id = token.user_id.ok_or(UserInfoError::InvalidRequest(
-        "Access token has no user subject; service-credential tokens cannot access userinfo",
-    ))?;
+    let scopes = scope_refs;
     let sub = user_id.to_string();
 
     let user = queries::GetUserDetailsQuery::new(oauth_app.deployment_id, user_id)
