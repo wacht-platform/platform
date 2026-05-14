@@ -379,6 +379,9 @@ pub struct OAuthClientResponse {
     pub is_active: bool,
     pub post_logout_redirect_uris: Vec<String>,
     pub id_token_signing_alg: String,
+    pub access_token_format: String,
+    pub access_token_ttl_seconds: i32,
+    pub skip_consent: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
