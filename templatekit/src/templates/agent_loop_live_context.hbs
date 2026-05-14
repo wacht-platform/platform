@@ -71,6 +71,12 @@ Tools — see model's tool catalog. Internal tools immediately callable. Do not 
 External tools (via `search_tools` / `load_tools`): {{join discoverable_external_tool_names ", "}}.
 Loaded external tools: {{#if loaded_external_tool_names}}{{join loaded_external_tool_names ", "}}{{else}}none{{/if}}.
 {{/if}}
+{{#if resources.available_sub_agents}}
+
+**Assignable sub-agents**:
+{{#each resources.available_sub_agents}}- {{name}}{{#if description}} — {{description}}{{/if}}
+{{/each}}
+{{/if}}
 {{#if resources.available_knowledge_bases}}
 
 **Knowledge bases**:
