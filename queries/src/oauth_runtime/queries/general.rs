@@ -780,3 +780,35 @@ impl ValidateRuntimeResourceEntitlementQuery {
         Ok(false)
     }
 }
+
+/// Liveness check for a Wacht session by id. Returns:
+/// - `Ok(Some(true))`  — session exists and is not deleted.
+/// - `Ok(Some(false))` — session exists but was soft-deleted (logout).
+/// - `Ok(None)`        — no session with this id.
+///
+/// Used by the OIDC userinfo path for JWT access tokens: there's no DB row
+/// for the token itself, so we use the `sid` claim to honor the logout
+/// cascade — JWTs minted before a logout must be refused for userinfo.
+pub struct IsOAuthSessionAliveQuery {
+    pub session_id: i64,
+}
+
+impl IsOAuthSessionAliveQuery {
+    pub fn new(session_id: i64) -> Self {
+        Self { session_id }
+    }
+
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Option<bool>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let row = sqlx::query!(
+            r#"SELECT deleted_at AS "deleted_at: chrono::DateTime<chrono::Utc>"
+               FROM sessions WHERE id = $1"#,
+            self.session_id
+        )
+        .fetch_optional(executor)
+        .await?;
+        Ok(row.map(|r| r.deleted_at.is_none()))
+    }
+}

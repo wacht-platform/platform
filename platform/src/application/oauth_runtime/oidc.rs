@@ -272,13 +272,10 @@ impl From<ApiErrorResponse> for UserInfoError {
 
 /// Tight JWT shape sniff. We only need to know whether to try local
 /// verification before falling back to the opaque DB lookup — full validation
-/// happens in `verify_jwt_access_token`.
+/// happens in `verify_jwt_access_token`. Opaque tokens are random URL-safe
+/// strings with no dots, so the 3-segment check is sufficient.
 fn looks_like_jwt(bearer: &str) -> bool {
-    let parts: Vec<&str> = bearer.split('.').collect();
-    if parts.len() != 3 {
-        return false;
-    }
-    jsonwebtoken::decode_header(bearer).is_ok()
+    bearer.split('.').count() == 3
 }
 
 #[derive(Debug, Deserialize)]
@@ -347,15 +344,11 @@ async fn verify_jwt_access_token(
             let reader = app_state
                 .db_router
                 .reader(common::db_router::ReadConsistency::Strong);
-            let deleted: Option<Option<chrono::DateTime<chrono::Utc>>> = sqlx::query_scalar!(
-                r#"SELECT deleted_at AS "deleted_at: chrono::DateTime<chrono::Utc>"
-                   FROM sessions WHERE id = $1"#,
-                sid
-            )
-            .fetch_optional(reader)
-            .await
-            .map_err(|e| ApiErrorResponse::from(common::errors::AppError::from(e)))?;
-            if let Some(Some(_)) = deleted {
+            let alive = queries::oauth_runtime::IsOAuthSessionAliveQuery::new(sid)
+                .execute_with_db(reader)
+                .await
+                .map_err(ApiErrorResponse::from)?;
+            if matches!(alive, Some(false)) {
                 return Err(UserInfoError::InvalidToken("Backing session was terminated"));
             }
         }
