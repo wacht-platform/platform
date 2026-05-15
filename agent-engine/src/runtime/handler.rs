@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::executor::core::AgentExecutorBuilder;
 use crate::runtime::secrets_provider::{SecretsProvider, SettingsSecretsProvider};
 use crate::runtime::vector_store::{LanceDbVectorStoreFactory, VectorStoreFactory};
+use crate::sandbox::self_healing::SelfHealingHandle;
 use crate::sandbox::{
     SandboxHandle, SandboxMount, SandboxMountMode, SandboxRuntimeFactory, TaskSandboxSpec,
     ThreadSandboxSpec,
@@ -172,11 +173,27 @@ impl AgentHandler {
                 task_key: task_ref.task_key,
                 mounts: task_ref.mounts,
             };
-            let handle = runtime
-                .ensure_task_sandbox(spec)
+            let initial = runtime
+                .ensure_task_sandbox(spec.clone())
                 .await
                 .map_err(|err| AppError::Internal(format!("ensure task sandbox: {err}")))?;
-            return Ok(Arc::from(handle));
+            let initial_arc: Arc<dyn SandboxHandle> = Arc::from(initial);
+            let label = format!(
+                "task[{}/{}]",
+                spec.project_id, spec.task_key
+            );
+            let recreate_runtime = runtime.clone();
+            let recreate_spec = spec.clone();
+            let recreate = Arc::new(move || -> crate::sandbox::self_healing::RecreateFuture {
+                let runtime = recreate_runtime.clone();
+                let spec = recreate_spec.clone();
+                Box::pin(async move {
+                    let fresh = runtime.ensure_task_sandbox(spec).await?;
+                    let arc: Arc<dyn SandboxHandle> = Arc::from(fresh);
+                    Ok(arc)
+                })
+            });
+            return Ok(Arc::new(SelfHealingHandle::new(initial_arc, recreate, label)));
         }
 
         let spec = ThreadSandboxSpec {
@@ -185,11 +202,24 @@ impl AgentHandler {
             project_id: Some(thread_state.project_id.to_string()),
             agent_id: Some(request.agent.id.to_string()),
         };
-        let handle = runtime
-            .ensure_thread_sandbox(spec)
+        let initial = runtime
+            .ensure_thread_sandbox(spec.clone())
             .await
             .map_err(|err| AppError::Internal(format!("ensure thread sandbox: {err}")))?;
-        Ok(Arc::from(handle))
+        let initial_arc: Arc<dyn SandboxHandle> = Arc::from(initial);
+        let label = format!("thread[{}]", spec.thread_id);
+        let recreate_runtime = runtime.clone();
+        let recreate_spec = spec.clone();
+        let recreate = Arc::new(move || -> crate::sandbox::self_healing::RecreateFuture {
+            let runtime = recreate_runtime.clone();
+            let spec = recreate_spec.clone();
+            Box::pin(async move {
+                let fresh = runtime.ensure_thread_sandbox(spec).await?;
+                let arc: Arc<dyn SandboxHandle> = Arc::from(fresh);
+                Ok(arc)
+            })
+        });
+        Ok(Arc::new(SelfHealingHandle::new(initial_arc, recreate, label)))
     }
 
     async fn resolve_task_sandbox_ref(

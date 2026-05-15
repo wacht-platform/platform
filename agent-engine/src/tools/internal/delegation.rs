@@ -234,30 +234,58 @@ impl ToolExecutor {
             });
         }
 
+        let assignment_reader = self
+            .app_state()
+            .db_router
+            .reader(common::db_router::ReadConsistency::Strong);
+        let thread_ids: Vec<i64> = threads.iter().map(|thread| thread.id).collect();
+        let assignments =
+            queries::ListThreadAgentAssignmentsForThreadsQuery::new(thread_ids.clone())
+                .execute_with_db(assignment_reader)
+                .await?;
+        let assignment_by_thread: std::collections::HashMap<i64, (i64, String)> = assignments
+            .into_iter()
+            .map(|assignment| {
+                (
+                    assignment.thread_id,
+                    (assignment.agent_id, assignment.agent_name),
+                )
+            })
+            .collect();
+
         Ok(serde_json::json!({
             "success": true,
             "tool": tool.name,
-            "threads": threads.into_iter().map(|thread| serde_json::json!({
-                "thread_id": thread.id.to_string(),
-                "title": thread.title,
-                "thread_purpose": if thread_identity_is_coordinator(
-                    &thread.title,
-                    &thread.thread_purpose,
-                    thread.responsibility.as_deref(),
-                ) {
-                    models::agent_thread::purpose::COORDINATOR.to_string()
-                } else {
-                    thread.thread_purpose
-                },
-                "responsibility": thread.responsibility,
-                "status": thread.status,
-                "last_activity_at": thread.last_activity_at.to_rfc3339(),
-                "completed_at": thread.completed_at.map(|value| value.to_rfc3339()),
-                "accepts_assignments": thread.accepts_assignments,
-                "reusable": thread.reusable,
-                "capability_tags": thread.capability_tags,
-                "system_instructions_preview": preview_text_by_words(thread.system_instructions.as_deref(), 100),
-            })).collect::<Vec<_>>(),
+            "threads": threads.into_iter().map(|thread| {
+                let assigned = assignment_by_thread.get(&thread.id);
+                let (assigned_agent_id, assigned_agent_name) = match assigned {
+                    Some((id, name)) => (Some(id.to_string()), Some(name.clone())),
+                    None => (None, None),
+                };
+                serde_json::json!({
+                    "thread_id": thread.id.to_string(),
+                    "title": thread.title,
+                    "thread_purpose": if thread_identity_is_coordinator(
+                        &thread.title,
+                        &thread.thread_purpose,
+                        thread.responsibility.as_deref(),
+                    ) {
+                        models::agent_thread::purpose::COORDINATOR.to_string()
+                    } else {
+                        thread.thread_purpose
+                    },
+                    "responsibility": thread.responsibility,
+                    "assigned_agent_id": assigned_agent_id,
+                    "assigned_agent_name": assigned_agent_name,
+                    "status": thread.status,
+                    "last_activity_at": thread.last_activity_at.to_rfc3339(),
+                    "completed_at": thread.completed_at.map(|value| value.to_rfc3339()),
+                    "accepts_assignments": thread.accepts_assignments,
+                    "reusable": thread.reusable,
+                    "capability_tags": thread.capability_tags,
+                    "system_instructions_preview": preview_text_by_words(thread.system_instructions.as_deref(), 100),
+                })
+            }).collect::<Vec<_>>(),
         }))
     }
 

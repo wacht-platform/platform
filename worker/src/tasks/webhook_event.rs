@@ -33,7 +33,7 @@ pub async fn trigger_webhook_event(
 
     let trigger_command = TriggerWebhookEventCommand::new(
         console_deployment_id,
-        task.deployment_id.to_string(),
+        format!("wh_{}", task.deployment_id),
         task.event_type.clone(),
         enriched_payload,
     );

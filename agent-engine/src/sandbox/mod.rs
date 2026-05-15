@@ -1,5 +1,6 @@
 pub mod factory;
 pub mod nats_runtime;
+pub mod self_healing;
 
 use std::collections::BTreeMap;
 use std::time::Duration;
