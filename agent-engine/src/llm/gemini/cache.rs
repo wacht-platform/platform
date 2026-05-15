@@ -147,7 +147,7 @@ impl GeminiClient {
         }
 
         if let Some(prior_state) = cache_request.prior_state.as_ref() {
-            if self.can_use_cached_prefix(
+            let can_use_prior_cache = self.can_use_cached_prefix(
                 cache_request,
                 prior_state,
                 &ExplicitCachePlan {
@@ -157,7 +157,8 @@ impl GeminiClient {
                     cached_contents_signature: cached_contents_signature.clone(),
                     cached_content_count: cacheable_contents.len(),
                 },
-            ) {
+            );
+            if can_use_prior_cache {
                 let mut delta_contents =
                     cacheable_contents[prior_state.cached_content_count..].to_vec();
                 delta_contents.extend(live_tail_contents.clone());

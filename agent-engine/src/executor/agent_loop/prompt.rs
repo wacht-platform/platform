@@ -5,13 +5,27 @@ use dto::json::{
     AgentLoopContext, AgentLoopConversationContext, AgentLoopPromptEnvelope,
     AgentLoopResourceContext, AgentLoopRuntimeContext, AgentLoopTaskContext,
     AgentLoopThreadContext, KnowledgeBasePromptItem, LlmHistoryEntry, LlmHistoryPart,
-    SkillPromptItem, ToolPromptItem,
+    ToolPromptItem,
 };
 
 use crate::llm::{SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest};
 use queries::GetProjectTaskBoardItemAssignmentByIdQuery;
 use templatekit::{render_prompt_text, render_template_only, AgentTemplates};
 const STEER_VISIBILITY_NUDGE_WINDOW: usize = 4;
+const MAX_LIVE_CONTEXT_CHARS: usize = 12_000;
+const MAX_TASK_JOURNAL_TAIL_CHARS: usize = 4_000;
+const MAX_AGENT_DESCRIPTION_CHARS: usize = 1_000;
+
+fn truncate_prompt_text(value: Option<String>, max_chars: usize) -> Option<String> {
+    let value = value?.trim().to_string();
+    if value.chars().count() <= max_chars {
+        return Some(value);
+    }
+    let mut truncated = value.chars().take(max_chars).collect::<String>();
+    truncated = truncated.trim_end().to_string();
+    truncated.push_str("...");
+    Some(truncated)
+}
 
 pub(crate) struct ThreadModeContext {
     pub(crate) exec_context: models::AgentThreadState,
@@ -37,8 +51,6 @@ pub(crate) struct BoardPromptContext {
 pub(crate) struct ToolPromptContext {
     pub(crate) tool_prompt_items: Vec<ToolPromptItem>,
     pub(crate) knowledge_base_prompt_items: Vec<KnowledgeBasePromptItem>,
-    pub(crate) system_skill_prompt_items: Vec<SkillPromptItem>,
-    pub(crate) agent_skill_prompt_items: Vec<SkillPromptItem>,
     pub(crate) available_sub_agents: Vec<dto::json::SubAgentPromptInfo>,
     pub(crate) discoverable_external_tool_names: Vec<String>,
     pub(crate) loaded_external_tool_names: Vec<String>,
@@ -174,8 +186,8 @@ impl AgentExecutor {
             resources: AgentLoopResourceContext {
                 available_tools: tool_context.tool_prompt_items,
                 available_knowledge_bases: tool_context.knowledge_base_prompt_items,
-                available_system_skills: tool_context.system_skill_prompt_items,
-                available_agent_skills: tool_context.agent_skill_prompt_items,
+                available_system_skills: Vec::new(),
+                available_agent_skills: Vec::new(),
                 available_sub_agents: tool_context.available_sub_agents,
             },
             task: AgentLoopTaskContext {
@@ -193,7 +205,10 @@ impl AgentExecutor {
         let mut prompt_context = AgentLoopPromptEnvelope {
             base: context,
             agent_name: self.ctx.agent.name.clone(),
-            agent_description: self.ctx.agent.description.clone(),
+            agent_description: truncate_prompt_text(
+                self.ctx.agent.description.clone(),
+                MAX_AGENT_DESCRIPTION_CHARS,
+            ),
             conversation_history_prefix: conversation_context.conversation_history_prefix.clone(),
             current_request_entry: conversation_context.current_request_entry,
             discoverable_external_tool_names: tool_context.discoverable_external_tool_names,
@@ -220,6 +235,9 @@ impl AgentExecutor {
                 "Failed to render agent loop live context template: {e}"
             ))
         })?;
+        let live_context_message =
+            truncate_prompt_text(Some(live_context_message), MAX_LIVE_CONTEXT_CHARS)
+                .unwrap_or_default();
 
         prompt_context.live_context_message = Some(live_context_message);
 
@@ -229,16 +247,26 @@ impl AgentExecutor {
     pub(crate) fn build_agent_loop_messages(
         &self,
         conversation_history_prefix: &[LlmHistoryEntry],
+        stable_context_message: Option<&str>,
         live_context_message: &str,
         current_request_entry: &LlmHistoryEntry,
         trailing_user_message: Option<&str>,
     ) -> Vec<SemanticLlmMessage> {
-        let mut messages = conversation_history_prefix
-            .iter()
-            .map(Self::semantic_message_from_history_entry)
-            .collect::<Vec<_>>();
+        let mut messages = Vec::new();
 
-        messages.push(SemanticLlmMessage::text("system", live_context_message));
+        if let Some(message) = stable_context_message
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            messages.push(SemanticLlmMessage::text("user", message));
+        }
+
+        messages.extend(
+            conversation_history_prefix
+                .iter()
+                .map(Self::semantic_message_from_history_entry),
+        );
+        messages.push(SemanticLlmMessage::text("user", live_context_message));
         messages.push(Self::semantic_message_from_history_entry(
             current_request_entry,
         ));
@@ -280,18 +308,54 @@ impl AgentExecutor {
             reasoning_effort: Some(reasoning_effort.to_string()),
         };
         let system_prompt = render_prompt_text(self.system_prompt_name(), prompt_context_value)?;
+        let stable_context_message = Self::build_stable_context_message(prompt_context);
         let messages = self.build_agent_loop_messages(
             &prompt_context.conversation_history_prefix,
+            stable_context_message.as_deref(),
             live_context_message,
             &prompt_context.current_request_entry,
             trailing_user_message,
         );
-
         Ok(SemanticLlmRequest::from_config(
             system_prompt,
             messages,
             config,
         ))
+    }
+
+    fn build_stable_context_message(
+        prompt_context: &AgentLoopPromptEnvelope,
+    ) -> Option<String> {
+        let sub_agents = &prompt_context.base.resources.available_sub_agents;
+        if sub_agents.is_empty() {
+            return None;
+        }
+
+        let mut lines = vec![
+            "STABLE ROUTING CONTEXT".to_string(),
+            String::new(),
+            "Assignable sub-agents. Use the exact `name` value as `assigned_agent_name` when creating or routing lanes."
+                .to_string(),
+        ];
+
+        for sub_agent in sub_agents {
+            let name = sub_agent.name.trim();
+            if name.is_empty() {
+                continue;
+            }
+            match sub_agent.description.as_deref().map(str::trim) {
+                Some(description) if !description.is_empty() => {
+                    lines.push(format!("- {name}: {description}"));
+                }
+                _ => lines.push(format!("- {name}")),
+            }
+        }
+
+        if lines.len() <= 3 {
+            None
+        } else {
+            Some(lines.join("\n"))
+        }
     }
 
     fn annotate_live_task_context_flag(value: &mut serde_json::Value) {
@@ -394,7 +458,10 @@ impl AgentExecutor {
         let recent_assignment_history =
             Self::recent_assignment_history(&active_board_item_assignments);
         let task_journal_tail = if active_board_item.is_some() {
-            self.task_journal_tail_snippet().await?
+            truncate_prompt_text(
+                self.task_journal_tail_snippet().await?,
+                MAX_TASK_JOURNAL_TAIL_CHARS,
+            )
         } else {
             None
         };
@@ -448,46 +515,6 @@ impl AgentExecutor {
             .iter()
             .map(KnowledgeBasePromptItem::from_knowledge_base)
             .collect::<Vec<_>>();
-        let system_skill_prompt_items = crate::tools::system_skills::list_system_skills()
-            .into_iter()
-            .map(|s| SkillPromptItem {
-                slug: s.slug.clone(),
-                mount_path: s.mount_path(),
-                description: s.description,
-                source: "system".to_string(),
-            })
-            .collect::<Vec<_>>();
-
-        let agent_skill_prompt_items = match queries::ListAgentSkillsQuery::new(
-            self.ctx.agent.deployment_id,
-            self.ctx.agent.id,
-        )
-        .execute_with_db(
-            self.ctx
-                .app_state
-                .db_router
-                .reader(common::ReadConsistency::Eventual),
-        )
-        .await
-        {
-            Ok(rows) => rows
-                .into_iter()
-                .map(|r| SkillPromptItem {
-                    mount_path: format!("/skills/agent/{}", r.slug),
-                    slug: r.slug,
-                    description: r.description,
-                    source: "agent".to_string(),
-                })
-                .collect(),
-            Err(e) => {
-                tracing::warn!(
-                    agent_id = self.ctx.agent.id,
-                    error = %e,
-                    "failed to load agent skills for prompt; serving empty list"
-                );
-                Vec::new()
-            }
-        };
 
         let connected_external_integrations = self.load_connected_external_integrations().await;
 
@@ -501,8 +528,6 @@ impl AgentExecutor {
             available_sub_agents,
             tool_prompt_items,
             knowledge_base_prompt_items,
-            system_skill_prompt_items,
-            agent_skill_prompt_items,
             discoverable_external_tool_names,
             loaded_external_tool_names,
             connected_external_integrations,
@@ -555,7 +580,10 @@ impl AgentExecutor {
                     .into_iter()
                     .map(|a| dto::json::SubAgentPromptInfo {
                         name: a.name,
-                        description: a.description,
+                        description: truncate_prompt_text(
+                            a.description,
+                            MAX_AGENT_DESCRIPTION_CHARS,
+                        ),
                     })
                     .collect::<Vec<_>>()
             })

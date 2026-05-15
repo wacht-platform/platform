@@ -21,6 +21,7 @@ pub async fn create_console_router(state: AppState) -> Router {
     let protected_routes = Router::new()
         .merge(super::project_routes())
         .merge(super::billing_routes())
+        .merge(super::buddy_routes())
         .nest("/deployments/{deployment_id}", deployment_routes)
         .layer(auth_layer);
 

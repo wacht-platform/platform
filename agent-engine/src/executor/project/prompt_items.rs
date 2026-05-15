@@ -22,7 +22,7 @@ impl AgentExecutor {
         ProjectTaskBoardPromptItem {
             task_key: item.task_key.clone(),
             title: item.title.clone(),
-            description: item.description.clone(),
+            description: truncate_prompt_text(item.description.clone(), 1_200),
             status: item.status.clone(),
             assigned_thread_id: item.assigned_thread_id,
             parent_task_key,
@@ -33,6 +33,17 @@ impl AgentExecutor {
             schedule: schedule.map(format_schedule_prompt_info),
         }
     }
+}
+
+fn truncate_prompt_text(value: Option<String>, max_chars: usize) -> Option<String> {
+    let value = value?.trim().to_string();
+    if value.chars().count() <= max_chars {
+        return Some(value);
+    }
+    let mut truncated = value.chars().take(max_chars).collect::<String>();
+    truncated = truncated.trim_end().to_string();
+    truncated.push_str("...");
+    Some(truncated)
 }
 
 fn format_schedule_prompt_info(s: &BoardItemScheduleSummary) -> BoardItemSchedulePromptInfo {

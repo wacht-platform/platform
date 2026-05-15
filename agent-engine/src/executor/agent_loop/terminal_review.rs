@@ -163,10 +163,9 @@ impl AgentExecutor {
     }
 
     fn build_terminal_review_messages(&self, prior_text: &str) -> Vec<SemanticLlmMessage> {
-        use crate::executor::context::conversation::format_relative_time_rfc3339;
+        use crate::executor::context::conversation::format_history_timestamp;
 
         let mut entries: Vec<SemanticLlmMessage> = Vec::new();
-        let now = chrono::Utc::now();
         let conversations = self
             .conversations
             .iter()
@@ -175,18 +174,21 @@ impl AgentExecutor {
             .collect::<Vec<_>>();
 
         for conv in conversations.into_iter().rev() {
-            let ago = format_relative_time_rfc3339(&conv.created_at.to_rfc3339(), now);
+            let timestamp = match format_history_timestamp(&conv.created_at.to_rfc3339()) {
+                Some(value) => value,
+                None => continue,
+            };
             match &conv.content {
                 ConversationContent::UserMessage { message, .. } => {
                     entries.push(SemanticLlmMessage::text(
                         "user",
-                        &format!("[{ago}] USER: {message}"),
+                        &format!("[{timestamp}] USER: {message}"),
                     ));
                 }
                 ConversationContent::Steer { message, .. } => {
                     entries.push(SemanticLlmMessage::text(
                         "user",
-                        &format!("[{ago}] AGENT_TEXT: {message}"),
+                        &format!("[{timestamp}] AGENT_TEXT: {message}"),
                     ));
                 }
                 ConversationContent::ToolResult {
@@ -201,31 +203,31 @@ impl AgentExecutor {
                         .unwrap_or_default();
                     entries.push(SemanticLlmMessage::text(
                         "user",
-                        &format!("[{ago}] TOOL: {tool_name} status={status}{error_part}"),
+                        &format!("[{timestamp}] TOOL: {tool_name} status={status}{error_part}"),
                     ));
                 }
                 ConversationContent::ClarificationRequest { .. } => {
                     entries.push(SemanticLlmMessage::text(
                         "user",
-                        &format!("[{ago}] AGENT_ASKED_USER_QUESTION"),
+                        &format!("[{timestamp}] AGENT_ASKED_USER_QUESTION"),
                     ));
                 }
                 ConversationContent::ClarificationResponse { .. } => {
                     entries.push(SemanticLlmMessage::text(
                         "user",
-                        &format!("[{ago}] USER_ANSWERED_QUESTION"),
+                        &format!("[{timestamp}] USER_ANSWERED_QUESTION"),
                     ));
                 }
                 ConversationContent::ApprovalRequest { .. } => {
                     entries.push(SemanticLlmMessage::text(
                         "user",
-                        &format!("[{ago}] AGENT_REQUESTED_APPROVAL"),
+                        &format!("[{timestamp}] AGENT_REQUESTED_APPROVAL"),
                     ));
                 }
                 ConversationContent::ApprovalResponse { .. } => {
                     entries.push(SemanticLlmMessage::text(
                         "user",
-                        &format!("[{ago}] USER_RESPONDED_APPROVAL"),
+                        &format!("[{timestamp}] USER_RESPONDED_APPROVAL"),
                     ));
                 }
                 _ => {}

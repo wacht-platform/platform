@@ -18,39 +18,15 @@ enum ClarificationOutcome<'a> {
     Pending,
 }
 
-pub(crate) fn format_relative_time_rfc3339(
-    ts: &str,
-    now: chrono::DateTime<chrono::Utc>,
-) -> String {
-    match chrono::DateTime::parse_from_rfc3339(ts) {
-        Ok(parsed) => {
-            let delta_secs = (now - parsed.with_timezone(&chrono::Utc)).num_seconds();
-            format_relative_delta(delta_secs)
-        }
-        Err(_) => ts.to_string(),
-    }
-}
-
-fn format_relative_delta(delta_secs: i64) -> String {
-    let abs = delta_secs.unsigned_abs();
-    if abs < 5 {
-        return "just now".to_string();
-    }
-    let is_future = delta_secs < 0;
-    let (n, unit) = if abs < 60 {
-        (abs, "s")
-    } else if abs < 3600 {
-        (abs / 60, "m")
-    } else if abs < 86_400 {
-        (abs / 3600, "h")
-    } else {
-        (abs / 86_400, "d")
-    };
-    if is_future {
-        format!("in {n}{unit}")
-    } else {
-        format!("{n}{unit} ago")
-    }
+pub(crate) fn format_history_timestamp(ts: &str) -> Option<String> {
+    chrono::DateTime::parse_from_rfc3339(ts)
+        .ok()
+        .map(|parsed| {
+            parsed
+                .with_timezone(&chrono::Utc)
+                .format("at %Y-%m-%d %H:%M UTC")
+                .to_string()
+        })
 }
 
 impl AgentExecutor {
@@ -76,8 +52,9 @@ impl AgentExecutor {
         if entry.parts.is_empty() {
             if let Some(timestamp) = entry.timestamp.as_ref() {
                 if !trimmed.is_empty() {
-                    let relative = format_relative_time_rfc3339(timestamp, chrono::Utc::now());
-                    return format!("[{relative}] {trimmed}");
+                    if let Some(formatted) = format_history_timestamp(timestamp) {
+                        return format!("[{formatted}] {trimmed}");
+                    }
                 }
             }
         }

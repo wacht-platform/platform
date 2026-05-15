@@ -130,6 +130,19 @@ pub(super) fn project_routes() -> Router<AppState> {
         )
 }
 
+/// User-scoped console state. Currently only the onboarding-tour ("Buddy")
+/// progress, stored in the developer's Wacht user `public_metadata.buddy`.
+/// Mounted under `protected_routes` in `console_router` only — never on
+/// backend_router or machine_router. Reads happen client-side via `useUser()`;
+/// this route exists only to write since `public_metadata` can't be set
+/// from the frontend API.
+pub(super) fn buddy_routes() -> Router<AppState> {
+    Router::new().route(
+        "/buddy/state",
+        axum::routing::patch(api::buddy::update_buddy_state),
+    )
+}
+
 pub(super) fn ai_routes() -> Router<AppState> {
     ai_routes::ai_routes()
 }

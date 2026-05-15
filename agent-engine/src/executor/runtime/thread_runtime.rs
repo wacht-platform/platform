@@ -265,7 +265,7 @@ impl AgentExecutor {
     ) -> Option<crate::llm::PromptCacheRequest> {
         let (cache_key, live_tail_count) = if let Some(event) = self.active_thread_event.as_ref() {
             if let Some(payload) = event.assignment_execution_payload() {
-                (format!("executor_assignment_{}", payload.assignment_id), 4)
+                (format!("executor_assignment_{}", payload.assignment_id), 2)
             } else if let Some(board_item_id) = event.board_item_id {
                 (format!("coordinator_board_{board_item_id}"), 2)
             } else {

@@ -10,6 +10,7 @@ pub mod api_key;
 pub mod b2b;
 pub mod billing;
 pub mod billing_webhook;
+pub mod buddy;
 pub mod composio;
 pub mod connection;
 pub mod credentials;
