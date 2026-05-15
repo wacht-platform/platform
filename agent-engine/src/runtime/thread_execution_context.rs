@@ -242,6 +242,7 @@ impl ThreadExecutionContext {
             model,
             self.agent.deployment_id,
             self.thread_id,
+            self.actor_id,
             self.app_state.redis_client.clone(),
             self.app_state.nats_client.clone(),
         )?;

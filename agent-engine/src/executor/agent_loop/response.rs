@@ -23,28 +23,33 @@ impl AgentExecutor {
     }
 
     fn strip_leading_time_prefix(text: &str) -> &str {
-        let trimmed = text.trim_start();
-        if !trimmed.starts_with('[') {
-            return text;
+        let mut current = text.trim_start();
+        for _ in 0..3 {
+            if !current.starts_with('[') {
+                return current;
+            }
+            let close = match current[1..].find(']') {
+                Some(idx) => idx + 1,
+                None => return current,
+            };
+            if close > 60 {
+                return current;
+            }
+            let inner = current[1..close].trim();
+            if !Self::looks_like_time_token(inner) {
+                return current;
+            }
+            current = current[close + 1..].trim_start();
         }
-        let close = match trimmed[1..].find(']') {
-            Some(idx) => idx + 1,
-            None => return text,
-        };
-        if close > 60 {
-            return text;
-        }
-        let inner = trimmed[1..close].trim();
-        if !Self::looks_like_time_token(inner) {
-            return text;
-        }
-        let after = &trimmed[close + 1..];
-        after.trim_start()
+        current
     }
 
     fn looks_like_time_token(s: &str) -> bool {
         if s == "just now" {
             return true;
+        }
+        if let Some(rest) = s.strip_prefix("at ") {
+            return Self::looks_like_absolute_time_token(rest);
         }
         if let Some(rest) = s.strip_prefix("in ") {
             return Self::is_time_unit_token(rest);
@@ -52,6 +57,10 @@ impl AgentExecutor {
         if let Some(rest) = s.strip_suffix(" ago") {
             return Self::is_time_unit_token(rest);
         }
+        Self::looks_like_absolute_time_token(s)
+    }
+
+    fn looks_like_absolute_time_token(s: &str) -> bool {
         let bytes = s.as_bytes();
         bytes.len() >= 10
             && bytes[0..4].iter().all(|b| b.is_ascii_digit())

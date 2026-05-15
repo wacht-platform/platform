@@ -55,7 +55,8 @@ impl GeminiClient {
         let webhook_payload = serde_json::json!({
             "model": self.model,
             "is_byok": self.is_byok,
-            "thread_id": self.thread_id,
+            "thread_id": self.thread_id.map(|id| id.to_string()),
+            "actor_id": self.actor_id.map(|id| id.to_string()),
             "input_tokens": total_prompt_tokens,
             "cached_tokens": cached_tokens,
             "output_tokens": output_tokens,

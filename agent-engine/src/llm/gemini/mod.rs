@@ -28,6 +28,7 @@ pub struct GeminiClient {
     client: reqwest::Client,
     deployment_id: Option<i64>,
     thread_id: Option<i64>,
+    actor_id: Option<i64>,
     redis_client: Option<redis::Client>,
     nats_client: Option<async_nats::Client>,
     is_byok: bool,
@@ -70,6 +71,7 @@ impl GeminiClient {
             client: reqwest::Client::new(),
             deployment_id: None,
             thread_id: None,
+            actor_id: None,
             redis_client: None,
             nats_client: None,
             is_byok: true,
@@ -92,11 +94,17 @@ impl GeminiClient {
         self
     }
 
+    pub fn with_actor(mut self, actor_id: i64) -> Self {
+        self.actor_id = Some(actor_id);
+        self
+    }
+
     pub fn from_api_key(
         deployment_api_key: Option<String>,
         model: &str,
         deployment_id: i64,
         thread_id: i64,
+        actor_id: i64,
         redis_client: redis::Client,
         nats_client: async_nats::Client,
     ) -> Result<Self, AppError> {
@@ -104,7 +112,8 @@ impl GeminiClient {
             return Ok(Self::new_byok(api_key, model.to_string())
                 .with_billing(deployment_id, redis_client)
                 .with_nats(nats_client)
-                .with_thread(thread_id));
+                .with_thread(thread_id)
+                .with_actor(actor_id));
         }
         Err(AppError::BadRequest(
             "Gemini API key is not configured for this deployment".to_string(),
