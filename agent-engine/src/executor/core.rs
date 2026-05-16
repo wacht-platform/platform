@@ -413,19 +413,6 @@ impl AgentExecutor {
             .and_then(|event| event.board_item_id)
     }
 
-    pub(crate) fn active_task_graph_has_unfinished_nodes(&self) -> bool {
-        use models::thread_task_graph::status;
-        let Some(snapshot) = self.task_graph_snapshot.as_ref() else {
-            return false;
-        };
-        if snapshot.graph.status != status::GRAPH_ACTIVE {
-            return false;
-        }
-        snapshot.nodes.iter().any(|node| {
-            node.status == status::NODE_PENDING || node.status == status::NODE_IN_PROGRESS
-        })
-    }
-
     pub(crate) fn effective_is_coordinator_thread(&self) -> bool {
         self.is_coordinator_thread
             || self

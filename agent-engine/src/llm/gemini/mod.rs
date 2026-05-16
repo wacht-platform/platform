@@ -348,7 +348,12 @@ impl GeminiClient {
                 }
             })
         } else {
-            json!({ "functionCallingConfig": { "mode": "AUTO" } })
+            // VALIDATED: model picks either a function call or natural language
+            // (same flexibility as AUTO, so the agent can still emit a pure-text
+            // terminal response). Gemini additionally enforces function-call
+            // schema adherence, which reduces malformed-args parse failures we
+            // were occasionally hitting on AUTO.
+            json!({ "functionCallingConfig": { "mode": "VALIDATED" } })
         };
         body.insert("toolConfig".to_string(), tool_config);
         body.insert("safetySettings".to_string(), gemini_safety_settings());

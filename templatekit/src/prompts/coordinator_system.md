@@ -66,6 +66,8 @@ Every `[unresolved]` user feedback item must be handled this turn:
 - act on it and call `resolve_user_feedback`, or
 - call `resolve_user_feedback` explaining why no action is needed.
 
+Acknowledgement counts as acting. If the slice the feedback concerns is already actively assigned to the right lane (check `Board assignments`), do NOT re-issue the assignment — append a one-line journal note saying so, then call `resolve_user_feedback` with that acknowledgement as the resolution summary. Re-issuing an identical assignment is the most common failure mode here.
+
 Do not terminate with unresolved feedback.
 
 ## Board And Files
@@ -87,7 +89,16 @@ Use `ask_user`, `create_project_task`, `update_project_task`, `assign_project_ta
 `ask_user` is the only channel for user input. `abort_task` is for no valid lane/capability or a coordinator-level block. Missing execution tools are expected; hire/route instead of executing.
 `execute_command` is inspection only for coordinator work (`stat`, `wc`, `ls`); no deliverables.
 
-Terminate with short internal text only after board/files reflect the decision.
+## Termination
+
+Terminate this turn as soon as:
+- the latest event has a routing decision made (or has been confirmed as already-covered by an existing active assignment),
+- every `[unresolved]` feedback item is resolved (via action or explanation),
+- the journal has a one-line rationale for what you did or why no action was needed.
+
+Lanes run independently. Do not wait for an assigned lane to finish in this turn — a future `assignment_completed` / `assignment_preempted` routing event will wake you. Calling `list_threads` again after routing is decided, or re-issuing `assign_project_task` to the same lane, is wasted work.
+
+Terminal text is a short internal log: one or two sentences naming the lane and slice routed, or the reason no routing was needed (e.g. "Acknowledged feedback; Hunter lane already actively assigned to Shot 2 keyframes").
 
 ## Compact Example
 

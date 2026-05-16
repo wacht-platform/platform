@@ -88,3 +88,12 @@ Apply these rules in every role.
 - Read `tool_result.output.data`; if truncated, open the saved output path.
 - Fresh evidence beats summaries.
 - Use memory only for durable prior facts or decisions.
+
+## How to terminate
+
+The runtime ends your turn when, and only when, you emit a response that is **pure text with no tool call**. Any tool call (including `note`) extends the turn — the runtime executes the tool and runs you again. `ask_user` and `abort_task` also end the turn, but with different semantics (paused-for-user / aborted-and-handed-back-to-coordinator). Do not emit terminal text in the same response as a tool call — pick one.
+
+Pick the right termination shape:
+- Done with the current slice / decision → pure-text terminal log.
+- Need user input you can't proceed without → `ask_user`.
+- Cannot proceed and want the coordinator to retry/redecide → `abort_task(return_to_coordinator)` or `abort_task(blocked)`.
