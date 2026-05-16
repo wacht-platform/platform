@@ -98,33 +98,45 @@ impl RateLimiter {
         Ok(limiter)
     }
 
-    /// Get or load a rate limit window by key
+    /// Get or load a rate limit window by key.
+    ///
+    /// CRITICAL: DashMap uses synchronous parking_lot locks internally. Holding
+    /// a `DashMap::entry()` guard across an `.await` deadlocks Tokio: a worker
+    /// thread suspended while holding the shard lock can be picked to run
+    /// another task that calls `entry()` on the same shard, which blocks the
+    /// worker, leaving no thread free to resume the original future. On
+    /// single-vCPU Cloud Run with a single Tokio worker thread, this hangs
+    /// permanently the first time two requests race on a cold key.
+    ///
+    /// The fetch happens BEFORE we take any DashMap lock. Under a cold-cache
+    /// race two requests may both hit Redis for the same key; one wins the
+    /// insert, the other discards its fetched window and uses the existing
+    /// arc. Wasted work is rare and bounded; deadlock is impossible.
     async fn get_or_load_window(&self, key: &str) -> Arc<RwLock<BucketedWindow>> {
-        // Fast path: window already exists
+        // Fast path: window already exists. Read guard from DashMap is dropped
+        // at the end of this `if let`; we never hold it across the .await
+        // below because the early return takes the only path that uses it.
         if let Some(window) = self.windows.get(key) {
             return window.clone();
         }
 
-        // Use DashMap's entry API for atomic insert-or-get
-        let key_owned = key.to_string();
-        let entry = self.windows.entry(key_owned.clone());
+        // Slow path: fetch outside any DashMap lock.
+        debug!("[RATE_LIMITER] Loading window: {}", key);
+        let fetched = sync::fetch_from_redis(&self.app_state, key)
+            .await
+            .unwrap_or_else(|| {
+                debug!("[RATE_LIMITER] Fresh window: {}", key);
+                BucketedWindow::new()
+            });
+        let new_arc = Arc::new(RwLock::new(fetched));
 
-        match entry {
+        // Synchronous insert-or-get. No await is held across the entry guard.
+        let key_owned = key.to_string();
+        match self.windows.entry(key_owned) {
             dashmap::mapref::entry::Entry::Occupied(entry) => entry.get().clone(),
             dashmap::mapref::entry::Entry::Vacant(entry) => {
-                debug!("[RATE_LIMITER] Loading window: {}", key);
-
-                // Fetch from Redis directly
-                let window = sync::fetch_from_redis(&self.app_state, key)
-                    .await
-                    .unwrap_or_else(|| {
-                        debug!("[RATE_LIMITER] Fresh window: {}", key);
-                        BucketedWindow::new()
-                    });
-
-                let window_arc = Arc::new(RwLock::new(window));
-                entry.insert(window_arc.clone());
-                window_arc
+                entry.insert(new_arc.clone());
+                new_arc
             }
         }
     }
@@ -229,14 +241,29 @@ impl RateLimiter {
             };
             self.delta_publisher.publish(delta);
 
-            // Publish snapshot to Redis asynchronously
+            // Publish snapshot to Redis asynchronously. Critical: we MUST NOT
+            // hold the window's read lock across the Redis I/O — a stalled or
+            // dead Redis would otherwise keep the read guard alive forever,
+            // blocking every subsequent `window.write().await` on this key
+            // and producing the classic "first few requests fine, then every
+            // request 504s" deadlock. Compress under the lock, drop the lock,
+            // then publish the owned bytes.
             let key_clone = key.clone();
             let window_clone = window.clone();
             let app_state = self.app_state.clone();
             let gateway_id = self.gateway_id.clone();
             tokio::spawn(async move {
-                let w = window_clone.read().await;
-                sync::publish_to_redis(&app_state, &gateway_id, &key_clone, &w).await;
+                let compressed = {
+                    let w = window_clone.read().await;
+                    match w.to_compressed() {
+                        Ok(c) => c,
+                        Err(e) => {
+                            error!(error = ?e, "[RATE_LIMIT] Snapshot compression failed");
+                            return;
+                        }
+                    }
+                };
+                sync::publish_to_redis(&app_state, &gateway_id, &key_clone, compressed).await;
                 debug!(key = %key_clone, "[RATE_LIMIT] Snapshot saved to Redis");
             });
 
@@ -343,16 +370,28 @@ impl RateLimiter {
                     "[SNAPSHOT_HANDLER] Processing snapshot request"
                 );
 
-                let Some(window_ref) = windows.get(&request.key) else {
-                    continue;
+                // Scope: DashMap shard guard lives only inside this block.
+                // Holding it across the .await below could stall any writer
+                // queued on the same shard (e.g. from get_or_load_window).
+                let window = {
+                    let Some(window_ref) = windows.get(&request.key) else {
+                        continue;
+                    };
+                    window_ref.value().clone()
                 };
 
-                let window = window_ref.value().clone();
-                let window_read = window.read().await;
-
-                let Ok(compressed) = window_read.to_compressed() else {
-                    error!("[SNAPSHOT_HANDLER] Compression error");
-                    continue;
+                // Scope: read guard lives only across compression. Same hazard
+                // as Bug A — holding it across the NATS publish below would
+                // stall every writer on this window if NATS slowed.
+                let compressed = {
+                    let w = window.read().await;
+                    match w.to_compressed() {
+                        Ok(c) => c,
+                        Err(_) => {
+                            error!("[SNAPSHOT_HANDLER] Compression error");
+                            continue;
+                        }
+                    }
                 };
 
                 let compressed_base64 =
