@@ -176,6 +176,11 @@ impl SandboxHandle for NatsSandboxHandleAdapter {
         Ok(())
     }
 
+    async fn touch(&self) -> SandboxResult<()> {
+        self.inner.touch().await.map_err(map_client_error)?;
+        Ok(())
+    }
+
     async fn read_file(&self, path: &str) -> SandboxResult<Vec<u8>> {
         self.inner.read_file(path).await.map_err(map_client_error)
     }

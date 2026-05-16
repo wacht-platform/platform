@@ -677,7 +677,47 @@ impl AgentExecutor {
         self.reconcile_agent_skills().await;
         self.run_hooks(LifecyclePhase::ExecutionStart, serde_json::Value::Null)
             .await;
+
+        // Spawn a sandbox keepalive task that pings the node every 5 minutes
+        // while this loop runs. The sandbox node's idle timeout is 60 minutes,
+        // so this gives a 12x safety margin against eviction during long
+        // gaps between tool calls (LLM streaming, slow Veo calls, etc.).
+        // SelfHealingHandle handles NotFound by recreating the sandbox, so a
+        // touch on an evicted sandbox restores it; we tolerate touch errors
+        // by logging and continuing.
+        let keepalive = {
+            let sandbox = self.sandbox.clone();
+            let thread_id = self.ctx.thread_id;
+            let label = sandbox.id().to_string();
+            tokio::spawn(async move {
+                let mut ticker = tokio::time::interval(std::time::Duration::from_secs(5 * 60));
+                ticker.tick().await; // skip the immediate first tick
+                loop {
+                    ticker.tick().await;
+                    if let Err(e) = sandbox.touch().await {
+                        tracing::warn!(
+                            thread_id,
+                            sandbox = %label,
+                            error = ?e,
+                            "sandbox keepalive: touch failed (will retry next tick)",
+                        );
+                    } else {
+                        tracing::trace!(
+                            thread_id,
+                            sandbox = %label,
+                            "sandbox keepalive: touched",
+                        );
+                    }
+                }
+            })
+        };
+
         let result = self.repl_inner().await;
+
+        // Stop the keepalive as soon as the loop exits. Abort is fire-and-forget;
+        // the next interval tick will be cancelled cleanly.
+        keepalive.abort();
+
         if result.is_err() {
             if let Err(e) = self.force_thread_idle_on_error_exit().await {
                 tracing::error!(
@@ -1142,47 +1182,6 @@ impl AgentExecutor {
     }
 
     async fn handle_terminal_text_response(&mut self, text: String) -> Result<bool, AppError> {
-        if self.active_task_graph_has_unfinished_nodes() {
-            let escape_hint = if self.is_conversation_thread {
-                " To hand control to user mid-plan without abandoning it: `notify_user` ends turn cleanly; graph stays, resumes on user reply."
-            } else {
-                ""
-            };
-            let unfinished = self
-                .task_graph_snapshot
-                .as_ref()
-                .map(|snapshot| {
-                    use models::thread_task_graph::status;
-                    snapshot
-                        .nodes
-                        .iter()
-                        .filter(|n| {
-                            n.status == status::NODE_PENDING
-                                || n.status == status::NODE_IN_PROGRESS
-                        })
-                        .map(|n| format!("#{}({})[{}]", n.id, n.title, n.status))
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            let terminal_preview: String = text.chars().take(200).collect();
-            tracing::warn!(
-                thread_id = self.ctx.thread_id,
-                board_item_id = ?self.current_board_item_id(),
-                execution_run_id = self.ctx.execution_run_id,
-                unfinished_node_count = unfinished.len(),
-                unfinished_nodes = %unfinished.join(", "),
-                terminal_text_preview = %terminal_preview,
-                "complete_blocked_by_task_graph: agent tried to terminate with text while graph has open nodes"
-            );
-            self.store_transient_steer(
-                "complete_blocked_by_task_graph",
-                format!(
-                    "Tried to wrap up text-only but task graph still has open nodes. Runtime re-runs me until convergence; no silent half-executed plan. Next turn: run the next ready node, or `task_graph_reset` to abandon cleanly. Then finish.{escape_hint}"
-                ),
-            );
-            return Ok(true);
-        }
-
         if self.is_service_mode_execution() && !self.service_mode_journal_was_updated().await? {
             self.store_transient_steer(
                 "complete_blocked_by_journal_guard",

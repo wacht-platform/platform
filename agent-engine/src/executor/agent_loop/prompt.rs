@@ -255,6 +255,7 @@ impl AgentExecutor {
         &self,
         conversation_history_prefix: &[LlmHistoryEntry],
         stable_context_message: Option<&str>,
+        virtual_task_state_message: Option<&str>,
         live_context_message: &str,
         current_request_entry: &LlmHistoryEntry,
         trailing_user_message: Option<&str>,
@@ -273,6 +274,14 @@ impl AgentExecutor {
                 .iter()
                 .map(Self::semantic_message_from_history_entry),
         );
+
+        if let Some(message) = virtual_task_state_message
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            messages.push(SemanticLlmMessage::text("user", message));
+        }
+
         messages.push(SemanticLlmMessage::text("user", live_context_message));
         messages.push(Self::semantic_message_from_history_entry(
             current_request_entry,
@@ -316,9 +325,11 @@ impl AgentExecutor {
         };
         let system_prompt = render_prompt_text(self.system_prompt_name(), prompt_context_value)?;
         let stable_context_message = Self::build_stable_context_message(prompt_context);
+        let virtual_task_state_message = Self::build_virtual_task_state_message(prompt_context);
         let messages = self.build_agent_loop_messages(
             &prompt_context.conversation_history_prefix,
             stable_context_message.as_deref(),
+            virtual_task_state_message.as_deref(),
             live_context_message,
             &prompt_context.current_request_entry,
             trailing_user_message,
@@ -470,6 +481,117 @@ impl AgentExecutor {
             block.push_str(instructions);
         }
         Some(block)
+    }
+
+    fn build_virtual_task_state_message(
+        prompt_context: &AgentLoopPromptEnvelope,
+    ) -> Option<String> {
+        let base = &prompt_context.base;
+        let mut lines: Vec<String> = Vec::new();
+
+        lines.push("CURRENT TASK STATE".to_string());
+
+        let thread = &base.thread;
+        lines.push(format!(
+            "Thread: #{} \"{}\" purpose={}{}",
+            thread.id,
+            thread.title,
+            thread.purpose,
+            thread
+                .responsibility
+                .as_deref()
+                .map(|r| format!(" responsibility={}", r))
+                .unwrap_or_default()
+        ));
+
+        if let Some(item) = base.task.active_board_item.as_ref() {
+            lines.push(format!(
+                "Board item: {} — {} (status={})",
+                item.task_key, item.title, item.status
+            ));
+            if !item.mounts.is_empty() {
+                lines.push("Mounts:".to_string());
+                for m in &item.mounts {
+                    let desc = m
+                        .description
+                        .as_deref()
+                        .filter(|s| !s.is_empty())
+                        .map(|s| format!(" — {}", s))
+                        .unwrap_or_default();
+                    lines.push(format!("- {} ({}){}", m.mount_path, m.mode, desc));
+                }
+            }
+        }
+
+        if let Some(assignment) = base.task.active_assignment.as_ref() {
+            lines.push(format!(
+                "Active assignment: #{} role={} status={} thread={}",
+                assignment.assignment_id,
+                assignment.assignment_role,
+                assignment.status,
+                assignment.thread_id
+            ));
+        }
+
+        if !base.task.active_board_item_assignments.is_empty() {
+            lines.push("Board assignments:".to_string());
+            for a in &base.task.active_board_item_assignments {
+                lines.push(format!(
+                    "- #{} role={} thread={} status={}",
+                    a.assignment_id, a.assignment_role, a.thread_id, a.status
+                ));
+            }
+        }
+
+        if !base.task.recent_assignment_history.is_empty() {
+            lines.push("Recent assignments:".to_string());
+            for a in &base.task.recent_assignment_history {
+                lines.push(format!(
+                    "- #{} role={} thread={} status={}{}",
+                    a.assignment_id,
+                    a.assignment_role,
+                    a.thread_id,
+                    a.status,
+                    a.result_status
+                        .as_deref()
+                        .map(|s| format!(" ({})", s))
+                        .unwrap_or_default()
+                ));
+            }
+        }
+
+        if !base.task.thread_assignment_queue.is_empty() {
+            lines.push("Queue:".to_string());
+            for a in &base.task.thread_assignment_queue {
+                lines.push(format!(
+                    "- #{} role={} status={}",
+                    a.assignment_id, a.assignment_role, a.status
+                ));
+            }
+        }
+
+        if let Some(tail) = base
+            .task
+            .task_journal_tail
+            .as_deref()
+            .filter(|s| !s.is_empty())
+        {
+            lines.push("Journal tail:".to_string());
+            lines.push(format!("```markdown\n{}\n```", tail));
+        }
+
+        if let Some(trigger) = base.conversation.triggering_event.as_ref() {
+            lines.push(format!(
+                "Trigger: `{}`",
+                serde_json::to_string(trigger).unwrap_or_default()
+            ));
+        }
+
+        if lines.len() <= 2 {
+            None
+        } else {
+            Some(lines.join("\n"))
+        }
     }
 
     fn compose_sub_agent_routing_section(

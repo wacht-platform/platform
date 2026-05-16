@@ -15,7 +15,11 @@ use crate::{
 
 const OPENROUTER_API_BASE_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 const REQUEST_TIMEOUT_SECS: u64 = 240;
-const MAX_RETRIES: u32 = 3;
+// RETRY POLICY (explicit product requirement):
+// - Up to 15 attempts on retryable failures (timeouts, 5xx, 429, transient parse).
+// - Fixed random delay between attempts, uniformly in [2s, 4s].
+// - No exponential backoff. Do not honor Retry-After; the fixed window is the contract.
+const MAX_RETRIES: u32 = 15;
 
 #[derive(Debug, Clone)]
 pub struct OpenRouterClient {
@@ -120,13 +124,6 @@ impl OpenRouterClient {
             Value::String(text) => text.parse::<u64>().ok(),
             _ => None,
         }
-    }
-
-    fn retry_delay_from_headers(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
-        let retry_after = headers.get(reqwest::header::RETRY_AFTER)?;
-        let retry_after = retry_after.to_str().ok()?.trim();
-        let secs = retry_after.parse::<f64>().ok()?;
-        Some(Duration::from_secs_f64(secs.max(0.5)))
     }
 
     fn should_retry_response(status_code: u16, response_text: &str) -> bool {
@@ -524,7 +521,6 @@ impl OpenRouterClient {
             };
 
             let status = response.status();
-            let retry_delay = Self::retry_delay_from_headers(response.headers());
             let response_text = response.text().await.map_err(|e| {
                 AppError::Internal(format!("Failed to read OpenRouter response body: {e}"))
             })?;
@@ -536,10 +532,7 @@ impl OpenRouterClient {
             let should_retry = Self::should_retry_response(status.as_u16(), &response_text);
             attempt += 1;
             if should_retry && attempt < MAX_RETRIES {
-                tokio::time::sleep(
-                    retry_delay.unwrap_or_else(|| Self::calculate_backoff_delay(attempt)),
-                )
-                .await;
+                tokio::time::sleep(Self::calculate_backoff_delay(attempt)).await;
                 continue;
             }
 
@@ -558,9 +551,13 @@ impl OpenRouterClient {
         })
     }
 
-    fn calculate_backoff_delay(attempt: u32) -> Duration {
-        let capped = attempt.min(5);
-        Duration::from_millis(500 * (1u64 << capped.saturating_sub(1)))
+    // RETRY POLICY (explicit product requirement):
+    // Fixed random delay between retry attempts — uniformly in [2000ms, 4000ms].
+    // No exponential backoff, no Retry-After header honoring; the fixed window
+    // is the contract. Matches `MAX_RETRIES: u32 = 15` at module scope.
+    fn calculate_backoff_delay(_attempt: u32) -> Duration {
+        let jitter_ms = 2000 + (rand::random::<f64>() * 2000.0) as u64;
+        Duration::from_millis(jitter_ms)
     }
 
     fn system_message(&self, system_prompt: &str) -> Value {

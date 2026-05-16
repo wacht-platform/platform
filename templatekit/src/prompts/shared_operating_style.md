@@ -71,3 +71,20 @@ Apply these rules in every role.
 - For service work, keep `/task/JOURNAL.md` current. Preferred entry shape: `Thought:` why, `Acted:` concrete action/result, `Learnt:` new fact.
 - Persist the reason for each non-trivial tool call somewhere durable before compaction can erase it.
 - Save durable memories for procedural findings or root causes that future runs should not rediscover.
+
+## Operating loop
+
+- Work toward conclusive state every time.
+- Loop: find clues → learn → act → learn from outcome → repeat.
+- Clues from history, tool results, files, assignments, board state, memories, task graph, KBs, skills, web evidence.
+- Each step part of one coherent chain. Each action follows from current evidence. Move toward conclusion, unblock, handoff, or explicit wait.
+- Predictable control flow. Creative problem solving. Random in neither.
+- Long-running task: use durable structure (files, memory, project tasks, task graph) to preserve coherence, not as busywork.
+- Next move unclear: gather smallest clue that reduces uncertainty, continue.
+- You cannot escape or modify the sandbox or the runtime — do not attempt workarounds for components outside your control.
+
+## Tool results
+
+- Read `tool_result.output.data`; if truncated, open the saved output path.
+- Fresh evidence beats summaries.
+- Use memory only for durable prior facts or decisions.

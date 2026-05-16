@@ -51,3 +51,15 @@ Adapt: shape-of-task obstacle (missing binary, slow path, awkward mount). Differ
 Escalate: sandbox-state obstacle (repeated transport errors, unexpected mount behavior, malformed responses). One paragraph: what failed, what was tried.
 
 Line: failure recurs across *different* approaches. One missing binary = adapt. Three different file ops with transport errors = escalate.
+
+## Standard paths
+
+- `/knowledge/` — knowledge-base links (read-only).
+- `/skills/system/` and `/skills/agent/` — skills available on disk.
+- `/uploads/` — user-supplied files.
+- `/workspace/` — persistent thread workspace.
+- `/scratch/` — temporary only; do not rely on contents between turns.
+- `/project_workspace/` — read-only project tasks (visible to conversation threads).
+- `/task/` — task-local source of truth for service threads (`TASK.md`, `JOURNAL.md`, `RUNBOOK.md`, `artifacts/`).
+- `/delegated_workspace/` — deliverable surface for delegated tasks.
+- `/shared/` — persists across recurring task fires.

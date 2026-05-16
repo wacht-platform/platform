@@ -1,7 +1,7 @@
 use super::core::AgentExecutor;
 use dto::json::{
-    BoardItemSchedulePromptInfo, ProjectTaskBoardAssignmentPromptItem, ProjectTaskBoardPromptItem,
-    ThreadEventPromptItem, ThreadEventPromptPayload,
+    BoardItemMountPromptInfo, BoardItemSchedulePromptInfo, ProjectTaskBoardAssignmentPromptItem,
+    ProjectTaskBoardPromptItem, ThreadEventPromptItem, ThreadEventPromptPayload,
 };
 use models::{ProjectTaskBoardItem, ThreadEvent};
 use queries::BoardItemScheduleSummary;
@@ -24,6 +24,7 @@ impl AgentExecutor {
             title: item.title.clone(),
             description: truncate_prompt_text(item.description.clone(), 1_200),
             status: item.status.clone(),
+            mounts: parse_board_item_mounts(&item.mounts),
             assigned_thread_id: item.assigned_thread_id,
             parent_task_key,
             child_task_keys,
@@ -33,6 +34,31 @@ impl AgentExecutor {
             schedule: schedule.map(format_schedule_prompt_info),
         }
     }
+}
+
+fn parse_board_item_mounts(mounts: &serde_json::Value) -> Vec<BoardItemMountPromptInfo> {
+    let Some(arr) = mounts.as_array() else {
+        return Vec::new();
+    };
+    arr.iter()
+        .filter_map(|m| {
+            let mount_path = m.get("mount_path")?.as_str()?.to_string();
+            let mode = m
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("rw")
+                .to_string();
+            let description = m
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            Some(BoardItemMountPromptInfo {
+                mount_path,
+                mode,
+                description,
+            })
+        })
+        .collect()
 }
 
 fn truncate_prompt_text(value: Option<String>, max_chars: usize) -> Option<String> {

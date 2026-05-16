@@ -435,6 +435,8 @@ pub struct ProjectTaskBoardPromptItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub status: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mounts: Vec<BoardItemMountPromptInfo>,
     #[serde(
         default,
         with = "models::utils::serde::i64_as_string_option",
@@ -451,6 +453,14 @@ pub struct ProjectTaskBoardPromptItem {
     pub updated_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<BoardItemSchedulePromptInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoardItemMountPromptInfo {
+    pub mount_path: String,
+    pub mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

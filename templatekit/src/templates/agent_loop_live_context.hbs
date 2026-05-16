@@ -1,70 +1,12 @@
-LIVE CONTEXT
-{{#if (eq thread.purpose "conversation")}}Mode: user-facing; text without tool calls is final. Background/tracked/scheduled work -> `create_project_task`.
-{{else}}Mode: internal; no user-facing replies or questions.
-{{/if}}{{#if (eq thread.purpose "coordinator")}}Coordinator: route slices to matching specialist lanes; do not execute.
-{{else}}Service: execute assigned work; do not orchestrate broadly.
-{{/if}}
+LIVE RUNTIME (per-iteration; not cached)
+Iteration: {{runtime.iteration_info.current_iteration}}/{{runtime.iteration_info.max_iterations}}. Now: {{runtime.current_datetime_utc}}.
 
-{{#if task.has_live_context}}
-CURRENT TASK STATE
-Use newest concrete state first: triggering event, assignment history, board item, queue, journal tail, graph/files, then history. Refer to `/task/TASK.md` and `/task/JOURNAL.md` on disk for durable detail beyond what's in the stable narrative.
-{{#if conversation.triggering_event}}
-Trigger: `{{json conversation.triggering_event}}`
-{{/if}}
-{{#if task.recent_assignment_history}}
-Recent assignments:
-{{#each task.recent_assignment_history}}- `{{json this}}`
-{{/each}}
-{{/if}}
-{{#if task.task_journal_tail}}
-Journal tail:
-```markdown
-{{task.task_journal_tail}}
-```
-{{/if}}
-{{#if task.active_board_item}}
-Board item: `{{json task.active_board_item}}`
-{{/if}}
-{{#if task.active_board_item_assignments}}
-Board assignments:
-{{#each task.active_board_item_assignments}}- `{{json this}}`
-{{/each}}
-{{/if}}
-{{#if task.thread_assignment_queue}}
-Queue:
-{{#each task.thread_assignment_queue}}- `{{json this}}`
-{{/each}}
-{{/if}}
-{{/if}}
-
-RESOURCES
-Tools are in the model tool catalog; internal tools are directly callable.
-{{#if discoverable_external_tool_names}}External tools: {{join discoverable_external_tool_names ", "}}. Loaded: {{#if loaded_external_tool_names}}{{join loaded_external_tool_names ", "}}{{else}}none{{/if}}.
-{{/if}}{{#if resources.available_knowledge_bases}}KBs:
-{{format_knowledge_bases resources.available_knowledge_bases}}
-{{/if}}Skills: inspect `/skills/system/` and `/skills/agent/` on disk when needed.
-{{#if task.task_graph_view}}
-Graph:
+{{#if task.task_graph_view}}Task graph:
 ```text
 {{task.task_graph_view}}
 ```
+{{/if}}{{#if discoverable_external_tool_names}}External tools available: {{join discoverable_external_tool_names ", "}}. Loaded: {{#if loaded_external_tool_names}}{{join loaded_external_tool_names ", "}}{{else}}none{{/if}}.
+{{/if}}{{#if resources.available_knowledge_bases}}Knowledge bases:
+{{format_knowledge_bases resources.available_knowledge_bases}}
+{{/if}}{{#if runtime.steer_visibility_nudge}}NUDGE: {{runtime.steer_visibility_nudge}}
 {{/if}}
-
-FILES
-`/knowledge/` KB links; `/skills/system/` and `/skills/agent/` skills; `/uploads/` user files; `/workspace/` persistent thread files; `/scratch/` temporary only; {{#if (eq thread.purpose "conversation")}}`/project_workspace/` read-only project tasks.{{else}}`/task/` task-local source of truth.{{/if}}
-
-TOOL RESULT RULES
-Read `tool_result.output.data`; if truncated, open saved output path. Fresh evidence beats summaries. Use memory only for durable prior facts/decisions.
-{{#if runtime.steer_visibility_nudge}}
-NUDGE: {{runtime.steer_visibility_nudge}}
-{{/if}}
-
-## Operating loop
-- Work toward conclusive state every time.
-- Loop: find clues → learn → act → learn from outcome → repeat.
-- Clues from history, tool results, files, assignments, board state, memories, task graph, KBs, skills, web evidence.
-- Each step part of one coherent chain. Each action follows from current evidence. Move toward conclusion, unblock, handoff, or explicit wait.
-- Predictable control flow. Creative problem solving. Random in neither.
-- Long-running task: use durable structure (files, memory, project tasks, task graph) to preserve coherence, not as busywork.
-- Next move unclear: gather smallest clue that reduces uncertainty, continue.
-- And always remember: you cannot escape or modify the sandbox or the runtime — do not attempt workarounds for components outside your control.

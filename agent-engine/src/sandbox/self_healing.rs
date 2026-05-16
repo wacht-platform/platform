@@ -94,6 +94,22 @@ impl SandboxHandle for SelfHealingHandle {
         }
     }
 
+    async fn touch(&self) -> SandboxResult<()> {
+        let handle = self.current().await;
+        match handle.touch().await {
+            Err(SandboxError::NotFound(detail)) => {
+                tracing::warn!(
+                    label = %self.label,
+                    detail = %detail,
+                    "sandbox: touch hit NotFound, recreating and retrying once",
+                );
+                let fresh = self.refresh().await?;
+                fresh.touch().await
+            }
+            other => other,
+        }
+    }
+
     async fn reconcile_skills(
         &self,
         agent_id: &str,

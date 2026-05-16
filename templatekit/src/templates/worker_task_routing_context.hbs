@@ -3,54 +3,26 @@
 {{else if (eq routing_reason "assignment_preempted")}}User edited this task while an executor was running it. Executor was preempted; partial work is in `/task/JOURNAL.md` and conversation history. Re-evaluate brief and lane.
 {{else if (eq routing_reason "assignment_completed")}}Assignment on this task terminated `{{last_assignment_result_status}}`. Decide: accept (mark task `completed`), route to reviewer, reassign with follow-up, close.
 {{else if (eq routing_reason "task_cancelled")}}User cancelled this task. Append a closing note to `/task/JOURNAL.md`. Do not reassign.
-{{else if (eq routing_reason "user_responded")}}User answered a clarification I (or an executor) had asked. The latest user-voice clarification message in this conversation history holds the typed answers. Re-evaluate the brief and routing with the answer in hand; append a short note to `/task/JOURNAL.md` summarizing what was answered before continuing.
-{{else if (eq routing_reason "user_feedback")}}User left feedback on this task. The current executor (if any) was preempted; partial work is in `/task/JOURNAL.md`. Read the full feedback timeline below, decide whether to acknowledge, adjust the brief, re-route, or close. Append a short note to `/task/JOURNAL.md` capturing how you're acting on the latest feedback.
+{{else if (eq routing_reason "user_responded")}}User answered a clarification. Re-evaluate brief and routing with the answer in hand.
+{{else if (eq routing_reason "user_feedback")}}User left feedback. The current executor (if any) was preempted; partial work is in `/task/JOURNAL.md`. Address every `[unresolved]` entry below.
 {{else}}Routing event for this task.
-{{/if}}
-{{#if is_recurring}}
-> **Recurring task.** This is one fire of a schedule that runs repeatedly. Listed mounts (e.g. `/shared/`) persist across every fire — read prior state at the start, write any state to remember before finishing. `/task/` is per-fire and resets next run.{{#if task_schedule}} Schedule: `{{task_schedule.kind}}`{{#if task_schedule.interval}}, every `{{task_schedule.interval}}`{{/if}}, next run `{{task_schedule.next_run_at}}`{{#if task_schedule.last_fired_at}}, last fired `{{task_schedule.last_fired_at}}`{{/if}}, overlap `{{task_schedule.overlap_policy}}`.{{/if}}
-
-{{/if}}
-Task key: {{task_key}}
-Board item id: {{board_item_id}}
-Title: {{title}}
-Description: {{description}}
-Status: {{status}}{{#if previous_status}} (was {{previous_status}}){{/if}}
-
-{{#if changed_fields}}Changed since last routing:
+{{/if}}{{#if is_recurring}}
+> **Recurring task.** This is one fire of a schedule that runs repeatedly.{{#if task_schedule}} Schedule: `{{task_schedule.kind}}`{{#if task_schedule.interval}}, every `{{task_schedule.interval}}`{{/if}}, next run `{{task_schedule.next_run_at}}`{{#if task_schedule.last_fired_at}}, last fired `{{task_schedule.last_fired_at}}`{{/if}}, overlap `{{task_schedule.overlap_policy}}`.{{/if}}{{#if schedule_scheduled_for}} Scheduled fire: {{schedule_scheduled_for}}.{{/if}}
+{{/if}}{{#if changed_fields}}
+Changed since last routing:
 {{#each changed_fields}}- {{field}}: {{from}} → {{to}}
-{{/each}}
-
-{{/if}}{{#if active_assignments}}Active assignments:
-{{#each active_assignments}}- #{{assignment_id}} {{assignment_role}} → thread {{thread_id}}: {{status}}{{#if result_status}} ({{result_status}}){{/if}}
-{{/each}}
-{{else}}No active assignments yet.
-{{/if}}
-{{#if parent_task_key}}Parent task (read-only): /project_workspace/tasks/{{parent_task_key}}/
-{{/if}}{{#if task_mounts}}Mounts (S3-backed, persist across this task's lifetime):
-{{#each task_mounts}}- {{mount_path}} ({{mode}}){{#if description}} — {{description}}{{/if}}
-{{/each}}{{#if schedule_scheduled_for}}Scheduled fire: {{schedule_scheduled_for}}.
-{{/if}}Read state from the mount at the start; write before finishing. For recurring tasks the mount persists across every fire of the schedule. Note any writes to mounted paths in `/task/JOURNAL.md`.
-{{/if}}
-Workspace: /task — Brief: /task/TASK.md — Journal: /task/JOURNAL.md
-Other tasks read-only at /project_workspace/tasks/<task_key>/.
-
-{{#if prior_fires}}Recent prior fires of this schedule (read-only at /project_workspace/tasks/<task_key>/, newest first):
+{{/each}}{{/if}}{{#if previous_status}}
+Status was previously `{{previous_status}}`.
+{{/if}}{{#if prior_fires}}
+Recent prior fires of this schedule (read-only at /project_workspace/tasks/<task_key>/, newest first):
 {{#each prior_fires}}- {{task_key}} (fired {{fired_at}}, {{status}})
-{{/each}}Older fires also at /project_workspace/tasks/. Read them only if you need historical context.
-
-{{/if}}{{#if comment_timeline}}User feedback timeline (chronological, oldest first):
+{{/each}}{{/if}}{{#if comment_timeline}}
+User feedback timeline (chronological, oldest first):
 {{#each comment_timeline}}- {{#if resolved}}[resolved]{{else}}[unresolved]{{/if}} (id={{id}}, {{created_at}}) {{body}}{{#if attachments}}
   attachments: {{#each attachments}}{{path}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if resolution_summary}}
   resolution: {{resolution_summary}}{{/if}}
-{{/each}}
-Address every `[unresolved]` entry this turn — either by acting on it (edit brief, re-route, write a journal note) AND calling `resolve_user_feedback` with the comment id(s) and a one-line resolution summary, or by explicitly calling `resolve_user_feedback` with a summary explaining why no action is needed. Don't terminate while `[unresolved]` items remain.
-{{/if}}
+{{/each}}{{/if}}
 
-Decide and act this turn. Route on actual ownership boundaries, not vague role labels. Append a one-line routing rationale to the journal before terminating.
+Decide and act this turn — but: if the slice the latest feedback or routing reason concerns is already actively assigned to the right lane (check `Active assignments` / `Board assignments` in the task state above), do NOT re-issue the assignment. Acknowledge it in `/task/JOURNAL.md`, call `resolve_user_feedback` on any `[unresolved]` comments with that acknowledgement, and end the turn. Re-issuing an identical assignment never accelerates the lane.
 
-Split a task when execution and review should be independent, when work needs different skills or evidence standards, when one lane doing everything would make acceptance unreliable. Don't split when narrow enough for one lane.
-
-Scope cues in title/description are literal. Broad wording (`everything`, `full`, `deep dive`, repeated facets) implies broad coverage — affects routing, decomposition, review depth.
-
-Earlier history below is a chronological task timeline: untagged entries are yours; `[thread #<id> "<title>" (<purpose>)] …` are other threads' messages; `[Task event] task_routing …` are runtime routing events; `[Compressed prior history] …` are compaction summaries. Your current-execution tool calls show full input + output; past-execution tool calls (yours from prior runs, and other threads') show input only with `[output not preserved in timeline view — re-run if needed]`. `read_file /task/JOURNAL.md` for the on-disk durable record.
+If you must act: route on actual ownership boundaries, not vague role labels. Append a one-line routing rationale to `/task/JOURNAL.md` before terminating.

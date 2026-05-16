@@ -36,6 +36,11 @@ pub trait SandboxHandle: Send + Sync {
 
     async fn delete(&self) -> SandboxResult<()>;
 
+    /// Keepalive — resets the sandbox's idle timer on the node. Cheap; called
+    /// by the agent loop's keepalive task to prevent eviction during long
+    /// gaps between tool calls (e.g. waiting on an LLM response).
+    async fn touch(&self) -> SandboxResult<()>;
+
     async fn reconcile_skills(
         &self,
         agent_id: &str,

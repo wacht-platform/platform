@@ -47,13 +47,6 @@ impl GeminiClient {
         Some((code, message))
     }
 
-    fn retry_delay_from_headers(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
-        let retry_after = headers.get(reqwest::header::RETRY_AFTER)?;
-        let retry_after = retry_after.to_str().ok()?.trim();
-        let secs = retry_after.parse::<f64>().ok()?;
-        Some(Duration::from_secs_f64(secs.max(0.5)))
-    }
-
     fn should_retry_response(status_code: u16, response_text: &str) -> bool {
         if matches!(status_code, 408 | 409 | 429 | 500 | 502 | 503 | 504) {
             return true;
@@ -377,7 +370,11 @@ impl GeminiClient {
         request_body: &str,
     ) -> Result<GeminiResponse, AppError> {
         let mut attempt = 0u32;
-        const MAX_RETRIES: u32 = 3;
+        // RETRY POLICY (explicit product requirement):
+        // - Up to 15 attempts on retryable failures (timeouts, 5xx, 429, transient parse).
+        // - Fixed random delay between attempts, uniformly in [2s, 4s].
+        // - No exponential backoff. Do not honor Retry-After; the fixed window is the contract.
+        const MAX_RETRIES: u32 = 15;
         let mut current_body = request_body.to_string();
         let mut safety_retry_used = false;
 
@@ -395,7 +392,6 @@ impl GeminiClient {
             match response {
                 Ok(resp) => {
                     let status = resp.status();
-                    let retry_delay = Self::retry_delay_from_headers(resp.headers());
                     let response_text = match resp.text().await {
                         Ok(body) => body,
                         Err(e) => {
@@ -420,11 +416,7 @@ impl GeminiClient {
                         if Self::should_retry_response(status.as_u16(), &response_text)
                             && attempt < MAX_RETRIES
                         {
-                            tokio::time::sleep(
-                                retry_delay
-                                    .unwrap_or_else(|| Self::calculate_backoff_delay(attempt)),
-                            )
-                            .await;
+                            tokio::time::sleep(Self::calculate_backoff_delay(attempt)).await;
                             continue;
                         }
                         break error;
@@ -489,18 +481,14 @@ impl GeminiClient {
         )))
     }
 
-    fn calculate_backoff_delay(attempt: u32) -> Duration {
-        const INITIAL_DELAY_MS: u64 = 200;
-        const MAX_DELAY_MS: u64 = 5000;
-        const MULTIPLIER: f64 = 2.0;
-
-        let base_delay =
-            INITIAL_DELAY_MS as f64 * MULTIPLIER.powi(attempt.saturating_sub(1) as i32);
-        let capped_delay = base_delay.min(MAX_DELAY_MS as f64);
-
-        let jitter_range = capped_delay * 0.25;
-        let jitter = (rand::random::<f64>() - 0.5) * 2.0 * jitter_range;
-        let final_delay = (capped_delay + jitter).max(0.0) as u64;
+    // RETRY POLICY (explicit product requirement):
+    // Fixed random delay between retry attempts — uniformly in [2000ms, 4000ms].
+    // No exponential backoff, no Retry-After header honoring; the fixed window is
+    // the contract. See `execute_generate_content_request` for the matching
+    // `MAX_RETRIES: u32 = 15`.
+    fn calculate_backoff_delay(_attempt: u32) -> Duration {
+        let jitter_ms = 2000 + (rand::random::<f64>() * 2000.0) as u64;
+        let final_delay = jitter_ms;
 
         Duration::from_millis(final_delay)
     }
@@ -585,11 +573,12 @@ fn inject_safety_steering(body: &str, block_reason: &str) -> Result<String, AppE
          level of abstraction as needed. Do not refuse the task — produce the best safe version of \
          the requested output."
     );
-    let mut value: Value = serde_json::from_str(body)
-        .map_err(|e| AppError::Internal(format!("Failed to parse Gemini request for re-prompt: {e}")))?;
-    let obj = value
-        .as_object_mut()
-        .ok_or_else(|| AppError::Internal("Gemini request body is not a JSON object".to_string()))?;
+    let mut value: Value = serde_json::from_str(body).map_err(|e| {
+        AppError::Internal(format!("Failed to parse Gemini request for re-prompt: {e}"))
+    })?;
+    let obj = value.as_object_mut().ok_or_else(|| {
+        AppError::Internal("Gemini request body is not a JSON object".to_string())
+    })?;
     let sys = obj
         .entry("system_instruction".to_string())
         .or_insert_with(|| json!({ "parts": [{ "text": "" }] }));
@@ -600,15 +589,18 @@ fn inject_safety_steering(body: &str, block_reason: &str) -> Result<String, AppE
     if parts.is_empty() {
         parts.push(json!({ "text": steering.trim_start() }));
     } else {
-        let first = parts[0]
-            .as_object_mut()
-            .ok_or_else(|| AppError::Internal("system_instruction.parts[0] not an object".to_string()))?;
+        let first = parts[0].as_object_mut().ok_or_else(|| {
+            AppError::Internal("system_instruction.parts[0] not an object".to_string())
+        })?;
         let existing = first
             .get("text")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        first.insert("text".to_string(), Value::String(format!("{existing}{steering}")));
+        first.insert(
+            "text".to_string(),
+            Value::String(format!("{existing}{steering}")),
+        );
     }
     serde_json::to_string(&value)
         .map_err(|e| AppError::Internal(format!("Failed to re-serialize Gemini request: {e}")))
