@@ -1,3 +1,4 @@
+use models::SecondFactorPolicy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -29,6 +30,7 @@ pub struct UpdateUserRequest {
     pub public_metadata: Option<Value>,
     pub private_metadata: Option<Value>,
     pub disabled: Option<bool>,
+    pub second_factor_policy: Option<SecondFactorPolicy>,
 }
 
 // Email management requests

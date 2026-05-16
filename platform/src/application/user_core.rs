@@ -9,10 +9,13 @@ use commands::{
 use common::db_router::ReadConsistency;
 use common::error::AppError;
 use common::state::AppState;
+use chrono::Utc;
 use dto::{
-    json::{CreateUserRequest, UpdatePasswordRequest, UpdateUserRequest},
+    json::{CreateUserRequest, NatsTaskMessage, UpdatePasswordRequest, UpdateUserRequest},
     query::ActiveUserListQueryParams,
 };
+use serde_json::json;
+use tracing::warn;
 use models::{
     SignIn, SocialConnection, UserDetails, UserOrganizationMembership, UserPasskey,
     UserWithIdentifiers, UserWorkspaceMembership,
@@ -25,6 +28,59 @@ use queries::{
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
 use common::deps;
+
+const WEBHOOK_EVENT_SUBJECT: &str = "worker.tasks.webhook.event";
+
+// Fire-and-forget publish of a `user.*` webhook event onto the same NATS
+// subject that the frontend API uses, so subscribers see admin-driven user
+// mutations identically to self-service ones. Failure to publish must not
+// fail the originating mutation — log and move on, matching FAPI semantics.
+fn publish_user_webhook_event(
+    app_state: &AppState,
+    deployment_id: i64,
+    event_type: &'static str,
+    entity_id: i64,
+    entity_type: &'static str,
+) {
+    let task_id = match app_state.sf.next_id() {
+        Ok(id) => id.to_string(),
+        Err(e) => {
+            warn!(error = %e, event_type, "Failed to allocate webhook task id");
+            return;
+        }
+    };
+
+    let inner = json!({
+        "deployment_id": deployment_id,
+        "event_type": event_type,
+        "event_payload": {
+            "entity_id": entity_id,
+            "entity_type": entity_type,
+        },
+        "triggered_at": Utc::now(),
+    });
+
+    let envelope = NatsTaskMessage {
+        task_type: "webhook.event".to_string(),
+        task_id,
+        payload: inner,
+    };
+
+    let bytes = match serde_json::to_vec(&envelope) {
+        Ok(b) => b,
+        Err(e) => {
+            warn!(error = %e, event_type, "Failed to serialize webhook task");
+            return;
+        }
+    };
+
+    let nats = app_state.nats_client.clone();
+    tokio::spawn(async move {
+        if let Err(e) = nats.publish(WEBHOOK_EVENT_SUBJECT, bytes.into()).await {
+            warn!(error = %e, event_type, "Failed to publish webhook event");
+        }
+    });
+}
 
 pub async fn get_active_user_list(
     app_state: &AppState,
@@ -100,6 +156,8 @@ pub async fn create_user(
             .await?;
     }
 
+    publish_user_webhook_event(app_state, deployment_id, "user.created", user.id, "user");
+
     Ok(user)
 }
 
@@ -115,6 +173,10 @@ pub async fn update_user(
     let user_details = UpdateUserCommand::new(deployment_id, user_id, request)
         .execute_with_deps(&deps)
         .await?;
+
+    // Fire once after the row mutation succeeds; profile-image side-effects
+    // below are surfacing the same updated user and shouldn't double-emit.
+    publish_user_webhook_event(app_state, deployment_id, "user.updated", user_id, "user");
 
     if remove_profile_image {
         UpdateUserProfileImageCommand::new(deployment_id, user_id, String::new())
@@ -175,6 +237,7 @@ pub async fn delete_user(
     DeleteUserCommand::new(deployment_id, user_id)
         .execute_with_db(app_state.db_router.writer())
         .await?;
+    publish_user_webhook_event(app_state, deployment_id, "user.deleted", user_id, "user");
     Ok(())
 }
 

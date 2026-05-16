@@ -261,6 +261,11 @@ impl UpdateUserCommand {
             query_builder.push_bind(disabled);
         }
 
+        if let Some(policy) = self.request.second_factor_policy.as_ref() {
+            query_builder.push(", second_factor_policy = ");
+            query_builder.push_bind(policy.to_string());
+        }
+
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
         query_builder.push(" AND id = ");

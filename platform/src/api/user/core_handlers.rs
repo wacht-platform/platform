@@ -128,6 +128,7 @@ pub async fn update_user(
         public_metadata: None,
         private_metadata: None,
         disabled: None,
+        second_factor_policy: None,
     };
 
     let mut profile_image_data: Option<(Vec<u8>, String)> = None;
@@ -169,6 +170,17 @@ pub async fn update_user(
                 let disabled_str = field.text()?;
                 if let Ok(disabled) = disabled_str.parse::<bool>() {
                     request.disabled = Some(disabled);
+                }
+            }
+            "second_factor_policy" => {
+                let policy_str = field.text()?;
+                if !policy_str.is_empty() {
+                    request.second_factor_policy = Some(policy_str.parse().map_err(|_| {
+                        common::error::AppError::BadRequest(
+                            "second_factor_policy must be one of: none, optional, enforced"
+                                .to_string(),
+                        )
+                    })?);
                 }
             }
             "remove_profile_image" => remove_profile_image = field.bool_true()?,
