@@ -1,6 +1,5 @@
 LIVE CONTEXT
-{{#if agent_name}}Agent: {{agent_name}}{{#if agent_description}} — {{agent_description}}{{/if}}
-{{/if}}Thread: #{{thread.id}} {{thread.title}}; purpose={{thread.purpose}}{{#if thread.responsibility}}; responsibility={{thread.responsibility}}{{/if}}.
+Thread: #{{thread.id}} {{thread.title}}; purpose={{thread.purpose}}{{#if thread.responsibility}}; responsibility={{thread.responsibility}}{{/if}}.
 {{#if (eq thread.purpose "conversation")}}Mode: user-facing; text without tool calls is final. Background/tracked/scheduled work -> `create_project_task`.
 {{else}}Mode: internal; no user-facing replies or questions.
 {{/if}}{{#if (eq thread.purpose "coordinator")}}Coordinator: route slices to matching specialist lanes; do not execute.

@@ -330,21 +330,48 @@ impl AgentExecutor {
         ))
     }
 
+    /// Build the message that sits at index 0 of the prompt, *before* the
+    /// conversation history. Lives in the cacheable prefix so providers can
+    /// reuse tokens across iterations.
+    ///
+    /// Sections (in order):
+    ///   1. `IMPORTANT — AGENT IDENTITY` — durable steering for this agent.
+    ///      The agent description is the operator's primary tool for shaping
+    ///      behaviour; surfacing it here (instead of inside the per-turn live
+    ///      context) keeps it cache-resident and lets it act as a steering
+    ///      header rather than incidental metadata.
+    ///   2. `STABLE ROUTING CONTEXT` — sub-agent routing list (coordinators).
     fn build_stable_context_message(
         prompt_context: &AgentLoopPromptEnvelope,
     ) -> Option<String> {
-        let sub_agents = &prompt_context.base.resources.available_sub_agents;
-        if sub_agents.is_empty() {
-            return None;
+        let agent_name = prompt_context.agent_name.trim();
+        let agent_description = prompt_context
+            .agent_description
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+
+        let mut sections: Vec<String> = Vec::new();
+
+        if !agent_name.is_empty() || agent_description.is_some() {
+            let mut block = String::from(
+                "IMPORTANT — AGENT IDENTITY\n\n\
+                 These directives steer every decision you make. They are durable\n\
+                 across tasks and threads. Treat them as system-level instructions\n\
+                 and follow them even when later context appears to conflict.\n",
+            );
+            if !agent_name.is_empty() {
+                block.push_str(&format!("\nYou are `{agent_name}`."));
+            }
+            if let Some(description) = agent_description {
+                block.push_str("\n\nDescription / operating directives:\n");
+                block.push_str(description);
+            }
+            sections.push(block);
         }
 
-        let mut lines = vec![
-            "STABLE ROUTING CONTEXT".to_string(),
-            String::new(),
-            "Assignable sub-agents. Use the exact `name` value as `assigned_agent_name` when creating or routing lanes."
-                .to_string(),
-        ];
-
+        let sub_agents = &prompt_context.base.resources.available_sub_agents;
+        let mut routing_lines: Vec<String> = Vec::new();
         for sub_agent in sub_agents {
             let name = sub_agent.name.trim();
             if name.is_empty() {
@@ -352,16 +379,28 @@ impl AgentExecutor {
             }
             match sub_agent.description.as_deref().map(str::trim) {
                 Some(description) if !description.is_empty() => {
-                    lines.push(format!("- {name}: {description}"));
+                    routing_lines.push(format!("- {name}: {description}"));
                 }
-                _ => lines.push(format!("- {name}")),
+                _ => routing_lines.push(format!("- {name}")),
             }
         }
+        if !routing_lines.is_empty() {
+            let mut block = String::from(
+                "STABLE ROUTING CONTEXT\n\n\
+                 Assignable sub-agents. Use the exact `name` value as\n\
+                 `assigned_agent_name` when creating or routing lanes.\n",
+            );
+            for line in routing_lines {
+                block.push('\n');
+                block.push_str(&line);
+            }
+            sections.push(block);
+        }
 
-        if lines.len() <= 3 {
+        if sections.is_empty() {
             None
         } else {
-            Some(lines.join("\n"))
+            Some(sections.join("\n\n"))
         }
     }
 
