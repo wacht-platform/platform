@@ -358,6 +358,7 @@ impl GeminiClient {
             json!({ "functionCallingConfig": { "mode": "AUTO" } })
         };
         body.insert("toolConfig".to_string(), tool_config);
+        body.insert("safetySettings".to_string(), gemini_safety_settings());
         if !generation_config.is_empty() {
             body.insert(
                 "generationConfig".to_string(),
@@ -377,6 +378,8 @@ impl GeminiClient {
     ) -> Result<GeminiResponse, AppError> {
         let mut attempt = 0u32;
         const MAX_RETRIES: u32 = 3;
+        let mut current_body = request_body.to_string();
+        let mut safety_retry_used = false;
 
         let last_error = loop {
             let response = self
@@ -384,7 +387,7 @@ impl GeminiClient {
                 .post(url)
                 .header("x-goog-api-key", &self.api_key)
                 .header("Content-Type", "application/json")
-                .body(request_body.to_string())
+                .body(current_body.clone())
                 .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
                 .send()
                 .await;
@@ -427,13 +430,32 @@ impl GeminiClient {
                         break error;
                     }
 
-                    return serde_json::from_str(&response_text).map_err(|e| {
-                        AppError::Internal(format!(
-                            "Failed to parse Gemini response JSON: {}. Raw body (first 1000 chars): {}",
-                            e,
-                            response_text.chars().take(1000).collect::<String>()
-                        ))
-                    });
+                    let parsed: GeminiResponse =
+                        serde_json::from_str(&response_text).map_err(|e| {
+                            AppError::Internal(format!(
+                                "Failed to parse Gemini response JSON: {}. Raw body (first 1000 chars): {}",
+                                e,
+                                response_text.chars().take(1000).collect::<String>()
+                            ))
+                        })?;
+                    if parsed.candidates.is_empty() {
+                        let block = parsed
+                            .prompt_feedback
+                            .as_ref()
+                            .and_then(|f| f.block_reason.as_deref())
+                            .unwrap_or("unknown")
+                            .to_string();
+                        if !safety_retry_used {
+                            safety_retry_used = true;
+                            current_body = inject_safety_steering(&current_body, &block)?;
+                            continue;
+                        }
+                        return Err(AppError::Internal(format!(
+                            "Gemini returned no candidates after safety re-prompt (block_reason={block}). Raw body (first 500 chars): {}",
+                            response_text.chars().take(500).collect::<String>()
+                        )));
+                    }
+                    return Ok(parsed);
                 }
                 Err(e) => {
                     let error_kind = if e.is_timeout() {
@@ -540,8 +562,56 @@ fn serialize_gemini_request_inner(
         "system_instruction": { "parts": [{ "text": prompt.system_prompt }] },
         "contents": contents,
         "generationConfig": generation_config,
+        "safetySettings": gemini_safety_settings(),
     }))
     .map_err(|e| AppError::Internal(format!("Failed to serialize LLM request: {e}")))
+}
+
+fn gemini_safety_settings() -> Value {
+    json!([
+        { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
+        { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
+        { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE" },
+        { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE" },
+        { "category": "HARM_CATEGORY_CIVIC_INTEGRITY", "threshold": "BLOCK_NONE" },
+    ])
+}
+
+fn inject_safety_steering(body: &str, block_reason: &str) -> Result<String, AppError> {
+    let steering = format!(
+        "\n\nIMPORTANT — the previous attempt was blocked by Gemini's content safety filters \
+         (block_reason={block_reason}). Re-generate a response that completes the task while \
+         staying within safety guidelines: rephrase, sanitize, summarize, or describe at a higher \
+         level of abstraction as needed. Do not refuse the task — produce the best safe version of \
+         the requested output."
+    );
+    let mut value: Value = serde_json::from_str(body)
+        .map_err(|e| AppError::Internal(format!("Failed to parse Gemini request for re-prompt: {e}")))?;
+    let obj = value
+        .as_object_mut()
+        .ok_or_else(|| AppError::Internal("Gemini request body is not a JSON object".to_string()))?;
+    let sys = obj
+        .entry("system_instruction".to_string())
+        .or_insert_with(|| json!({ "parts": [{ "text": "" }] }));
+    let parts = sys
+        .get_mut("parts")
+        .and_then(|p| p.as_array_mut())
+        .ok_or_else(|| AppError::Internal("system_instruction.parts missing".to_string()))?;
+    if parts.is_empty() {
+        parts.push(json!({ "text": steering.trim_start() }));
+    } else {
+        let first = parts[0]
+            .as_object_mut()
+            .ok_or_else(|| AppError::Internal("system_instruction.parts[0] not an object".to_string()))?;
+        let existing = first
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        first.insert("text".to_string(), Value::String(format!("{existing}{steering}")));
+    }
+    serde_json::to_string(&value)
+        .map_err(|e| AppError::Internal(format!("Failed to re-serialize Gemini request: {e}")))
 }
 
 // Gemini 2.5 uses thinkingBudget (integer); Gemini 3+ uses thinkingLevel (string).

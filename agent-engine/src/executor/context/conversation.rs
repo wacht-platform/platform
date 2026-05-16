@@ -584,7 +584,7 @@ impl AgentExecutor {
     pub(crate) async fn get_task_history_for_llm(&self) -> Vec<LlmHistoryEntry> {
         let own_thread_id = self.ctx.thread_id;
 
-        let mut entries: Vec<(chrono::DateTime<chrono::Utc>, LlmHistoryEntry)> = Vec::new();
+        let mut entries: Vec<(bool, chrono::DateTime<chrono::Utc>, LlmHistoryEntry)> = Vec::new();
         let current_execution_run_id = self.ctx.execution_run_id;
 
         for conv in &self.conversations {
@@ -621,6 +621,7 @@ impl AgentExecutor {
                             "[Compressed prior history]\nOriginal request: {user_message}\n\n{agent_execution}"
                         );
                         entries.push((
+                            is_timeline,
                             conv.created_at,
                             LlmHistoryEntry::with_content(
                                 if is_cross { "user" } else { "model" },
@@ -645,12 +646,13 @@ impl AgentExecutor {
                             tag(message.clone()),
                         );
                         entry.sender = sender_name.clone();
-                        entries.push((conv.created_at, entry));
+                        entries.push((is_timeline, conv.created_at, entry));
                     }
                 }
                 ConversationMessageType::Steer => {
                     if let ConversationContent::Steer { message, .. } = &conv.content {
                         entries.push((
+                            is_timeline,
                             conv.created_at,
                             LlmHistoryEntry::with_content(
                                 if is_cross { "user" } else { "model" },
@@ -685,6 +687,7 @@ impl AgentExecutor {
                             )
                         };
                         entries.push((
+                            is_timeline,
                             conv.created_at,
                             LlmHistoryEntry::with_content(
                                 "user",
@@ -706,7 +709,7 @@ impl AgentExecutor {
                                 entry.content = Some(tag(body));
                                 entry.role = "user".to_string();
                             }
-                            entries.push((conv.created_at, entry));
+                            entries.push((is_timeline, conv.created_at, entry));
                         }
                     }
                 }
@@ -720,6 +723,7 @@ impl AgentExecutor {
                         }
                         text.push_str(&format!("\nReason: {description}"));
                         entries.push((
+                            is_timeline,
                             conv.created_at,
                             LlmHistoryEntry::with_content(
                                 if is_cross { "user" } else { "model" },
@@ -741,6 +745,7 @@ impl AgentExecutor {
                             text.push_str(&format!("\n  - {}: {}", d.tool_name, mode));
                         }
                         entries.push((
+                            is_timeline,
                             conv.created_at,
                             LlmHistoryEntry::with_content(
                                 "user",
@@ -765,6 +770,7 @@ impl AgentExecutor {
                             text.push_str(&format!("\nContext: {ctx}"));
                         }
                         entries.push((
+                            is_timeline,
                             conv.created_at,
                             LlmHistoryEntry::with_content(
                                 if is_cross { "user" } else { "model" },
@@ -780,6 +786,7 @@ impl AgentExecutor {
                         &conv.content
                     {
                         entries.push((
+                            is_timeline,
                             conv.created_at,
                             LlmHistoryEntry::with_content(
                                 "user",
@@ -805,6 +812,7 @@ impl AgentExecutor {
                             ));
                         }
                         entries.push((
+                            is_timeline,
                             conv.created_at,
                             LlmHistoryEntry::with_content(
                                 "user",
@@ -833,6 +841,7 @@ impl AgentExecutor {
                 text.push_str(&format!("\n  note: {n}"));
             }
             entries.push((
+                true,
                 event.created_at,
                 LlmHistoryEntry::with_content(
                     "user",
@@ -843,8 +852,53 @@ impl AgentExecutor {
             ));
         }
 
-        entries.sort_by_key(|(ts, _)| *ts);
-        entries.into_iter().map(|(_, e)| e).collect()
+        entries.sort_by_key(|(_, ts, _)| *ts);
+
+        let mut prior_lines: Vec<String> = Vec::new();
+        let mut current: Vec<LlmHistoryEntry> = Vec::new();
+        for (is_timeline, ts, entry) in entries {
+            if is_timeline {
+                let body = entry.content.clone().unwrap_or_default();
+                if body.trim().is_empty() {
+                    continue;
+                }
+                prior_lines.push(format!(
+                    "[{}][{}] {}",
+                    ts.format("%Y-%m-%dT%H:%M:%SZ"),
+                    entry.entry_type,
+                    body
+                ));
+            } else {
+                current.push(entry);
+            }
+        }
+
+        let mut out: Vec<LlmHistoryEntry> = Vec::new();
+        if !prior_lines.is_empty() && current.is_empty() {
+            current.push(LlmHistoryEntry::with_content(
+                "user",
+                "user_message",
+                None,
+                "[No new request — continue from prior task history.]".to_string(),
+            ));
+        }
+        if !prior_lines.is_empty() {
+            let mut block = String::from(
+                "PRIOR TASK HISTORY\n\nBelow are conversation records from earlier executions of this task. Do not respond to them — use them only as background. Refer to /task/JOURNAL.md for the durable summary.\n",
+            );
+            for line in prior_lines {
+                block.push('\n');
+                block.push_str(&line);
+            }
+            out.push(LlmHistoryEntry::with_content(
+                "user",
+                "prior_task_history",
+                None,
+                block,
+            ));
+        }
+        out.extend(current);
+        out
     }
 
     fn format_clarification_entry(
@@ -1453,18 +1507,8 @@ impl AgentExecutor {
             return Ok(false);
         }
 
-        if self.is_service_mode_execution() && !self.service_mode_journal_was_updated().await? {
-            self.store_conversation(
-                ConversationContent::SystemDecision {
-                    step: "compaction_blocked_by_journal_guard".to_string(),
-                    reasoning: "Conversation compaction was blocked because /task/JOURNAL.md has not been updated since the last checkpoint. The journal is the lossy summary that survives compaction — write it before the window is dropped. Update /task/JOURNAL.md with the key facts from the recent turns, then continue; compaction will retry on the next trigger.".to_string(),
-                    confidence: 1.0,
-                },
-                ConversationMessageType::SystemDecision,
-            )
-            .await?;
-            return Ok(false);
-        }
+        let service_mode_needs_journal_extend =
+            self.is_service_mode_execution() && !self.service_mode_journal_was_updated().await?;
 
         let conversations = GetCompactionWindowConversationsQuery {
             thread_id: self.ctx.thread_id,
@@ -1534,6 +1578,29 @@ impl AgentExecutor {
             return Ok(false);
         }
 
+        if service_mode_needs_journal_extend {
+            let appended = self
+                .auto_extend_task_journal_from_compaction_window(&execution_messages)
+                .await?;
+            self.store_conversation(
+                ConversationContent::SystemDecision {
+                    step: if appended {
+                        "compaction_journal_auto_extended".to_string()
+                    } else {
+                        "compaction_journal_auto_extend_skipped_no_new_entries".to_string()
+                    },
+                    reasoning: if appended {
+                        "Before compacting, the runtime asked the weak LLM to extract durable facts present in the recent window but missing from /task/JOURNAL.md, and appended them. Compaction now proceeds with a refreshed journal.".to_string()
+                    } else {
+                        "The recent window contained nothing durable that wasn't already in /task/JOURNAL.md, so no journal extension was written. Compaction proceeds with the existing journal.".to_string()
+                    },
+                    confidence: 1.0,
+                },
+                ConversationMessageType::SystemDecision,
+            )
+            .await?;
+        }
+
         let summary_request = build_compaction_window_label(&conversations);
         let (_summary_tokens, summary_record) = self
             .generate_execution_summary_for_messages(summary_request, execution_messages)
@@ -1573,6 +1640,105 @@ impl AgentExecutor {
             .with_execution_state(self.build_execution_state_snapshot(None))
             .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
             .await?;
+
+        Ok(true)
+    }
+
+    async fn auto_extend_task_journal_from_compaction_window(
+        &mut self,
+        execution_messages: &[Value],
+    ) -> Result<bool, AppError> {
+        use crate::runtime::task_workspace::{
+            compute_task_journal_hash, TASK_WORKSPACE_JOURNAL_FILE,
+        };
+
+        let existing_journal = match self
+            .filesystem
+            .read_file_bytes(TASK_WORKSPACE_JOURNAL_FILE)
+            .await
+        {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(AppError::NotFound(_)) => String::new(),
+            Err(e) => return Err(e),
+        };
+
+        let window_slice = if execution_messages.len() > 100 {
+            &execution_messages[execution_messages.len() - 100..]
+        } else {
+            execution_messages
+        };
+
+        let window_text = window_slice
+            .iter()
+            .filter_map(|m| {
+                let role = m.get("role")?.as_str().unwrap_or("");
+                let mtype = m.get("message_type").and_then(|v| v.as_str()).unwrap_or("");
+                let ts = m.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
+                let content = m.get("content")?.as_str().unwrap_or("");
+                Some(format!("[{ts}] {role}/{mtype}\n{content}"))
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n");
+
+        let system_prompt = "You maintain /task/JOURNAL.md for an autonomous agent that is about to lose visibility into its recent conversation window (compaction). The journal is the durable carry-forward record — once compaction runs, only the journal survives.\n\nYour job: read the EXISTING JOURNAL and the RECENT WINDOW. Extract durable facts, decisions, intermediate findings, exact errors, file paths, identifiers, and user corrections from the window that are NOT already captured in the journal. Produce a markdown block that will be APPENDED to the journal.\n\nRules:\n- Output ONLY the markdown block to append. No preface, no JSON, no code fences.\n- Begin with a timestamped section header (e.g. `## Compaction checkpoint — <ISO timestamp>`).\n- Use tight bullet points. Preserve concrete details verbatim where they matter.\n- Skip chatter, retries, intermediate hypotheses, and anything already in the journal.\n- If the window adds nothing durable beyond what the journal already contains, output the single token `NO_NEW_ENTRIES`.";
+
+        let user_message = format!(
+            "EXISTING JOURNAL:\n```markdown\n{existing}\n```\n\nRECENT WINDOW (about to be compacted):\n{window}\n\nAppend-only markdown block (or `NO_NEW_ENTRIES`):",
+            existing = if existing_journal.trim().is_empty() {
+                "(journal is empty)".to_string()
+            } else {
+                existing_journal.clone()
+            },
+            window = if window_text.is_empty() {
+                "(no messages)".to_string()
+            } else {
+                window_text
+            }
+        );
+
+        let request = SemanticLlmRequest {
+            system_prompt: system_prompt.to_string(),
+            messages: vec![SemanticLlmMessage::text("user", user_message)],
+            response_json_schema: Value::Null,
+            temperature: None,
+            max_output_tokens: Some(2048),
+            reasoning_effort: None,
+            forced_tool_names: None,
+        };
+
+        let extension = self
+            .create_weak_llm()
+            .await?
+            .generate_text_from_prompt(request)
+            .await
+            .map(|output| output.text)
+            .map_err(|e| {
+                AppError::Internal(format!("Journal auto-extend generation failed: {e}"))
+            })?;
+
+        let trimmed = extension.trim();
+        if trimmed.is_empty() || trimmed == "NO_NEW_ENTRIES" {
+            return Ok(false);
+        }
+
+        let mut new_journal = existing_journal;
+        if !new_journal.is_empty() && !new_journal.ends_with('\n') {
+            new_journal.push('\n');
+        }
+        if !new_journal.is_empty() {
+            new_journal.push('\n');
+        }
+        new_journal.push_str(trimmed);
+        new_journal.push('\n');
+
+        self.filesystem
+            .write_file(TASK_WORKSPACE_JOURNAL_FILE, &new_journal, false)
+            .await?;
+
+        // Keep the start hash in sync so subsequent journal-was-updated checks
+        // in the same run reflect the auto-extended state.
+        self.task_journal_start_hash =
+            Some(compute_task_journal_hash(&self.filesystem).await?);
 
         Ok(true)
     }

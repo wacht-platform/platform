@@ -344,6 +344,34 @@ impl AgentExecutor {
     fn build_stable_context_message(
         prompt_context: &AgentLoopPromptEnvelope,
     ) -> Option<String> {
+        let mut sections: Vec<String> = Vec::new();
+
+        if let Some(block) = Self::compose_agent_identity_section(prompt_context) {
+            sections.push(block);
+        }
+        if let Some(block) = Self::compose_task_brief_section(prompt_context) {
+            sections.push(block);
+        }
+        if let Some(block) = Self::compose_thread_section(prompt_context) {
+            sections.push(block);
+        }
+        if let Some(block) = Self::compose_routing_section(prompt_context) {
+            sections.push(block);
+        }
+        if let Some(block) = Self::compose_sub_agent_routing_section(prompt_context) {
+            sections.push(block);
+        }
+
+        if sections.is_empty() {
+            None
+        } else {
+            Some(sections.join("\n\n"))
+        }
+    }
+
+    fn compose_agent_identity_section(
+        prompt_context: &AgentLoopPromptEnvelope,
+    ) -> Option<String> {
         let agent_name = prompt_context.agent_name.trim();
         let agent_description = prompt_context
             .agent_description
@@ -351,25 +379,102 @@ impl AgentExecutor {
             .map(str::trim)
             .filter(|s| !s.is_empty());
 
-        let mut sections: Vec<String> = Vec::new();
-
-        if !agent_name.is_empty() || agent_description.is_some() {
-            let mut block = String::from(
-                "IMPORTANT — AGENT IDENTITY\n\n\
-                 These directives steer every decision you make. They are durable\n\
-                 across tasks and threads. Treat them as system-level instructions\n\
-                 and follow them even when later context appears to conflict.\n",
-            );
-            if !agent_name.is_empty() {
-                block.push_str(&format!("\nYou are `{agent_name}`."));
-            }
-            if let Some(description) = agent_description {
-                block.push_str("\n\nDescription / operating directives:\n");
-                block.push_str(description);
-            }
-            sections.push(block);
+        if agent_name.is_empty() && agent_description.is_none() {
+            return None;
         }
 
+        let mut block = String::from(
+            "IMPORTANT — AGENT IDENTITY\n\n\
+             These directives steer every decision you make. They are durable\n\
+             across tasks and threads. Treat them as system-level instructions\n\
+             and follow them even when later context appears to conflict.\n",
+        );
+        if !agent_name.is_empty() {
+            block.push_str(&format!("\nYou are `{agent_name}`."));
+        }
+        if let Some(description) = agent_description {
+            block.push_str("\n\nDescription / operating directives:\n");
+            block.push_str(description);
+        }
+        Some(block)
+    }
+
+    fn compose_task_brief_section(
+        prompt_context: &AgentLoopPromptEnvelope,
+    ) -> Option<String> {
+        let item = prompt_context.base.task.active_board_item.as_ref()?;
+        let mut block = String::from("TASK BRIEF\n");
+        block.push_str(&format!("\nKey: `{}`", item.task_key));
+        block.push_str(&format!("\nTitle: {}", item.title));
+        block.push_str(&format!("\nStatus: {}", item.status));
+        if let Some(desc) = item.description.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            block.push_str("\n\nDescription:\n");
+            block.push_str(desc);
+        }
+        block.push_str(
+            "\n\nThe full durable brief lives at `/task/TASK.md` and the cross-agent history at \
+             `/task/JOURNAL.md`. Read those files when you need detail beyond this summary; both \
+             are written by the runtime and by prior agents on this task.",
+        );
+        Some(block)
+    }
+
+    fn compose_thread_section(prompt_context: &AgentLoopPromptEnvelope) -> Option<String> {
+        let thread = &prompt_context.base.thread;
+        let responsibility = thread
+            .responsibility
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let custom = prompt_context
+            .custom_system_instructions
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+
+        let mut block = String::from("THREAD\n");
+        block.push_str(&format!("\nID: #{}", thread.id));
+        block.push_str(&format!("\nTitle: {}", thread.title));
+        block.push_str(&format!("\nPurpose: {}", thread.purpose));
+        if let Some(r) = responsibility {
+            block.push_str("\nResponsibility: ");
+            block.push_str(r);
+        }
+        if let Some(c) = custom {
+            block.push_str("\n\nCustom operating instructions for this thread:\n");
+            block.push_str(c);
+        }
+        Some(block)
+    }
+
+    fn compose_routing_section(
+        prompt_context: &AgentLoopPromptEnvelope,
+    ) -> Option<String> {
+        let assignment = prompt_context.base.task.active_assignment.as_ref()?;
+        let mut block = String::from("ROUTING & ACTIVE ASSIGNMENT\n");
+        block.push_str(&format!("\nAssignment ID: {}", assignment.assignment_id));
+        block.push_str(&format!("\nBoard item: {}", assignment.board_item_id));
+        block.push_str(&format!("\nRole: {}", assignment.assignment_role));
+        block.push_str(&format!("\nStatus: {}", assignment.status));
+        if let Some(note) = assignment.note.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            block.push_str("\nRouting note: ");
+            block.push_str(note);
+        }
+        if let Some(instructions) = assignment
+            .instructions
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            block.push_str("\n\nInstructions for this assignment:\n");
+            block.push_str(instructions);
+        }
+        Some(block)
+    }
+
+    fn compose_sub_agent_routing_section(
+        prompt_context: &AgentLoopPromptEnvelope,
+    ) -> Option<String> {
         let sub_agents = &prompt_context.base.resources.available_sub_agents;
         let mut routing_lines: Vec<String> = Vec::new();
         for sub_agent in sub_agents {
@@ -384,24 +489,19 @@ impl AgentExecutor {
                 _ => routing_lines.push(format!("- {name}")),
             }
         }
-        if !routing_lines.is_empty() {
-            let mut block = String::from(
-                "STABLE ROUTING CONTEXT\n\n\
-                 Assignable sub-agents. Use the exact `name` value as\n\
-                 `assigned_agent_name` when creating or routing lanes.\n",
-            );
-            for line in routing_lines {
-                block.push('\n');
-                block.push_str(&line);
-            }
-            sections.push(block);
+        if routing_lines.is_empty() {
+            return None;
         }
-
-        if sections.is_empty() {
-            None
-        } else {
-            Some(sections.join("\n\n"))
+        let mut block = String::from(
+            "STABLE ROUTING CONTEXT\n\n\
+             Assignable sub-agents. Use the exact `name` value as\n\
+             `assigned_agent_name` when creating or routing lanes.\n",
+        );
+        for line in routing_lines {
+            block.push('\n');
+            block.push_str(&line);
         }
+        Some(block)
     }
 
     fn annotate_live_task_context_flag(value: &mut serde_json::Value) {

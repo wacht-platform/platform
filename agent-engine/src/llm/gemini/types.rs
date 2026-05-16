@@ -5,11 +5,20 @@ pub const GEMINI_STRUCTURED_OUTPUT_TRUNCATED_MARKER: &str = "gemini_structured_o
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GeminiResponse {
+    #[serde(default)]
     pub candidates: Vec<Candidate>,
     #[serde(rename = "usageMetadata")]
     pub usage_metadata: Option<UsageMetadata>,
     #[serde(rename = "modelVersion")]
     pub model_version: Option<String>,
+    #[serde(rename = "promptFeedback", default)]
+    pub prompt_feedback: Option<PromptFeedback>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct PromptFeedback {
+    #[serde(rename = "blockReason", default)]
+    pub block_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
