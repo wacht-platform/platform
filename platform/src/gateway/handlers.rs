@@ -24,6 +24,19 @@ use super::validation::{check_permissions, is_valid_api_key_format};
 
 const ALLOWED_HTTP_METHODS: &[&str] = &["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
+fn spawn_api_audit_log(
+    app_state: &common::state::AppState,
+    request_id: &str,
+    event: &ApiKeyVerificationEvent,
+) {
+    let app_state = app_state.clone();
+    let request_id = request_id.to_string();
+    let event = event.clone();
+    tokio::spawn(async move {
+        enqueue_api_audit_log(&app_state, &request_id, &event).await;
+    });
+}
+
 async fn enqueue_api_audit_log(
     app_state: &common::state::AppState,
     request_id: &str,
@@ -607,7 +620,7 @@ pub async fn check_authz(
         audit_event = audit_event.with_blocked_by(rule);
     }
 
-    enqueue_api_audit_log(app_state, &request_id, &audit_event).await;
+    spawn_api_audit_log(app_state, &request_id, &audit_event);
 
     let reason = if all_allowed {
         None
@@ -938,7 +951,7 @@ async fn check_authz_oauth_access_token(
     if let Some(rule) = blocked_by_rule.clone() {
         audit_event = audit_event.with_blocked_by(rule);
     }
-    enqueue_api_audit_log(app_state, &request_id, &audit_event).await;
+    spawn_api_audit_log(app_state, &request_id, &audit_event);
 
     let reason = if all_allowed {
         None
