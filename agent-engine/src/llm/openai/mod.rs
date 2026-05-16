@@ -23,6 +23,11 @@ pub struct OpenAiClient {
     api_key: String,
     model: String,
     client: reqwest::Client,
+    deployment_id: Option<i64>,
+    thread_id: Option<i64>,
+    actor_id: Option<i64>,
+    nats_client: Option<async_nats::Client>,
+    is_byok: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -130,7 +135,42 @@ impl OpenAiClient {
             api_key,
             model,
             client: reqwest::Client::new(),
+            deployment_id: None,
+            thread_id: None,
+            actor_id: None,
+            nats_client: None,
+            is_byok: true,
         }
+    }
+
+    pub fn with_billing_context(
+        mut self,
+        deployment_id: i64,
+        thread_id: i64,
+        actor_id: i64,
+        nats_client: async_nats::Client,
+    ) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self.thread_id = Some(thread_id);
+        self.actor_id = Some(actor_id);
+        self.nats_client = Some(nats_client);
+        self
+    }
+
+    async fn track_token_usage(&self, usage: &UsageMetadata) {
+        crate::llm::usage::publish_model_usage(
+            crate::llm::usage::ModelUsageContext {
+                deployment_id: self.deployment_id,
+                thread_id: self.thread_id,
+                actor_id: self.actor_id,
+                model: &self.model,
+                is_byok: self.is_byok,
+                nats_client: self.nats_client.as_ref(),
+                search_queries: &[],
+            },
+            usage,
+        )
+        .await;
     }
 
     pub async fn generate_structured_from_prompt<T>(
@@ -165,9 +205,13 @@ impl OpenAiClient {
             ))
         })?;
 
+        let usage_metadata = parsed.usage.map(Self::map_usage_metadata);
+        if let Some(usage) = &usage_metadata {
+            self.track_token_usage(usage).await;
+        }
         Ok(StructuredGenerationOutput {
             value,
-            usage_metadata: parsed.usage.map(Self::map_usage_metadata),
+            usage_metadata,
             cache_state: None,
         })
     }
@@ -192,9 +236,13 @@ impl OpenAiClient {
             ));
         }
 
+        let usage_metadata = parsed.usage.map(Self::map_usage_metadata);
+        if let Some(usage) = &usage_metadata {
+            self.track_token_usage(usage).await;
+        }
         Ok(crate::llm::TextGenerationOutput {
             text: generated_text,
-            usage_metadata: parsed.usage.map(Self::map_usage_metadata),
+            usage_metadata,
         })
     }
 
@@ -244,10 +292,14 @@ impl OpenAiClient {
             ));
         }
 
+        let usage_metadata = parsed.usage.map(Self::map_usage_metadata);
+        if let Some(usage) = &usage_metadata {
+            self.track_token_usage(usage).await;
+        }
         Ok(ToolCallGenerationOutput {
             calls,
             content_text,
-            usage_metadata: parsed.usage.map(Self::map_usage_metadata),
+            usage_metadata,
             cache_state: None,
         })
     }

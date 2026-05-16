@@ -3,6 +3,7 @@ pub mod gemini;
 pub mod openai;
 pub mod openrouter;
 mod provider;
+pub(crate) mod usage;
 
 #[allow(unused_imports)]
 pub(crate) mod providers {

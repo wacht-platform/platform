@@ -236,14 +236,26 @@ impl ThreadExecutionContext {
                     self.provider_keys.openrouter_api_key.clone(),
                     model,
                     self.provider_keys.openrouter_require_parameters,
-                )?;
+                )?
+                .with_billing_context(
+                    self.agent.deployment_id,
+                    self.thread_id,
+                    self.actor_id,
+                    self.app_state.nats_client.clone(),
+                );
                 return Ok(ResolvedLlm::new(Arc::new(client), model));
             }
             "openai" => {
                 let client = OpenAiClient::from_api_key(
                     self.provider_keys.openai_api_key.clone(),
                     model,
-                )?;
+                )?
+                .with_billing_context(
+                    self.agent.deployment_id,
+                    self.thread_id,
+                    self.actor_id,
+                    self.app_state.nats_client.clone(),
+                );
                 return Ok(ResolvedLlm::new(Arc::new(client), model));
             }
             _ => {}
