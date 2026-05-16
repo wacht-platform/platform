@@ -577,11 +577,26 @@ impl AgentExecutor {
             ));
         }
 
+        if self.assign_project_task_already_called_this_run(&params.task_key) {
+            return Ok(serde_json::json!({
+                "success": true,
+                "tool": "assign_project_task",
+                "task_key": params.task_key,
+                "updated": false,
+                "already_assigned_this_turn": true,
+                "next_step": "terminate_if_done",
+                "guidance": format!(
+                    "Task '{}' was already assigned earlier this turn. The lane is processing it independently — re-issuing does not accelerate it. If this is all you had to do in this turn, emit a short text response with NO tool call to end the turn (one or two sentences naming the lane and slice routed is enough). If you still have other unresolved feedback or other tasks to route on this turn, continue with those — just do not re-call assign_project_task for this task_key.",
+                    params.task_key
+                ),
+            }));
+        }
+
         self.guard_routing_requires_task_brief(&params.task_key, "assign_project_task")
             .await?;
 
         let board_id = self.ensure_project_task_board_id().await?;
-        let board_item =
+        let mut board_item =
             queries::GetProjectTaskBoardItemByTaskKeyQuery::new(board_id, params.task_key.clone())
                 .execute_with_db(self.ctx.app_state.db_router.writer())
                 .await?
@@ -591,6 +606,28 @@ impl AgentExecutor {
                         params.task_key
                     ))
                 })?;
+
+        if matches!(board_item.status.as_str(), "completed" | "cancelled" | "blocked") {
+            let prior_status = board_item.status.clone();
+            sqlx::query!(
+                r#"
+                UPDATE project_task_board_items
+                SET status = 'pending', completed_at = NULL, updated_at = NOW()
+                WHERE id = $1
+                "#,
+                board_item.id,
+            )
+            .execute(self.ctx.app_state.db_router.writer())
+            .await?;
+            board_item.status = "pending".to_string();
+            board_item.completed_at = None;
+            tracing::info!(
+                board_item_id = board_item.id,
+                task_key = %board_item.task_key,
+                prior_status = %prior_status,
+                "assign_project_task: reopened terminal/blocked board item to pending"
+            );
+        }
 
         let changed = self
             .ensure_project_task_board_assignments(&board_item, Some(params.assignments))
@@ -603,6 +640,35 @@ impl AgentExecutor {
             "updated": changed,
             "board_item_id": board_item.id.to_string(),
         }))
+    }
+
+    fn assign_project_task_already_called_this_run(&self, task_key: &str) -> bool {
+        let current_run = self.ctx.execution_run_id;
+        for conv in self.conversations.iter().rev() {
+            if conv.execution_run_id != Some(current_run) {
+                continue;
+            }
+            let models::ConversationContent::ToolResult {
+                tool_name,
+                status,
+                input,
+                ..
+            } = &conv.content
+            else {
+                continue;
+            };
+            if tool_name != "assign_project_task" {
+                continue;
+            }
+            if status != "success" {
+                continue;
+            }
+            let prior_task_key = input.get("task_key").and_then(|v| v.as_str());
+            if prior_task_key == Some(task_key) {
+                return true;
+            }
+        }
+        false
     }
 
     async fn guard_routing_requires_task_brief(

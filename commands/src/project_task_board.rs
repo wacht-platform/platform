@@ -16,6 +16,36 @@ use models::{
 use queries::{GetProjectTaskBoardItemByIdQuery, ListProjectTaskBoardItemAssignmentsQuery};
 use sqlx::Row;
 
+pub struct ReopenBoardItemIfClosedCommand {
+    pub board_item_id: i64,
+}
+
+impl ReopenBoardItemIfClosedCommand {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Option<String>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let prior: Option<(String,)> = sqlx::query_as(
+            r#"
+            WITH pre AS (
+                SELECT id, status FROM project_task_board_items WHERE id = $1
+            )
+            UPDATE project_task_board_items AS u
+            SET status = 'pending', completed_at = NULL, updated_at = NOW()
+            FROM pre
+            WHERE u.id = pre.id
+              AND pre.status IN ('completed', 'cancelled', 'blocked')
+            RETURNING pre.status AS prior_status
+            "#,
+        )
+        .bind(self.board_item_id)
+        .fetch_optional(executor)
+        .await
+        .map_err(AppError::from)?;
+        Ok(prior.map(|(s,)| s))
+    }
+}
+
 fn board_item_status_is_terminal(status: &str) -> bool {
     matches!(status, "completed" | "cancelled")
 }

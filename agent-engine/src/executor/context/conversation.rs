@@ -805,11 +805,18 @@ impl AgentExecutor {
                             serde_json::from_value(answers.clone()).unwrap_or_default();
                         let mut text = String::from("User answered:");
                         for a in &parsed {
-                            text.push_str(&format!(
-                                "\n- {}: {}",
-                                a.question_id,
-                                Self::describe_answer_value(&a.value)
-                            ));
+                            let answer_value = Self::describe_answer_value(&a.value);
+                            match self.lookup_question_text_by_id(&a.question_id) {
+                                Some(question_text) => text.push_str(&format!(
+                                    "\n- \"{}\" → {}",
+                                    question_text.trim(),
+                                    answer_value
+                                )),
+                                None => text.push_str(&format!(
+                                    "\n- {}: {}",
+                                    a.question_id, answer_value
+                                )),
+                            }
                         }
                         entries.push((
                             is_timeline,
@@ -1024,6 +1031,26 @@ impl AgentExecutor {
                 format!("confirm ({confirm_label}) or cancel ({cancel_label})")
             }
         }
+    }
+
+    fn lookup_question_text_by_id(&self, target_id: &str) -> Option<String> {
+        for conv in self.conversations.iter().rev() {
+            let ConversationContent::ClarificationRequest { questions, .. } = &conv.content
+            else {
+                continue;
+            };
+            let parsed: Vec<models::Question> =
+                match serde_json::from_value(questions.clone()) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+            for q in parsed {
+                if q.id == target_id {
+                    return Some(q.text);
+                }
+            }
+        }
+        None
     }
 
     fn describe_answer_value(value: &models::AnswerValue) -> String {
@@ -1871,10 +1898,31 @@ Output plain text only — no JSON, no code fences, no surrounding prose."#,
                 context.as_deref().unwrap_or("")
             ),
             ConversationContent::ClarificationResponse { answers, .. } => {
-                format!(
-                    "CLARIFICATION_RESPONSE answers={}",
-                    compact_json_preview(answers, 4000)
-                )
+                let parsed: Vec<models::QuestionAnswer> =
+                    serde_json::from_value(answers.clone()).unwrap_or_default();
+                if parsed.is_empty() {
+                    format!(
+                        "CLARIFICATION_RESPONSE answers={}",
+                        compact_json_preview(answers, 4000)
+                    )
+                } else {
+                    let mut out = String::from("CLARIFICATION_QA");
+                    for a in &parsed {
+                        let answer_value = Self::describe_answer_value(&a.value);
+                        match self.lookup_question_text_by_id(&a.question_id) {
+                            Some(question_text) => out.push_str(&format!(
+                                "\n  q=\"{}\" -> a={}",
+                                question_text.trim(),
+                                answer_value
+                            )),
+                            None => out.push_str(&format!(
+                                "\n  qid={} -> a={}",
+                                a.question_id, answer_value
+                            )),
+                        }
+                    }
+                    out
+                }
             }
             ConversationContent::TaskSubscriptionNotification {
                 task_key,

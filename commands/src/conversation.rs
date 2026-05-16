@@ -74,13 +74,21 @@ impl CleanupCompactedConversationsCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
+        // When the compaction was scoped by board_item (service-thread runs,
+        // coordinator turns), delete cross-thread records on that board_item to
+        // match the loader (`GetBoardItemConversationHistoryQuery`) and the
+        // window query (`GetCompactionWindowConversationsQuery`), both of
+        // which read cross-thread. Otherwise (conversation-thread compaction,
+        // no board_item) fall back to thread-only scoping.
         let result = sqlx::query(
             r#"
             DELETE FROM conversations
-            WHERE thread_id = $1
-              AND id <= $2
-              AND ($3::bigint IS NULL OR board_item_id = $3)
+            WHERE id <= $2
               AND message_type <> 'execution_summary'
+              AND (
+                    ($3::bigint IS NOT NULL AND board_item_id = $3)
+                 OR ($3::bigint IS NULL AND thread_id = $1)
+              )
             "#,
         )
         .bind(self.thread_id)
