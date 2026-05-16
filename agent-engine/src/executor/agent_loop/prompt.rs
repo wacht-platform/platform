@@ -205,10 +205,17 @@ impl AgentExecutor {
         let mut prompt_context = AgentLoopPromptEnvelope {
             base: context,
             agent_name: self.ctx.agent.name.clone(),
-            agent_description: truncate_prompt_text(
-                self.ctx.agent.description.clone(),
-                MAX_AGENT_DESCRIPTION_CHARS,
-            ),
+            // The agent's own description is the agent's primary durable
+            // instructions slot. Render in full — truncation only makes sense
+            // for the sub-agent routing list (see `load_sub_agent_prompt_info`).
+            agent_description: self
+                .ctx
+                .agent
+                .description
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToString::to_string),
             conversation_history_prefix: conversation_context.conversation_history_prefix.clone(),
             current_request_entry: conversation_context.current_request_entry,
             discoverable_external_tool_names: tool_context.discoverable_external_tool_names,
