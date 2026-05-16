@@ -607,18 +607,12 @@ impl AgentExecutor {
                     ))
                 })?;
 
-        if matches!(board_item.status.as_str(), "completed" | "cancelled" | "blocked") {
-            let prior_status = board_item.status.clone();
-            sqlx::query!(
-                r#"
-                UPDATE project_task_board_items
-                SET status = 'pending', completed_at = NULL, updated_at = NOW()
-                WHERE id = $1
-                "#,
-                board_item.id,
-            )
-            .execute(self.ctx.app_state.db_router.writer())
-            .await?;
+        let reopen = commands::ReopenBoardItemIfClosedCommand {
+            board_item_id: board_item.id,
+        }
+        .execute_with_db(self.ctx.app_state.db_router.writer())
+        .await?;
+        if let Some(prior_status) = reopen {
             board_item.status = "pending".to_string();
             board_item.completed_at = None;
             tracing::info!(
