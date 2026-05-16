@@ -113,6 +113,7 @@ pub async fn create_user(
 /// - public_metadata: json optional
 /// - private_metadata: json optional
 /// - disabled: flag optional
+/// - second_factor_policy: string optional — one of `none`, `optional`, `enforced`
 /// - remove_profile_image: flag optional
 /// - profile_image: file optional
 pub async fn update_user(
