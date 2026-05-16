@@ -1148,6 +1148,32 @@ impl AgentExecutor {
             } else {
                 ""
             };
+            let unfinished = self
+                .task_graph_snapshot
+                .as_ref()
+                .map(|snapshot| {
+                    use models::thread_task_graph::status;
+                    snapshot
+                        .nodes
+                        .iter()
+                        .filter(|n| {
+                            n.status == status::NODE_PENDING
+                                || n.status == status::NODE_IN_PROGRESS
+                        })
+                        .map(|n| format!("#{}({})[{}]", n.id, n.title, n.status))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let terminal_preview: String = text.chars().take(200).collect();
+            tracing::warn!(
+                thread_id = self.ctx.thread_id,
+                board_item_id = ?self.current_board_item_id(),
+                execution_run_id = self.ctx.execution_run_id,
+                unfinished_node_count = unfinished.len(),
+                unfinished_nodes = %unfinished.join(", "),
+                terminal_text_preview = %terminal_preview,
+                "complete_blocked_by_task_graph: agent tried to terminate with text while graph has open nodes"
+            );
             self.store_transient_steer(
                 "complete_blocked_by_task_graph",
                 format!(

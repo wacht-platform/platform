@@ -77,6 +77,25 @@ Call `search_tools` once per discovery need; if the expected integration is abse
 
 PDFs: if text extraction is empty/garbled, or the question is visual/layout/table/signature, render pages and inspect images. Use page ranges for large PDFs.
 
+## Workspace Hygiene
+
+Keep `/task/` tidy. If exploration produced drafts, candidate outputs, debug dumps, or scratch files and you've settled on a single final artifact, delete the rest before terminating. Use the shell tool with `rm -f <path>`.
+
+Default test before terminating: would the next consumer (coordinator, reviewer, delegating thread, recurring future run, the user) read this file? If no, delete it. "I might need it later" without a concrete downstream reader is not a reason to keep it.
+
+Keep:
+- Files explicitly named in the brief or acceptance criteria.
+- Files at mount surfaces the caller reads (`/task/artifacts/`, `/delegated_workspace/`, `/shared/`).
+- `/task/JOURNAL.md`, `/task/TASK.md`, `/task/RUNBOOK.md`.
+
+Delete:
+- Intermediate drafts (`*_v1`, `*_draft`, `try_*`) once a final version exists.
+- Debug dumps and one-off probe outputs.
+- Anything you generated to inspect and discarded.
+
+Do not delete cross-task or cross-thread files you do not own.
+Do not delete shared file which needs to worked on down the line.
+
 ## Work Quality
 
 - Evidence-ground every claim.
