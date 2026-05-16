@@ -32,6 +32,18 @@ pub struct AgentDetailsResponse {
     pub tools: Vec<serde_json::Value>,
     pub knowledge_bases: Vec<serde_json::Value>,
     pub sub_agents: Option<Vec<i64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strong_model: Option<models::AgentModelOverride>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weak_model: Option<models::AgentModelOverride>,
+    #[serde(default)]
+    pub require_approval_mcp: bool,
+    #[serde(default)]
+    pub require_approval_virtual: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_approval_rules: Vec<models::AgentToolApprovalRule>,
+    #[serde(default)]
+    pub hooks: models::AgentHooksConfig,
 }
 
 pub async fn get_ai_agents(
@@ -129,6 +141,12 @@ pub async fn get_ai_agent_details(
         tools: vec![],
         knowledge_bases: vec![],
         sub_agents: agent.sub_agents,
+        strong_model: agent.strong_model,
+        weak_model: agent.weak_model,
+        require_approval_mcp: agent.require_approval_mcp,
+        require_approval_virtual: agent.require_approval_virtual,
+        tool_approval_rules: agent.tool_approval_rules,
+        hooks: agent.hooks,
     })
 }
 
