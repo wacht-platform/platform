@@ -437,6 +437,44 @@ impl AgentHandler {
             }
             ExecutionMode::ThreadEvent(thread_event) => {
                 if let Some(assignment_id) = assignment_id_from_thread_event(&thread_event) {
+                    let assignment = queries::GetProjectTaskBoardItemAssignmentByIdQuery::new(
+                        assignment_id,
+                    )
+                    .execute_with_db(self.app_state.db_router.writer())
+                    .await?;
+                    if let Some(a) = assignment.as_ref() {
+                        if matches!(a.status.as_str(), "cancelled" | "completed" | "rejected") {
+                            tracing::info!(
+                                thread_id,
+                                deployment_id,
+                                assignment_id,
+                                board_item_id = ?thread_event.board_item_id,
+                                status = %a.status,
+                                "Skipping ASSIGNMENT_EXECUTION: assignment is no longer active"
+                            );
+                            return Ok(());
+                        }
+                    }
+                    if let Some(board_item_id) = thread_event.board_item_id {
+                        if let Some(item) =
+                            queries::GetProjectTaskBoardItemByIdQuery::new(board_item_id)
+                                .execute_with_db(self.app_state.db_router.writer())
+                                .await?
+                        {
+                            if matches!(item.status.as_str(), "cancelled" | "completed") {
+                                tracing::info!(
+                                    thread_id,
+                                    deployment_id,
+                                    assignment_id,
+                                    board_item_id,
+                                    status = %item.status,
+                                    "Skipping ASSIGNMENT_EXECUTION: board item is no longer active"
+                                );
+                                return Ok(());
+                            }
+                        }
+                    }
+
                     let update_deps = common::deps::from_app(&self.app_state).db().nats().id();
                     commands::UpdateProjectTaskBoardItemAssignmentStateCommand::new(
                         assignment_id,
