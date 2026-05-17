@@ -224,6 +224,66 @@ impl AgentExecutor {
             .await
     }
 
+    pub(crate) async fn store_assignment_execution_trigger(
+        &self,
+        assignment_id: i64,
+        board_item_id: i64,
+        task_key: String,
+        routing_reason: Option<String>,
+    ) -> Result<ConversationRecord, AppError> {
+        let command = CreateConversationCommand::new(
+            self.ctx.app_state.sf.next_id()? as i64,
+            self.ctx.thread_id,
+            ConversationContent::AssignmentExecutionTrigger {
+                assignment_id,
+                board_item_id,
+                task_key,
+                routing_reason,
+                triggered_at: chrono::Utc::now(),
+            },
+            ConversationMessageType::AssignmentExecutionTrigger,
+        )
+        .with_execution_run_id(self.ctx.execution_run_id)
+        .with_board_item_id(board_item_id);
+        let conversation = command
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await?;
+        let _ = self
+            .channel
+            .send(StreamEvent::ConversationMessage(conversation.clone()))
+            .await;
+        Ok(conversation)
+    }
+
+    pub(crate) async fn store_task_routing_trigger(
+        &self,
+        board_item_id: i64,
+        task_key: String,
+        routing_reason: Option<String>,
+    ) -> Result<ConversationRecord, AppError> {
+        let command = CreateConversationCommand::new(
+            self.ctx.app_state.sf.next_id()? as i64,
+            self.ctx.thread_id,
+            ConversationContent::TaskRoutingTrigger {
+                board_item_id,
+                task_key,
+                routing_reason,
+                triggered_at: chrono::Utc::now(),
+            },
+            ConversationMessageType::TaskRoutingTrigger,
+        )
+        .with_execution_run_id(self.ctx.execution_run_id)
+        .with_board_item_id(board_item_id);
+        let conversation = command
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await?;
+        let _ = self
+            .channel
+            .send(StreamEvent::ConversationMessage(conversation.clone()))
+            .await;
+        Ok(conversation)
+    }
+
     pub(crate) async fn store_user_message(
         &self,
         message: String,
@@ -580,10 +640,127 @@ impl AgentExecutor {
                     }
                     i += 1;
                 }
+                ConversationMessageType::AssignmentExecutionTrigger
+                | ConversationMessageType::TaskRoutingTrigger => {
+                    let text = self.render_trigger_marker(conv);
+                    history.push(LlmHistoryEntry::with_content(
+                        "user",
+                        "trigger",
+                        timestamp.clone(),
+                        text,
+                    ));
+                    i += 1;
+                }
             }
         }
 
         history
+    }
+
+    fn latest_trigger_marker_id(&self) -> Option<i64> {
+        self.conversations
+            .iter()
+            .rev()
+            .find(|c| {
+                matches!(
+                    c.message_type,
+                    ConversationMessageType::AssignmentExecutionTrigger
+                        | ConversationMessageType::TaskRoutingTrigger
+                )
+            })
+            .map(|c| c.id)
+    }
+
+    fn render_trigger_marker(&self, conv: &ConversationRecord) -> String {
+        let is_latest = Some(conv.id) == self.latest_trigger_marker_id();
+        if is_latest {
+            if let Some(brief) = self.current_trigger_brief.as_deref() {
+                return brief.to_string();
+            }
+        }
+        self.trigger_stub(&conv.content)
+    }
+
+    fn trigger_stub(&self, content: &ConversationContent) -> String {
+        match content {
+            ConversationContent::AssignmentExecutionTrigger {
+                assignment_id,
+                board_item_id,
+                task_key,
+                triggered_at,
+                routing_reason,
+                ..
+            } => {
+                let mut out = format!(
+                    "[earlier assignment trigger · #{} · {} · {}{}]",
+                    assignment_id,
+                    task_key,
+                    triggered_at.format("%Y-%m-%dT%H:%M:%SZ"),
+                    routing_reason
+                        .as_deref()
+                        .map(|r| format!(" · {r}"))
+                        .unwrap_or_default()
+                );
+                if let Some(detail) = self.nearest_routing_event_detail(*board_item_id, *triggered_at) {
+                    out.push_str("\n  ↳ ");
+                    out.push_str(&detail);
+                }
+                out
+            }
+            ConversationContent::TaskRoutingTrigger {
+                board_item_id,
+                task_key,
+                triggered_at,
+                routing_reason,
+                ..
+            } => {
+                let mut out = format!(
+                    "[earlier task routing · item #{} · {} · {}{}]",
+                    board_item_id,
+                    task_key,
+                    triggered_at.format("%Y-%m-%dT%H:%M:%SZ"),
+                    routing_reason
+                        .as_deref()
+                        .map(|r| format!(" · {r}"))
+                        .unwrap_or_default()
+                );
+                if let Some(detail) = self.nearest_routing_event_detail(*board_item_id, *triggered_at) {
+                    out.push_str("\n  ↳ ");
+                    out.push_str(&detail);
+                }
+                out
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// Look up the routing event closest in time to `triggered_at` and
+    /// return a short human-readable detail (summary or note). Returns
+    /// None if no event matches or if neither field has content. The
+    /// routing event list lives on self.routing_events, populated by
+    /// memory context load.
+    fn nearest_routing_event_detail(
+        &self,
+        _board_item_id: i64,
+        triggered_at: chrono::DateTime<chrono::Utc>,
+    ) -> Option<String> {
+        let candidate = self.routing_events.iter().min_by_key(|e| {
+            (e.created_at.timestamp_millis() - triggered_at.timestamp_millis()).abs()
+        })?;
+        // Tolerate small clock skew; if the closest match is more than
+        // 10 minutes away from the trigger, we probably don't have the
+        // matching event loaded.
+        if (candidate.created_at - triggered_at).num_seconds().abs() > 600 {
+            return None;
+        }
+        let summary = candidate.summary.as_deref().map(str::trim).filter(|s| !s.is_empty());
+        let note = candidate.note.as_deref().map(str::trim).filter(|s| !s.is_empty());
+        match (summary, note) {
+            (Some(s), Some(n)) => Some(format!("{s} — {n}")),
+            (Some(s), None) => Some(s.to_string()),
+            (None, Some(n)) => Some(n.to_string()),
+            (None, None) => None,
+        }
     }
 
     pub(crate) async fn get_task_history_for_llm(&self) -> Vec<LlmHistoryEntry> {
@@ -834,6 +1011,15 @@ impl AgentExecutor {
                             ),
                         ));
                     }
+                }
+                ConversationMessageType::AssignmentExecutionTrigger
+                | ConversationMessageType::TaskRoutingTrigger => {
+                    let text = self.render_trigger_marker(conv);
+                    entries.push((
+                        is_timeline,
+                        conv.created_at,
+                        LlmHistoryEntry::with_content("user", "trigger", timestamp, tag(text)),
+                    ));
                 }
             }
         }
@@ -2065,6 +2251,30 @@ Output plain text. No JSON, no code fences, no preface.";
             ConversationContent::TaskSubscriptionDelivery { summary } => {
                 format!("TASK_SUBSCRIPTION_DELIVERY {summary}")
             }
+            ConversationContent::AssignmentExecutionTrigger {
+                assignment_id,
+                task_key,
+                routing_reason,
+                ..
+            } => format!(
+                "ASSIGNMENT_TRIGGER #{assignment_id} task={task_key}{}",
+                routing_reason
+                    .as_deref()
+                    .map(|r| format!(" reason={r}"))
+                    .unwrap_or_default()
+            ),
+            ConversationContent::TaskRoutingTrigger {
+                board_item_id,
+                task_key,
+                routing_reason,
+                ..
+            } => format!(
+                "TASK_ROUTING_TRIGGER item={board_item_id} task={task_key}{}",
+                routing_reason
+                    .as_deref()
+                    .map(|r| format!(" reason={r}"))
+                    .unwrap_or_default()
+            ),
         }
     }
 }
@@ -2126,5 +2336,7 @@ fn conversation_message_type_label(message_type: &ConversationMessageType) -> &'
         ConversationMessageType::ClarificationRequest => "clarification_request",
         ConversationMessageType::ClarificationResponse => "clarification_response",
         ConversationMessageType::TaskSubscriptionNotification => "task_subscription_notification",
+        ConversationMessageType::AssignmentExecutionTrigger => "assignment_execution_trigger",
+        ConversationMessageType::TaskRoutingTrigger => "task_routing_trigger",
     }
 }

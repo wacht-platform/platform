@@ -74,6 +74,12 @@ pub struct EditFileParams {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ExecuteCommandParams {
     pub command: String,
+    /// Per-call timeout override in seconds. Clamped to [1, 1800] (30 min) by
+    /// the runtime. If omitted, the shell executor's default applies (10 min).
+    /// Use a longer value for known-slow ops like ffmpeg re-encodes or large
+    /// downloads; use a shorter value for ops that should fail fast.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<u64>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

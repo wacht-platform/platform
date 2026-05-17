@@ -47,6 +47,13 @@ pub enum ConversationMessageType {
     ClarificationRequest,
     ClarificationResponse,
     TaskSubscriptionNotification,
+    /// Service-thread trigger: a worker started executing an assignment.
+    /// Payload is a thin marker; the full brief is rehydrated from DB at
+    /// prompt-build time.
+    AssignmentExecutionTrigger,
+    /// Coordinator-thread trigger: a board item routed back for decision.
+    /// Same shape — thin marker, brief rehydrated.
+    TaskRoutingTrigger,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,6 +132,30 @@ pub enum ConversationContent {
     TaskSubscriptionDelivery {
         summary: String,
     },
+    /// Service-thread trigger marker (thin). Replaces the historical
+    /// pattern of persisting the full assignment brief as a UserMessage.
+    /// The brief is rehydrated at prompt-build time from canonical DB +
+    /// filesystem state.
+    AssignmentExecutionTrigger {
+        #[serde(with = "crate::utils::serde::i64_as_string")]
+        assignment_id: i64,
+        #[serde(with = "crate::utils::serde::i64_as_string")]
+        board_item_id: i64,
+        task_key: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        routing_reason: Option<String>,
+        triggered_at: DateTime<Utc>,
+    },
+    /// Coordinator-thread trigger marker (thin). Replaces persisting the
+    /// rendered task_routing brief as a UserMessage on the coordinator.
+    TaskRoutingTrigger {
+        #[serde(with = "crate::utils::serde::i64_as_string")]
+        board_item_id: i64,
+        task_key: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        routing_reason: Option<String>,
+        triggered_at: DateTime<Utc>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,6 +225,8 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
             "clarification_request" => ConversationMessageType::ClarificationRequest,
             "clarification_response" => ConversationMessageType::ClarificationResponse,
             "task_subscription_notification" => ConversationMessageType::TaskSubscriptionNotification,
+            "assignment_execution_trigger" => ConversationMessageType::AssignmentExecutionTrigger,
+            "task_routing_trigger" => ConversationMessageType::TaskRoutingTrigger,
             _ => {
                 return Err(sqlx::Error::ColumnDecode {
                     index: "message_type".to_string(),

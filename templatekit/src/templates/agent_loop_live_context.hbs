@@ -1,6 +1,11 @@
 LIVE RUNTIME (per-iteration; not cached)
 Iteration: {{runtime.iteration_info.current_iteration}}/{{runtime.iteration_info.max_iterations}}. Now: {{runtime.current_datetime_utc}}.
 
+{{#if most_recent_user_input}}MOST RECENT USER INPUT ({{most_recent_user_input.source}} at {{most_recent_user_input.timestamp}}):
+{{most_recent_user_input.text}}
+
+{{/if}}
+
 {{#if (eq thread.purpose "execution")}}STOP WHEN: your assigned slice is complete — deliverables under `/task/artifacts/` (or the mount the brief specifies), a one-line journal entry appended, scratch files cleaned up. Terminate with a short internal log naming what you produced. Use `abort_task(return_to_coordinator)` for wrong-lane/bad-brief/missing-capability, `abort_task(blocked)` for external dependencies, `ask_user` only for slice-specific questions you genuinely need answered to finish.
 {{else if (eq thread.purpose "coordinator")}}STOP WHEN: routing decision is made (or confirmed already-covered), every `[unresolved]` feedback item is resolved, journal has a one-line rationale. Lanes run independently — do not wait, do not re-issue an identical assignment to a lane that's already actively assigned.
 {{else if (eq thread.purpose "review")}}STOP WHEN: accept/reject decision is recorded with concrete rationale referencing the acceptance criteria.

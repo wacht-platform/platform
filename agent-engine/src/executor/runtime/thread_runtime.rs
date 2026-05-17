@@ -184,6 +184,23 @@ impl AgentExecutor {
         Ok(())
     }
 
+    async fn resolve_task_key_for_board_item(&self, board_item_id: i64) -> Option<String> {
+        if board_item_id == 0 {
+            return None;
+        }
+        queries::GetProjectTaskBoardItemByIdQuery::new(board_item_id)
+            .execute_with_db(
+                self.ctx
+                    .app_state
+                    .db_router
+                    .reader(common::ReadConsistency::Strong),
+            )
+            .await
+            .ok()
+            .flatten()
+            .map(|item| item.task_key)
+    }
+
     pub async fn execute_with_thread_event(
         &mut self,
         thread_event: models::ThreadEvent,
@@ -192,15 +209,58 @@ impl AgentExecutor {
         self.tool_executor
             .set_active_board_item_id(thread_event.board_item_id);
 
+        // build_thread_event_message renders the full brief (and runs its
+        // side effects — journal hash init, schedule carryover). For
+        // trigger events we DON'T persist the brief as a fat conversation
+        // row; we persist a thin marker and stash the brief in
+        // current_trigger_brief so the prompt builder can rehydrate the
+        // latest marker. Rerunning the agent on a future iteration reads
+        // canonical state (DB + filesystem) fresh — old markers carry no
+        // stale snapshot.
         let thread_event_message = self.build_thread_event_message(&thread_event).await?;
-        let conversation = if thread_event.event_type
-            == models::thread_event::event_type::THREAD_SUBSCRIPTION_DELIVERY
-        {
-            self.store_subscription_delivery_message(thread_event_message.clone())
+
+        let conversation = match thread_event.event_type.as_str() {
+            models::thread_event::event_type::THREAD_SUBSCRIPTION_DELIVERY => {
+                self.store_subscription_delivery_message(thread_event_message.clone())
+                    .await?
+            }
+            models::thread_event::event_type::ASSIGNMENT_EXECUTION => {
+                let payload = thread_event.assignment_execution_payload();
+                let assignment_id = payload
+                    .as_ref()
+                    .map(|p| p.assignment_id)
+                    .unwrap_or_default();
+                let board_item_id = thread_event.board_item_id.unwrap_or_default();
+                let task_key = self
+                    .resolve_task_key_for_board_item(board_item_id)
+                    .await
+                    .unwrap_or_default();
+                self.current_trigger_brief = Some(thread_event_message.clone());
+                self.store_assignment_execution_trigger(
+                    assignment_id,
+                    board_item_id,
+                    task_key,
+                    None,
+                )
                 .await?
-        } else {
-            self.store_user_message(thread_event_message.clone(), None)
-                .await?
+            }
+            models::thread_event::event_type::TASK_ROUTING => {
+                let routing_reason = thread_event
+                    .task_routing_payload()
+                    .and_then(|p| p.routing_reason);
+                let board_item_id = thread_event.board_item_id.unwrap_or_default();
+                let task_key = self
+                    .resolve_task_key_for_board_item(board_item_id)
+                    .await
+                    .unwrap_or_default();
+                self.current_trigger_brief = Some(thread_event_message.clone());
+                self.store_task_routing_trigger(board_item_id, task_key, routing_reason)
+                    .await?
+            }
+            _ => {
+                self.store_user_message(thread_event_message.clone(), None)
+                    .await?
+            }
         };
 
         self.user_request = match &conversation.content {
@@ -220,6 +280,7 @@ impl AgentExecutor {
 
         let result = self.repl().await;
         self.active_thread_event = None;
+        self.current_trigger_brief = None;
         self.tool_executor.set_active_board_item_id(None);
         result
     }

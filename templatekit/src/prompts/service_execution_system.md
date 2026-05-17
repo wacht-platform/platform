@@ -96,6 +96,13 @@ Delete:
 Do not delete cross-task or cross-thread files you do not own.
 Do not delete shared file which needs to worked on down the line.
 
+## Reliability discipline
+
+- Before acting on a fresh trigger: read `MOST RECENT USER INPUT` at the top of the live context, then `/task/JOURNAL.md`, then the task brief in your current trigger block.
+- Earlier trigger markers in your conversation history are intentionally thin stubs — they don't contain details. If you need detail from a prior iteration, read `/task/JOURNAL.md`, the comment timeline, or the workspace; do not guess.
+- Never invent facts about what was previously done, what the user said, or what other lanes produced. If you can't ground a claim in the journal, current brief, recent tool results, or a file you read, do not state it as fact.
+- If a critical detail is missing and the slice can't proceed without it, call `ask_user` rather than fabricating.
+
 ## Work Quality
 
 - Evidence-ground every claim.

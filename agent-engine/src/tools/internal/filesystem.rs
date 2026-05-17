@@ -153,7 +153,9 @@ impl ToolExecutor {
         shell: &ShellExecutor,
         params: ExecuteCommandParams,
     ) -> Result<Value, AppError> {
-        let output = shell.execute(&params.command).await?;
+        let output = shell
+            .execute_with_timeout(&params.command, params.timeout_seconds)
+            .await?;
 
         Ok(serde_json::json!({
             "success": output.exit_code == 0,
@@ -161,7 +163,8 @@ impl ToolExecutor {
             "command": params.command,
             "stdout": output.stdout,
             "stderr": output.stderr,
-            "exit_code": output.exit_code
+            "exit_code": output.exit_code,
+            "timeout_seconds": params.timeout_seconds,
         }))
     }
 }

@@ -40,6 +40,12 @@ pub struct AgentExecutor {
     pub(crate) board_context_cache: Option<crate::executor::agent_loop::prompt::BoardPromptContext>,
     pub(crate) tool_context_cache: Option<crate::executor::agent_loop::prompt::ToolPromptContext>,
     pub(crate) active_thread_event: Option<ThreadEvent>,
+    /// Full rendered task brief for the trigger event that started this
+    /// iteration. Set in execute_with_thread_event before the REPL runs;
+    /// cleared at end-of-iteration. The history renderer uses this to
+    /// rehydrate the latest AssignmentExecutionTrigger / TaskRoutingTrigger
+    /// marker into a full prompt block.
+    pub(crate) current_trigger_brief: Option<String>,
     pub(crate) active_schedule_carryover: Option<models::ScheduleCarryover>,
     pub(crate) is_conversation_thread: bool,
     pub(crate) is_coordinator_thread: bool,
@@ -327,6 +333,7 @@ impl AgentExecutorBuilder {
             board_context_cache: None,
             tool_context_cache: None,
             active_thread_event: None,
+            current_trigger_brief: None,
             active_schedule_carryover: None,
             is_conversation_thread,
             is_coordinator_thread,
