@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id\n            FROM project_task_board_item_assignments\n            WHERE board_item_id = $1\n              AND thread_id = $2\n              AND assignment_role = 'coordinator'\n              AND status NOT IN ('completed', 'cancelled', 'rejected')\n            ORDER BY id DESC\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b1334666add19be165ad4571e34f0367f9dbedcd10c1047cdf7a484dc4ed3217"
+}

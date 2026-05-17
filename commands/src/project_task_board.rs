@@ -1359,6 +1359,125 @@ impl UpdateProjectTaskBoardItemAssignmentCommand {
     }
 }
 
+/// Complete a coordinator-role assignment when the coordinator's turn
+/// ends. Unlike `UpdateProjectTaskBoardItemAssignmentStateCommand`, this
+/// preserves `board_item.assigned_thread_id` if it has already been
+/// transferred to another thread (e.g. by `assign_project_task` creating
+/// an executor assignment in the same coordinator turn). Only blanks the
+/// pointer when it still points at the coordinator's own thread.
+pub struct MarkCoordinatorAssignmentCompletedCommand {
+    pub assignment_id: i64,
+    pub coordinator_thread_id: i64,
+    pub board_item_id: i64,
+}
+
+/// Look up an active coordinator-role assignment for (board_item,
+/// thread); create one if none exists. Used by the agent runtime when a
+/// TASK_ROUTING event reaches a coordinator thread, so the coordinator
+/// is an explicit owner of the board item while it decides routing.
+/// Returns the assignment id.
+pub struct EnsureCoordinatorAssignmentCommand {
+    pub board_item_id: i64,
+    pub coordinator_thread_id: i64,
+}
+
+impl EnsureCoordinatorAssignmentCommand {
+    pub fn new(board_item_id: i64, coordinator_thread_id: i64) -> Self {
+        Self {
+            board_item_id,
+            coordinator_thread_id,
+        }
+    }
+
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<i64, AppError>
+    where
+        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + HasNatsProvider + ?Sized,
+    {
+        let existing = sqlx::query_scalar!(
+            r#"
+            SELECT id
+            FROM project_task_board_item_assignments
+            WHERE board_item_id = $1
+              AND thread_id = $2
+              AND assignment_role = 'coordinator'
+              AND status NOT IN ('completed', 'cancelled', 'rejected')
+            ORDER BY id DESC
+            LIMIT 1
+            "#,
+            self.board_item_id,
+            self.coordinator_thread_id,
+        )
+        .fetch_optional(deps.writer_pool())
+        .await?;
+
+        if let Some(id) = existing {
+            return Ok(id);
+        }
+
+        let new_id = deps.id_provider().next_id()? as i64;
+        let assignment = CreateProjectTaskBoardItemAssignmentCommand {
+            id: new_id,
+            board_item_id: self.board_item_id,
+            thread_id: self.coordinator_thread_id,
+            assignment_role: models::project_task_board::assignment_role::COORDINATOR.to_string(),
+            status: models::project_task_board::assignment_status::IN_PROGRESS.to_string(),
+            instructions: None,
+            metadata: serde_json::json!({}),
+        }
+        .execute_with_deps(deps)
+        .await?;
+        Ok(assignment.id)
+    }
+}
+
+impl MarkCoordinatorAssignmentCompletedCommand {
+    pub fn new(assignment_id: i64, coordinator_thread_id: i64, board_item_id: i64) -> Self {
+        Self {
+            assignment_id,
+            coordinator_thread_id,
+            board_item_id,
+        }
+    }
+
+    pub async fn execute_with_db<'e, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'e, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        sqlx::query!(
+            r#"
+            UPDATE project_task_board_item_assignments
+            SET status = 'completed',
+                result_status = COALESCE(result_status, 'completed'),
+                completed_at = COALESCE(completed_at, NOW()),
+                updated_at = NOW()
+            WHERE id = $1
+              AND status NOT IN ('completed', 'cancelled', 'rejected')
+            "#,
+            self.assignment_id,
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        sqlx::query!(
+            r#"
+            UPDATE project_task_board_items
+            SET assigned_thread_id = CASE
+                    WHEN assigned_thread_id = $2 THEN NULL
+                    ELSE assigned_thread_id
+                END,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+            self.board_item_id,
+            self.coordinator_thread_id,
+        )
+        .execute(&mut *conn)
+        .await?;
+        Ok(())
+    }
+}
+
 pub struct WriteAssignmentResultPayloadCommand {
     pub assignment_id: i64,
     pub payload: serde_json::Value,

@@ -46,6 +46,12 @@ pub struct AgentExecutor {
     /// rehydrate the latest AssignmentExecutionTrigger / TaskRoutingTrigger
     /// marker into a full prompt block.
     pub(crate) current_trigger_brief: Option<String>,
+    /// Coordinator-role assignment auto-created when a TASK_ROUTING event
+    /// reaches this coordinator thread. Holds (assignment_id, board_item_id)
+    /// so the runtime can complete it at end-of-iteration without re-querying.
+    /// `None` for non-coordinator threads and when no routing event triggered
+    /// this run.
+    pub(crate) coordinator_assignment: Option<(i64, i64)>,
     pub(crate) active_schedule_carryover: Option<models::ScheduleCarryover>,
     pub(crate) is_conversation_thread: bool,
     pub(crate) is_coordinator_thread: bool,
@@ -334,6 +340,7 @@ impl AgentExecutorBuilder {
             tool_context_cache: None,
             active_thread_event: None,
             current_trigger_brief: None,
+            coordinator_assignment: None,
             active_schedule_carryover: None,
             is_conversation_thread,
             is_coordinator_thread,

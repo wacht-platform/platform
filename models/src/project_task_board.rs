@@ -233,6 +233,11 @@ pub mod assignment_role {
     pub const SPECIALIST_REVIEWER: &str = "specialist_reviewer";
     pub const APPROVER: &str = "approver";
     pub const OBSERVER: &str = "observer";
+    /// Auto-created when a task_routing event reaches the coordinator
+    /// thread. Marks the coordinator as the active owner of the board
+    /// item while it reasons; cleared when the coordinator transfers via
+    /// assign_project_task or terminates.
+    pub const COORDINATOR: &str = "coordinator";
 }
 
 pub mod assignment_status {

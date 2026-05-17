@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE project_task_board_item_assignments\n            SET status = 'completed',\n                result_status = COALESCE(result_status, 'completed'),\n                completed_at = COALESCE(completed_at, NOW()),\n                updated_at = NOW()\n            WHERE id = $1\n              AND status NOT IN ('completed', 'cancelled', 'rejected')\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3dd137b4636a460dc29429d6104a1432f7a0be377a9808df2b5fbbf2696ae962"
+}

@@ -254,8 +254,13 @@ impl AgentExecutor {
                     .await
                     .unwrap_or_default();
                 self.current_trigger_brief = Some(thread_event_message.clone());
-                self.store_task_routing_trigger(board_item_id, task_key, routing_reason)
-                    .await?
+                let conv = self
+                    .store_task_routing_trigger(board_item_id, task_key, routing_reason)
+                    .await?;
+                if board_item_id != 0 && self.effective_is_coordinator_thread() {
+                    self.ensure_coordinator_assignment(board_item_id).await?;
+                }
+                conv
             }
             _ => {
                 self.store_user_message(thread_event_message.clone(), None)
@@ -279,10 +284,57 @@ impl AgentExecutor {
         }
 
         let result = self.repl().await;
+        self.finalize_coordinator_assignment().await;
         self.active_thread_event = None;
         self.current_trigger_brief = None;
         self.tool_executor.set_active_board_item_id(None);
         result
+    }
+
+    /// Look up an existing in-flight coordinator-role assignment for this
+    /// board item / thread, or create one. Stash (assignment_id,
+    /// board_item_id) so [`finalize_coordinator_assignment`] can close it
+    /// at end-of-iteration.
+    async fn ensure_coordinator_assignment(
+        &mut self,
+        board_item_id: i64,
+    ) -> Result<(), AppError> {
+        let assignment_id =
+            commands::project_task_board::EnsureCoordinatorAssignmentCommand::new(
+                board_item_id,
+                self.ctx.thread_id,
+            )
+            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
+            .await?;
+        self.coordinator_assignment = Some((assignment_id, board_item_id));
+        Ok(())
+    }
+
+    /// Complete the coordinator-owned assignment if one was created for
+    /// this iteration. Errors are logged but not propagated — the
+    /// iteration's actual result (from `repl`) must remain the source of
+    /// truth for the caller.
+    async fn finalize_coordinator_assignment(&mut self) {
+        let Some((assignment_id, board_item_id)) = self.coordinator_assignment.take() else {
+            return;
+        };
+        let cmd = commands::project_task_board::MarkCoordinatorAssignmentCompletedCommand::new(
+            assignment_id,
+            self.ctx.thread_id,
+            board_item_id,
+        );
+        if let Err(e) = cmd
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await
+        {
+            tracing::warn!(
+                thread_id = self.ctx.thread_id,
+                assignment_id,
+                board_item_id,
+                error = ?e,
+                "failed to complete coordinator-role assignment at end of iteration"
+            );
+        }
     }
 
     pub(crate) fn build_execution_state_snapshot(
