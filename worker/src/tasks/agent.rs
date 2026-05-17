@@ -17,6 +17,15 @@ const DEPLOYMENT_SLOT_BACKOFF_MIN_MS: u64 = 250;
 const DEPLOYMENT_SLOT_BACKOFF_MAX_MS: u64 = 5_000;
 const BACKOFF_JITTER_MAX_MS: u64 = 250;
 
+/// Window the worker waits before running a `task_routing` agent loop so
+/// that a burst of user feedback can pile up. After the window expires the
+/// worker checks `event_log` for any newer pending/publishing routing event
+/// for the same board item; if one exists it yields (marking itself
+/// superseded) and the newer event becomes canonical. Layered on top of the
+/// write-time CTE coalesce in `InsertTaskRoutingEvent` — this catches
+/// bursts that slipped through the dispatcher race.
+const TASK_ROUTING_COALESCE_WINDOW: Duration = Duration::from_millis(3000);
+
 #[derive(Debug)]
 pub enum AgentExecutionError {
     ExecutionBusy {
@@ -437,6 +446,71 @@ pub async fn process_event_log_work(
     outcome
 }
 
+/// Wait the configured coalesce window, then decide whether this worker
+/// should run the agent loop for a `task_routing` event or yield to a
+/// newer routing event for the same board item. Returns `Some(message)`
+/// when this worker should exit early (already marked superseded) and
+/// `None` when it should proceed.
+///
+/// Only applies to `task_routing` on non-conversation threads — those are
+/// the coordinator-targeted events that we want to debounce. Other event
+/// kinds (assignment_execution, user_message_received, etc.) run
+/// immediately.
+async fn coalesce_task_routing_or_yield(
+    app_state: &AppState,
+    event_log_id: i64,
+    kind: &str,
+    thread: &models::AgentThread,
+    payload: &serde_json::Value,
+) -> Result<Option<String>, AgentExecutionError> {
+    if kind != "task_routing" {
+        return Ok(None);
+    }
+    if thread.thread_purpose == models::agent_thread::purpose::CONVERSATION {
+        return Ok(None);
+    }
+    let Some(board_item_id) = payload
+        .get("board_item_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<i64>().ok())
+    else {
+        return Ok(None);
+    };
+
+    sleep(TASK_ROUTING_COALESCE_WINDOW).await;
+
+    let pool = app_state.db_router.writer();
+    let newer = commands::latest_pending_task_routing_after(pool, board_item_id, event_log_id)
+        .await
+        .map_err(|e| {
+            AgentExecutionError::Other(anyhow::anyhow!("coalesce: check newer routing: {e}"))
+        })?;
+
+    if let Some(latest) = newer {
+        commands::mark_task_routing_superseded(pool, event_log_id, latest)
+            .await
+            .map_err(|e| {
+                AgentExecutionError::Other(anyhow::anyhow!("coalesce: mark superseded: {e}"))
+            })?;
+        tracing::info!(
+            event_log_id,
+            superseded_by = latest,
+            board_item_id,
+            "task_routing yielded to newer routing event"
+        );
+        return Ok(Some(format!(
+            "task_routing {event_log_id}: superseded by {latest}"
+        )));
+    }
+
+    commands::suppress_older_pending_task_routing(pool, board_item_id, event_log_id)
+        .await
+        .map_err(|e| {
+            AgentExecutionError::Other(anyhow::anyhow!("coalesce: suppress older: {e}"))
+        })?;
+    Ok(None)
+}
+
 async fn run_event_log_work(
     app_state: AppState,
     event_log_id: i64,
@@ -445,8 +519,6 @@ async fn run_event_log_work(
     kind: &str,
     payload: serde_json::Value,
 ) -> Result<String, AgentExecutionError> {
-    let concurrency_guard = acquire_deployment_execution_slot(&app_state, deployment_id).await?;
-
     let thread = queries::GetAgentThreadByIdQuery::new(thread_id, deployment_id)
         .execute_with_db(app_state.db_router.writer())
         .await
@@ -456,6 +528,14 @@ async fn run_event_log_work(
                 "thread {thread_id} not found in deployment {deployment_id}"
             ))
         })?;
+
+    if let Some(message) =
+        coalesce_task_routing_or_yield(&app_state, event_log_id, kind, &thread, &payload).await?
+    {
+        return Ok(message);
+    }
+
+    let concurrency_guard = acquire_deployment_execution_slot(&app_state, deployment_id).await?;
 
     let agent_id_override = payload
         .get("agent_id")

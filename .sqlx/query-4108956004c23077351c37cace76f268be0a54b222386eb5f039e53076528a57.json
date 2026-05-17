@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE event_log\n        SET publish_status     = 'published',\n            published_at       = NOW(),\n            next_publish_at    = NULL,\n            last_publish_error = $3\n        WHERE aggregate_type   = 'board_item'\n          AND aggregate_id     = $1\n          AND event_type       = 'task_routing'\n          AND id               < $2\n          AND publish_status   IN ('pending', 'publishing')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4108956004c23077351c37cace76f268be0a54b222386eb5f039e53076528a57"
+}

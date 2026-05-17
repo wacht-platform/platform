@@ -262,17 +262,34 @@ impl AgentExecutor {
 
     pub(crate) async fn build_prompt_cache_request(
         &self,
+        live_tail_count: usize,
     ) -> Option<crate::llm::PromptCacheRequest> {
-        let (cache_key, live_tail_count) = if let Some(event) = self.active_thread_event.as_ref() {
+        // `AGENT_ENGINE_CACHE_MODE` toggles the prompt caching strategy:
+        //   - "explicit" (default): explicit Gemini `cachedContents` lifecycle
+        //     managed by us (cache.rs + Redis state). Guaranteed reuse, write
+        //     cost on first call, fixed TTL.
+        //   - "implicit": skip our cache plan entirely. Gemini 2.5+ models
+        //     implicitly cache identical prefixes server-side at no write cost.
+        //     We just need to keep the prefix stable (which the prompt builder
+        //     already does after the live_tail_count / stable_context fixes).
+        //   - "off": disable both. Useful for A/B baseline.
+        let mode = std::env::var("AGENT_ENGINE_CACHE_MODE")
+            .unwrap_or_else(|_| "explicit".to_string())
+            .to_ascii_lowercase();
+        if mode == "implicit" || mode == "off" {
+            return None;
+        }
+
+        let cache_key = if let Some(event) = self.active_thread_event.as_ref() {
             if let Some(payload) = event.assignment_execution_payload() {
-                (format!("executor_assignment_{}", payload.assignment_id), 2)
+                format!("executor_assignment_{}", payload.assignment_id)
             } else if let Some(board_item_id) = event.board_item_id {
-                (format!("coordinator_board_{board_item_id}"), 2)
+                format!("coordinator_board_{board_item_id}")
             } else {
-                ("thread_default".to_string(), 2)
+                "thread_default".to_string()
             }
         } else if self.is_conversation_thread {
-            ("conversation".to_string(), 2)
+            "conversation".to_string()
         } else {
             return None;
         };

@@ -414,10 +414,13 @@ impl AgentExecutor {
         prompt_context: &AgentLoopPromptEnvelope,
     ) -> Option<String> {
         let item = prompt_context.base.task.active_board_item.as_ref()?;
+        // Keep this section purely stable across iterations so the LLM prompt
+        // cache (Gemini explicit context cache) can reuse the prefix hash.
+        // Per-turn mutable fields (status) live in `virtual_task_state_message`
+        // which sits in the live tail.
         let mut block = String::from("TASK BRIEF\n");
         block.push_str(&format!("\nKey: `{}`", item.task_key));
         block.push_str(&format!("\nTitle: {}", item.title));
-        block.push_str(&format!("\nStatus: {}", item.status));
         if let Some(desc) = item.description.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
             block.push_str("\n\nDescription:\n");
             block.push_str(desc);
@@ -425,7 +428,8 @@ impl AgentExecutor {
         block.push_str(
             "\n\nThe full durable brief lives at `/task/TASK.md` and the cross-agent history at \
              `/task/JOURNAL.md`. Read those files when you need detail beyond this summary; both \
-             are written by the runtime and by prior agents on this task.",
+             are written by the runtime and by prior agents on this task. Current task status is \
+             surfaced in the live task-state block below.",
         );
         Some(block)
     }
@@ -462,11 +466,14 @@ impl AgentExecutor {
         prompt_context: &AgentLoopPromptEnvelope,
     ) -> Option<String> {
         let assignment = prompt_context.base.task.active_assignment.as_ref()?;
+        // Same caching contract as `compose_task_brief_section`: keep stable
+        // identifiers / role / note / instructions here, leave `status`
+        // (which flips queued → running → succeeded/failed) to the live tail
+        // via `virtual_task_state_message`.
         let mut block = String::from("ROUTING & ACTIVE ASSIGNMENT\n");
         block.push_str(&format!("\nAssignment ID: {}", assignment.assignment_id));
         block.push_str(&format!("\nBoard item: {}", assignment.board_item_id));
         block.push_str(&format!("\nRole: {}", assignment.assignment_role));
-        block.push_str(&format!("\nStatus: {}", assignment.status));
         if let Some(note) = assignment.note.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
             block.push_str("\nRouting note: ");
             block.push_str(note);

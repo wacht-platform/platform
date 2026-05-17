@@ -226,6 +226,102 @@ where
     Ok(())
 }
 
+/// Latest pending/publishing `task_routing` event_log id for a board item
+/// that is strictly newer than `after_event_log_id`. Returns `None` if this
+/// caller is already the newest queued routing event. Used by the worker's
+/// pre-loop coalesce check to decide whether to yield to a newer routing
+/// burst.
+pub async fn latest_pending_task_routing_after<'e, E>(
+    executor: E,
+    board_item_id: i64,
+    after_event_log_id: i64,
+) -> Result<Option<i64>, AppError>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let row = sqlx::query!(
+        r#"
+        SELECT MAX(id) AS latest
+        FROM event_log
+        WHERE aggregate_type = 'board_item'
+          AND aggregate_id   = $1
+          AND event_type     = 'task_routing'
+          AND id             > $2
+          AND publish_status IN ('pending', 'publishing')
+        "#,
+        board_item_id,
+        after_event_log_id,
+    )
+    .fetch_one(executor)
+    .await?;
+    Ok(row.latest)
+}
+
+/// Mark a single `task_routing` event_log row as published+superseded, so
+/// the dispatcher and lease-recovery treat it as terminal. Used when the
+/// worker's pre-loop coalesce check decides to yield to a newer routing
+/// event for the same board item.
+pub async fn mark_task_routing_superseded<'e, E>(
+    executor: E,
+    event_log_id: i64,
+    superseded_by: i64,
+) -> Result<(), AppError>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let reason = format!("superseded by task_routing {superseded_by}");
+    sqlx::query!(
+        r#"
+        UPDATE event_log
+        SET publish_status     = 'published',
+            published_at       = NOW(),
+            next_publish_at    = NULL,
+            last_publish_error = $2
+        WHERE id = $1
+        "#,
+        event_log_id,
+        reason,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Mark every pending/publishing `task_routing` row strictly older than
+/// `canonical_event_log_id` (for the same board item) as superseded. Used
+/// by the worker after deciding it is the canonical routing event, so any
+/// older entries the dispatcher hasn't picked yet are skipped.
+pub async fn suppress_older_pending_task_routing<'e, E>(
+    executor: E,
+    board_item_id: i64,
+    canonical_event_log_id: i64,
+) -> Result<(), AppError>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let reason = format!("superseded by task_routing {canonical_event_log_id}");
+    sqlx::query!(
+        r#"
+        UPDATE event_log
+        SET publish_status     = 'published',
+            published_at       = NOW(),
+            next_publish_at    = NULL,
+            last_publish_error = $3
+        WHERE aggregate_type   = 'board_item'
+          AND aggregate_id     = $1
+          AND event_type       = 'task_routing'
+          AND id               < $2
+          AND publish_status   IN ('pending', 'publishing')
+        "#,
+        board_item_id,
+        canonical_event_log_id,
+        reason,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
 /// Apply a REST-style edit (title / description / status) to a board item:
 /// computes the field diff, writes the columns, preempts running
 /// assignments on content edits or status->cancelled, and re-routes the

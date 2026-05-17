@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT MAX(id) AS latest\n        FROM event_log\n        WHERE aggregate_type = 'board_item'\n          AND aggregate_id   = $1\n          AND event_type     = 'task_routing'\n          AND id             > $2\n          AND publish_status IN ('pending', 'publishing')\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "latest",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9332091e5eda1e69fac4581f923b2aafc4bfc473fe7ad0b7b165730bea8b703c"
+}

@@ -867,7 +867,17 @@ impl AgentExecutor {
         }
 
         let llm = self.create_strong_llm().await?;
-        let cache_request = self.build_prompt_cache_request().await;
+        // Live tail = everything past the conversation history. The cacheable
+        // prefix is `[stable_context?, ...history]` — definitionally stable.
+        // The post-history slots (virtual_task_state?, live_context,
+        // current_request, trailing_user?) mutate per turn (journal grows,
+        // statuses flip, per-second timestamp) and MUST stay out of the cache,
+        // otherwise the prefix-hash check invalidates the cache every call.
+        let history_len = prompt_context.conversation_history_prefix.len();
+        let total_messages = request.messages.len();
+        let pre_history = total_messages.saturating_sub(history_len).min(1); // stable_context (0 or 1)
+        let live_tail_count = total_messages.saturating_sub(pre_history + history_len);
+        let cache_request = self.build_prompt_cache_request(live_tail_count).await;
         self.run_hooks(
             super::hooks::LifecyclePhase::BeforeLlm,
             serde_json::Value::Null,

@@ -151,6 +151,13 @@ pub(super) fn base_deployment_routes() -> Router<AppState> {
     deployment_routes::base_deployment_routes()
 }
 
+/// Machine-router-only. Mints a fresh backend API key for `wacht env pull`.
+/// Deliberately not part of `base_deployment_routes` so backend_router and
+/// console_router don't expose it.
+pub(super) fn credentials_routes() -> Router<AppState> {
+    deployment_routes::credentials_routes()
+}
+
 pub(super) fn billing_routes() -> Router<AppState> {
     server_routes::billing_routes()
 }

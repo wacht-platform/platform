@@ -12,11 +12,15 @@ pub(super) fn base_deployment_routes() -> Router<AppState> {
         .merge(settings_routes())
         .merge(segments_routes())
         .merge(analytics_routes())
-        .merge(credentials_routes())
         .merge(super::api_auth_routes::api_auth_routes())
 }
 
-fn credentials_routes() -> Router<AppState> {
+/// Mint a fresh backend API key for a deployment. Machine-router only —
+/// used by `wacht env pull` to populate `.env.local` during local
+/// development. Deliberately NOT exposed on backend_router or
+/// console_router: backend SDKs should not call this, and console users
+/// manage keys through the API-Auth UI instead.
+pub(super) fn credentials_routes() -> Router<AppState> {
     Router::new().route(
         "/credentials",
         post(api::credentials::create_deployment_credentials),

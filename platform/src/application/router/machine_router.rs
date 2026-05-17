@@ -12,7 +12,8 @@ pub async fn create_machine_router(state: AppState) -> Router {
 
     let deployment_routes = super::base_deployment_routes()
         .merge(super::ai_routes())
-        .merge(super::backend_specific_routes());
+        .merge(super::backend_specific_routes())
+        .merge(super::credentials_routes());
 
     let protected_routes = Router::new()
         .merge(super::project_routes())
