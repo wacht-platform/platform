@@ -54,6 +54,8 @@ fn parse_conversation_message_type(value: &str) -> Result<ConversationMessageTyp
         "clarification_request" => Ok(ConversationMessageType::ClarificationRequest),
         "clarification_response" => Ok(ConversationMessageType::ClarificationResponse),
         "task_subscription_notification" => Ok(ConversationMessageType::TaskSubscriptionNotification),
+        "assignment_execution_trigger" => Ok(ConversationMessageType::AssignmentExecutionTrigger),
+        "task_routing_trigger" => Ok(ConversationMessageType::TaskRoutingTrigger),
         other => Err(AppError::Internal(format!(
             "Unknown conversation message_type '{}'",
             other
