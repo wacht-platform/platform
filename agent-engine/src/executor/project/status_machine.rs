@@ -108,6 +108,35 @@ pub fn validate_terminal_payload_shape(
             }
         }
     }
+    validate_handoff_line("findings", params.findings.as_deref())?;
+    validate_handoff_line("cautions", params.cautions.as_deref())?;
+    validate_handoff_line("next", params.next.as_deref())?;
+    Ok(())
+}
+
+const HANDOFF_LINE_MAX: usize = 200;
+
+fn validate_handoff_line(field: &str, value: Option<&str>) -> Result<(), AppError> {
+    let Some(raw) = value else {
+        return Ok(());
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    if trimmed.contains('\n') || trimmed.contains('\r') {
+        return Err(AppError::BadRequest(format!(
+            "update_project_task: `{field}` must be a single line — no newlines. \
+             Use `; ` to separate multiple points."
+        )));
+    }
+    if trimmed.chars().count() > HANDOFF_LINE_MAX {
+        return Err(AppError::BadRequest(format!(
+            "update_project_task: `{field}` is too long ({} chars; max {HANDOFF_LINE_MAX}). \
+             Keep it tight — long context belongs in artifacts under `/task/artifacts/`.",
+            trimmed.chars().count()
+        )));
+    }
     Ok(())
 }
 

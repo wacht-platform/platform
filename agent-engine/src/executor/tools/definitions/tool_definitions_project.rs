@@ -345,6 +345,43 @@ pub fn update_project_task_schema() -> Vec<SchemaField> {
             required: false,
             ..Default::default()
         },
+        SchemaField {
+            name: "findings".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some(
+                "Optional one-line handoff. Durable facts the next agent on this task needs to know — \
+                 e.g. `Webhook secret rotated 2026-05-10; staging env var not updated`. Single line, \
+                 max ~200 chars. If you have several, semicolon-separate them. Long context belongs \
+                 in `/task/artifacts/`, not here. Lands in the journal entry the runtime writes on \
+                 completion."
+                    .to_string(),
+            ),
+            required: false,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "cautions".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some(
+                "Optional one-line handoff. Gotchas, do-nots, or destructive actions the next agent \
+                 should avoid — e.g. `Don't run replay.sh — it resigns with the wrong secret`. \
+                 Single line, max ~200 chars. Lands in the journal."
+                    .to_string(),
+            ),
+            required: false,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "next".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some(
+                "Optional one-line recommendation for the coordinator or next agent — e.g. \
+                 `assign ops-lane to rotate STAGING_WEBHOOK_SECRET`. Single line, max ~200 chars."
+                    .to_string(),
+            ),
+            required: false,
+            ..Default::default()
+        },
     ]
 }
 

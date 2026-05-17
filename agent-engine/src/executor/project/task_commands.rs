@@ -1,5 +1,10 @@
 use super::core::AgentExecutor;
 
+use crate::llm::{SemanticLlmMessage, SemanticLlmRequest};
+use crate::runtime::task_workspace::{
+    append_journal_handoff_entry, finalize_journal_compaction, prepare_journal_compaction,
+    render_rule_only_activity, CheckpointInputs, HandoffPayload, TASK_WORKSPACE_JOURNAL_FILE,
+};
 use common::error::AppError;
 use dto::json::agent_executor::{
     AssignProjectTaskParams, CreateProjectTaskParams, GetProjectTaskParams, SubscribeToTaskParams,
@@ -214,6 +219,7 @@ impl AgentExecutor {
                         }
                     }
                 }
+                self.persist_completion_handoff(&params).await?;
             }
         }
 
@@ -693,5 +699,164 @@ impl AgentExecutor {
             "{} blocked: `/task/TASK.md` is missing or too thin for task {}. Write the operative task brief with `write_file` before routing this task so the executor has a concrete contract.",
             tool_name, target_task_key
         )))
+    }
+
+    async fn maybe_compact_task_journal(&mut self) -> Result<bool, AppError> {
+        let existing = match self.filesystem.read_file_bytes(TASK_WORKSPACE_JOURNAL_FILE).await {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(AppError::NotFound(_)) => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        let Some(inputs) = prepare_journal_compaction(&existing) else {
+            return Ok(false);
+        };
+
+        let activity = if inputs.outcomes_by_actor.is_empty() {
+            String::new()
+        } else {
+            match self.summarise_actor_outcomes_via_weak_llm(&inputs).await {
+                Ok(text) if !text.trim().is_empty() => text,
+                Ok(_) => {
+                    tracing::warn!(
+                        thread_id = self.ctx.thread_id,
+                        "journal compaction: weak LLM returned empty body; using rule-only fallback"
+                    );
+                    render_rule_only_activity(&inputs)
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        thread_id = self.ctx.thread_id,
+                        error = %err,
+                        "journal compaction: weak LLM call failed; using rule-only fallback"
+                    );
+                    render_rule_only_activity(&inputs)
+                }
+            }
+        };
+
+        let new_content = finalize_journal_compaction(&existing, &inputs, &activity);
+        self.filesystem
+            .write_file(TASK_WORKSPACE_JOURNAL_FILE, &new_content, false)
+            .await?;
+        Ok(true)
+    }
+
+    async fn summarise_actor_outcomes_via_weak_llm(
+        &self,
+        inputs: &CheckpointInputs,
+    ) -> Result<String, AppError> {
+        let system_prompt = "You compress agent activity into per-actor summaries for a task journal checkpoint. \
+You receive a list of actors and the outcomes each one produced over many turns. Output a markdown bullet list, one bullet per actor:\n\
+- **actor_name** (N turns): 1–3 sentence summary of what they did and the final state.\n\n\
+Rules:\n\
+- Group by what the actor accomplished, not by turn order.\n\
+- If a later outcome supersedes an earlier one (e.g. first noted X was broken, then later fixed it) — describe the final state. Mention the journey only when it matters.\n\
+- Preserve concrete state changes verbatim (\"rotated X\", \"approved Y\", \"deleted Z\").\n\
+- Past tense. Tight. Roughly 150 chars per actor bullet.\n\
+- Output ONLY the bullet list. No preface, no JSON, no code fences.";
+
+        let mut user_message = String::from("Outcomes by actor (turn index in the compaction window, timestamp, outcome):\n\n");
+        for (actor, turns) in &inputs.outcomes_by_actor {
+            user_message.push_str(&format!("{}:\n", actor));
+            for (idx, ts, text) in turns {
+                user_message.push_str(&format!("  - turn {idx} @ {ts}: {text}\n"));
+            }
+            user_message.push('\n');
+        }
+        user_message.push_str("Output the markdown bullet list (one bullet per actor).");
+
+        let request = SemanticLlmRequest {
+            system_prompt: system_prompt.to_string(),
+            messages: vec![SemanticLlmMessage::text("user", user_message)],
+            response_json_schema: serde_json::Value::Null,
+            temperature: None,
+            max_output_tokens: Some(2048),
+            reasoning_effort: None,
+            forced_tool_names: None,
+        };
+
+        self.create_weak_llm()
+            .await?
+            .generate_text_from_prompt(request)
+            .await
+            .map(|output| output.text)
+            .map_err(|e| AppError::Internal(format!("journal compaction summary failed: {e}")))
+    }
+
+    /// Order matters: journal first (idempotent by marker), then DB. On
+    /// partial failure the agent retries the whole call; the marker
+    /// prevents a duplicate journal entry.
+    async fn persist_completion_handoff(
+        &mut self,
+        params: &UpdateProjectTaskParams,
+    ) -> Result<(), AppError> {
+        let Some(assignment_id) = self.current_assignment_id() else {
+            return Ok(());
+        };
+
+        // Best-effort — never block the turn on memory housekeeping.
+        if let Err(err) = self.maybe_compact_task_journal().await {
+            tracing::warn!(
+                thread_id = self.ctx.thread_id,
+                assignment_id,
+                error = %err,
+                "journal compaction failed before handoff append; proceeding with oversized journal"
+            );
+        }
+
+        let handoff = HandoffPayload {
+            findings: params
+                .findings
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
+            cautions: params
+                .cautions
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
+            next: params
+                .next
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
+        };
+
+        let outcome = params
+            .result_summary
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or("");
+        let artifacts: Vec<String> = params
+            .artifacts
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        append_journal_handoff_entry(
+            &self.filesystem,
+            assignment_id,
+            &self.ctx.agent.name,
+            "completed",
+            outcome,
+            &handoff,
+            &artifacts,
+            chrono::Utc::now(),
+        )
+        .await?;
+
+        let payload_value = serde_json::to_value(&handoff)
+            .map_err(|e| AppError::Internal(format!("serialize handoff payload: {e}")))?;
+        commands::WriteAssignmentResultPayloadCommand::new(assignment_id, payload_value)
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await?;
+
+        Ok(())
     }
 }

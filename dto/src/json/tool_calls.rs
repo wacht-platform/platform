@@ -244,6 +244,12 @@ pub struct UpdateProjectTaskParams {
     /// `/task/artifacts/`. Validated at the boundary.
     #[serde(default)]
     pub artifacts: Option<Vec<String>>,
+    #[serde(default)]
+    pub findings: Option<String>,
+    #[serde(default)]
+    pub cautions: Option<String>,
+    #[serde(default)]
+    pub next: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

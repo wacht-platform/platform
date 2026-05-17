@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 
 enum ClarificationOutcome<'a> {
     Answered(&'a [models::QuestionAnswer]),
+    Freeform(&'a str),
     Expired,
     Pending,
 }
@@ -516,22 +517,26 @@ impl AgentExecutor {
                             serde_json::from_value(questions.clone()).unwrap_or_default();
 
                         let response = response_for_request.get(&conv.id);
-                        let parsed_answers: Vec<models::QuestionAnswer> = response
-                            .and_then(|resp| {
-                                if let ConversationContent::ClarificationResponse {
-                                    answers, ..
-                                } = &resp.content
-                                {
-                                    serde_json::from_value(answers.clone()).ok()
-                                } else {
-                                    None
-                                }
-                            })
+                        let (freeform_text, answers_value) = match response.map(|r| &r.content) {
+                            Some(ConversationContent::ClarificationResponse {
+                                answers,
+                                freeform_text,
+                                ..
+                            }) => (freeform_text.as_deref(), Some(answers)),
+                            _ => (None, None),
+                        };
+                        let parsed_answers: Vec<models::QuestionAnswer> = answers_value
+                            .filter(|_| freeform_text.is_none())
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
                             .unwrap_or_default();
 
                         let outcome = if let Some(resp) = response {
                             skip_conversation_ids.insert(resp.id);
-                            ClarificationOutcome::Answered(&parsed_answers)
+                            if let Some(text) = freeform_text {
+                                ClarificationOutcome::Freeform(text)
+                            } else {
+                                ClarificationOutcome::Answered(&parsed_answers)
+                            }
                         } else if ordered_conversations[i + 1..]
                             .iter()
                             .any(|c| matches!(c.message_type, ConversationMessageType::UserMessage))
@@ -936,6 +941,12 @@ impl AgentExecutor {
                         .unwrap_or_else(|| "(no answer recorded)".to_string());
                     out.push_str(&format!("\n- {}: {}", q.text.trim(), answer_text));
                 }
+            }
+            ClarificationOutcome::Freeform(text) => {
+                out.push_str(
+                    "\n\nI skipped the structured form and replied freely. Treat this as my answer in my own words; do not re-ask the same questions:\n",
+                );
+                out.push_str(text.trim());
             }
             ClarificationOutcome::Expired => {
                 out.push_str(
@@ -1524,7 +1535,12 @@ impl AgentExecutor {
         &mut self,
         trigger_conversation: &ConversationRecord,
     ) -> Result<bool, AppError> {
-        const PROMPT_TOKEN_THRESHOLD: u32 = 120_000;
+        const PROMPT_TOKEN_THRESHOLD: u32 = 150_000;
+        // Last N messages from the compaction window stay in the DB
+        // verbatim. The agent's next iteration loads them alongside the
+        // summary so it has detailed context for what to do immediately
+        // next — only older content gets condensed.
+        const RECENT_DETAIL_KEEP: usize = 15;
 
         if self
             .conversation_compaction_state
@@ -1545,12 +1561,20 @@ impl AgentExecutor {
         .execute_with_db(self.ctx.app_state.db_router.writer())
         .await?;
 
-        let cleanup_through_id = conversations.iter().map(|conv| conv.id).max();
+        // Split into (older, recent tail). Older gets the full Thought/Acted
+        // summary + cleanup; tail stays verbatim in the DB AND also gets its
+        // own short orientation brief so the next iteration has a quick
+        // "here's where we are" without parsing 15 raw messages.
+        let split_at = conversations.len().saturating_sub(RECENT_DETAIL_KEEP);
+        let (older_conversations, recent_tail) = conversations.split_at(split_at);
+
+        let cleanup_through_id = older_conversations.iter().map(|conv| conv.id).max();
         let Some(cleanup_through_id) = cleanup_through_id else {
+            // Whole window fits in the recent tail — nothing to compact.
             return Ok(false);
         };
 
-        let mut execution_messages: Vec<_> = conversations
+        let mut execution_messages: Vec<_> = older_conversations
             .iter()
             .filter_map(|msg| {
                 let compact_content = self.compact_execution_message(msg);
@@ -1628,10 +1652,23 @@ impl AgentExecutor {
             .await?;
         }
 
-        let summary_request = build_compaction_window_label(&conversations);
+        let summary_request = build_compaction_window_label(older_conversations);
         let (_summary_tokens, summary_record) = self
             .generate_execution_summary_for_messages(summary_request, execution_messages)
             .await?;
+
+        if !recent_tail.is_empty() {
+            let recent_messages = self.build_recent_brief_messages(recent_tail);
+            if !recent_messages.is_empty() {
+                if let Err(err) = self.generate_recent_activity_brief(recent_messages).await {
+                    tracing::warn!(
+                        thread_id = self.ctx.thread_id,
+                        error = %err,
+                        "recent-activity brief generation failed; verbatim tail still preserved"
+                    );
+                }
+            }
+        }
 
         DispatchConversationCleanupTaskCommand::new(self.ctx.thread_id, cleanup_through_id)
             .with_board_item_id(self.current_board_item_id())
@@ -1838,6 +1875,91 @@ Output plain text only — no JSON, no code fences, no surrounding prose."#,
         Ok((0, summary_record))
     }
 
+    fn build_recent_brief_messages(
+        &self,
+        recent: &[ConversationRecord],
+    ) -> Vec<serde_json::Value> {
+        recent
+            .iter()
+            .filter_map(|msg| {
+                let content = self.compact_execution_message(msg);
+                if content.is_empty() {
+                    return None;
+                }
+                Some(json!({
+                    "role": self.map_conversation_type_to_role(&msg.message_type),
+                    "message_type": conversation_message_type_label(&msg.message_type),
+                    "timestamp": msg.created_at.to_rfc3339(),
+                    "content": content,
+                }))
+            })
+            .collect()
+    }
+
+    async fn generate_recent_activity_brief(
+        &mut self,
+        recent_messages: Vec<serde_json::Value>,
+    ) -> Result<ConversationRecord, AppError> {
+        let system_prompt = "You write a tight orientation brief for an autonomous agent that's about to resume work after a context compaction. \
+You receive its most recent conversation events in chronological order. Produce 2–4 sentences that tell the agent: what it was working on, what just happened, and what's immediately on its plate. \
+This brief sits above the verbatim recent transcript — keep it concise, an orientation only, not a re-render of the events. \
+Output plain text. No JSON, no code fences, no preface.";
+
+        let user_message_text = recent_messages
+            .iter()
+            .filter_map(|m| {
+                let role = m.get("role")?.as_str()?;
+                let mtype = m.get("message_type").and_then(|v| v.as_str()).unwrap_or("");
+                let content = m.get("content")?.as_str()?;
+                Some(format!("[{role}/{mtype}]\n{content}"))
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n");
+
+        let request = SemanticLlmRequest {
+            system_prompt: system_prompt.to_string(),
+            messages: vec![SemanticLlmMessage::text("user", user_message_text)],
+            response_json_schema: serde_json::Value::Null,
+            temperature: None,
+            max_output_tokens: Some(512),
+            reasoning_effort: None,
+            forced_tool_names: None,
+        };
+
+        let brief = self
+            .create_weak_llm()
+            .await?
+            .generate_text_from_prompt(request)
+            .await
+            .map(|output| output.text)
+            .map_err(|e| AppError::Internal(format!("recent activity brief failed: {e}")))?;
+
+        let trimmed = brief.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::Internal(
+                "recent activity brief returned empty text".to_string(),
+            ));
+        }
+
+        let record = self
+            .create_conversation(
+                ConversationContent::ExecutionSummary {
+                    user_message: "Recent activity orientation (verbatim transcript follows below)"
+                        .to_string(),
+                    agent_execution: trimmed.to_string(),
+                },
+                ConversationMessageType::ExecutionSummary,
+            )
+            .await?;
+
+        self.conversations.push(record.clone());
+        let _ = self
+            .channel
+            .send(StreamEvent::ConversationMessage(record.clone()))
+            .await;
+        Ok(record)
+    }
+
     fn compact_execution_message(&self, message: &ConversationRecord) -> String {
         match &message.content {
             ConversationContent::UserMessage { message, .. } => {
@@ -1897,7 +2019,14 @@ Output plain text only — no JSON, no code fences, no surrounding prose."#,
                 compact_json_preview(questions, 4000),
                 context.as_deref().unwrap_or("")
             ),
-            ConversationContent::ClarificationResponse { answers, .. } => {
+            ConversationContent::ClarificationResponse {
+                answers,
+                freeform_text,
+                ..
+            } => {
+                if let Some(text) = freeform_text.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    return format!("CLARIFICATION_FREEFORM {}", text);
+                }
                 let parsed: Vec<models::QuestionAnswer> =
                     serde_json::from_value(answers.clone()).unwrap_or_default();
                 if parsed.is_empty() {

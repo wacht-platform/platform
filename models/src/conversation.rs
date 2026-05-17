@@ -110,6 +110,8 @@ pub enum ConversationContent {
         )]
         request_message_id: Option<i64>,
         answers: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        freeform_text: Option<String>,
     },
     TaskSubscriptionNotification {
         #[serde(with = "crate::utils::serde::i64_as_string")]

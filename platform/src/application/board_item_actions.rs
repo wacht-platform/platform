@@ -116,6 +116,7 @@ pub async fn answer_project_task_board_item_question(
     let response_content = ConversationContent::ClarificationResponse {
         request_message_id: None,
         answers: answers_json.clone(),
+        freeform_text: None,
     };
     let conv_id = app_state.sf.next_id()? as i64;
 

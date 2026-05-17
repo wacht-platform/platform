@@ -413,6 +413,13 @@ impl AgentExecutor {
             .and_then(|event| event.board_item_id)
     }
 
+    pub(crate) fn current_assignment_id(&self) -> Option<i64> {
+        self.active_thread_event
+            .as_ref()
+            .and_then(|event| event.assignment_execution_payload())
+            .map(|payload| payload.assignment_id)
+    }
+
     pub(crate) fn effective_is_coordinator_thread(&self) -> bool {
         self.is_coordinator_thread
             || self

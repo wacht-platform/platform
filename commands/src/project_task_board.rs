@@ -1359,6 +1359,42 @@ impl UpdateProjectTaskBoardItemAssignmentCommand {
     }
 }
 
+pub struct WriteAssignmentResultPayloadCommand {
+    pub assignment_id: i64,
+    pub payload: serde_json::Value,
+}
+
+impl WriteAssignmentResultPayloadCommand {
+    pub fn new(assignment_id: i64, payload: serde_json::Value) -> Self {
+        Self {
+            assignment_id,
+            payload,
+        }
+    }
+
+    /// Shallow-merges `payload` into the existing `result_payload` JSONB
+    /// rather than overwriting. Other keys on the column (e.g.
+    /// `handoff_file_path` read by the agent loop) are preserved.
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query!(
+            r#"
+            UPDATE project_task_board_item_assignments
+            SET result_payload = COALESCE(result_payload, '{}'::jsonb) || $2::jsonb,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+            self.assignment_id,
+            self.payload,
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+}
+
 pub struct UpdateProjectTaskBoardItemAssignmentStateCommand {
     pub assignment_id: i64,
     pub status: String,
