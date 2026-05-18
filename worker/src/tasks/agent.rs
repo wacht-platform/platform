@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::oneshot;
 use tokio::time::{Duration, interval, sleep};
+use tracing::Instrument;
 
 const MAX_DEPLOYMENT_CONCURRENT_EXECUTIONS: i64 = 2000;
 const EXECUTION_SLOT_TTL_SECONDS: i64 = 600;
@@ -410,40 +411,79 @@ pub async fn process_event_log_work(
     .map_err(|e| AgentExecutionError::Other(anyhow::anyhow!("claim work_lease: {e}")))?;
 
     if !claimed {
+        tracing::debug!(event_log_id, kind = %kind, "event_log already leased; consumer will ack");
         return Ok(format!("event_log {event_log_id}: already leased"));
     }
 
-    let (heartbeat_handle, heartbeat_stop) =
-        spawn_event_log_heartbeat(app_state.clone(), event_log_id, worker_id.clone());
-
-    let outcome = run_event_log_work(
-        app_state.clone(),
+    let app_state_bg = app_state.clone();
+    let kind_bg = kind.clone();
+    let worker_id_bg = worker_id.clone();
+    let span = tracing::info_span!(
+        "event_log_background",
         event_log_id,
         deployment_id,
         thread_id,
-        &kind,
-        payload,
-    )
-    .await;
+        kind = %kind_bg,
+        worker_id = %worker_id_bg,
+    );
+    tokio::spawn(
+        async move {
+            tracing::info!("background event_log work started");
 
-    let _ = heartbeat_stop.send(());
-    let _ = heartbeat_handle.await;
+            let (heartbeat_handle, heartbeat_stop) = spawn_event_log_heartbeat(
+                app_state_bg.clone(),
+                event_log_id,
+                worker_id_bg.clone(),
+            );
 
-    match &outcome {
-        Ok(_) => {
-            let _ =
-                commands::event_log::release_work_lease(app_state.db_router.writer(), event_log_id)
-                    .await;
+            let outcome = run_event_log_work(
+                app_state_bg.clone(),
+                event_log_id,
+                deployment_id,
+                thread_id,
+                &kind_bg,
+                payload,
+            )
+            .await;
+
+            let _ = heartbeat_stop.send(());
+            let _ = heartbeat_handle.await;
+
+            match &outcome {
+                Ok(message) => {
+                    tracing::info!(result = %message, "background event_log work completed");
+                }
+                Err(AgentExecutionError::ExecutionBusy { .. }) => {
+                    tracing::info!("background event_log work busy; rescheduling for retry");
+                    if let Err(e) = commands::event_log::schedule_event_retry(
+                        app_state_bg.db_router.writer(),
+                        event_log_id,
+                        1,
+                        "agent execution slot busy",
+                    )
+                    .await
+                    {
+                        tracing::warn!(error = %e, "schedule_event_retry after ExecutionBusy failed");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "background event_log work failed; lease will be released and lease-recovery cron will retry on expiry");
+                }
+            }
+
+            if let Err(release_err) = commands::event_log::release_work_lease(
+                app_state_bg.db_router.writer(),
+                event_log_id,
+            )
+            .await
+            {
+                tracing::warn!(error = %release_err, "release_work_lease failed");
+            }
         }
-        Err(e) => {
-            tracing::warn!(event_log_id, error = %e, "event_log work failed; releasing lease for retry");
-            let _ =
-                commands::event_log::release_work_lease(app_state.db_router.writer(), event_log_id)
-                    .await;
-        }
-    }
+        .instrument(span),
+    );
 
-    outcome
+    Ok(format!("event_log {event_log_id} ({kind}): dispatched"))
 }
 
 /// Wait the configured coalesce window, then decide whether this worker

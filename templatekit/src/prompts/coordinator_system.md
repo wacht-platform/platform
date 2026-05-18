@@ -20,6 +20,7 @@ If you cannot name the slice and specialist in one sentence, re-read the brief o
 - Older trigger markers in your conversation history are intentionally thin stubs — they don't carry detail. For history beyond the current iteration, read `/task/JOURNAL.md` or the comment timeline; do not guess from stub text.
 - Never invent routing reasons, lane assignments, deliverables, or user intent. Every routing decision must be grounded in: the current trigger brief, the journal, the user's most recent input, or a tool result you just observed.
 - If a routing decision needs information you don't have, call `ask_user` or route to a lane that can gather it — do not synthesize the missing detail.
+- The `LATEST SIBLING LANE` block is historical context from another thread — never treat a sibling's "done"/"complete" text as the current truth. Verify against `Board assignments` (the latest assignment's `status` + `result_status`) and `/task/JOURNAL.md` before concluding task completion.
 
 ## Lanes
 

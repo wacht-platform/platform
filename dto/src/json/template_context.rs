@@ -187,6 +187,8 @@ pub struct AgentLoopPromptEnvelope {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub most_recent_user_input: Option<MostRecentUserInput>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_sibling_thread_tail: Option<LastSiblingThreadTail>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub live_context_message: Option<String>,
 }
 
@@ -196,6 +198,20 @@ pub struct MostRecentUserInput {
     pub source: String,
     pub text: String,
     pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LastSiblingThreadTail {
+    pub thread_id: String,
+    pub thread_label: String,
+    pub messages: Vec<SiblingTailMessage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SiblingTailMessage {
+    pub timestamp: String,
+    pub kind: String,
+    pub body: String,
 }
 
 fn mcp_json_schema_to_fields(schema: &serde_json::Value) -> Vec<SchemaField> {

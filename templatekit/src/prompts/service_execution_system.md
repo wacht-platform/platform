@@ -102,6 +102,7 @@ Do not delete shared file which needs to worked on down the line.
 - Earlier trigger markers in your conversation history are intentionally thin stubs — they don't contain details. If you need detail from a prior iteration, read `/task/JOURNAL.md`, the comment timeline, or the workspace; do not guess.
 - Never invent facts about what was previously done, what the user said, or what other lanes produced. If you can't ground a claim in the journal, current brief, recent tool results, or a file you read, do not state it as fact.
 - If a critical detail is missing and the slice can't proceed without it, call `ask_user` rather than fabricating.
+- The `LATEST SIBLING LANE` block is historical context from another thread — treat its "done"/"finished" text as past, not as a current fact about your slice. Trust `/task/JOURNAL.md`, the brief, and your own tool results.
 
 ## Work Quality
 

@@ -15,6 +15,110 @@ const STEER_VISIBILITY_NUDGE_WINDOW: usize = 4;
 const MAX_LIVE_CONTEXT_CHARS: usize = 12_000;
 const MAX_TASK_JOURNAL_TAIL_CHARS: usize = 4_000;
 const MAX_AGENT_DESCRIPTION_CHARS: usize = 1_000;
+const MAX_SIBLING_TAIL_MESSAGE_CHARS: usize = 1_000;
+
+fn cap_sibling_message_body(body: String) -> String {
+    if body.chars().count() <= MAX_SIBLING_TAIL_MESSAGE_CHARS {
+        return body;
+    }
+    let mut out: String = body
+        .chars()
+        .take(MAX_SIBLING_TAIL_MESSAGE_CHARS)
+        .collect();
+    out.push_str("…[truncated]");
+    out
+}
+
+fn render_sibling_message_kind(content: &models::ConversationContent) -> String {
+    match content {
+        models::ConversationContent::UserMessage { .. } => "user_message",
+        models::ConversationContent::Steer { .. } => "steer",
+        models::ConversationContent::ToolResult { .. } => "tool_result",
+        models::ConversationContent::SystemDecision { .. } => "system_decision",
+        models::ConversationContent::ApprovalRequest { .. } => "approval_request",
+        models::ConversationContent::ApprovalResponse { .. } => "approval_response",
+        models::ConversationContent::ExecutionSummary { .. } => "execution_summary",
+        models::ConversationContent::ClarificationRequest { .. } => "clarification_request",
+        models::ConversationContent::ClarificationResponse { .. } => "clarification_response",
+        models::ConversationContent::TaskSubscriptionNotification { .. } => {
+            "task_subscription_notification"
+        }
+        models::ConversationContent::TaskSubscriptionDelivery { .. } => "task_subscription_delivery",
+        models::ConversationContent::AssignmentExecutionTrigger { .. } => {
+            "assignment_execution_trigger"
+        }
+        models::ConversationContent::TaskRoutingTrigger { .. } => "task_routing_trigger",
+    }
+    .to_string()
+}
+
+fn render_sibling_message_body(content: &models::ConversationContent) -> String {
+    match content {
+        models::ConversationContent::UserMessage { message, .. } => message.clone(),
+        models::ConversationContent::Steer { message, .. } => message.clone(),
+        models::ConversationContent::SystemDecision { reasoning, .. } => reasoning.clone(),
+        models::ConversationContent::ToolResult {
+            tool_name,
+            status,
+            input,
+            output,
+            error,
+        } => {
+            let input_s = serde_json::to_string(input).unwrap_or_else(|_| "<unrenderable>".into());
+            let output_s = match output {
+                Some(v) => serde_json::to_string(v).unwrap_or_else(|_| "<unrenderable>".into()),
+                None => "null".to_string(),
+            };
+            let err = error
+                .as_deref()
+                .map(|e| format!(" error={e}"))
+                .unwrap_or_default();
+            format!("{tool_name} status={status} input={input_s} output={output_s}{err}")
+        }
+        models::ConversationContent::ApprovalRequest { description, .. } => description.clone(),
+        models::ConversationContent::ApprovalResponse { approvals, .. } => {
+            serde_json::to_string(approvals).unwrap_or_else(|_| "<unrenderable>".into())
+        }
+        models::ConversationContent::ExecutionSummary {
+            user_message,
+            agent_execution,
+        } => format!("request: {user_message}\n\n{agent_execution}"),
+        models::ConversationContent::ClarificationRequest { questions, .. } => {
+            serde_json::to_string(questions).unwrap_or_else(|_| "<unrenderable>".into())
+        }
+        models::ConversationContent::ClarificationResponse {
+            freeform_text,
+            answers,
+            ..
+        } => match freeform_text {
+            Some(t) if !t.trim().is_empty() => t.clone(),
+            _ => serde_json::to_string(answers).unwrap_or_else(|_| "<unrenderable>".into()),
+        },
+        models::ConversationContent::TaskSubscriptionNotification {
+            task_key,
+            task_title,
+            from_status,
+            to_status,
+            ..
+        } => format!(
+            "subscription: {task_key} \"{task_title}\" {from_status}→{to_status}"
+        ),
+        models::ConversationContent::TaskSubscriptionDelivery { summary } => summary.clone(),
+        models::ConversationContent::AssignmentExecutionTrigger {
+            task_key,
+            assignment_id,
+            ..
+        } => format!("assignment_execution task={task_key} assignment={assignment_id}"),
+        models::ConversationContent::TaskRoutingTrigger {
+            task_key,
+            routing_reason,
+            ..
+        } => format!(
+            "task_routing task={task_key} reason={}",
+            routing_reason.as_deref().unwrap_or("unspecified")
+        ),
+    }
+}
 
 fn truncate_prompt_text(value: Option<String>, max_chars: usize) -> Option<String> {
     let value = value?.trim().to_string();
@@ -107,6 +211,52 @@ impl AgentExecutor {
             source: source.to_string(),
             text,
             timestamp: ts.to_rfc3339(),
+        })
+    }
+
+    fn last_sibling_thread_tail(
+        &self,
+        limit: usize,
+    ) -> Option<dto::json::template_context::LastSiblingThreadTail> {
+        let own = self.ctx.thread_id;
+        let latest_sibling_thread = self
+            .conversations
+            .iter()
+            .filter_map(|c| match c.thread_id {
+                Some(tid) if tid != own => Some((tid, c.created_at)),
+                _ => None,
+            })
+            .max_by_key(|(_, ts)| *ts)
+            .map(|(tid, _)| tid)?;
+
+        let mut rows: Vec<_> = self
+            .conversations
+            .iter()
+            .filter(|c| c.thread_id == Some(latest_sibling_thread))
+            .collect();
+        rows.sort_by_key(|c| c.created_at);
+        let tail = rows.split_off(rows.len().saturating_sub(limit));
+
+        let label = self
+            .task_thread_meta
+            .iter()
+            .find(|m| m.thread_id == latest_sibling_thread)
+            .map(|m| format!("\"{}\" ({})", m.title, m.thread_purpose))
+            .unwrap_or_else(|| "(no metadata)".to_string());
+
+        let messages = tail
+            .into_iter()
+            .map(|c| dto::json::template_context::SiblingTailMessage {
+                timestamp: c.created_at.to_rfc3339(),
+                kind: render_sibling_message_kind(&c.content),
+                body: cap_sibling_message_body(render_sibling_message_body(&c.content)),
+            })
+            .collect();
+
+        Some(dto::json::template_context::LastSiblingThreadTail {
+            thread_id: latest_sibling_thread.to_string(),
+            thread_label: label,
+            messages,
         })
     }
 
@@ -280,6 +430,7 @@ impl AgentExecutor {
                 .filter(|value| !value.is_empty())
                 .map(ToString::to_string),
             most_recent_user_input: self.latest_user_input_snapshot(),
+            last_sibling_thread_tail: self.last_sibling_thread_tail(5),
             live_context_message: None,
         };
 
