@@ -602,6 +602,7 @@ where
                EXTRACT(EPOCH FROM (NOW() - a.updated_at))::bigint AS "stale_seconds!"
         FROM project_task_board_item_assignments a
         WHERE a.status IN ('claimed', 'in_progress')
+          AND a.assignment_role <> 'coordinator'
           AND a.updated_at < NOW() - INTERVAL '1 second' * $1
           AND NOT EXISTS (
               SELECT 1

@@ -138,6 +138,10 @@ where
         return Ok(None);
     };
 
+    // Coord-role rows are bookkeeping markers, not execution work — the
+    // reconciler must not surface them as the assignment to re-dispatch,
+    // or it would emit ASSIGNMENT_EXECUTION events at the coordinator
+    // thread (which doesn't run executor work).
     let assignment = sqlx::query_as!(
         ProjectTaskBoardItemAssignment,
         r#"
@@ -149,6 +153,7 @@ where
         FROM project_task_board_item_assignments
         WHERE board_item_id = $1
           AND status IN ('pending', 'available', 'claimed', 'in_progress')
+          AND assignment_role <> 'coordinator'
         ORDER BY id ASC
         LIMIT 1
         "#,

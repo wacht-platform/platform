@@ -998,10 +998,15 @@ impl ReconcileProjectTaskBoardItemCommand {
             .execute_with_db(deps.reader_pool(ReadConsistency::Strong))
             .await?;
 
-        if assignments
-            .iter()
-            .any(|assignment| matches!(assignment.status.as_str(), "claimed" | "in_progress"))
-        {
+        // Coordinator-role assignments are bookkeeping markers (the
+        // coordinator owns the board item during its routing turn); they
+        // don't represent execution work, so they must not block dispatch
+        // of a freshly-created executor assignment in the same turn.
+        if assignments.iter().any(|assignment| {
+            matches!(assignment.status.as_str(), "claimed" | "in_progress")
+                && assignment.assignment_role
+                    != models::project_task_board::assignment_role::COORDINATOR
+        }) {
             return Ok(());
         }
 
