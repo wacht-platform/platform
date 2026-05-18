@@ -1050,6 +1050,15 @@ impl ReconcileProjectTaskBoardItemCommand {
             return Ok(());
         }
 
+        // Skip re-routing to coord if a coord-role turn is already in flight.
+        if assignments.iter().any(|a| {
+            a.assignment_role
+                == models::project_task_board::assignment_role::COORDINATOR
+                && matches!(a.status.as_str(), "claimed" | "in_progress")
+        }) {
+            return Ok(());
+        }
+
         enqueue_board_item_to_coordinator_with_deps(
             deps,
             &board_item,
