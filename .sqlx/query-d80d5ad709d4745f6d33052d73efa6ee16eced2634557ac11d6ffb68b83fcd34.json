@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH coalesced AS (\n                UPDATE event_log\n                SET payload = jsonb_set($1::jsonb, '{event_log_id}', to_jsonb(id::text)),\n                    next_publish_at = NOW()\n                WHERE aggregate_type = 'board_item'\n                  AND aggregate_id = $2\n                  AND event_type = 'task_routing'\n                  AND publish_status = $3\n                RETURNING id\n            )\n            INSERT INTO event_log (\n                id, deployment_id,\n                aggregate_type, aggregate_id, event_type, payload, priority,\n                publish_subject, publish_status,\n                idempotency_key,\n                caused_by_event_id\n            )\n            SELECT\n                $4, $5,\n                'board_item', $2, 'task_routing', $1::jsonb, 15,\n                $6, $3,\n                $7,\n                $8\n            WHERE NOT EXISTS (SELECT 1 FROM coalesced)\n            ON CONFLICT (idempotency_key) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Int8",
+        "Text",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d80d5ad709d4745f6d33052d73efa6ee16eced2634557ac11d6ffb68b83fcd34"
+}

@@ -123,11 +123,17 @@ impl<'a> InsertTaskRoutingEvent<'a> {
             }
         }
 
+        // jsonb_set keeps payload.event_log_id consistent with the existing
+        // row's id when we coalesce a fresh routing event into an
+        // already-pending row. Without it the worker reads the new caller's
+        // freshly-generated snowflake from the payload, tries to claim a
+        // work_lease for a row id that was never inserted, and trips the
+        // work_lease_event_id_fkey foreign key.
         sqlx::query!(
             r#"
             WITH coalesced AS (
                 UPDATE event_log
-                SET payload = $1::jsonb,
+                SET payload = jsonb_set($1::jsonb, '{event_log_id}', to_jsonb(id::text)),
                     next_publish_at = NOW()
                 WHERE aggregate_type = 'board_item'
                   AND aggregate_id = $2
