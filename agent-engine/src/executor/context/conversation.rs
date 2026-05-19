@@ -5,7 +5,7 @@ use crate::executor::runtime::step_control::{
 use crate::llm::{SemanticLlmContentBlock, SemanticLlmMessage, SemanticLlmRequest};
 use templatekit::render_prompt_text;
 
-use commands::{CreateConversationCommand, DispatchConversationCleanupTaskCommand};
+use commands::CreateConversationCommand;
 use common::error::AppError;
 use dto::json::{LlmHistoryEntry, LlmHistoryPart, StreamEvent};
 use models::{ConversationContent, ConversationMessageType, ConversationRecord};
@@ -1855,11 +1855,6 @@ impl AgentExecutor {
                 }
             }
         }
-
-        DispatchConversationCleanupTaskCommand::new(self.ctx.thread_id, cleanup_through_id)
-            .with_board_item_id(self.current_board_item_id())
-            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).nats().id())
-            .await?;
 
         let _ = self
             .channel

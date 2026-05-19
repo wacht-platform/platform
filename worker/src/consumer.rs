@@ -9,7 +9,7 @@ use std::time::Duration;
 use tracing::{error, warn};
 
 use crate::tasks::{
-    agent, analytics, api_audit, api_key_role_permissions_sync, billing, conversation, document,
+    agent, analytics, api_audit, api_key_role_permissions_sync, billing, document,
     email, token, vector_store, webhook, webhook_event, webhook_replay_batch,
 };
 
@@ -61,8 +61,6 @@ enum WorkerTask {
     EmailSendWaitlistApproval(email::WaitlistApprovalTask),
     #[serde(rename = "token.clean")]
     TokenClean(token::TokenCleanupTask),
-    #[serde(rename = "conversation.cleanup_compacted")]
-    ConversationCleanupCompacted(conversation::CompactedConversationCleanupTask),
     #[serde(rename = "webhook.deliver")]
     WebhookDeliver(webhook::WebhookDeliveryTask),
     #[serde(rename = "webhook.batch")]
@@ -242,11 +240,6 @@ impl NatsConsumer {
                 )
                 .await
                 .map_err(|e| TaskError::Permanent(e.to_string()))?;
-            }
-            WorkerTask::ConversationCleanupCompacted(task) => {
-                conversation::cleanup_compacted_conversations(task, &self.app_state)
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
             }
             WorkerTask::WebhookDeliver(task) => {
                 let result = webhook::process_webhook_delivery(
