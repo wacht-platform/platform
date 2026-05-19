@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE project_task_board_items\n        SET status = $2,\n            completed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE completed_at END,\n            updated_at = NOW()\n        WHERE id = $1 AND archived_at IS NULL\n        RETURNING id, board_id, task_key, title, description, status,\n                  assigned_thread_id, metadata, completed_at, archived_at,\n                  created_at, updated_at, state_version,\n                  schedule_id, scheduled_for, fired_at,\n                  pending_question, pending_approval, mounts, exclusive_owner_agent_id\n        ",
+  "query": "\n            UPDATE project_task_board_items\n            SET title = COALESCE($2, title),\n                description = CASE WHEN $4::boolean THEN $3 ELSE description END,\n                status = COALESCE($5, status),\n                completed_at = CASE\n                    WHEN $5 = 'completed' THEN NOW()\n                    WHEN $5 IS NOT NULL AND $5 <> 'completed' THEN NULL\n                    ELSE completed_at\n                END,\n                updated_at = NOW()\n            WHERE id = $1 AND archived_at IS NULL\n            RETURNING id, board_id, task_key, title, description, status,\n                      assigned_thread_id, metadata, completed_at, archived_at,\n                      created_at, updated_at, state_version,\n                      schedule_id, scheduled_for, fired_at,\n                      pending_question, pending_approval, mounts, exclusive_owner_agent_id,\n                      deliverables\n            ",
   "describe": {
     "columns": [
       {
@@ -102,11 +102,19 @@
         "ordinal": 19,
         "name": "exclusive_owner_agent_id",
         "type_info": "Int8"
+      },
+      {
+        "ordinal": 20,
+        "name": "deliverables",
+        "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
         "Int8",
+        "Text",
+        "Text",
+        "Bool",
         "Text"
       ]
     },
@@ -130,8 +138,9 @@
       true,
       true,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "4aab6ab0f624d1f8ae598fc2580be98f320204bd10e67e53e230332b5c8cbadd"
+  "hash": "ba7d32371f4b4cfa5e3950bbed78d13dfc6f820996f8f6ba6a004de0635e1364"
 }

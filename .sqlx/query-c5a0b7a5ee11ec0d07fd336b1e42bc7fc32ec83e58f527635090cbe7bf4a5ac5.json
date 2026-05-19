@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE project_task_board_items\n            SET archived_at = CASE WHEN $3 THEN NOW() ELSE NULL END,\n                updated_at = NOW()\n            WHERE id = $1 AND board_id = $2\n            RETURNING id, board_id, task_key, title, description, status,\n                      assigned_thread_id, metadata, completed_at, archived_at,\n                      created_at, updated_at, state_version,\n                      schedule_id, scheduled_for, fired_at,\n                      pending_question, pending_approval, mounts, exclusive_owner_agent_id\n            ",
+  "query": "\n        UPDATE project_task_board_items\n        SET updated_at = NOW()\n        WHERE id = (\n            SELECT id\n            FROM project_task_board_items\n            WHERE status IN ('pending', 'in_progress')\n              AND archived_at IS NULL\n              AND updated_at < $1\n            ORDER BY updated_at ASC\n            LIMIT 1\n            FOR UPDATE SKIP LOCKED\n        )\n        RETURNING\n            id, board_id, task_key, title, description, status,\n            assigned_thread_id, metadata, completed_at, archived_at,\n            created_at, updated_at, state_version,\n            schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id,\n            deliverables\n        ",
   "describe": {
     "columns": [
       {
@@ -102,13 +102,16 @@
         "ordinal": 19,
         "name": "exclusive_owner_agent_id",
         "type_info": "Int8"
+      },
+      {
+        "ordinal": 20,
+        "name": "deliverables",
+        "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Int8",
-        "Bool"
+        "Timestamptz"
       ]
     },
     "nullable": [
@@ -131,8 +134,9 @@
       true,
       true,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "151b07d3ddd2d62a62719376ac4f0a8482c12738b88cedcaaaaaa2b26734ceb6"
+  "hash": "c5a0b7a5ee11ec0d07fd336b1e42bc7fc32ec83e58f527635090cbe7bf4a5ac5"
 }

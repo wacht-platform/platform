@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE project_task_board_items\n            SET title = COALESCE($2, title),\n                description = CASE WHEN $4::boolean THEN $3 ELSE description END,\n                status = COALESCE($5, status),\n                completed_at = CASE\n                    WHEN $5 = 'completed' THEN NOW()\n                    WHEN $5 IS NOT NULL AND $5 <> 'completed' THEN NULL\n                    ELSE completed_at\n                END,\n                updated_at = NOW()\n            WHERE id = $1 AND archived_at IS NULL\n            RETURNING id, board_id, task_key, title, description, status,\n                      assigned_thread_id, metadata, completed_at, archived_at,\n                      created_at, updated_at, state_version,\n                      schedule_id, scheduled_for, fired_at,\n                      pending_question, pending_approval, mounts, exclusive_owner_agent_id\n            ",
+  "query": "\n            SELECT id, board_id, task_key, title, description, status,\n                   assigned_thread_id, metadata, completed_at, archived_at,\n                   created_at, updated_at, state_version,\n                   schedule_id, scheduled_for, fired_at,\n                   pending_question, pending_approval, mounts, exclusive_owner_agent_id,\n                   deliverables\n            FROM project_task_board_items\n            WHERE id = $1 AND archived_at IS NULL\n            ",
   "describe": {
     "columns": [
       {
@@ -102,15 +102,16 @@
         "ordinal": 19,
         "name": "exclusive_owner_agent_id",
         "type_info": "Int8"
+      },
+      {
+        "ordinal": 20,
+        "name": "deliverables",
+        "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Text",
-        "Text",
-        "Bool",
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
@@ -133,8 +134,9 @@
       true,
       true,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "3705c504348f091fa92eaeb0a47f06a4183e957ab2371f146e2599b646fb66e8"
+  "hash": "954fe826bf8e16053daae1e7e83cc098daff1c85951afd7870da12b4c275feef"
 }

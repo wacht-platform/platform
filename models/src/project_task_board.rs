@@ -61,6 +61,8 @@ pub struct ProjectTaskBoardItem {
         skip_serializing_if = "Option::is_none"
     )]
     pub exclusive_owner_agent_id: Option<i64>,
+    #[serde(default)]
+    pub deliverables: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

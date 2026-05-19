@@ -857,6 +857,23 @@ Rules:\n\
             .execute_with_db(self.ctx.app_state.db_router.writer())
             .await?;
 
+        if let Some(board_item_id) = self.current_board_item_id() {
+            let entry = serde_json::json!({
+                "at": chrono::Utc::now().to_rfc3339(),
+                "assignment_id": assignment_id.to_string(),
+                "by_thread_id": self.ctx.thread_id.to_string(),
+                "by_agent_name": self.ctx.agent.name,
+                "result_summary": outcome,
+                "artifacts": artifacts,
+                "findings": handoff.findings,
+                "cautions": handoff.cautions,
+                "next": handoff.next,
+            });
+            commands::AppendBoardItemDeliverableCommand::new(board_item_id, entry)
+                .execute_with_db(self.ctx.app_state.db_router.writer())
+                .await?;
+        }
+
         Ok(())
     }
 }

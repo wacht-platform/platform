@@ -136,7 +136,7 @@ impl ListProjectTaskBoardItemsQuery {
             SELECT
                 id, board_id, task_key, title, description, status,
                 assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
+                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id, deliverables
             FROM project_task_board_items
             WHERE board_id = $1 AND archived_at IS NULL
               AND ($2::boolean OR exclusive_owner_agent_id IS NULL)
@@ -181,6 +181,7 @@ impl ListProjectTaskBoardItemsQuery {
                 i.pending_approval  AS "pending_approval?",
                 i.mounts            AS "mounts!",
                 i.exclusive_owner_agent_id AS "exclusive_owner_agent_id?",
+                i.deliverables      AS "deliverables!",
                 s.schedule_kind     AS "schedule_kind?",
                 s.interval_seconds  AS "schedule_interval_seconds?",
                 s.next_run_at       AS "schedule_next_run_at?",
@@ -238,6 +239,7 @@ impl ListProjectTaskBoardItemsQuery {
                 pending_approval: row.pending_approval,
                 mounts: row.mounts,
                 exclusive_owner_agent_id: row.exclusive_owner_agent_id,
+                deliverables: row.deliverables,
             };
             out.push(ProjectTaskBoardItemWithSchedule { item, schedule });
         }
@@ -266,7 +268,7 @@ impl GetProjectTaskBoardItemByIdQuery {
             SELECT
                 id, board_id, task_key, title, description, status,
                 assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
+                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id, deliverables
             FROM project_task_board_items
             WHERE id = $1 AND archived_at IS NULL
             "#,
@@ -340,7 +342,7 @@ impl GetProjectTaskBoardItemByTaskKeyQuery {
             SELECT
                 id, board_id, task_key, title, description, status,
                 assigned_thread_id, metadata, completed_at, archived_at, created_at, updated_at, state_version,
-                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id
+                schedule_id, scheduled_for, fired_at, pending_question, pending_approval, mounts, exclusive_owner_agent_id, deliverables
             FROM project_task_board_items
             WHERE board_id = $1 AND task_key = $2 AND archived_at IS NULL
             LIMIT 1
