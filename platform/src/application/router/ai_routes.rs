@@ -7,6 +7,8 @@ use axum::{
 use crate::api;
 use common::state::AppState;
 
+const TASK_WORKSPACE_UPLOAD_BODY_LIMIT_BYTES: usize = 70 * 1024 * 1024;
+
 pub(super) fn ai_routes() -> Router<AppState> {
     Router::new()
         .route(
@@ -197,7 +199,10 @@ pub(super) fn ai_routes() -> Router<AppState> {
         .route(
             "/ai/actor-projects/{project_id}/board/items",
             get(api::agent_threads::list_project_task_board_items)
-                .post(api::agent_threads::create_project_task_board_item),
+                .post(api::agent_threads::create_project_task_board_item)
+                .layer(DefaultBodyLimit::max(
+                    TASK_WORKSPACE_UPLOAD_BODY_LIMIT_BYTES,
+                )),
         )
         .route(
             "/ai/actor-projects/{project_id}/board/items/{item_id}",
@@ -221,7 +226,9 @@ pub(super) fn ai_routes() -> Router<AppState> {
         )
         .route(
             "/ai/actor-projects/{project_id}/board/items/{item_id}/update",
-            post(api::agent_threads::update_project_task_board_item),
+            post(api::agent_threads::update_project_task_board_item).layer(DefaultBodyLimit::max(
+                TASK_WORKSPACE_UPLOAD_BODY_LIMIT_BYTES,
+            )),
         )
         .route(
             "/ai/actor-projects/{project_id}/board/items/{item_id}/archive",
@@ -246,7 +253,10 @@ pub(super) fn ai_routes() -> Router<AppState> {
         .route(
             "/ai/actor-projects/{project_id}/board/items/{item_id}/comments",
             get(api::agent_threads::list_project_task_board_item_comments)
-                .post(api::agent_threads::create_project_task_board_item_comment),
+                .post(api::agent_threads::create_project_task_board_item_comment)
+                .layer(DefaultBodyLimit::max(
+                    TASK_WORKSPACE_UPLOAD_BODY_LIMIT_BYTES,
+                )),
         )
         .route(
             "/ai/actor-projects/{project_id}/board/items/delegate",

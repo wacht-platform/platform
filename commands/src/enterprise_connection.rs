@@ -312,8 +312,8 @@ impl UpdateEnterpriseConnectionCommand {
         .fetch_optional(executor)
         .await?
         .and_then(|raw| EnterpriseConnectionProtocol::try_from(raw).ok());
-        let protocol_for_validation = existing_protocol
-            .unwrap_or(EnterpriseConnectionProtocol::Oidc);
+        let protocol_for_validation =
+            existing_protocol.unwrap_or(EnterpriseConnectionProtocol::Oidc);
         validate_and_normalize_oidc_fields(
             &protocol_for_validation,
             &mut request.oidc_issuer_url,

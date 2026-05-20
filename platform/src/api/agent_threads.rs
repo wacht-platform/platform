@@ -1,9 +1,10 @@
+use crate::api::multipart::MultipartPayload;
 use crate::application::{
     agent_threads as agent_threads_app, board_item_actions as board_actions_app,
     response::{ApiResult, PaginatedResponse},
 };
 use crate::middleware::RequireDeployment;
-use axum::extract::{Json, Path, Query, State};
+use axum::extract::{FromRequest, Json, Multipart, Path, Query, Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::IntoResponse;
 use common::state::AppState;
@@ -487,17 +488,147 @@ pub async fn list_project_task_board_items(
     Ok(PaginatedResponse::from(items).into())
 }
 
+fn is_multipart_request(request: &Request) -> bool {
+    request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|h| h.to_str().ok())
+        .map(|h| h.to_ascii_lowercase().starts_with("multipart/"))
+        .unwrap_or(false)
+}
+
+fn parse_multipart_bool(
+    value: &str,
+    field_name: &str,
+) -> Result<bool, crate::application::response::ApiErrorResponse> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        _ => Err((
+            StatusCode::BAD_REQUEST,
+            format!("invalid {field_name}: expected boolean"),
+        )
+            .into()),
+    }
+}
+
+async fn parse_create_board_item_multipart(
+    multipart: Multipart,
+) -> Result<
+    (
+        CreateProjectTaskBoardItemRequest,
+        Vec<agent_threads_app::WorkspaceUploadInput>,
+    ),
+    crate::application::response::ApiErrorResponse,
+> {
+    let payload = MultipartPayload::parse(multipart).await?;
+    let mut title = String::new();
+    let mut description: Option<String> = None;
+    let mut status: Option<String> = None;
+    let mut schedule_kind: Option<String> = None;
+    let mut next_run_at: Option<chrono::DateTime<chrono::Utc>> = None;
+    let mut interval_seconds: Option<i64> = None;
+    let mut mounts: Option<Vec<models::project_task_schedule::ScheduleMount>> = None;
+    let mut attachments: Vec<agent_threads_app::WorkspaceUploadInput> = Vec::new();
+
+    for field in payload.fields() {
+        match field.name.as_str() {
+            "title" => title = field.text_trimmed()?,
+            "description" => description = field.optional_text_trimmed()?,
+            "status" => status = field.optional_text_trimmed()?,
+            "schedule_kind" => schedule_kind = field.optional_text_trimmed()?,
+            "next_run_at" => {
+                if let Some(text) = field.optional_text_trimmed()? {
+                    next_run_at = Some(
+                        chrono::DateTime::parse_from_rfc3339(&text)
+                            .map(|d| d.with_timezone(&chrono::Utc))
+                            .map_err(|e| {
+                                (StatusCode::BAD_REQUEST, format!("invalid next_run_at: {e}"))
+                            })?,
+                    );
+                }
+            }
+            "interval_seconds" => {
+                if let Some(text) = field.optional_text_trimmed()? {
+                    interval_seconds = Some(text.parse::<i64>().map_err(|e| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            format!("invalid interval_seconds: {e}"),
+                        )
+                    })?);
+                }
+            }
+            "mounts" => {
+                if let Some(text) = field.optional_text_trimmed()? {
+                    mounts =
+                        Some(serde_json::from_str(&text).map_err(|e| {
+                            (StatusCode::BAD_REQUEST, format!("invalid mounts: {e}"))
+                        })?);
+                }
+            }
+            "attachments" => {
+                if let Some(file_name) = field.file_name.clone() {
+                    attachments.push(agent_threads_app::WorkspaceUploadInput {
+                        original_name: file_name,
+                        content_type: field.content_type.clone(),
+                        bytes: field.bytes.clone(),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if title.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "'title' is required".to_string()).into());
+    }
+
+    Ok((
+        CreateProjectTaskBoardItemRequest {
+            title,
+            description,
+            status,
+            schedule_kind,
+            next_run_at,
+            interval_seconds,
+            mounts,
+        },
+        attachments,
+    ))
+}
+
 pub async fn create_project_task_board_item(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ProjectParams>,
-    Json(request): Json<CreateProjectTaskBoardItemRequest>,
+    request: Request,
 ) -> ApiResult<ProjectTaskBoardItem> {
+    let (body, attachments) = if is_multipart_request(&request) {
+        let multipart = Multipart::from_request(request, &()).await.map_err(|e| {
+            crate::application::response::ApiErrorResponse::from((
+                StatusCode::BAD_REQUEST,
+                format!("bad multipart: {e}"),
+            ))
+        })?;
+        parse_create_board_item_multipart(multipart).await?
+    } else {
+        let Json(body) = Json::<CreateProjectTaskBoardItemRequest>::from_request(request, &())
+            .await
+            .map_err(|e| {
+                crate::application::response::ApiErrorResponse::from((
+                    StatusCode::BAD_REQUEST,
+                    format!("bad json: {e}"),
+                ))
+            })?;
+        (body, Vec::new())
+    };
+
     let item = agent_threads_app::create_project_task_board_item(
         &app_state,
         deployment_id,
         params.project_id,
-        request,
+        body,
+        attachments,
     )
     .await?;
     Ok(item.into())
@@ -641,18 +772,127 @@ pub async fn list_project_task_board_item_relations(
     Ok(PaginatedResponse::from(relations).into())
 }
 
+async fn parse_update_board_item_multipart(
+    multipart: Multipart,
+) -> Result<
+    (
+        UpdateProjectTaskBoardItemRequest,
+        Vec<agent_threads_app::WorkspaceUploadInput>,
+    ),
+    crate::application::response::ApiErrorResponse,
+> {
+    let payload = MultipartPayload::parse(multipart).await?;
+    let mut title: Option<String> = None;
+    let mut description: Option<String> = None;
+    let mut status: Option<String> = None;
+    let mut schedule_kind: Option<String> = None;
+    let mut next_run_at: Option<chrono::DateTime<chrono::Utc>> = None;
+    let mut interval_seconds: Option<i64> = None;
+    let mut clear_schedule: Option<bool> = None;
+    let mut mounts: Option<Vec<models::project_task_schedule::ScheduleMount>> = None;
+    let mut attachments: Vec<agent_threads_app::WorkspaceUploadInput> = Vec::new();
+
+    for field in payload.fields() {
+        match field.name.as_str() {
+            "title" => title = field.optional_text_trimmed()?,
+            "description" => description = field.optional_text_trimmed()?,
+            "status" => status = field.optional_text_trimmed()?,
+            "schedule_kind" => schedule_kind = field.optional_text_trimmed()?,
+            "next_run_at" => {
+                if let Some(text) = field.optional_text_trimmed()? {
+                    next_run_at = Some(
+                        chrono::DateTime::parse_from_rfc3339(&text)
+                            .map(|d| d.with_timezone(&chrono::Utc))
+                            .map_err(|e| {
+                                (StatusCode::BAD_REQUEST, format!("invalid next_run_at: {e}"))
+                            })?,
+                    );
+                }
+            }
+            "interval_seconds" => {
+                if let Some(text) = field.optional_text_trimmed()? {
+                    interval_seconds = Some(text.parse::<i64>().map_err(|e| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            format!("invalid interval_seconds: {e}"),
+                        )
+                    })?);
+                }
+            }
+            "clear_schedule" => {
+                if let Some(text) = field.optional_text_trimmed()? {
+                    clear_schedule = Some(parse_multipart_bool(&text, "clear_schedule")?);
+                }
+            }
+            "mounts" => {
+                if let Some(text) = field.optional_text_trimmed()? {
+                    mounts =
+                        Some(serde_json::from_str(&text).map_err(|e| {
+                            (StatusCode::BAD_REQUEST, format!("invalid mounts: {e}"))
+                        })?);
+                }
+            }
+            "attachments" => {
+                if let Some(file_name) = field.file_name.clone() {
+                    attachments.push(agent_threads_app::WorkspaceUploadInput {
+                        original_name: file_name,
+                        content_type: field.content_type.clone(),
+                        bytes: field.bytes.clone(),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok((
+        UpdateProjectTaskBoardItemRequest {
+            title,
+            description,
+            status,
+            schedule_kind,
+            next_run_at,
+            interval_seconds,
+            clear_schedule,
+            mounts,
+        },
+        attachments,
+    ))
+}
+
 pub async fn update_project_task_board_item(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path((project_id, item_id)): Path<(i64, i64)>,
-    Json(request): Json<UpdateProjectTaskBoardItemRequest>,
+    request: Request,
 ) -> ApiResult<ProjectTaskBoardItem> {
+    let (body, attachments) = if is_multipart_request(&request) {
+        let multipart = Multipart::from_request(request, &()).await.map_err(|e| {
+            crate::application::response::ApiErrorResponse::from((
+                StatusCode::BAD_REQUEST,
+                format!("bad multipart: {e}"),
+            ))
+        })?;
+        parse_update_board_item_multipart(multipart).await?
+    } else {
+        let Json(body) = Json::<UpdateProjectTaskBoardItemRequest>::from_request(request, &())
+            .await
+            .map_err(|e| {
+                crate::application::response::ApiErrorResponse::from((
+                    StatusCode::BAD_REQUEST,
+                    format!("bad json: {e}"),
+                ))
+            })?;
+        (body, Vec::new())
+    };
+
     let item = agent_threads_app::update_project_task_board_item(
         &app_state,
         deployment_id,
         project_id,
         item_id,
-        request,
+        body,
+        attachments,
     )
     .await?;
     Ok(item.into())
@@ -757,20 +997,69 @@ pub async fn list_project_task_board_item_comments(
     Ok(PaginatedResponse::from(comments).into())
 }
 
+async fn parse_create_comment_multipart(
+    multipart: Multipart,
+) -> Result<
+    (String, Vec<agent_threads_app::WorkspaceUploadInput>),
+    crate::application::response::ApiErrorResponse,
+> {
+    let payload = MultipartPayload::parse(multipart).await?;
+    let mut body = String::new();
+    let mut attachments: Vec<agent_threads_app::WorkspaceUploadInput> = Vec::new();
+
+    for field in payload.fields() {
+        match field.name.as_str() {
+            "body" => body = field.text_trimmed()?,
+            "attachments" => {
+                if let Some(file_name) = field.file_name.clone() {
+                    attachments.push(agent_threads_app::WorkspaceUploadInput {
+                        original_name: file_name,
+                        content_type: field.content_type.clone(),
+                        bytes: field.bytes.clone(),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok((body, attachments))
+}
+
 pub async fn create_project_task_board_item_comment(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path((project_id, item_id)): Path<(i64, i64)>,
     Query(params): Query<CommentParams>,
-    Json(request): Json<board_actions_app::CreateCommentRequest>,
+    request: Request,
 ) -> ApiResult<models::ProjectTaskBoardItemComment> {
+    let (body, attachments) = if is_multipart_request(&request) {
+        let multipart = Multipart::from_request(request, &()).await.map_err(|e| {
+            crate::application::response::ApiErrorResponse::from((
+                StatusCode::BAD_REQUEST,
+                format!("bad multipart: {e}"),
+            ))
+        })?;
+        parse_create_comment_multipart(multipart).await?
+    } else {
+        let Json(req): Json<board_actions_app::CreateCommentRequest> =
+            Json::from_request(request, &()).await.map_err(|e| {
+                crate::application::response::ApiErrorResponse::from((
+                    StatusCode::BAD_REQUEST,
+                    format!("bad json: {e}"),
+                ))
+            })?;
+        (req.body, Vec::new())
+    };
+
     let comment = board_actions_app::create_project_task_board_item_comment(
         &app_state,
         deployment_id,
         params.actor_id,
         project_id,
         item_id,
-        request.body,
+        body,
+        attachments,
     )
     .await?;
     Ok(comment.into())

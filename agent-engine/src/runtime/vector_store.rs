@@ -3,9 +3,8 @@ use commands::ResolveDeploymentStorageCommand;
 use common::error::AppError;
 use common::state::AppState;
 use common::{
-    connect_vector_store, open_knowledge_base_table_in_connection,
-    open_memory_table_in_connection, search_full_text_in_table, search_hybrid_in_table,
-    search_vector_in_table,
+    connect_vector_store, open_knowledge_base_table_in_connection, open_memory_table_in_connection,
+    search_full_text_in_table, search_hybrid_in_table, search_vector_in_table,
 };
 use lancedb::{Connection, Table};
 use models::ai_knowledge_base::DocumentChunkSearchResult;
@@ -47,11 +46,7 @@ pub trait VectorStore: Send + Sync {
 }
 
 pub trait VectorStoreFactory: Send + Sync {
-    fn create(
-        &self,
-        deployment_id: i64,
-        embedding_dimension: i32,
-    ) -> Arc<dyn VectorStore>;
+    fn create(&self, deployment_id: i64, embedding_dimension: i32) -> Arc<dyn VectorStore>;
 }
 
 pub struct LanceDbVectorStore {
@@ -226,11 +221,7 @@ impl LanceDbVectorStoreFactory {
 }
 
 impl VectorStoreFactory for LanceDbVectorStoreFactory {
-    fn create(
-        &self,
-        deployment_id: i64,
-        embedding_dimension: i32,
-    ) -> Arc<dyn VectorStore> {
+    fn create(&self, deployment_id: i64, embedding_dimension: i32) -> Arc<dyn VectorStore> {
         Arc::new(LanceDbVectorStore::new(
             self.app_state.clone(),
             deployment_id,

@@ -871,9 +871,7 @@ impl UpdateProjectTaskBoardItemCommand {
         let mut cancelled_now = false;
         if let (Some(prior), Some(_)) = (original_status.as_deref(), new_status.as_deref()) {
             if prior != item.status {
-                if let Some(kind) =
-                    models::TaskSubscriptionEventKind::from_status(&item.status)
-                {
+                if let Some(kind) = models::TaskSubscriptionEventKind::from_status(&item.status) {
                     let count = crate::fan_out_task_subscription_notifications(
                         &mut tx,
                         deps,
@@ -1052,8 +1050,7 @@ impl ReconcileProjectTaskBoardItemCommand {
 
         // Skip re-routing to coord if a coord-role turn is already in flight.
         if assignments.iter().any(|a| {
-            a.assignment_role
-                == models::project_task_board::assignment_role::COORDINATOR
+            a.assignment_role == models::project_task_board::assignment_role::COORDINATOR
                 && matches!(a.status.as_str(), "claimed" | "in_progress")
         }) {
             return Ok(());
@@ -1521,6 +1518,39 @@ impl WriteAssignmentResultPayloadCommand {
             "#,
             self.assignment_id,
             self.payload,
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+}
+
+pub struct ReplaceBoardItemMetadataCommand {
+    pub board_item_id: i64,
+    pub metadata: serde_json::Value,
+}
+
+impl ReplaceBoardItemMetadataCommand {
+    pub fn new(board_item_id: i64, metadata: serde_json::Value) -> Self {
+        Self {
+            board_item_id,
+            metadata,
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query!(
+            r#"
+            UPDATE project_task_board_items
+            SET metadata = $2,
+                updated_at = NOW()
+            WHERE id = $1 AND archived_at IS NULL
+            "#,
+            self.board_item_id,
+            self.metadata,
         )
         .execute(executor)
         .await?;

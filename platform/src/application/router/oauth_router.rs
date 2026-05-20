@@ -23,18 +23,14 @@ pub async fn create_oauth_router(state: AppState) -> Router {
                 "/.well-known/openid-configuration",
                 get(api::oauth_runtime::openid_configuration),
             )
-            .route(
-                "/.well-known/jwks.json",
-                get(api::oauth_runtime::jwks),
-            )
+            .route("/.well-known/jwks.json", get(api::oauth_runtime::jwks))
             .route(
                 "/oauth/userinfo",
                 get(api::oauth_runtime::userinfo).post(api::oauth_runtime::userinfo),
             )
             .route(
                 "/oauth/logout",
-                get(api::oauth_runtime::oauth_logout)
-                    .post(api::oauth_runtime::oauth_logout_post),
+                get(api::oauth_runtime::oauth_logout).post(api::oauth_runtime::oauth_logout_post),
             )
             .route(
                 "/oauth/authorize",

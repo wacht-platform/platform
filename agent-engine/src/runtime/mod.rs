@@ -8,4 +8,6 @@ pub mod vector_store;
 pub use handler::{AgentHandler, ExecutionRequest};
 pub use knowledge_orchestrator::KnowledgeOrchestrator;
 pub use secrets_provider::{SecretsProvider, SettingsSecretsProvider};
-pub use vector_store::{LanceDbVectorStore, LanceDbVectorStoreFactory, VectorStore, VectorStoreFactory};
+pub use vector_store::{
+    LanceDbVectorStore, LanceDbVectorStoreFactory, VectorStore, VectorStoreFactory,
+};

@@ -7,7 +7,8 @@ use tokio::sync::Mutex;
 
 use super::{ExecRequest, ExecResult, SandboxError, SandboxHandle, SandboxResult};
 
-pub type RecreateFuture = Pin<Box<dyn Future<Output = SandboxResult<Arc<dyn SandboxHandle>>> + Send>>;
+pub type RecreateFuture =
+    Pin<Box<dyn Future<Output = SandboxResult<Arc<dyn SandboxHandle>>> + Send>>;
 pub type RecreateFn = Arc<dyn Fn() -> RecreateFuture + Send + Sync>;
 
 /// Wraps a `SandboxHandle` so that when an operation fails with

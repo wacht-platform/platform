@@ -92,4 +92,3 @@ pub async fn discard_organization_invitation(
     .execute_with_db(app_state.db_router.writer())
     .await
 }
-

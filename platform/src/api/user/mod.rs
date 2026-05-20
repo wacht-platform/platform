@@ -20,9 +20,7 @@ pub use identifier_handlers::{
 pub use invitation_handlers::{
     approve_waitlist_user, delete_invitation, get_invited_user_list, get_user_waitlist, invite_user,
 };
-pub use membership_handlers::{
-    get_user_organization_memberships, get_user_workspace_memberships,
-};
+pub use membership_handlers::{get_user_organization_memberships, get_user_workspace_memberships};
 pub use mfa_handlers::{
     create_user_authenticator, delete_user_authenticator, regenerate_user_backup_codes,
 };

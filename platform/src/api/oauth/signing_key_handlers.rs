@@ -6,8 +6,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use common::state::AppState;
 use dto::json::oauth_runtime::{
-    OAuthAppSigningKeyRotatedResponse, OAuthAppSigningKeySummary,
-    OAuthAppSigningKeysListResponse,
+    OAuthAppSigningKeyRotatedResponse, OAuthAppSigningKeySummary, OAuthAppSigningKeysListResponse,
 };
 use queries::oauth_runtime::OAuthAppPublishableKey;
 

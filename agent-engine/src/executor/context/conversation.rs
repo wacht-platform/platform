@@ -20,14 +20,12 @@ enum ClarificationOutcome<'a> {
 }
 
 pub(crate) fn format_history_timestamp(ts: &str) -> Option<String> {
-    chrono::DateTime::parse_from_rfc3339(ts)
-        .ok()
-        .map(|parsed| {
-            parsed
-                .with_timezone(&chrono::Utc)
-                .format("at %Y-%m-%d %H:%M UTC")
-                .to_string()
-        })
+    chrono::DateTime::parse_from_rfc3339(ts).ok().map(|parsed| {
+        parsed
+            .with_timezone(&chrono::Utc)
+            .format("at %Y-%m-%d %H:%M UTC")
+            .to_string()
+    })
 }
 
 impl AgentExecutor {
@@ -628,8 +626,7 @@ impl AgentExecutor {
                 }
 
                 ConversationMessageType::TaskSubscriptionNotification => {
-                    if let ConversationContent::TaskSubscriptionDelivery { summary } =
-                        &conv.content
+                    if let ConversationContent::TaskSubscriptionDelivery { summary } = &conv.content
                     {
                         history.push(LlmHistoryEntry::with_content(
                             "user",
@@ -701,7 +698,9 @@ impl AgentExecutor {
                         .map(|r| format!(" · {r}"))
                         .unwrap_or_default()
                 );
-                if let Some(detail) = self.nearest_routing_event_detail(*board_item_id, *triggered_at) {
+                if let Some(detail) =
+                    self.nearest_routing_event_detail(*board_item_id, *triggered_at)
+                {
                     out.push_str("\n  ↳ ");
                     out.push_str(&detail);
                 }
@@ -724,7 +723,9 @@ impl AgentExecutor {
                         .map(|r| format!(" · {r}"))
                         .unwrap_or_default()
                 );
-                if let Some(detail) = self.nearest_routing_event_detail(*board_item_id, *triggered_at) {
+                if let Some(detail) =
+                    self.nearest_routing_event_detail(*board_item_id, *triggered_at)
+                {
                     out.push_str("\n  ↳ ");
                     out.push_str(&detail);
                 }
@@ -753,8 +754,16 @@ impl AgentExecutor {
         if (candidate.created_at - triggered_at).num_seconds().abs() > 600 {
             return None;
         }
-        let summary = candidate.summary.as_deref().map(str::trim).filter(|s| !s.is_empty());
-        let note = candidate.note.as_deref().map(str::trim).filter(|s| !s.is_empty());
+        let summary = candidate
+            .summary
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let note = candidate
+            .note
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
         match (summary, note) {
             (Some(s), Some(n)) => Some(format!("{s} — {n}")),
             (Some(s), None) => Some(s.to_string()),
@@ -964,8 +973,7 @@ impl AgentExecutor {
                     }
                 }
                 ConversationMessageType::TaskSubscriptionNotification => {
-                    if let ConversationContent::TaskSubscriptionDelivery { summary } =
-                        &conv.content
+                    if let ConversationContent::TaskSubscriptionDelivery { summary } = &conv.content
                     {
                         entries.push((
                             is_timeline,
@@ -994,10 +1002,8 @@ impl AgentExecutor {
                                     question_text.trim(),
                                     answer_value
                                 )),
-                                None => text.push_str(&format!(
-                                    "\n- {}: {}",
-                                    a.question_id, answer_value
-                                )),
+                                None => text
+                                    .push_str(&format!("\n- {}: {}", a.question_id, answer_value)),
                             }
                         }
                         entries.push((
@@ -1232,15 +1238,13 @@ impl AgentExecutor {
 
     fn lookup_question_text_by_id(&self, target_id: &str) -> Option<String> {
         for conv in self.conversations.iter().rev() {
-            let ConversationContent::ClarificationRequest { questions, .. } = &conv.content
-            else {
+            let ConversationContent::ClarificationRequest { questions, .. } = &conv.content else {
                 continue;
             };
-            let parsed: Vec<models::Question> =
-                match serde_json::from_value(questions.clone()) {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                };
+            let parsed: Vec<models::Question> = match serde_json::from_value(questions.clone()) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
             for q in parsed {
                 if q.id == target_id {
                     return Some(q.text);
@@ -1982,8 +1986,7 @@ impl AgentExecutor {
 
         // Keep the start hash in sync so subsequent journal-was-updated checks
         // in the same run reflect the auto-extended state.
-        self.task_journal_start_hash =
-            Some(compute_task_journal_hash(&self.filesystem).await?);
+        self.task_journal_start_hash = Some(compute_task_journal_hash(&self.filesystem).await?);
 
         Ok(true)
     }
@@ -2056,10 +2059,7 @@ Output plain text only — no JSON, no code fences, no surrounding prose."#,
         Ok((0, summary_record))
     }
 
-    fn build_recent_brief_messages(
-        &self,
-        recent: &[ConversationRecord],
-    ) -> Vec<serde_json::Value> {
+    fn build_recent_brief_messages(&self, recent: &[ConversationRecord]) -> Vec<serde_json::Value> {
         recent
             .iter()
             .filter_map(|msg| {
@@ -2205,7 +2205,11 @@ Output plain text. No JSON, no code fences, no preface.";
                 freeform_text,
                 ..
             } => {
-                if let Some(text) = freeform_text.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                if let Some(text) = freeform_text
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
                     return format!("CLARIFICATION_FREEFORM {}", text);
                 }
                 let parsed: Vec<models::QuestionAnswer> =

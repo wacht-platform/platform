@@ -8,9 +8,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use common::state::AppState;
-use dto::json::oauth_runtime::{
-    JwksResponse, OAuthLogoutRequest, OpenIdConfigurationResponse,
-};
+use dto::json::oauth_runtime::{JwksResponse, OAuthLogoutRequest, OpenIdConfigurationResponse};
 
 use crate::application::{oauth_runtime as oauth_runtime_app, response::ApiResult};
 
@@ -34,10 +32,7 @@ pub async fn jwks(
 /// a `WWW-Authenticate: Bearer ...` header with the standard error codes
 /// (`invalid_token`, `insufficient_scope`, `invalid_request`) so RP libraries
 /// can recognise the error without parsing a custom JSON envelope.
-pub async fn userinfo(
-    State(app_state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn userinfo(State(app_state): State<AppState>, headers: HeaderMap) -> Response {
     match oauth_runtime_app::userinfo(&app_state, &headers).await {
         Ok(body) => Json(body).into_response(),
         Err(err) => bearer_error_response(err),

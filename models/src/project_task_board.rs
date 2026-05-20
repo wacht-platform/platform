@@ -169,6 +169,17 @@ pub struct ProjectTaskBoardItemMetadata {
     pub updated_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schedule_carryover: Option<ScheduleCarryover>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<TaskWorkspaceAttachment>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskWorkspaceAttachment {
+    pub path: String,
+    pub name: String,
+    pub original_name: String,
+    pub mime_type: String,
+    pub size_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

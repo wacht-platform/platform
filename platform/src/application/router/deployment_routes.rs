@@ -94,8 +94,7 @@ fn user_management_routes() -> Router<AppState> {
         )
         .route(
             "/users/{user_id}/authenticators",
-            post(api::user::create_user_authenticator)
-                .delete(api::user::delete_user_authenticator),
+            post(api::user::create_user_authenticator).delete(api::user::delete_user_authenticator),
         )
         .route(
             "/users/{user_id}/backup-codes/regenerate",

@@ -69,7 +69,9 @@ impl CreateConversationCommand {
             ConversationMessageType::ExecutionSummary => "execution_summary",
             ConversationMessageType::ClarificationRequest => "clarification_request",
             ConversationMessageType::ClarificationResponse => "clarification_response",
-            ConversationMessageType::TaskSubscriptionNotification => "task_subscription_notification",
+            ConversationMessageType::TaskSubscriptionNotification => {
+                "task_subscription_notification"
+            }
             ConversationMessageType::AssignmentExecutionTrigger => "assignment_execution_trigger",
             ConversationMessageType::TaskRoutingTrigger => "task_routing_trigger",
         };

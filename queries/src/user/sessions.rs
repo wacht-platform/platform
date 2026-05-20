@@ -64,12 +64,16 @@ impl GetUserSigninsQuery {
                     active_workspace_membership_id: row.get("active_workspace_membership_id"),
                     expires_at: DateTime::from_naive_utc_and_offset(expires_at, Utc),
                     last_active_at: DateTime::from_naive_utc_and_offset(last_active_at, Utc),
-                    ip_address: row.get::<Option<String>, _>("ip_address").unwrap_or_default(),
+                    ip_address: row
+                        .get::<Option<String>, _>("ip_address")
+                        .unwrap_or_default(),
                     browser: row.get::<Option<String>, _>("browser").unwrap_or_default(),
                     device: row.get::<Option<String>, _>("device").unwrap_or_default(),
                     city: row.get::<Option<String>, _>("city").unwrap_or_default(),
                     region: row.get::<Option<String>, _>("region").unwrap_or_default(),
-                    region_code: row.get::<Option<String>, _>("region_code").unwrap_or_default(),
+                    region_code: row
+                        .get::<Option<String>, _>("region_code")
+                        .unwrap_or_default(),
                     country: row.get::<Option<String>, _>("country").unwrap_or_default(),
                     country_code: row
                         .get::<Option<String>, _>("country_code")

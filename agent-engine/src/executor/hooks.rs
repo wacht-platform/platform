@@ -46,9 +46,7 @@ fn hook_webhook_event(phase: LifecyclePhase, status: HookStepStatus) -> &'static
         (LifecyclePhase::ExecutionStart, HookStepStatus::Skipped) => {
             "agent.execution_start_hook.skipped"
         }
-        (LifecyclePhase::BeforeLlm, HookStepStatus::Succeeded) => {
-            "agent.before_llm_hook.succeeded"
-        }
+        (LifecyclePhase::BeforeLlm, HookStepStatus::Succeeded) => "agent.before_llm_hook.succeeded",
         (LifecyclePhase::BeforeLlm, HookStepStatus::Failed) => "agent.before_llm_hook.failed",
         (LifecyclePhase::BeforeLlm, HookStepStatus::Skipped) => "agent.before_llm_hook.skipped",
         (LifecyclePhase::AfterLlm, HookStepStatus::Succeeded) => "agent.after_llm_hook.succeeded",
@@ -59,9 +57,7 @@ fn hook_webhook_event(phase: LifecyclePhase, status: HookStepStatus) -> &'static
         }
         (LifecyclePhase::BeforeTool, HookStepStatus::Failed) => "agent.before_tool_hook.failed",
         (LifecyclePhase::BeforeTool, HookStepStatus::Skipped) => "agent.before_tool_hook.skipped",
-        (LifecyclePhase::AfterTool, HookStepStatus::Succeeded) => {
-            "agent.after_tool_hook.succeeded"
-        }
+        (LifecyclePhase::AfterTool, HookStepStatus::Succeeded) => "agent.after_tool_hook.succeeded",
         (LifecyclePhase::AfterTool, HookStepStatus::Failed) => "agent.after_tool_hook.failed",
         (LifecyclePhase::AfterTool, HookStepStatus::Skipped) => "agent.after_tool_hook.skipped",
         (LifecyclePhase::OnBudgetExhausted, HookStepStatus::Succeeded) => {
@@ -76,9 +72,7 @@ fn hook_webhook_event(phase: LifecyclePhase, status: HookStepStatus) -> &'static
         (LifecyclePhase::ExecutionEnd, HookStepStatus::Succeeded) => {
             "agent.execution_end_hook.succeeded"
         }
-        (LifecyclePhase::ExecutionEnd, HookStepStatus::Failed) => {
-            "agent.execution_end_hook.failed"
-        }
+        (LifecyclePhase::ExecutionEnd, HookStepStatus::Failed) => "agent.execution_end_hook.failed",
         (LifecyclePhase::ExecutionEnd, HookStepStatus::Skipped) => {
             "agent.execution_end_hook.skipped"
         }

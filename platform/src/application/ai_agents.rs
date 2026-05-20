@@ -72,12 +72,8 @@ pub async fn create_ai_agent(
 ) -> Result<AiAgent, AppError> {
     let db_deps = deps::from_app(app_state).db();
     let agent_id = app_state.sf.next_id()? as i64;
-    let mut command = CreateAiAgentCommand::new(
-        agent_id,
-        deployment_id,
-        request.name,
-        request.description,
-    );
+    let mut command =
+        CreateAiAgentCommand::new(agent_id, deployment_id, request.name, request.description);
 
     if let Some(sub_agents) = request.sub_agents {
         command = command.with_sub_agents(sub_agents.into_iter().map(i64::from).collect());

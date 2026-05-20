@@ -191,4 +191,3 @@ impl DiscardOrganizationInvitationCommand {
         Ok(())
     }
 }
-

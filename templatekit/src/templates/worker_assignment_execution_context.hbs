@@ -25,6 +25,9 @@
 {{/if}}{{#if parent_task_key}}- Parent task (read-only): `/project_workspace/tasks/{{parent_task_key}}/`
 {{/if}}- Other tasks (read-only): `/project_workspace/tasks/<task_key>/`
 {{#if runbook_file}}- Runbook (recurring): `{{runbook_file}}`
+{{/if}}{{#if task_attachments}}- Uploaded task inputs:
+{{#each task_attachments}}  - `{{path}}`{{#if name}} ({{name}}){{/if}}{{#if mime_type}} — {{mime_type}}{{/if}}
+{{/each}}
 {{/if}}{{#if task_mounts}}
 ## Mounts
 

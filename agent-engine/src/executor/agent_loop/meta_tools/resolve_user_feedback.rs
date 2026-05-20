@@ -23,16 +23,15 @@ impl AgentExecutor {
             ));
         };
         let (comment_ids, invalid_ids): (Vec<i64>, Vec<&String>) =
-            args.comment_ids.iter().fold(
-                (Vec::new(), Vec::new()),
-                |(mut ok, mut bad), raw| {
+            args.comment_ids
+                .iter()
+                .fold((Vec::new(), Vec::new()), |(mut ok, mut bad), raw| {
                     match raw.parse::<i64>() {
                         Ok(id) => ok.push(id),
                         Err(_) => bad.push(raw),
                     }
                     (ok, bad)
-                },
-            );
+                });
         if !invalid_ids.is_empty() {
             return Err(AppError::BadRequest(format!(
                 "resolve_user_feedback: invalid comment_ids: {:?}",

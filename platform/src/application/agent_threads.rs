@@ -19,13 +19,13 @@ use models::{
 };
 use queries::{
     GetActorByIdQuery, GetActorProjectByIdQuery, GetAgentThreadByIdQuery, GetAgentThreadStateQuery,
-    GetLatestThreadTaskGraphQuery, GetMcpServerByIdQuery,
-    GetProjectTaskBoardByIdQuery, GetProjectTaskBoardByProjectIdQuery,
-    GetProjectTaskBoardItemByIdQuery, GetProjectTaskScheduleByTaskKeyQuery,
-    GetThreadTaskGraphByIdQuery, GetThreadTaskGraphSummaryQuery, ListActorProjectsQuery,
-    ListActorsQuery, ListAgentThreadsQuery, ListAssignmentsForThreadQuery,
-    ListProjectTaskBoardItemAssignmentsQuery, ListProjectTaskBoardItemRelationsQuery,
-    ListProjectTaskBoardItemsQuery, ListThreadTaskEdgesQuery, ListThreadTaskNodesQuery,
+    GetLatestThreadTaskGraphQuery, GetMcpServerByIdQuery, GetProjectTaskBoardByIdQuery,
+    GetProjectTaskBoardByProjectIdQuery, GetProjectTaskBoardItemByIdQuery,
+    GetProjectTaskScheduleByTaskKeyQuery, GetThreadTaskGraphByIdQuery,
+    GetThreadTaskGraphSummaryQuery, ListActorProjectsQuery, ListActorsQuery, ListAgentThreadsQuery,
+    ListAssignmentsForThreadQuery, ListProjectTaskBoardItemAssignmentsQuery,
+    ListProjectTaskBoardItemRelationsQuery, ListProjectTaskBoardItemsQuery,
+    ListThreadTaskEdgesQuery, ListThreadTaskNodesQuery,
 };
 
 use crate::application::{AppState, agent_thread_execution as agent_thread_execution_app};
@@ -225,6 +225,153 @@ fn thread_uploads_storage_prefix(deployment_id: i64, thread_id: i64) -> String {
 
 fn task_workspace_storage_prefix(deployment_id: i64, project_id: i64, task_key: &str) -> String {
     format!("{}/{}/tasks/{}/", deployment_id, project_id, task_key)
+}
+
+pub const MAX_TASK_WORKSPACE_UPLOAD_BYTES: u64 = 64 * 1024 * 1024;
+
+#[derive(Debug, Clone)]
+pub struct WorkspaceUploadInput {
+    pub original_name: String,
+    pub content_type: Option<String>,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
+pub struct UploadedTaskWorkspaceFile {
+    pub path: String,
+    pub name: String,
+    pub original_name: String,
+    pub mime_type: String,
+    pub size_bytes: u64,
+}
+
+fn sanitize_upload_filename(name: &str) -> Option<String> {
+    let mut out = String::with_capacity(name.len());
+    let mut prev_underscore = false;
+    for ch in name.chars() {
+        let is_allowed = ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || ch == '-';
+        if is_allowed {
+            out.push(ch);
+            prev_underscore = false;
+        } else if !prev_underscore {
+            out.push('_');
+            prev_underscore = true;
+        }
+    }
+    let trimmed = out.trim_matches('_');
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+pub async fn upload_task_workspace_files(
+    app_state: &AppState,
+    deployment_id: i64,
+    project_id: i64,
+    task_key: &str,
+    files: Vec<WorkspaceUploadInput>,
+) -> Result<Vec<UploadedTaskWorkspaceFile>, AppError> {
+    if files.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let deps = common::deps::from_app(app_state).db().enc();
+    let storage = commands::ResolveDeploymentStorageCommand::new(deployment_id)
+        .execute_with_deps(&deps)
+        .await?;
+
+    let base_prefix = task_workspace_storage_prefix(deployment_id, project_id, task_key);
+    let mut results = Vec::with_capacity(files.len());
+
+    for file in files {
+        let size = file.bytes.len() as u64;
+        if size == 0 {
+            continue;
+        }
+        if size > MAX_TASK_WORKSPACE_UPLOAD_BYTES {
+            return Err(AppError::BadRequest(format!(
+                "file '{}' exceeds {}MB limit",
+                file.original_name,
+                MAX_TASK_WORKSPACE_UPLOAD_BYTES / (1024 * 1024)
+            )));
+        }
+        let safe_name = sanitize_upload_filename(&file.original_name).ok_or_else(|| {
+            AppError::BadRequest(format!("filename '{}' is invalid", file.original_name))
+        })?;
+        let id = app_state.sf.next_id()? as i64;
+        let relative_path = format!("uploads/{}_{}", id, safe_name);
+        let mime_type = file
+            .content_type
+            .filter(|ct| !ct.is_empty() && ct != "application/octet-stream")
+            .unwrap_or_else(|| "application/octet-stream".to_string());
+
+        let key = storage.object_key(&format!("{}{}", base_prefix, relative_path));
+        let request = storage
+            .client()
+            .put_object()
+            .bucket(storage.bucket())
+            .key(&key)
+            .body(aws_sdk_s3::primitives::ByteStream::from(file.bytes))
+            .content_type(mime_type.clone());
+        request
+            .send()
+            .await
+            .map_err(|e| AppError::S3(e.to_string()))?;
+
+        results.push(UploadedTaskWorkspaceFile {
+            path: format!("/task/{}", relative_path),
+            name: Path::new(&relative_path)
+                .file_name()
+                .and_then(|v| v.to_str())
+                .unwrap_or(&relative_path)
+                .to_string(),
+            original_name: file.original_name,
+            mime_type,
+            size_bytes: size,
+        });
+    }
+
+    Ok(results)
+}
+
+pub fn merge_attachments_into_metadata(
+    existing: &serde_json::Value,
+    new_attachments: &[UploadedTaskWorkspaceFile],
+) -> Result<serde_json::Value, AppError> {
+    if new_attachments.is_empty() {
+        return Ok(existing.clone());
+    }
+    let mut metadata = match existing {
+        serde_json::Value::Object(_) => existing.clone(),
+        serde_json::Value::Null => serde_json::Value::Object(Default::default()),
+        _ => {
+            return Err(AppError::Internal(
+                "metadata is not an object; cannot merge attachments".to_string(),
+            ));
+        }
+    };
+
+    let Some(obj) = metadata.as_object_mut() else {
+        return Err(AppError::Internal(
+            "metadata is not an object; cannot merge attachments".to_string(),
+        ));
+    };
+    let existing_attachments = obj
+        .get("attachments")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut merged = existing_attachments;
+    for attachment in new_attachments {
+        merged.push(
+            serde_json::to_value(attachment)
+                .map_err(|e| AppError::Internal(format!("serialize attachment: {e}")))?,
+        );
+    }
+    obj.insert("attachments".to_string(), serde_json::Value::Array(merged));
+    Ok(metadata)
 }
 
 fn sanitize_optional_relative_path(raw: &str) -> Result<String, AppError> {
@@ -1210,6 +1357,7 @@ pub async fn create_project_task_board_item(
     deployment_id: i64,
     project_id: i64,
     request: CreateProjectTaskBoardItemRequest,
+    attachments: Vec<WorkspaceUploadInput>,
 ) -> Result<ProjectTaskBoardItem, AppError> {
     let project = get_actor_project_by_id(app_state, deployment_id, project_id).await?;
     let board = get_project_task_board_by_project_id(app_state, deployment_id, project_id).await?;
@@ -1226,6 +1374,11 @@ pub async fn create_project_task_board_item(
     let mounts_value = validate_and_serialize_mounts(request.mounts.as_deref())?
         .unwrap_or_else(|| serde_json::json!([]));
 
+    let uploaded =
+        upload_task_workspace_files(app_state, deployment_id, project_id, &task_key, attachments)
+            .await?;
+    let metadata = merge_attachments_into_metadata(&serde_json::json!({}), &uploaded)?;
+
     let mut tx = app_state.db_router.writer().begin().await?;
 
     let mut item = CreateProjectTaskBoardItemCommand {
@@ -1236,7 +1389,7 @@ pub async fn create_project_task_board_item(
         description: request.description,
         status,
         assigned_thread_id,
-        metadata: serde_json::json!({}),
+        metadata,
         mounts: mounts_value,
         exclusive_owner_agent_id: None,
     }
@@ -1348,6 +1501,7 @@ pub async fn update_project_task_board_item(
     project_id: i64,
     item_id: i64,
     request: UpdateProjectTaskBoardItemRequest,
+    attachments: Vec<WorkspaceUploadInput>,
 ) -> Result<ProjectTaskBoardItem, AppError> {
     let item = get_project_task_board_item_by_id(app_state, deployment_id, item_id).await?;
     let board = get_project_task_board_by_project_id(app_state, deployment_id, project_id).await?;
@@ -1360,6 +1514,15 @@ pub async fn update_project_task_board_item(
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
         .await?
         .ok_or_else(|| AppError::NotFound("Project not found".to_string()))?;
+
+    let uploaded = upload_task_workspace_files(
+        app_state,
+        deployment_id,
+        project_id,
+        &item.task_key,
+        attachments,
+    )
+    .await?;
 
     let clear_schedule = request.clear_schedule.unwrap_or(false);
     let schedule = parse_schedule_request(
@@ -1453,6 +1616,14 @@ pub async fn update_project_task_board_item(
             .execute_with_db(app_state.db_router.writer())
             .await?;
         }
+    }
+
+    if !uploaded.is_empty() {
+        let merged_metadata = merge_attachments_into_metadata(&current.metadata, &uploaded)?;
+        commands::ReplaceBoardItemMetadataCommand::new(current.id, merged_metadata.clone())
+            .execute_with_db(app_state.db_router.writer())
+            .await?;
+        current.metadata = merged_metadata;
     }
 
     if edit_outcome.routed || edit_outcome.preempted || edit_outcome.subscribers_notified > 0 {

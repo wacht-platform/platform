@@ -69,4 +69,3 @@ pub async fn discard_organization_invitation(
     .await?;
     Ok(().into())
 }
-

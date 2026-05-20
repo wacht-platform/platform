@@ -127,10 +127,7 @@ pub struct CompromiseOAuthAppSigningKey {
 }
 
 impl CompromiseOAuthAppSigningKey {
-    pub async fn execute_with_db<'e, E>(
-        self,
-        executor: E,
-    ) -> Result<bool, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<bool, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {

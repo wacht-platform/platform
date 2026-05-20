@@ -294,22 +294,20 @@ impl ToolExecutor {
         current_thread: &models::AgentThreadState,
     ) -> Result<(), AppError> {
         let deployment_id = self.agent().deployment_id;
-        let project = queries::GetActorProjectByIdQuery::new(
-            current_thread.project_id,
-            deployment_id,
-        )
-        .execute_with_db(
-            self.app_state()
-                .db_router
-                .reader(common::db_router::ReadConsistency::Strong),
-        )
-        .await?
-        .ok_or_else(|| {
-            AppError::Internal(format!(
-                "Project {} not found for thread {}",
-                current_thread.project_id, current_thread.id
-            ))
-        })?;
+        let project =
+            queries::GetActorProjectByIdQuery::new(current_thread.project_id, deployment_id)
+                .execute_with_db(
+                    self.app_state()
+                        .db_router
+                        .reader(common::db_router::ReadConsistency::Strong),
+                )
+                .await?
+                .ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "Project {} not found for thread {}",
+                        current_thread.project_id, current_thread.id
+                    ))
+                })?;
 
         let Some(coordinator_thread_id) = project.coordinator_thread_id else {
             return Err(AppError::BadRequest(
@@ -317,37 +315,33 @@ impl ToolExecutor {
             ));
         };
 
-        let coordinator_agent_id = queries::ResolveThreadExecutionAgentQuery::new(
-            coordinator_thread_id,
-            deployment_id,
-        )
-        .execute_with_db(
-            self.app_state()
-                .db_router
-                .reader(common::db_router::ReadConsistency::Strong),
-        )
-        .await?
-        .ok_or_else(|| {
-            AppError::Internal(format!(
-                "Coordinator thread {coordinator_thread_id} has no assigned agent"
-            ))
-        })?;
+        let coordinator_agent_id =
+            queries::ResolveThreadExecutionAgentQuery::new(coordinator_thread_id, deployment_id)
+                .execute_with_db(
+                    self.app_state()
+                        .db_router
+                        .reader(common::db_router::ReadConsistency::Strong),
+                )
+                .await?
+                .ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "Coordinator thread {coordinator_thread_id} has no assigned agent"
+                    ))
+                })?;
 
         let caller_id = self.agent().id;
         if caller_id == coordinator_agent_id {
             return Ok(());
         }
 
-        let coordinator_agents = queries::GetAiAgentsByIdsQuery::new(
-            deployment_id,
-            vec![coordinator_agent_id],
-        )
-        .execute_with_db(
-            self.app_state()
-                .db_router
-                .reader(common::db_router::ReadConsistency::Strong),
-        )
-        .await?;
+        let coordinator_agents =
+            queries::GetAiAgentsByIdsQuery::new(deployment_id, vec![coordinator_agent_id])
+                .execute_with_db(
+                    self.app_state()
+                        .db_router
+                        .reader(common::db_router::ReadConsistency::Strong),
+                )
+                .await?;
 
         let is_sub_agent = coordinator_agents
             .first()
@@ -381,7 +375,8 @@ impl ToolExecutor {
 
         if !is_coordinator && !is_conversation {
             return Err(AppError::BadRequest(
-                "create_thread is only available to coordinator or conversation threads".to_string(),
+                "create_thread is only available to coordinator or conversation threads"
+                    .to_string(),
             ));
         }
 
@@ -464,11 +459,8 @@ impl ToolExecutor {
             (agent.id, agent.name.clone())
         } else {
             let mut available_agent_names = vec![self.agent().name.clone()];
-            available_agent_names.extend(
-                available_sub_agents
-                    .iter()
-                    .map(|agent| agent.name.clone()),
-            );
+            available_agent_names
+                .extend(available_sub_agents.iter().map(|agent| agent.name.clone()));
             return Err(AppError::BadRequest(format!(
                 "assigned_agent_name must be the current agent or one of its sub-agents. Available agents: {}",
                 available_agent_names.join(", ")
@@ -736,8 +728,7 @@ impl ToolExecutor {
         let conv_thread_id = current_thread.id;
         let board_item_id = self.app_state().sf.next_id()? as i64;
         let task_key = format!("DELEGATE-{board_item_id}");
-        let mount_s3_key =
-            format!("persistent/{conv_thread_id}/workspace/delegate/{task_key}");
+        let mount_s3_key = format!("persistent/{conv_thread_id}/workspace/delegate/{task_key}");
         let mounts = serde_json::json!([{
             "mount_path": "/delegated_workspace",
             "s3_relative_key": mount_s3_key,
@@ -745,8 +736,7 @@ impl ToolExecutor {
         }]);
 
         let board_id =
-            crate::executor::project::lookup_or_create_project_task_board_id(&self.ctx)
-                .await?;
+            crate::executor::project::lookup_or_create_project_task_board_id(&self.ctx).await?;
 
         let mut tx = self.app_state().db_router.writer().begin().await?;
 

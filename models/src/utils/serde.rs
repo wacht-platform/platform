@@ -88,10 +88,7 @@ pub mod i64_as_string_option {
         match opt {
             None => Ok(None),
             Some(Either::Number(n)) => Ok(Some(n)),
-            Some(Either::String(s)) => s
-                .parse::<i64>()
-                .map(Some)
-                .map_err(serde::de::Error::custom),
+            Some(Either::String(s)) => s.parse::<i64>().map(Some).map_err(serde::de::Error::custom),
         }
     }
 }

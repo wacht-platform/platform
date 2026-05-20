@@ -28,12 +28,7 @@ pub struct CreateAiAgentCommand {
 }
 
 impl CreateAiAgentCommand {
-    pub fn new(
-        id: i64,
-        deployment_id: i64,
-        name: String,
-        description: Option<String>,
-    ) -> Self {
+    pub fn new(id: i64, deployment_id: i64, name: String, description: Option<String>) -> Self {
         Self {
             id,
             deployment_id,

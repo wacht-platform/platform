@@ -9,8 +9,8 @@ use std::time::Duration;
 use tracing::{error, warn};
 
 use crate::tasks::{
-    agent, analytics, api_audit, api_key_role_permissions_sync, billing, document,
-    email, token, vector_store, webhook, webhook_event, webhook_replay_batch,
+    agent, analytics, api_audit, api_key_role_permissions_sync, billing, document, email, token,
+    vector_store, webhook, webhook_event, webhook_replay_batch,
 };
 
 const AGENT_EXECUTION_BUSY_RETRY_DELAY_SECONDS: u64 = 30;

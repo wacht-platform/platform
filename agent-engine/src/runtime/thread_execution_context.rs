@@ -246,16 +246,14 @@ impl ThreadExecutionContext {
                 return Ok(ResolvedLlm::new(Arc::new(client), model));
             }
             "openai" => {
-                let client = OpenAiClient::from_api_key(
-                    self.provider_keys.openai_api_key.clone(),
-                    model,
-                )?
-                .with_billing_context(
-                    self.agent.deployment_id,
-                    self.thread_id,
-                    self.actor_id,
-                    self.app_state.nats_client.clone(),
-                );
+                let client =
+                    OpenAiClient::from_api_key(self.provider_keys.openai_api_key.clone(), model)?
+                        .with_billing_context(
+                            self.agent.deployment_id,
+                            self.thread_id,
+                            self.actor_id,
+                            self.app_state.nats_client.clone(),
+                        );
                 return Ok(ResolvedLlm::new(Arc::new(client), model));
             }
             _ => {}
@@ -278,5 +276,4 @@ impl ThreadExecutionContext {
             .execute_with_db(self.app_state.db_router.writer())
             .await
     }
-
 }

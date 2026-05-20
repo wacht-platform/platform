@@ -5,7 +5,8 @@ use rand::RngCore;
 use totp_rs::Secret;
 
 const BACKUP_CODE_COUNT: usize = 12;
-const BACKUP_CODE_CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz";
+const BACKUP_CODE_CHARSET: &[u8] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz";
 
 fn generate_backup_codes() -> Vec<String> {
     let mut codes = Vec::with_capacity(BACKUP_CODE_COUNT);
@@ -129,8 +130,7 @@ impl CreateUserAuthenticatorCommand {
             .map_err(|_| AppError::BadRequest("invalid base32 secret".to_string()))?;
         if decoded.len() < 16 {
             return Err(AppError::BadRequest(
-                "secret too short — TOTP secrets must be at least 128 bits (16 bytes)"
-                    .to_string(),
+                "secret too short — TOTP secrets must be at least 128 bits (16 bytes)".to_string(),
             ));
         }
 
@@ -188,7 +188,10 @@ impl CreateUserAuthenticatorCommand {
 
         // Format the otpauth URL ourselves — totp-rs's `get_url()` lives behind
         // the `otpauth` feature flag, not enabled in our build.
-        let account = self.account_name_override.as_deref().unwrap_or(&row.account);
+        let account = self
+            .account_name_override
+            .as_deref()
+            .unwrap_or(&row.account);
         let issuer_enc = urlencoding::encode(&row.issuer);
         let account_enc = urlencoding::encode(account);
         let otp_url = format!(

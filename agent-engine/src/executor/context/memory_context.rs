@@ -1,6 +1,6 @@
 use crate::runtime::thread_execution_context::ThreadExecutionContext;
-use common::state::AppState;
 use common::error::AppError;
+use common::state::AppState;
 use models::{ImmediateContext, MemoryRecord, TaskRoutingEvent, TaskThreadMeta};
 use queries::{
     GetBoardItemConversationHistoryQuery, GetBoardItemRoutingEventsQuery,

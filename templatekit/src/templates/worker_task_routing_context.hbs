@@ -22,6 +22,10 @@ User feedback timeline (chronological, oldest first):
   attachments: {{#each attachments}}{{path}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if resolution_summary}}
   resolution: {{resolution_summary}}{{/if}}
 {{/each}}{{/if}}
+{{#if task_attachments}}
+Uploaded task inputs:
+{{#each task_attachments}}- `{{path}}`{{#if name}} ({{name}}){{/if}}{{#if mime_type}} — {{mime_type}}{{/if}}
+{{/each}}{{/if}}
 
 Decide and act this turn — but: if the slice the latest feedback or routing reason concerns is already actively assigned to the right lane (check `Active assignments` / `Board assignments` in the task state above), do NOT re-issue the assignment. Acknowledge it in `/task/JOURNAL.md`, call `resolve_user_feedback` on any `[unresolved]` comments with that acknowledgement, and end the turn. Re-issuing an identical assignment never accelerates the lane.
 

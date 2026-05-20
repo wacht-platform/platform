@@ -1,8 +1,6 @@
 use chrono::Utc;
 use common::{HasDbRouter, HasIdProvider, ReadConsistency, error::AppError};
-use models::{
-    ProjectTaskBoardItem, ProjectTaskBoardItemAssignment, TaskSubscriptionEventKind,
-};
+use models::{ProjectTaskBoardItem, ProjectTaskBoardItemAssignment, TaskSubscriptionEventKind};
 use queries::{ListProjectTaskBoardItemAssignmentsQuery, ListSubscribersForBoardItemQuery};
 use serde::Serialize;
 use sqlx::Postgres;
@@ -107,7 +105,10 @@ impl<'a> InsertTaskRoutingEvent<'a> {
                 .previous_status
                 .filter(|s| !s.is_empty() && s != &self.board_item.status)
             {
-                map.insert("previous_status".to_string(), serde_json::Value::String(prev));
+                map.insert(
+                    "previous_status".to_string(),
+                    serde_json::Value::String(prev),
+                );
             }
             if !self.changed_fields.is_empty() {
                 map.insert(
@@ -434,8 +435,8 @@ impl<'a> ApplyBoardItemEditCommand<'a> {
         let content_changed = changed_fields
             .iter()
             .any(|c| c.field == "title" || c.field == "description");
-        let cancelled_now = matches!(new_status.as_deref(), Some("cancelled"))
-            && original_status != "cancelled";
+        let cancelled_now =
+            matches!(new_status.as_deref(), Some("cancelled")) && original_status != "cancelled";
 
         let mut tx = pool.begin().await?;
 

@@ -224,7 +224,9 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
             "execution_summary" => ConversationMessageType::ExecutionSummary,
             "clarification_request" => ConversationMessageType::ClarificationRequest,
             "clarification_response" => ConversationMessageType::ClarificationResponse,
-            "task_subscription_notification" => ConversationMessageType::TaskSubscriptionNotification,
+            "task_subscription_notification" => {
+                ConversationMessageType::TaskSubscriptionNotification
+            }
             "assignment_execution_trigger" => ConversationMessageType::AssignmentExecutionTrigger,
             "task_routing_trigger" => ConversationMessageType::TaskRoutingTrigger,
             _ => {

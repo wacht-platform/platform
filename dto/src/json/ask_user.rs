@@ -10,7 +10,26 @@ pub struct AskUserParams {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct AnswerSubmission {
+    #[serde(default)]
     pub answers: Vec<QuestionAnswer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freeform_text: Option<String>,
+}
+
+const FREEFORM_ANSWER_MAX_CHARS: usize = 4000;
+
+impl AnswerSubmission {
+    pub fn freeform_trimmed(&self) -> Option<String> {
+        self.freeform_text
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    }
+
+    pub fn is_freeform(&self) -> bool {
+        self.freeform_trimmed().is_some()
+    }
 }
 
 pub fn validate_question_set(questions: &[Question]) -> Result<(), String> {
@@ -121,6 +140,20 @@ pub fn validate_answers(
     pending: &PendingQuestion,
     submission: &AnswerSubmission,
 ) -> Result<(), String> {
+    if let Some(freeform) = submission.freeform_trimmed() {
+        if !submission.answers.is_empty() {
+            return Err("send either structured answers or freeform_text, not both".to_string());
+        }
+        if freeform.chars().count() > FREEFORM_ANSWER_MAX_CHARS {
+            return Err(format!(
+                "freeform_text exceeds {FREEFORM_ANSWER_MAX_CHARS} characters"
+            ));
+        }
+        return Ok(());
+    }
+    if submission.answers.is_empty() {
+        return Err("send either structured answers or freeform_text".to_string());
+    }
     if submission.answers.len() != pending.questions.len() {
         return Err(format!(
             "expected {} answers, got {}",

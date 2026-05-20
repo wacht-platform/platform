@@ -1,3 +1,4 @@
+use chrono::Utc;
 use commands::{
     CreateUserAuthenticatorCommand, CreateUserAuthenticatorResponse, CreateUserCommand,
     DeleteUserAuthenticatorCommand, DeleteUserCommand, DeleteUserPasskeyCommand,
@@ -9,13 +10,10 @@ use commands::{
 use common::db_router::ReadConsistency;
 use common::error::AppError;
 use common::state::AppState;
-use chrono::Utc;
 use dto::{
     json::{CreateUserRequest, NatsTaskMessage, UpdatePasswordRequest, UpdateUserRequest},
     query::ActiveUserListQueryParams,
 };
-use serde_json::json;
-use tracing::warn;
 use models::{
     SignIn, SocialConnection, UserDetails, UserOrganizationMembership, UserPasskey,
     UserWithIdentifiers, UserWorkspaceMembership,
@@ -25,6 +23,8 @@ use queries::{
     GetUserPasskeysQuery, GetUserSigninsQuery, GetUserSocialConnectionsQuery,
     GetUserWorkspaceMembershipsQuery,
 };
+use serde_json::json;
+use tracing::warn;
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
 use common::deps;

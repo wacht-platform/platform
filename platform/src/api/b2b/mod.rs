@@ -121,7 +121,6 @@ pub struct OrganizationInvitationListQueryParams {
     pub include_deleted: bool,
 }
 
-
 #[derive(Deserialize)]
 pub struct WorkspaceMemberQueryParams {
     pub offset: Option<i64>,

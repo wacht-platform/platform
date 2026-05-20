@@ -3,7 +3,7 @@ use super::core::AgentExecutor;
 use commands::UpdateAgentThreadStateCommand;
 use common::error::AppError;
 use models::AgentThreadStatus;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 impl AgentExecutor {
     pub(super) fn sanitize_user_facing_message(raw: &str, fallback: &str) -> String {

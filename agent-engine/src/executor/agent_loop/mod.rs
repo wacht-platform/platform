@@ -6,7 +6,7 @@ mod tool_schema;
 pub(crate) use super::core;
 
 use super::core::AgentExecutor;
-use templatekit::{render_template_with_prompt, AgentTemplates};
+use templatekit::{AgentTemplates, render_template_with_prompt};
 
 use commands::UpdateAgentThreadStateCommand;
 use common::error::AppError;
@@ -233,6 +233,10 @@ impl AgentExecutor {
                     .as_ref()
                     .map(|item| Self::format_task_mounts(&item.mounts))
                     .unwrap_or_default();
+                let task_attachments = board_item
+                    .as_ref()
+                    .map(Self::format_task_attachments)
+                    .unwrap_or_default();
                 let schedule_scheduled_for = Self::format_scheduled_for(carryover.as_ref());
                 let task_schedule = self
                     .load_schedule_info_for_prompt(
@@ -295,6 +299,7 @@ impl AgentExecutor {
                         "task_journal_tail": task_journal_tail,
                         "parent_task_key": parent_task_key,
                         "is_recurring": is_recurring,
+                        "task_attachments": task_attachments,
                         "task_mounts": task_mounts,
                         "task_schedule": task_schedule,
                         "schedule_scheduled_for": schedule_scheduled_for,
@@ -450,6 +455,10 @@ impl AgentExecutor {
                     .as_ref()
                     .map(|item| Self::format_task_mounts(&item.mounts))
                     .unwrap_or_default();
+                let task_attachments = board_item
+                    .as_ref()
+                    .map(Self::format_task_attachments)
+                    .unwrap_or_default();
                 let schedule_scheduled_for = Self::format_scheduled_for(carryover.as_ref());
                 let task_schedule = self
                     .load_schedule_info_for_prompt(
@@ -522,6 +531,7 @@ impl AgentExecutor {
                         "is_delegated": is_delegated,
                         "delegated_by_thread_id": delegated_by_thread_id,
                         "delegated_workspace_mount": delegated_workspace_mount,
+                        "task_attachments": task_attachments,
                         "task_mounts": task_mounts,
                         "task_schedule": task_schedule,
                         "schedule_scheduled_for": schedule_scheduled_for,
@@ -644,6 +654,21 @@ impl AgentExecutor {
                     "mount_path": m.mount_path,
                     "mode": m.mode,
                     "description": m.description,
+                })
+            })
+            .collect()
+    }
+
+    fn format_task_attachments(item: &models::ProjectTaskBoardItem) -> Vec<serde_json::Value> {
+        item.typed_metadata()
+            .attachments
+            .into_iter()
+            .map(|attachment| {
+                json!({
+                    "path": attachment.path,
+                    "name": attachment.original_name,
+                    "mime_type": attachment.mime_type,
+                    "size_bytes": attachment.size_bytes,
                 })
             })
             .collect()

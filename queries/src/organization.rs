@@ -7,7 +7,10 @@ pub struct GetOrganizationNameQuery {
 
 impl GetOrganizationNameQuery {
     pub fn new(organization_id: i64, deployment_id: i64) -> Self {
-        Self { organization_id, deployment_id }
+        Self {
+            organization_id,
+            deployment_id,
+        }
     }
 
     pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<String, AppError>

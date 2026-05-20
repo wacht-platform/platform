@@ -325,7 +325,7 @@ impl GetAiAgentsByIdsQuery {
                 name: row.name,
                 description: row.description,
                 deployment_id: row.deployment_id,
-                    tools_count: row.tools_count,
+                tools_count: row.tools_count,
                 knowledge_bases_count: row.knowledge_bases_count,
                 sub_agents,
                 strong_model: build_override(row.strong_model_provider, row.strong_model),

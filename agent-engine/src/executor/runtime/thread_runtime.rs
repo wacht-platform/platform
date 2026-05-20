@@ -295,17 +295,13 @@ impl AgentExecutor {
     /// board item / thread, or create one. Stash (assignment_id,
     /// board_item_id) so [`finalize_coordinator_assignment`] can close it
     /// at end-of-iteration.
-    async fn ensure_coordinator_assignment(
-        &mut self,
-        board_item_id: i64,
-    ) -> Result<(), AppError> {
-        let assignment_id =
-            commands::project_task_board::EnsureCoordinatorAssignmentCommand::new(
-                board_item_id,
-                self.ctx.thread_id,
-            )
-            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
-            .await?;
+    async fn ensure_coordinator_assignment(&mut self, board_item_id: i64) -> Result<(), AppError> {
+        let assignment_id = commands::project_task_board::EnsureCoordinatorAssignmentCommand::new(
+            board_item_id,
+            self.ctx.thread_id,
+        )
+        .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
+        .await?;
         self.coordinator_assignment = Some((assignment_id, board_item_id));
         Ok(())
     }

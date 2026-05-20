@@ -199,7 +199,9 @@ impl AgentExecutor {
         }
 
         if self.is_conversation_thread && !self.effective_is_coordinator_thread() {
-            return self.handle_update_project_task_from_conversation(params).await;
+            return self
+                .handle_update_project_task_from_conversation(params)
+                .await;
         }
 
         if let Some(next_status) = params.status.as_deref() {
@@ -288,20 +290,18 @@ impl AgentExecutor {
             })?;
 
         let project_id = self.ctx.get_thread().await?.project_id;
-        let project = queries::GetActorProjectByIdQuery::new(
-            project_id,
-            self.ctx.agent.deployment_id,
-        )
-        .execute_with_db(
-            self.ctx
-                .app_state
-                .db_router
-                .reader(common::ReadConsistency::Strong),
-        )
-        .await?
-        .ok_or_else(|| {
-            AppError::Internal(format!("Project {project_id} not found for task update"))
-        })?;
+        let project =
+            queries::GetActorProjectByIdQuery::new(project_id, self.ctx.agent.deployment_id)
+                .execute_with_db(
+                    self.ctx
+                        .app_state
+                        .db_router
+                        .reader(common::ReadConsistency::Strong),
+                )
+                .await?
+                .ok_or_else(|| {
+                    AppError::Internal(format!("Project {project_id} not found for task update"))
+                })?;
 
         let outcome = commands::ApplyBoardItemEditCommand {
             deployment_id: self.ctx.agent.deployment_id,
@@ -357,20 +357,17 @@ impl AgentExecutor {
         }
 
         let board_id = self.ensure_project_task_board_id().await?;
-        let board_item =
-            queries::GetProjectTaskBoardItemByTaskKeyQuery::new(board_id, &task_key)
-                .execute_with_db(
-                    self.ctx
-                        .app_state
-                        .db_router
-                        .reader(common::ReadConsistency::Strong),
-                )
-                .await?
-                .ok_or_else(|| {
-                    AppError::BadRequest(format!(
-                        "Task `{task_key}` not found on this project board"
-                    ))
-                })?;
+        let board_item = queries::GetProjectTaskBoardItemByTaskKeyQuery::new(board_id, &task_key)
+            .execute_with_db(
+                self.ctx
+                    .app_state
+                    .db_router
+                    .reader(common::ReadConsistency::Strong),
+            )
+            .await?
+            .ok_or_else(|| {
+                AppError::BadRequest(format!("Task `{task_key}` not found on this project board"))
+            })?;
 
         let event_kinds = match params.event_kinds.as_ref() {
             Some(values) if !values.is_empty() => {
@@ -430,20 +427,17 @@ impl AgentExecutor {
         }
 
         let board_id = self.ensure_project_task_board_id().await?;
-        let board_item =
-            queries::GetProjectTaskBoardItemByTaskKeyQuery::new(board_id, &task_key)
-                .execute_with_db(
-                    self.ctx
-                        .app_state
-                        .db_router
-                        .reader(common::ReadConsistency::Strong),
-                )
-                .await?
-                .ok_or_else(|| {
-                    AppError::BadRequest(format!(
-                        "Task `{task_key}` not found on this project board"
-                    ))
-                })?;
+        let board_item = queries::GetProjectTaskBoardItemByTaskKeyQuery::new(board_id, &task_key)
+            .execute_with_db(
+                self.ctx
+                    .app_state
+                    .db_router
+                    .reader(common::ReadConsistency::Strong),
+            )
+            .await?
+            .ok_or_else(|| {
+                AppError::BadRequest(format!("Task `{task_key}` not found on this project board"))
+            })?;
 
         let removed = commands::DeleteAgentThreadTaskSubscriptionCommand {
             thread_id: self.ctx.thread_id,
@@ -508,17 +502,15 @@ impl AgentExecutor {
             .await?;
         let latest_assignment = assignments.into_iter().max_by_key(|a| a.updated_at);
 
-        let subscription = queries::GetAgentThreadTaskSubscriptionQuery::new(
-            self.ctx.thread_id,
-            board_item.id,
-        )
-        .execute_with_db(
-            self.ctx
-                .app_state
-                .db_router
-                .reader(common::ReadConsistency::Strong),
-        )
-        .await?;
+        let subscription =
+            queries::GetAgentThreadTaskSubscriptionQuery::new(self.ctx.thread_id, board_item.id)
+                .execute_with_db(
+                    self.ctx
+                        .app_state
+                        .db_router
+                        .reader(common::ReadConsistency::Strong),
+                )
+                .await?;
 
         let schedule_json = schedule.as_ref().map(|s| {
             serde_json::json!({
@@ -702,7 +694,11 @@ impl AgentExecutor {
     }
 
     async fn maybe_compact_task_journal(&mut self) -> Result<bool, AppError> {
-        let existing = match self.filesystem.read_file_bytes(TASK_WORKSPACE_JOURNAL_FILE).await {
+        let existing = match self
+            .filesystem
+            .read_file_bytes(TASK_WORKSPACE_JOURNAL_FILE)
+            .await
+        {
             Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
             Err(AppError::NotFound(_)) => return Ok(false),
             Err(e) => return Err(e),
@@ -755,7 +751,9 @@ Rules:\n\
 - Past tense. Tight. Roughly 150 chars per actor bullet.\n\
 - Output ONLY the bullet list. No preface, no JSON, no code fences.";
 
-        let mut user_message = String::from("Outcomes by actor (turn index in the compaction window, timestamp, outcome):\n\n");
+        let mut user_message = String::from(
+            "Outcomes by actor (turn index in the compaction window, timestamp, outcome):\n\n",
+        );
         for (actor, turns) in &inputs.outcomes_by_actor {
             user_message.push_str(&format!("{}:\n", actor));
             for (idx, ts, text) in turns {

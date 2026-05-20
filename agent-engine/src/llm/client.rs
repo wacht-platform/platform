@@ -237,4 +237,3 @@ impl From<PromptCacheRequest> for ExplicitCacheRequest {
         }
     }
 }
-

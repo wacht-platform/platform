@@ -365,10 +365,9 @@ async fn handle_authorization_code_grant(
     .map_err(map_token_app_error)?;
 
     if access_token_format == "jwt" {
-        let issuer = crate::api::oauth_runtime::helpers::resolve_issuer_from_oauth_app(
-            &context.oauth_app,
-        )
-        .map_err(map_token_app_error)?;
+        let issuer =
+            crate::api::oauth_runtime::helpers::resolve_issuer_from_oauth_app(&context.oauth_app)
+                .map_err(map_token_app_error)?;
         tokens.access_token = super::oidc::build_access_jwt(
             &app_state,
             context.oauth_app.id,
@@ -600,10 +599,9 @@ async fn handle_refresh_token_grant(
     .map_err(map_token_app_error)?;
 
     if access_token_format == "jwt" {
-        let issuer = crate::api::oauth_runtime::helpers::resolve_issuer_from_oauth_app(
-            &context.oauth_app,
-        )
-        .map_err(map_token_app_error)?;
+        let issuer =
+            crate::api::oauth_runtime::helpers::resolve_issuer_from_oauth_app(&context.oauth_app)
+                .map_err(map_token_app_error)?;
         tokens.access_token = super::oidc::build_access_jwt(
             &app_state,
             context.oauth_app.id,

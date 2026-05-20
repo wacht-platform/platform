@@ -3,8 +3,8 @@
 
 use axum::http::HeaderMap;
 use axum::response::Redirect;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 use common::state::AppState;
 use dto::json::oauth_runtime::{
@@ -150,7 +150,11 @@ pub async fn list_app_signing_keys(
     oauth_app_id: i64,
 ) -> Result<Vec<OAuthAppPublishableKey>, ApiErrorResponse> {
     ListOAuthAppPublishableSigningKeysQuery::new(oauth_app_id)
-        .execute_with_db(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
+        .execute_with_db(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
         .await
         .map_err(ApiErrorResponse::from)
 }
@@ -259,7 +263,10 @@ pub async fn jwks(
 pub enum UserInfoError {
     MissingToken,
     InvalidToken(&'static str),
-    InsufficientScope { required: &'static str, message: &'static str },
+    InsufficientScope {
+        required: &'static str,
+        message: &'static str,
+    },
     InvalidRequest(&'static str),
     Internal(ApiErrorResponse),
 }
@@ -349,7 +356,9 @@ async fn verify_jwt_access_token(
                 .await
                 .map_err(ApiErrorResponse::from)?;
             if matches!(alive, Some(false)) {
-                return Err(UserInfoError::InvalidToken("Backing session was terminated"));
+                return Err(UserInfoError::InvalidToken(
+                    "Backing session was terminated",
+                ));
             }
         }
     }
@@ -409,15 +418,21 @@ pub async fn userinfo(
             return Err(UserInfoError::InvalidToken("Access token expired"));
         }
         if token.grant_status != "active" {
-            return Err(UserInfoError::InvalidToken("Backing OAuth grant is no longer active"));
+            return Err(UserInfoError::InvalidToken(
+                "Backing OAuth grant is no longer active",
+            ));
         }
         if let Some(expires) = token.grant_expires_at {
             if expires <= Utc::now() {
-                return Err(UserInfoError::InvalidToken("Backing OAuth grant has expired"));
+                return Err(UserInfoError::InvalidToken(
+                    "Backing OAuth grant has expired",
+                ));
             }
         }
         if token.session_deleted_at.is_some() {
-            return Err(UserInfoError::InvalidToken("Backing session was terminated"));
+            return Err(UserInfoError::InvalidToken(
+                "Backing session was terminated",
+            ));
         }
         let user_id = token.user_id.ok_or(UserInfoError::InvalidRequest(
             "Access token has no user subject; service-credential tokens cannot access userinfo",
@@ -440,10 +455,8 @@ pub async fn userinfo(
         .await
         .map_err(ApiErrorResponse::from)?;
 
-    let primary_email_verified: Option<bool> = user
-        .primary_email_address
-        .as_ref()
-        .and_then(|primary| {
+    let primary_email_verified: Option<bool> =
+        user.primary_email_address.as_ref().and_then(|primary| {
             user.email_addresses
                 .iter()
                 .find(|e| &e.email == primary)
@@ -531,12 +544,8 @@ pub async fn logout(
             .execute_with_db(reader)
             .await
             .map_err(ApiErrorResponse::from)?;
-        let claims = verify_id_token_hint(
-            token,
-            &candidates,
-            &issuer,
-            request.client_id.as_deref(),
-        )?;
+        let claims =
+            verify_id_token_hint(token, &candidates, &issuer, request.client_id.as_deref())?;
         let _ = (claims.iss, claims.aud);
         claims.sid.and_then(|s| s.parse::<i64>().ok())
     } else {
@@ -552,13 +561,11 @@ pub async fn logout(
 
     let redirect_uri = match (&request.post_logout_redirect_uri, &request.client_id) {
         (Some(uri), Some(client_id)) => {
-            let client = queries::GetRuntimeOAuthClientByClientIdQuery::new(
-                oauth_app.id,
-                client_id.clone(),
-            )
-            .execute_with_db(pool)
-            .await
-            .map_err(ApiErrorResponse::from)?;
+            let client =
+                queries::GetRuntimeOAuthClientByClientIdQuery::new(oauth_app.id, client_id.clone())
+                    .execute_with_db(pool)
+                    .await
+                    .map_err(ApiErrorResponse::from)?;
             let Some(client) = client else {
                 return Err(ApiErrorResponse::bad_request("Unknown client_id"));
             };
@@ -589,10 +596,7 @@ pub async fn logout(
     Ok(Redirect::to(&target))
 }
 
-fn client_allows_post_logout_redirect(
-    client: &queries::RuntimeOAuthClientData,
-    uri: &str,
-) -> bool {
+fn client_allows_post_logout_redirect(client: &queries::RuntimeOAuthClientData, uri: &str) -> bool {
     client
         .post_logout_redirect_uris
         .iter()
@@ -747,16 +751,13 @@ pub async fn build_id_token(
             .as_ref()
             .filter(|_| want_email)
             .and_then(|u| u.primary_email_address.clone()),
-        email_verified: user_details
-            .as_ref()
-            .filter(|_| want_email)
-            .and_then(|u| {
-                let primary = u.primary_email_address.as_ref()?;
-                u.email_addresses
-                    .iter()
-                    .find(|e| &e.email == primary)
-                    .map(|e| e.verified)
-            }),
+        email_verified: user_details.as_ref().filter(|_| want_email).and_then(|u| {
+            let primary = u.primary_email_address.as_ref()?;
+            u.email_addresses
+                .iter()
+                .find(|e| &e.email == primary)
+                .map(|e| e.verified)
+        }),
     };
 
     common::utils::jwt::sign_token_with_kid(&claims, &key.algorithm, &key.private_key_pem, &key.kid)
@@ -785,7 +786,9 @@ fn compute_at_hash(access_token: &str) -> String {
 fn extract_bearer(headers: &HeaderMap) -> Option<String> {
     let v = headers.get(axum::http::header::AUTHORIZATION)?;
     let s = v.to_str().ok()?;
-    let stripped = s.strip_prefix("Bearer ").or_else(|| s.strip_prefix("bearer "))?;
+    let stripped = s
+        .strip_prefix("Bearer ")
+        .or_else(|| s.strip_prefix("bearer "))?;
     if stripped.trim().is_empty() {
         None
     } else {

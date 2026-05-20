@@ -381,10 +381,7 @@ impl AgentExecutor {
                 }),
                 models::InternalToolType::UnsubscribeFromTask => {
                     Ok(ToolCallRequest::UnsubscribeFromTask {
-                        params: Self::parse_tool_params(
-                            "unsubscribe_from_task",
-                            normalized_input,
-                        )?,
+                        params: Self::parse_tool_params("unsubscribe_from_task", normalized_input)?,
                     })
                 }
                 models::InternalToolType::DelegateTask => Ok(ToolCallRequest::DelegateTask {

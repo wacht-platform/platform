@@ -426,7 +426,10 @@ pub struct GetOrganizationMembershipPermissionsQuery {
 
 impl GetOrganizationMembershipPermissionsQuery {
     pub fn new(membership_id: i64, organization_id: i64) -> Self {
-        Self { membership_id, organization_id }
+        Self {
+            membership_id,
+            organization_id,
+        }
     }
 
     pub async fn execute_with_db<'e, E>(
@@ -471,7 +474,10 @@ pub struct GetWorkspaceMembershipPermissionsQuery {
 
 impl GetWorkspaceMembershipPermissionsQuery {
     pub fn new(membership_id: i64, workspace_id: i64) -> Self {
-        Self { membership_id, workspace_id }
+        Self {
+            membership_id,
+            workspace_id,
+        }
     }
 
     pub async fn execute_with_db<'e, E>(

@@ -1,8 +1,7 @@
 use crate::{
     application::{
         response::{ApiResult, PaginatedResponse},
-        user_core as user_core_app,
-        user_identifier as user_identifier_app,
+        user_core as user_core_app, user_identifier as user_identifier_app,
     },
     middleware::RequireDeployment,
 };

@@ -128,9 +128,9 @@ pub struct ExecutionRequest {
 
 impl AgentHandler {
     pub fn new(app_state: AppState) -> Self {
-        let secrets_provider: Arc<dyn SecretsProvider> = Arc::new(
-            SettingsSecretsProvider::new(app_state.encryption_service.clone()),
-        );
+        let secrets_provider: Arc<dyn SecretsProvider> = Arc::new(SettingsSecretsProvider::new(
+            app_state.encryption_service.clone(),
+        ));
         let vector_store_factory: Arc<dyn VectorStoreFactory> =
             Arc::new(LanceDbVectorStoreFactory::new(app_state.clone()));
         let sandbox_factory = build_sandbox_factory(&app_state);
@@ -178,10 +178,7 @@ impl AgentHandler {
                 .await
                 .map_err(|err| AppError::Internal(format!("ensure task sandbox: {err}")))?;
             let initial_arc: Arc<dyn SandboxHandle> = Arc::from(initial);
-            let label = format!(
-                "task[{}/{}]",
-                spec.project_id, spec.task_key
-            );
+            let label = format!("task[{}/{}]", spec.project_id, spec.task_key);
             let recreate_runtime = runtime.clone();
             let recreate_spec = spec.clone();
             let recreate = Arc::new(move || -> crate::sandbox::self_healing::RecreateFuture {
@@ -193,7 +190,11 @@ impl AgentHandler {
                     Ok(arc)
                 })
             });
-            return Ok(Arc::new(SelfHealingHandle::new(initial_arc, recreate, label)));
+            return Ok(Arc::new(SelfHealingHandle::new(
+                initial_arc,
+                recreate,
+                label,
+            )));
         }
 
         let spec = ThreadSandboxSpec {
@@ -219,7 +220,11 @@ impl AgentHandler {
                 Ok(arc)
             })
         });
-        Ok(Arc::new(SelfHealingHandle::new(initial_arc, recreate, label)))
+        Ok(Arc::new(SelfHealingHandle::new(
+            initial_arc,
+            recreate,
+            label,
+        )))
     }
 
     async fn resolve_task_sandbox_ref(
@@ -437,11 +442,10 @@ impl AgentHandler {
             }
             ExecutionMode::ThreadEvent(thread_event) => {
                 if let Some(assignment_id) = assignment_id_from_thread_event(&thread_event) {
-                    let assignment = queries::GetProjectTaskBoardItemAssignmentByIdQuery::new(
-                        assignment_id,
-                    )
-                    .execute_with_db(self.app_state.db_router.writer())
-                    .await?;
+                    let assignment =
+                        queries::GetProjectTaskBoardItemAssignmentByIdQuery::new(assignment_id)
+                            .execute_with_db(self.app_state.db_router.writer())
+                            .await?;
                     if let Some(a) = assignment.as_ref() {
                         if matches!(a.status.as_str(), "cancelled" | "completed" | "rejected") {
                             tracing::info!(

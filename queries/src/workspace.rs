@@ -7,7 +7,10 @@ pub struct GetWorkspaceNameQuery {
 
 impl GetWorkspaceNameQuery {
     pub fn new(workspace_id: i64, deployment_id: i64) -> Self {
-        Self { workspace_id, deployment_id }
+        Self {
+            workspace_id,
+            deployment_id,
+        }
     }
 
     pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<String, AppError>

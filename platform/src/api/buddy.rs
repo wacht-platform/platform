@@ -104,9 +104,8 @@ pub async fn update_buddy_state(
         }
     }
 
-    let buddy_value = serde_json::to_value(&buddy).map_err(|e| {
-        ApiErrorResponse::internal(format!("failed to serialize buddy state: {e}"))
-    })?;
+    let buddy_value = serde_json::to_value(&buddy)
+        .map_err(|e| ApiErrorResponse::internal(format!("failed to serialize buddy state: {e}")))?;
     metadata_obj.insert("buddy".to_string(), buddy_value);
 
     let mut update_req = wacht::models::UpdateUserRequest::new();

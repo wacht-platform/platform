@@ -12,8 +12,9 @@ use models::{
     ToolApprovalRequestState,
 };
 use queries::{
-    GetAgentThreadStateQuery, GetProjectTaskBoardByProjectIdQuery, GetProjectTaskBoardItemByIdQuery,
-    ListProjectTaskBoardItemCommentsQuery, ResolveThreadExecutionAgentQuery,
+    GetAgentThreadStateQuery, GetProjectTaskBoardByProjectIdQuery,
+    GetProjectTaskBoardItemByIdQuery, ListProjectTaskBoardItemCommentsQuery,
+    ResolveThreadExecutionAgentQuery,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -111,12 +112,13 @@ pub async fn answer_project_task_board_item_question(
         .await?
         .ok_or_else(|| AppError::NotFound("assignment not found".to_string()))?;
 
+    let freeform_text = submission.freeform_trimmed();
     let answers_json = serde_json::to_value(&submission.answers)
         .map_err(|e| AppError::Internal(format!("serialize answers: {e}")))?;
     let response_content = ConversationContent::ClarificationResponse {
         request_message_id: None,
         answers: answers_json.clone(),
-        freeform_text: None,
+        freeform_text: freeform_text.clone(),
     };
     let conv_id = app_state.sf.next_id()? as i64;
 
@@ -146,7 +148,7 @@ pub async fn answer_project_task_board_item_question(
     .await?;
 
     let event_log_id = app_state.sf.next_id()? as i64;
-    let payload = json!({
+    let mut payload = json!({
         "event_log_id": event_log_id.to_string(),
         "deployment_id": "0",
         "thread_id": assignment.thread_id.to_string(),
@@ -156,6 +158,9 @@ pub async fn answer_project_task_board_item_question(
         "summary": "User answered the pending clarification; resume the assignment.",
         "answers": answers_json,
     });
+    if let Some(text) = freeform_text.as_ref() {
+        payload["freeform_text"] = serde_json::Value::String(text.clone());
+    }
     InsertEventLogCommand::new(
         event_log_id,
         item.board_id,
@@ -355,12 +360,26 @@ pub async fn create_project_task_board_item_comment(
     project_id: i64,
     item_id: i64,
     body: String,
+    attachments: Vec<crate::application::agent_threads::WorkspaceUploadInput>,
 ) -> Result<ProjectTaskBoardItemComment, AppError> {
     let body = body.trim().to_string();
-    if body.is_empty() {
-        return Err(AppError::BadRequest("comment body required".to_string()));
+    if body.is_empty() && attachments.is_empty() {
+        return Err(AppError::BadRequest(
+            "comment body or attachments required".to_string(),
+        ));
     }
     let item = fetch_item(app_state, project_id, item_id).await?;
+
+    let uploaded = crate::application::agent_threads::upload_task_workspace_files(
+        app_state,
+        deployment_id,
+        project_id,
+        &item.task_key,
+        attachments,
+    )
+    .await?;
+    let metadata =
+        crate::application::agent_threads::merge_attachments_into_metadata(&json!({}), &uploaded)?;
 
     let coordinator_thread_id = queries::GetProjectCoordinatorThreadIdQuery::new(project_id)
         .execute_with_db(app_state.db_router.writer())
@@ -376,7 +395,7 @@ pub async fn create_project_task_board_item_comment(
         board_item_id: item_id,
         actor_id,
         body,
-        metadata: json!({}),
+        metadata,
     }
     .execute_with_db(&mut *tx)
     .await?;
@@ -481,22 +500,20 @@ pub async fn delegate_task(
         )));
     }
 
-    let lane_agent_id = ResolveThreadExecutionAgentQuery::new(
-        request.target_lane_thread_id,
-        deployment_id,
-    )
-    .execute_with_db(
-        app_state
-            .db_router
-            .reader(common::db_router::ReadConsistency::Strong),
-    )
-    .await?
-    .ok_or_else(|| {
-        AppError::BadRequest(format!(
-            "delegate_task: lane thread {} has no assigned agent",
-            request.target_lane_thread_id
-        ))
-    })?;
+    let lane_agent_id =
+        ResolveThreadExecutionAgentQuery::new(request.target_lane_thread_id, deployment_id)
+            .execute_with_db(
+                app_state
+                    .db_router
+                    .reader(common::db_router::ReadConsistency::Strong),
+            )
+            .await?
+            .ok_or_else(|| {
+                AppError::BadRequest(format!(
+                    "delegate_task: lane thread {} has no assigned agent",
+                    request.target_lane_thread_id
+                ))
+            })?;
 
     let project_thread = GetAgentThreadStateQuery::new(lane.id, deployment_id)
         .execute_with_db(

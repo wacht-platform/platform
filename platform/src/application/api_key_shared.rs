@@ -87,13 +87,13 @@ pub async fn resolve_api_key_membership_context(
         let organization_id = app.organization_id.ok_or_else(|| {
             AppError::BadRequest("organization_id required when org membership is set".to_string())
         })?;
-        let organization_permissions =
-            GetOrganizationMembershipPermissionsQuery::new(organization_membership_id, organization_id)
-                .execute_with_db(reader)
-                .await?
-                .ok_or_else(|| {
-                    AppError::NotFound("Organization membership not found".to_string())
-                })?;
+        let organization_permissions = GetOrganizationMembershipPermissionsQuery::new(
+            organization_membership_id,
+            organization_id,
+        )
+        .execute_with_db(reader)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Organization membership not found".to_string()))?;
 
         context.organization_id = Some(organization_permissions.organization_id);
         context.org_role_permissions = organization_permissions.permissions;
@@ -101,7 +101,9 @@ pub async fn resolve_api_key_membership_context(
 
     if let Some(workspace_membership_id) = context.workspace_membership_id {
         let workspace_id = app.workspace_id.ok_or_else(|| {
-            AppError::BadRequest("workspace_id required when workspace membership is set".to_string())
+            AppError::BadRequest(
+                "workspace_id required when workspace membership is set".to_string(),
+            )
         })?;
         let workspace_permissions =
             GetWorkspaceMembershipPermissionsQuery::new(workspace_membership_id, workspace_id)

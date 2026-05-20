@@ -10,7 +10,7 @@ use dto::json::{
 
 use crate::llm::{SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest};
 use queries::GetProjectTaskBoardItemAssignmentByIdQuery;
-use templatekit::{render_prompt_text, render_template_only, AgentTemplates};
+use templatekit::{AgentTemplates, render_prompt_text, render_template_only};
 const STEER_VISIBILITY_NUDGE_WINDOW: usize = 4;
 const MAX_LIVE_CONTEXT_CHARS: usize = 12_000;
 const MAX_TASK_JOURNAL_TAIL_CHARS: usize = 4_000;
@@ -21,10 +21,7 @@ fn cap_sibling_message_body(body: String) -> String {
     if body.chars().count() <= MAX_SIBLING_TAIL_MESSAGE_CHARS {
         return body;
     }
-    let mut out: String = body
-        .chars()
-        .take(MAX_SIBLING_TAIL_MESSAGE_CHARS)
-        .collect();
+    let mut out: String = body.chars().take(MAX_SIBLING_TAIL_MESSAGE_CHARS).collect();
     out.push_str("…[truncated]");
     out
 }
@@ -43,7 +40,9 @@ fn render_sibling_message_kind(content: &models::ConversationContent) -> String 
         models::ConversationContent::TaskSubscriptionNotification { .. } => {
             "task_subscription_notification"
         }
-        models::ConversationContent::TaskSubscriptionDelivery { .. } => "task_subscription_delivery",
+        models::ConversationContent::TaskSubscriptionDelivery { .. } => {
+            "task_subscription_delivery"
+        }
         models::ConversationContent::AssignmentExecutionTrigger { .. } => {
             "assignment_execution_trigger"
         }
@@ -100,9 +99,7 @@ fn render_sibling_message_body(content: &models::ConversationContent) -> String 
             from_status,
             to_status,
             ..
-        } => format!(
-            "subscription: {task_key} \"{task_title}\" {from_status}→{to_status}"
-        ),
+        } => format!("subscription: {task_key} \"{task_title}\" {from_status}→{to_status}"),
         models::ConversationContent::TaskSubscriptionDelivery { summary } => summary.clone(),
         models::ConversationContent::AssignmentExecutionTrigger {
             task_key,
@@ -166,7 +163,9 @@ impl AgentExecutor {
     /// event. Surfaced as the MOST RECENT USER INPUT block at the top
     /// of the live context so the agent always reads the freshest steer
     /// first, even when older trigger markers in history are thin stubs.
-    fn latest_user_input_snapshot(&self) -> Option<dto::json::template_context::MostRecentUserInput> {
+    fn latest_user_input_snapshot(
+        &self,
+    ) -> Option<dto::json::template_context::MostRecentUserInput> {
         let mut latest: Option<(chrono::DateTime<chrono::Utc>, &'static str, String)> = None;
         for conv in self.conversations.iter() {
             let candidate: Option<(&'static str, String)> = match &conv.content {
@@ -186,14 +185,13 @@ impl AgentExecutor {
                         Some(("steer", trimmed.to_string()))
                     }
                 }
-                models::ConversationContent::ClarificationResponse {
-                    freeform_text,
-                    ..
-                } => freeform_text
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(|t| ("freeform_clarification", t.to_string())),
+                models::ConversationContent::ClarificationResponse { freeform_text, .. } => {
+                    freeform_text
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(|t| ("freeform_clarification", t.to_string()))
+                }
                 _ => None,
             };
             if let Some((source, text)) = candidate {
@@ -207,11 +205,13 @@ impl AgentExecutor {
                 }
             }
         }
-        latest.map(|(ts, source, text)| dto::json::template_context::MostRecentUserInput {
-            source: source.to_string(),
-            text,
-            timestamp: ts.to_rfc3339(),
-        })
+        latest.map(
+            |(ts, source, text)| dto::json::template_context::MostRecentUserInput {
+                source: source.to_string(),
+                text,
+                timestamp: ts.to_rfc3339(),
+            },
+        )
     }
 
     fn last_sibling_thread_tail(
@@ -556,9 +556,7 @@ impl AgentExecutor {
     ///      context) keeps it cache-resident and lets it act as a steering
     ///      header rather than incidental metadata.
     ///   2. `STABLE ROUTING CONTEXT` — sub-agent routing list (coordinators).
-    fn build_stable_context_message(
-        prompt_context: &AgentLoopPromptEnvelope,
-    ) -> Option<String> {
+    fn build_stable_context_message(prompt_context: &AgentLoopPromptEnvelope) -> Option<String> {
         let mut sections: Vec<String> = Vec::new();
 
         if let Some(block) = Self::compose_agent_identity_section(prompt_context) {
@@ -584,9 +582,7 @@ impl AgentExecutor {
         }
     }
 
-    fn compose_agent_identity_section(
-        prompt_context: &AgentLoopPromptEnvelope,
-    ) -> Option<String> {
+    fn compose_agent_identity_section(prompt_context: &AgentLoopPromptEnvelope) -> Option<String> {
         let agent_name = prompt_context.agent_name.trim();
         let agent_description = prompt_context
             .agent_description
@@ -614,9 +610,7 @@ impl AgentExecutor {
         Some(block)
     }
 
-    fn compose_task_brief_section(
-        prompt_context: &AgentLoopPromptEnvelope,
-    ) -> Option<String> {
+    fn compose_task_brief_section(prompt_context: &AgentLoopPromptEnvelope) -> Option<String> {
         let item = prompt_context.base.task.active_board_item.as_ref()?;
         // Keep this section purely stable across iterations so the LLM prompt
         // cache (Gemini explicit context cache) can reuse the prefix hash.
@@ -625,7 +619,12 @@ impl AgentExecutor {
         let mut block = String::from("TASK BRIEF\n");
         block.push_str(&format!("\nKey: `{}`", item.task_key));
         block.push_str(&format!("\nTitle: {}", item.title));
-        if let Some(desc) = item.description.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(desc) = item
+            .description
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             block.push_str("\n\nDescription:\n");
             block.push_str(desc);
         }
@@ -666,9 +665,7 @@ impl AgentExecutor {
         Some(block)
     }
 
-    fn compose_routing_section(
-        prompt_context: &AgentLoopPromptEnvelope,
-    ) -> Option<String> {
+    fn compose_routing_section(prompt_context: &AgentLoopPromptEnvelope) -> Option<String> {
         let assignment = prompt_context.base.task.active_assignment.as_ref()?;
         // Same caching contract as `compose_task_brief_section`: keep stable
         // identifiers / role / note / instructions here, leave `status`
@@ -678,7 +675,12 @@ impl AgentExecutor {
         block.push_str(&format!("\nAssignment ID: {}", assignment.assignment_id));
         block.push_str(&format!("\nBoard item: {}", assignment.board_item_id));
         block.push_str(&format!("\nRole: {}", assignment.assignment_role));
-        if let Some(note) = assignment.note.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(note) = assignment
+            .note
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             block.push_str("\nRouting note: ");
             block.push_str(note);
         }

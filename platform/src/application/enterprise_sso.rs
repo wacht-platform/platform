@@ -1,3 +1,4 @@
+use base64::{Engine, engine::general_purpose::STANDARD};
 use commands::{
     enterprise_connection::{
         CreateEnterpriseConnectionCommand, CreateEnterpriseConnectionRequest,
@@ -25,7 +26,6 @@ use queries::{
     GetEnterpriseConnectionQuery, GetScimTokenQuery, ListEnterpriseConnectionsQuery,
     ListOrganizationDomainsQuery,
 };
-use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;

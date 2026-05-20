@@ -17,10 +17,7 @@ pub struct SessionCascadeResult {
 }
 
 impl RevokeSessionAndCascadeTokens {
-    pub async fn execute_with_pool(
-        self,
-        pool: &PgPool,
-    ) -> Result<SessionCascadeResult, AppError> {
+    pub async fn execute_with_pool(self, pool: &PgPool) -> Result<SessionCascadeResult, AppError> {
         let mut tx = pool.begin().await?;
 
         let sessions = sqlx::query!(

@@ -57,8 +57,9 @@ pub async fn lookup_actor(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<LookupActorParams>,
 ) -> ApiResult<LookupActorResponse> {
-    let actor = GetActorByExternalKeyQuery::new(deployment_id, params.subject_type, params.external_key)
-        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
-        .await?;
+    let actor =
+        GetActorByExternalKeyQuery::new(deployment_id, params.subject_type, params.external_key)
+            .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
+            .await?;
     Ok(LookupActorResponse { actor }.into())
 }

@@ -113,12 +113,13 @@ impl RotateApiKeyCommand {
                     "organization_id required when org membership resolved".to_string(),
                 )
             })?;
-            let org_perm = GetOrganizationMembershipPermissionsQuery::new(org_membership_id, app_org_id)
-                .execute_with_db(&mut *tx)
-                .await?
-                .ok_or_else(|| {
-                    AppError::NotFound("Organization membership not found".to_string())
-                })?;
+            let org_perm =
+                GetOrganizationMembershipPermissionsQuery::new(org_membership_id, app_org_id)
+                    .execute_with_db(&mut *tx)
+                    .await?
+                    .ok_or_else(|| {
+                        AppError::NotFound("Organization membership not found".to_string())
+                    })?;
 
             organization_id = Some(org_perm.organization_id);
             org_role_permissions = org_perm.permissions;
@@ -130,13 +131,13 @@ impl RotateApiKeyCommand {
                     "workspace_id required when workspace membership resolved".to_string(),
                 )
             })?;
-            let workspace_perm =
-                GetWorkspaceMembershipPermissionsQuery::new(workspace_membership_id, app_workspace_id)
-                    .execute_with_db(&mut *tx)
-                    .await?
-                    .ok_or_else(|| {
-                        AppError::NotFound("Workspace membership not found".to_string())
-                    })?;
+            let workspace_perm = GetWorkspaceMembershipPermissionsQuery::new(
+                workspace_membership_id,
+                app_workspace_id,
+            )
+            .execute_with_db(&mut *tx)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Workspace membership not found".to_string()))?;
 
             if let Some(existing_org_id) = organization_id {
                 if existing_org_id != workspace_perm.organization_id {

@@ -45,13 +45,8 @@ pub async fn revoke_user_signin(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<UserSigninParams>,
 ) -> ApiResult<()> {
-    user_core_app::revoke_user_signin(
-        &app_state,
-        deployment_id,
-        params.user_id,
-        params.signin_id,
-    )
-    .await?;
+    user_core_app::revoke_user_signin(&app_state, deployment_id, params.user_id, params.signin_id)
+        .await?;
     Ok(().into())
 }
 

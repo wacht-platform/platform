@@ -101,11 +101,8 @@ pub async fn create_oauth_app(
     // Signing Keys tab is non-empty from day one and id_token issuance never
     // has to do a slow first-request key generation. Idempotent — re-runs are
     // no-ops thanks to the unique index on (oauth_app_id) WHERE status='active'.
-    if let Err(_e) = crate::application::oauth_runtime::ensure_active_signing_key(
-        app_state,
-        created.id,
-    )
-    .await
+    if let Err(_e) =
+        crate::application::oauth_runtime::ensure_active_signing_key(app_state, created.id).await
     {
         tracing::warn!(
             oauth_app_id = created.id,

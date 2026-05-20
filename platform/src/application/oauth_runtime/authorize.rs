@@ -127,21 +127,16 @@ pub async fn oauth_consent_submit(
             } else if request.session_id.is_some() {
                 request.session_id
             } else {
-                queries::GetActiveSessionForUserQuery::new(
-                    claims.deployment_id,
-                    request.user_id,
-                )
-                .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
-                .await?
+                queries::GetActiveSessionForUserQuery::new(claims.deployment_id, request.user_id)
+                    .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
+                    .await?
             };
 
             // OIDC `auth_time` per spec is the End-User authentication moment
             // (signins.created_at), not the /authorize timestamp.
             let auth_time = if let Some(sid) = session_id {
                 queries::GetSigninAuthTimeQuery::new(sid, request.user_id)
-                    .execute_with_db(
-                        app_state.db_router.reader(ReadConsistency::Strong),
-                    )
+                    .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
                     .await?
                     .or(claims.auth_time)
             } else {
@@ -563,9 +558,7 @@ fn resolve_scope_definitions(
 /// will honor downstream in the consent flow) are accepted; unknowns are
 /// rejected so RPs fail loudly. Errors are mapped to OIDC error codes by
 /// `oidc_authorize_error_code` and surfaced as redirects to `redirect_uri`.
-fn validate_oidc_authorize_params(
-    request: &OAuthAuthorizeRequest,
-) -> Result<(), ApiErrorResponse> {
+fn validate_oidc_authorize_params(request: &OAuthAuthorizeRequest) -> Result<(), ApiErrorResponse> {
     if let Some(mode) = request
         .response_mode
         .as_deref()

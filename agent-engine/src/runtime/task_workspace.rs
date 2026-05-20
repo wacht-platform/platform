@@ -282,8 +282,8 @@ impl JournalCheckpoint {
             }
             if let Some(rest) = trimmed.strip_prefix("### ") {
                 let header = rest.trim_start();
-                in_relevant = header.starts_with("Earlier eras")
-                    || header.starts_with("Activity by actor");
+                in_relevant =
+                    header.starts_with("Earlier eras") || header.starts_with("Activity by actor");
                 if in_relevant {
                     if !out.is_empty() && !out.ends_with('\n') {
                         out.push('\n');
@@ -470,10 +470,8 @@ pub fn prepare_journal_compaction(content: &str) -> Option<CheckpointInputs> {
     let compact_count = entry_count.saturating_sub(JOURNAL_RECENT_ENTRIES_KEPT);
     let tail_kept = JOURNAL_RECENT_ENTRIES_KEPT;
 
-    let mut seen_cautions: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
-    let mut seen_artifacts: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut seen_cautions: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen_artifacts: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut cautions = Vec::new();
     let mut artifacts = Vec::new();
     let mut prior_eras: Vec<(String, String)> = Vec::new();
@@ -520,7 +518,12 @@ pub fn prepare_journal_compaction(content: &str) -> Option<CheckpointInputs> {
         }
         if let JournalSection::Entry(entry) = section {
             taken += 1;
-            if let Some(c) = entry.cautions.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            if let Some(c) = entry
+                .cautions
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
                 let line = format!("[{}] {}", entry.actor, c);
                 if seen_cautions.insert(line.clone()) {
                     cautions.push(line);
@@ -532,11 +535,17 @@ pub fn prepare_journal_compaction(content: &str) -> Option<CheckpointInputs> {
                     artifacts.push(trimmed);
                 }
             }
-            if let Some(outcome) = entry.outcome.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-                by_actor
-                    .entry(entry.actor.clone())
-                    .or_default()
-                    .push((taken, entry.timestamp.clone(), outcome.to_string()));
+            if let Some(outcome) = entry
+                .outcome
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                by_actor.entry(entry.actor.clone()).or_default().push((
+                    taken,
+                    entry.timestamp.clone(),
+                    outcome.to_string(),
+                ));
             }
         }
     }

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use common::error::AppError;
 use models::ConversationContent;
@@ -108,11 +108,8 @@ impl AgentExecutor {
                 max_output_tokens: Some(200),
                 reasoning_effort: None,
             };
-            let mut request = SemanticLlmRequest::from_config(
-                system_prompt.clone(),
-                history.clone(),
-                config,
-            );
+            let mut request =
+                SemanticLlmRequest::from_config(system_prompt.clone(), history.clone(), config);
             request.forced_tool_names =
                 Some(vec![CONTINUE_TOOL.to_string(), COMPLETE_TOOL.to_string()]);
             match self

@@ -292,8 +292,12 @@ pub async fn test_connection_handler(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ConnectionParams>,
 ) -> ApiResult<TestConnectionResult> {
-    let result =
-        test_existing_connection(&app_state, deployment_id, params.org_id, params.connection_id)
-            .await?;
+    let result = test_existing_connection(
+        &app_state,
+        deployment_id,
+        params.org_id,
+        params.connection_id,
+    )
+    .await?;
     Ok(result.into())
 }
