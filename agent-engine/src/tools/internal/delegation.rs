@@ -1,4 +1,5 @@
 use super::ToolExecutor;
+use crate::sandbox::ExecRequest;
 use commands::{
     CreateAgentThreadCommand, CreateProjectTaskBoardItemAssignmentCommand,
     CreateProjectTaskBoardItemCommand, UpdateAgentThreadCommand,
@@ -6,11 +7,13 @@ use commands::{
 };
 use common::error::AppError;
 use dto::json::agent_executor::{
-    CreateThreadParams, DelegateTaskParams, ListThreadsParams, SleepParams, UpdateThreadParams,
+    CreateThreadParams, DelegateTaskInputMount, DelegateTaskParams, ListThreadsParams, SleepParams,
+    UpdateThreadParams,
 };
 use models::AiTool;
 use serde_json::Value;
-use tokio::time::{sleep, Duration};
+use std::collections::BTreeMap;
+use tokio::time::{Duration, sleep};
 
 const MAX_CUSTOM_THREAD_INSTRUCTION_WORDS: usize = 160;
 const MAX_CUSTOM_THREAD_INSTRUCTION_CHARS: usize = 1200;
@@ -109,6 +112,8 @@ fn jaccard_similarity(
 }
 
 const LANE_SIMILARITY_REJECT_THRESHOLD: f64 = 0.80;
+const MIN_DELEGATE_DESCRIPTION_CHARS: usize = 80;
+const MIN_DELEGATE_DESCRIPTION_WORDS: usize = 14;
 
 fn preview_text_by_words(input: Option<&str>, max_words: usize) -> Option<String> {
     let input = input?.trim();
@@ -189,7 +194,145 @@ fn validate_custom_thread_instructions(input: &str) -> Result<String, AppError> 
     Ok(normalized)
 }
 
+fn validate_delegate_description(input: Option<&str>) -> Result<String, AppError> {
+    let normalized = input
+        .map(|v| v.split_whitespace().collect::<Vec<_>>().join(" "))
+        .unwrap_or_default();
+    let char_count = normalized.chars().count();
+    let word_count = normalized.split_whitespace().count();
+    if char_count < MIN_DELEGATE_DESCRIPTION_CHARS || word_count < MIN_DELEGATE_DESCRIPTION_WORDS {
+        return Err(AppError::BadRequest(format!(
+            "delegate_task requires a clear brief with boundaries and an expected output (minimum {MIN_DELEGATE_DESCRIPTION_CHARS} chars and {MIN_DELEGATE_DESCRIPTION_WORDS} words). Include what to inspect, what to ignore, and what file to write under `/delegated_workspace/`."
+        )));
+    }
+    let lower = normalized.to_ascii_lowercase();
+    let has_output_boundary = lower.contains("/delegated_workspace")
+        || lower.contains("output")
+        || lower.contains("deliverable")
+        || lower.contains("write")
+        || lower.contains("produce");
+    let has_scope_boundary = lower.contains("inspect")
+        || lower.contains("analyze")
+        || lower.contains("review")
+        || lower.contains("read")
+        || lower.contains("scope");
+    if !has_output_boundary || !has_scope_boundary {
+        return Err(AppError::BadRequest(
+            "delegate_task brief must clearly state both the input/scope to inspect and the expected output/deliverable. Name the `/delegated_workspace/` output path when possible."
+                .to_string(),
+        ));
+    }
+    Ok(normalized)
+}
+
+fn validate_delegate_input_mounts(
+    mounts: Option<Vec<DelegateTaskInputMount>>,
+    conv_thread_id: i64,
+) -> Result<Vec<serde_json::Value>, AppError> {
+    let mut resolved = Vec::new();
+    let mut seen_aliases = std::collections::HashSet::new();
+    let mut seen_paths = std::collections::HashSet::new();
+    for mount in mounts.unwrap_or_default() {
+        let path = mount.path.trim().trim_end_matches('/').to_string();
+        if path == "/workspace" || path == "workspace" {
+            return Err(AppError::BadRequest(
+                "delegate_task input_mounts.path must be an explicit subfolder under `/workspace/`, not the workspace root."
+                    .to_string(),
+            ));
+        }
+        let Some(relative) = path
+            .strip_prefix("/workspace/")
+            .or_else(|| path.strip_prefix("workspace/"))
+        else {
+            return Err(AppError::BadRequest(format!(
+                "delegate_task input_mounts.path `{path}` must be under `/workspace/`."
+            )));
+        };
+        if relative.is_empty()
+            || relative
+                .split('/')
+                .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+        {
+            return Err(AppError::BadRequest(format!(
+                "delegate_task input_mounts.path `{path}` must be a normalized workspace subfolder path."
+            )));
+        }
+
+        let alias = mount.alias.trim().trim_matches('/').to_string();
+        if alias.is_empty()
+            || alias.contains('/')
+            || alias == "."
+            || alias == ".."
+            || !alias
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+        {
+            return Err(AppError::BadRequest(
+                "delegate_task input_mounts.alias must be a single path segment using letters, numbers, dash, or underscore."
+                    .to_string(),
+            ));
+        }
+        if !seen_aliases.insert(alias.clone()) {
+            return Err(AppError::BadRequest(format!(
+                "delegate_task input_mounts alias `{alias}` is duplicated."
+            )));
+        }
+        if !seen_paths.insert(relative.to_string()) {
+            return Err(AppError::BadRequest(format!(
+                "delegate_task input_mounts path `/workspace/{relative}` is duplicated."
+            )));
+        }
+
+        resolved.push(serde_json::json!({
+            "mount_path": format!("/delegated_inputs/{alias}"),
+            "s3_relative_key": format!("persistent/{conv_thread_id}/workspace/{relative}"),
+            "mode": "ro",
+            "source_path": format!("/workspace/{relative}"),
+            "alias": alias,
+        }));
+    }
+    Ok(resolved)
+}
+
 impl ToolExecutor {
+    async fn verify_delegate_input_mount_sources(
+        &self,
+        input_mounts: &[serde_json::Value],
+    ) -> Result<(), AppError> {
+        let sandbox = self.sandbox_handle()?;
+        for mount in input_mounts {
+            let Some(source_path) = mount.get("source_path").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let result = sandbox
+                .exec(ExecRequest {
+                    command: vec![
+                        "bash".into(),
+                        "-c".into(),
+                        "test -d \"$1\"".into(),
+                        "_".into(),
+                        source_path.to_string(),
+                    ],
+                    cwd: None,
+                    env: BTreeMap::new(),
+                    timeout: Some(Duration::from_secs(5)),
+                    exec_id: None,
+                })
+                .await
+                .map_err(|err| {
+                    AppError::Internal(format!(
+                        "delegate_task failed to inspect input mount source `{source_path}`: {err}"
+                    ))
+                })?;
+            if result.exit_code != 0 {
+                return Err(AppError::BadRequest(format!(
+                    "delegate_task input_mounts.path `{source_path}` must exist and be a directory in the conversation workspace before delegation."
+                )));
+            }
+        }
+        Ok(())
+    }
+
     pub(super) async fn execute_sleep(
         &self,
         tool: &AiTool,
@@ -685,6 +828,7 @@ impl ToolExecutor {
                 "delegate_task requires a non-empty title".to_string(),
             ));
         }
+        let description = validate_delegate_description(params.description.as_deref())?;
 
         let target_lane_thread_id: i64 = params.target_lane_thread_id.into();
         let lane = queries::GetAgentThreadStateQuery::new(
@@ -729,11 +873,17 @@ impl ToolExecutor {
         let board_item_id = self.app_state().sf.next_id()? as i64;
         let task_key = format!("DELEGATE-{board_item_id}");
         let mount_s3_key = format!("persistent/{conv_thread_id}/workspace/delegate/{task_key}");
-        let mounts = serde_json::json!([{
+        let mut mounts = vec![serde_json::json!({
             "mount_path": "/delegated_workspace",
             "s3_relative_key": mount_s3_key,
             "mode": "rw",
-        }]);
+        })];
+        let input_mounts =
+            validate_delegate_input_mounts(params.input_mounts.clone(), conv_thread_id)?;
+        self.verify_delegate_input_mount_sources(&input_mounts)
+            .await?;
+        mounts.extend(input_mounts.clone());
+        let mounts = serde_json::Value::Array(mounts);
 
         let board_id =
             crate::executor::project::lookup_or_create_project_task_board_id(&self.ctx).await?;
@@ -745,7 +895,7 @@ impl ToolExecutor {
             board_id,
             task_key: task_key.clone(),
             title: title.clone(),
-            description: params.description.clone(),
+            description: Some(description.clone()),
             status: "pending".to_string(),
             assigned_thread_id: Some(target_lane_thread_id),
             metadata: serde_json::json!({
@@ -753,6 +903,7 @@ impl ToolExecutor {
                 "delegated_by_thread_id": conv_thread_id.to_string(),
                 "delegated_by_agent_id": self.agent().id.to_string(),
                 "capability_tags": params.capability_tags.clone().unwrap_or_default(),
+                "input_mounts": input_mounts.clone(),
             }),
             mounts: mounts.clone(),
             exclusive_owner_agent_id: Some(lane_agent_id),
@@ -779,7 +930,7 @@ impl ToolExecutor {
             thread_id: target_lane_thread_id,
             assignment_role: models::project_task_board::assignment_role::EXECUTOR.to_string(),
             status: models::project_task_board::assignment_status::AVAILABLE.to_string(),
-            instructions: params.description.clone(),
+            instructions: Some(description),
             metadata: serde_json::json!({
                 "kind": "delegated_task_assignment",
                 "delegated_by_thread_id": conv_thread_id.to_string(),
@@ -797,6 +948,7 @@ impl ToolExecutor {
             "assigned_agent_id": lane_agent_id.to_string(),
             "shared_workspace_path_in_conversation": format!("/workspace/delegate/{}", board_item.task_key),
             "shared_workspace_path_in_lane": "/delegated_workspace",
+            "input_mounts_in_lane": input_mounts,
             "subscribed": true,
         }))
     }

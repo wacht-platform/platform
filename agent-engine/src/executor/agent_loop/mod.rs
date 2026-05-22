@@ -442,6 +442,29 @@ impl AgentExecutor {
                 } else {
                     None
                 };
+                let delegated_input_mounts = if is_delegated {
+                    board_item
+                        .as_ref()
+                        .and_then(|item| item.mounts.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|m| {
+                                    let path = m.get("mount_path").and_then(|v| v.as_str())?;
+                                    if !path.starts_with("/delegated_inputs/") {
+                                        return None;
+                                    }
+                                    Some(serde_json::json!({
+                                        "mount_path": path,
+                                        "alias": m.get("alias").and_then(|v| v.as_str()),
+                                        "source_path": m.get("source_path").and_then(|v| v.as_str()),
+                                    }))
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
                 let carryover = board_item
                     .as_ref()
                     .and_then(|item| item.typed_metadata().schedule_carryover);
@@ -531,6 +554,7 @@ impl AgentExecutor {
                         "is_delegated": is_delegated,
                         "delegated_by_thread_id": delegated_by_thread_id,
                         "delegated_workspace_mount": delegated_workspace_mount,
+                        "delegated_input_mounts": delegated_input_mounts,
                         "task_attachments": task_attachments,
                         "task_mounts": task_mounts,
                         "task_schedule": task_schedule,

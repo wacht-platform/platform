@@ -22,6 +22,10 @@
 
 - Active task: `/task/` — brief `/task/TASK.md`, journal `/task/JOURNAL.md`, deliverables under `/task/artifacts/`.
 {{#if is_delegated}}- **Shared mount with the delegating conversation: `/delegated_workspace/` (RW).** This is the ONLY place the delegating conversation will look for your output. Read any inputs they left here at the start, write your deliverable here before you finish, and reference exact paths in `/task/JOURNAL.md`. `/task/artifacts/` is fine for scratch but the conversation reads `/delegated_workspace/`.
+{{#if delegated_input_mounts}}- **Read-only delegated inputs:**
+{{#each delegated_input_mounts}}  - `{{mount_path}}`{{#if alias}} ({{alias}}){{/if}}{{#if source_path}} from `{{source_path}}`{{/if}}
+{{/each}}Do not write to `/delegated_inputs/`; write results to `/delegated_workspace/`.
+{{/if}}
 {{/if}}{{#if parent_task_key}}- Parent task (read-only): `/project_workspace/tasks/{{parent_task_key}}/`
 {{/if}}- Other tasks (read-only): `/project_workspace/tasks/<task_key>/`
 {{#if runbook_file}}- Runbook (recurring): `{{runbook_file}}`

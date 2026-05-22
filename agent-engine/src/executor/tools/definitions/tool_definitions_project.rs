@@ -135,7 +135,7 @@ pub(crate) fn project_tools() -> Vec<(
         ),
         (
             "delegate_task",
-            "Hand a discrete piece of work to an existing execution lane in the current project. Conversation threads only; the assigned agent on the target lane will own this task exclusively (coordinator and reviewer do not see it). \n\nShared workspace — the SAME S3 prefix mounted in two places:\n- You (conversation) read/write at `/workspace/delegate/<task_key>/`\n- The lane reads/writes at `/delegated_workspace/`\n\nOutputs from the lane appear in YOUR `/workspace/delegate/<task_key>/` — that is the only place to find them. Do NOT look under `/project_workspace/tasks/<task_key>/` for delegated outputs; that path only holds the coordinator-side TASK.md/JOURNAL.md and is empty of artifacts for delegated work.\n\nFlow: put inputs in `/workspace/delegate/<task_key>/` before delegating → the lane runs → outputs land in the same folder → you read them. Task status auto-completes when the lane finishes (no coordinator/reviewer step). You are auto-subscribed to status updates.",
+            "Hand a discrete piece of work to an existing execution lane in the current project. Conversation threads only; the assigned agent on the target lane will own this task exclusively (coordinator and reviewer do not see it).\n\nGive clear boundaries: the description must say exactly what to inspect, what to ignore, and what deliverable to write. For folder analysis, pass explicit `input_mounts` so the lane receives read-only views of the relevant `/workspace/<folder>` paths at `/delegated_inputs/<alias>/`.\n\nShared output workspace — the SAME S3 prefix mounted in two places:\n- You (conversation) read/write outputs at `/workspace/delegate/<task_key>/`\n- The lane reads/writes outputs at `/delegated_workspace/`\n\nOutputs from the lane appear in YOUR `/workspace/delegate/<task_key>/` — that is the only place to find them. Do NOT look under `/project_workspace/tasks/<task_key>/` for delegated outputs; that path only holds the coordinator-side TASK.md/JOURNAL.md and is empty of artifacts for delegated work.\n\nFlow: pass input folders with `input_mounts` and/or write explicit notes in the description → the lane reads `/delegated_inputs/<alias>/` and writes outputs to `/delegated_workspace/` → you read those outputs from `/workspace/delegate/<task_key>/`. Task status auto-completes when the lane finishes (no coordinator/reviewer step). You are auto-subscribed to status updates.",
             InternalToolType::DelegateTask,
             delegate_task_schema(),
         ),
@@ -162,8 +162,36 @@ pub fn delegate_task_schema() -> Vec<SchemaField> {
     vec![
         SchemaField { name: "target_lane_thread_id".to_string(), field_type: "STRING".to_string(), description: Some("Thread ID of an existing EXECUTION lane in this project to receive the task. Obtain it from `list_threads` or `create_thread`.".to_string()), required: true, ..Default::default() },
         SchemaField { name: "title".to_string(), field_type: "STRING".to_string(), description: Some("Short, specific task title (one line).".to_string()), required: true, ..Default::default() },
-        SchemaField { name: "description".to_string(), field_type: "STRING".to_string(), description: Some("What needs to be done. Be concrete about success criteria and the expected deliverable. Mention any files placed in the shared workspace folder.".to_string()), required: false, ..Default::default() },
+        SchemaField { name: "description".to_string(), field_type: "STRING".to_string(), description: Some("Required clear task brief. State scope boundaries, what to inspect, what to ignore, and the exact deliverable path/name the lane should write under `/delegated_workspace/`.".to_string()), required: true, ..Default::default() },
         SchemaField { name: "capability_tags".to_string(), field_type: "ARRAY".to_string(), items_type: Some("STRING".to_string()), description: Some("Optional matching hints carried on the task. Stable role labels like `research`, `review`, `analysis`.".to_string()), min_items: Some(1), required: false, ..Default::default() },
+        SchemaField {
+            name: "input_mounts".to_string(),
+            field_type: "ARRAY".to_string(),
+            description: Some("Optional read-only input folders from this conversation workspace. Each item is `{ path, alias }`, where `path` must be an explicit subfolder under `/workspace/` (not `/workspace` itself) and `alias` becomes `/delegated_inputs/<alias>/` for the lane. Use this when the delegated agent needs to analyze a folder without copying it.".to_string()),
+            max_items: Some(8),
+            items_schema: Some(Box::new(SchemaField {
+                field_type: "OBJECT".to_string(),
+                properties: Some(vec![
+                    SchemaField {
+                        name: "path".to_string(),
+                        field_type: "STRING".to_string(),
+                        description: Some("Existing folder under this conversation's `/workspace/`, for example `/workspace/research`. Must not be `/workspace` itself.".to_string()),
+                        required: true,
+                        ..Default::default()
+                    },
+                    SchemaField {
+                        name: "alias".to_string(),
+                        field_type: "STRING".to_string(),
+                        description: Some("Safe short mount name. The delegated lane sees this folder at `/delegated_inputs/<alias>/`.".to_string()),
+                        required: true,
+                        ..Default::default()
+                    },
+                ]),
+                ..Default::default()
+            })),
+            required: false,
+            ..Default::default()
+        },
     ]
 }
 

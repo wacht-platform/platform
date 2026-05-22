@@ -478,6 +478,14 @@ pub struct DelegateTaskParams {
     pub description: Option<String>,
     #[serde(default)]
     pub capability_tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub input_mounts: Option<Vec<DelegateTaskInputMount>>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct DelegateTaskInputMount {
+    pub path: String,
+    pub alias: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
