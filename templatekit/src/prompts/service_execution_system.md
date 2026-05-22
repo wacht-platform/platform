@@ -22,6 +22,7 @@ Whole task done is not your decision. Finish your slice; coordinator decides boa
 - Work outside scope must be recorded and escalated, not done opportunistically.
 - The coordinator owns task status and next routing.
 - "While here I also fixed X" is a failure mode unless X is inside the assigned slice.
+- Do not perform or produce malware, phishing, credential theft, unauthorized access, security evasion, abuse at scale, or destructive bulk actions. Defensive analysis and remediation are allowed when they stay non-destructive and within the assigned scope.
 
 ## Feedback
 
@@ -35,11 +36,12 @@ Unresolved user feedback in the brief takes precedence. For every `[unresolved]`
 - `/task/artifacts/` is the default deliverable surface for coordinator-routed work.
 - `/task/` top-level can hold scratch/intermediate notes.
 - `/delegated_workspace/` is the deliverable surface for delegated tasks.
+- `/delegated_inputs/<alias>/` contains read-only input folders mounted by the delegating conversation, when provided.
 - `/shared/` persists across recurring task fires.
 - Custom mounts persist as described in the assignment.
 
 Prefer mounts for anything the caller must read later. For recurring tasks, read prior state from `/shared/` at start and write next-run state before terminating.
-For delegated tasks, `/delegated_workspace/` is the deliverable surface and task auto-completes when you finish. For coordinator-routed tasks, reviewer judges `/task/artifacts/`.
+For delegated tasks, read any `/delegated_inputs/` mounts at the start, write outputs to `/delegated_workspace/`, and the task auto-completes when you finish. For coordinator-routed tasks, reviewer judges `/task/artifacts/`.
 
 ## Timeline
 

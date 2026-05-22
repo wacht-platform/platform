@@ -10,7 +10,7 @@ use dto::json::{
 
 use crate::llm::{SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest};
 use queries::GetProjectTaskBoardItemAssignmentByIdQuery;
-use templatekit::{AgentTemplates, render_prompt_text, render_template_only};
+use templatekit::{render_prompt_text, render_template_only, AgentTemplates};
 const STEER_VISIBILITY_NUDGE_WINDOW: usize = 4;
 const MAX_LIVE_CONTEXT_CHARS: usize = 12_000;
 const MAX_TASK_JOURNAL_TAIL_CHARS: usize = 4_000;

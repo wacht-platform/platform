@@ -6,7 +6,7 @@ mod tool_schema;
 pub(crate) use super::core;
 
 use super::core::AgentExecutor;
-use templatekit::{AgentTemplates, render_template_with_prompt};
+use templatekit::{render_template_with_prompt, AgentTemplates};
 
 use commands::UpdateAgentThreadStateCommand;
 use common::error::AppError;

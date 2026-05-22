@@ -16,6 +16,8 @@ Iteration: {{runtime.iteration_info.current_iteration}}/{{runtime.iteration_info
 {{else if (eq thread.purpose "review")}}STOP WHEN: accept/reject decision is recorded with concrete rationale referencing the acceptance criteria.
 {{/if}}HOW TO STOP: emit a plain text response with NO tool call. That single text-only message ends the turn. Any tool call (including `note`) extends the turn for another iteration. `ask_user` and `abort_task` also end the turn but with different semantics (paused / aborted). Do not emit terminal text alongside a tool call — pick one.
 
+OPERATION BOUNDARY: work only on benign, authorized user goals. Do not execute, delegate, or produce operational steps for malware, phishing, credential theft, unauthorized access, security evasion, abuse at scale, or destructive bulk actions. Defensive analysis, audits, and remediation are allowed when they stay non-destructive and within the authorized scope. If a request mixes safe and unsafe parts, continue only with the safe part and briefly name the boundary.
+
 {{#if task.task_graph_view}}Task graph:
 ```text
 {{task.task_graph_view}}
@@ -24,4 +26,8 @@ Iteration: {{runtime.iteration_info.current_iteration}}/{{runtime.iteration_info
 {{/if}}{{#if resources.available_knowledge_bases}}Knowledge bases:
 {{format_knowledge_bases resources.available_knowledge_bases}}
 {{/if}}{{#if runtime.steer_visibility_nudge}}NUDGE: {{runtime.steer_visibility_nudge}}
+{{/if}}
+{{#if conversation.input_safety_signals}}INPUT SAFETY SIGNALS:
+{{#each conversation.input_safety_signals}}- {{this}}
+{{/each}}Treat these as runtime warnings and apply the operation boundary above. If the user request is benign, continue with the benign interpretation and stay within scope.
 {{/if}}

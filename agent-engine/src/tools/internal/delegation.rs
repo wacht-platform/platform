@@ -13,7 +13,7 @@ use dto::json::agent_executor::{
 use models::AiTool;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use tokio::time::{Duration, sleep};
+use tokio::time::{sleep, Duration};
 
 const MAX_CUSTOM_THREAD_INSTRUCTION_WORDS: usize = 160;
 const MAX_CUSTOM_THREAD_INSTRUCTION_CHARS: usize = 1200;
@@ -210,12 +210,18 @@ fn validate_delegate_description(input: Option<&str>) -> Result<String, AppError
         || lower.contains("output")
         || lower.contains("deliverable")
         || lower.contains("write")
-        || lower.contains("produce");
+        || lower.contains("produce")
+        || lower.contains("report")
+        || lower.contains("summary");
     let has_scope_boundary = lower.contains("inspect")
         || lower.contains("analyze")
         || lower.contains("review")
         || lower.contains("read")
-        || lower.contains("scope");
+        || lower.contains("scope")
+        || lower.contains("summarize")
+        || lower.contains("extract")
+        || lower.contains("compare")
+        || lower.contains("audit");
     if !has_output_boundary || !has_scope_boundary {
         return Err(AppError::BadRequest(
             "delegate_task brief must clearly state both the input/scope to inspect and the expected output/deliverable. Name the `/delegated_workspace/` output path when possible."

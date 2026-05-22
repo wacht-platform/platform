@@ -62,4 +62,5 @@ Line: failure recurs across *different* approaches. One missing binary = adapt. 
 - `/project_workspace/` — read-only project tasks (visible to conversation threads).
 - `/task/` — task-local source of truth for service threads (`TASK.md`, `JOURNAL.md`, `RUNBOOK.md`, `artifacts/`).
 - `/delegated_workspace/` — deliverable surface for delegated tasks.
+- `/delegated_inputs/<alias>/` — read-only input folders for delegated tasks, when provided.
 - `/shared/` — persists across recurring task fires.

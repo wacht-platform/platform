@@ -9,7 +9,7 @@ impl AgentExecutor {
         &mut self,
         call: &crate::llm::GeneratedToolCall,
     ) -> Result<bool, AppError> {
-        use dto::json::ask_user::{AskUserParams, validate_question_set};
+        use dto::json::ask_user::{validate_question_set, AskUserParams};
 
         let params: AskUserParams = serde_json::from_value(call.arguments.clone())
             .map_err(|e| AppError::BadRequest(format!("ask_user params malformed: {e}")))?;
