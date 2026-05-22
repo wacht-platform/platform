@@ -229,15 +229,16 @@ where
     };
 
     let event_id = deps.id_provider().next_id()? as i64;
-    let payload = serde_json::json!({
-        "event_log_id": event_id.to_string(),
-        "deployment_id": thread.deployment_id.to_string(),
-        "thread_id": assignment.thread_id.to_string(),
-        "assignment_id": assignment.id.to_string(),
-        "board_item_id": assignment.board_item_id.to_string(),
-        "kind": "assignment_execution",
-        "summary": summary,
-    });
+    let payload = crate::event_log::EventLogPayload::new(
+        event_id,
+        thread.deployment_id,
+        assignment.thread_id,
+        "assignment_execution",
+    )
+    .with_id("assignment_id", assignment.id)
+    .with_id("board_item_id", assignment.board_item_id)
+    .with_serializable("summary", summary)
+    .build();
     let idempotency_key = format!(
         "assignment_execution_{}_{}",
         assignment.id, assignment.state_version

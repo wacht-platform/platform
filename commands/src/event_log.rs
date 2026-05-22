@@ -52,6 +52,65 @@ pub async fn nudge_dispatcher(nats: &async_nats::Client) {
         .await;
 }
 
+/// Build the `event_log.payload` JSON for worker-consumed events.
+///
+/// The worker reads payloads by string key (`parse_payload_i64(&p, "event_log_id")`),
+/// so producers and consumers don't share a typed struct. This builder
+/// captures the four fields every payload sets — `event_log_id`,
+/// `deployment_id`, `thread_id`, `kind` — encodes i64s as strings (the
+/// worker's `parse_payload_i64` accepts string or number, but every existing
+/// site emits string), and lets callers tack on event-specific extras.
+pub struct EventLogPayload {
+    map: serde_json::Map<String, Value>,
+}
+
+impl EventLogPayload {
+    pub fn new(
+        event_log_id: i64,
+        deployment_id: i64,
+        thread_id: i64,
+        kind: impl Into<String>,
+    ) -> Self {
+        let mut map = serde_json::Map::with_capacity(4);
+        map.insert("event_log_id".into(), Value::String(event_log_id.to_string()));
+        map.insert("deployment_id".into(), Value::String(deployment_id.to_string()));
+        map.insert("thread_id".into(), Value::String(thread_id.to_string()));
+        map.insert("kind".into(), Value::String(kind.into()));
+        Self { map }
+    }
+
+    pub fn with(mut self, key: impl Into<String>, value: impl Into<Value>) -> Self {
+        self.map.insert(key.into(), value.into());
+        self
+    }
+
+    pub fn with_id(self, key: impl Into<String>, id: i64) -> Self {
+        self.with(key, Value::String(id.to_string()))
+    }
+
+    pub fn with_opt_id(self, key: impl Into<String>, id: Option<i64>) -> Self {
+        self.with(
+            key,
+            id.map(|n| Value::String(n.to_string())).unwrap_or(Value::Null),
+        )
+    }
+
+    pub fn with_serializable<T: serde::Serialize>(mut self, key: impl Into<String>, value: T) -> Self {
+        if let Ok(v) = serde_json::to_value(value) {
+            self.map.insert(key.into(), v);
+        }
+        self
+    }
+
+    pub fn build(self) -> Value {
+        Value::Object(self.map)
+    }
+
+    pub fn as_object_mut(&mut self) -> &mut serde_json::Map<String, Value> {
+        &mut self.map
+    }
+}
+
 pub struct EnqueueThreadWorkEvent {
     pub event_log_id: i64,
     pub deployment_id: i64,
@@ -69,15 +128,16 @@ impl EnqueueThreadWorkEvent {
     where
         E: sqlx::Executor<'e, Database = Postgres>,
     {
-        let payload = serde_json::json!({
-            "event_log_id": self.event_log_id.to_string(),
-            "deployment_id": self.deployment_id.to_string(),
-            "thread_id": self.thread_id.to_string(),
-            "kind": self.event_type,
-            "agent_id": self.agent_id.map(|id| id.to_string()),
-            "conversation_id": self.conversation_id.map(|id| id.to_string()),
-            "execution_payload": self.execution_payload,
-        });
+        let payload = EventLogPayload::new(
+            self.event_log_id,
+            self.deployment_id,
+            self.thread_id,
+            self.event_type.clone(),
+        )
+        .with_opt_id("agent_id", self.agent_id)
+        .with_opt_id("conversation_id", self.conversation_id)
+        .with("execution_payload", self.execution_payload.clone())
+        .build();
 
         InsertEventLogCommand::new(
             self.event_log_id,

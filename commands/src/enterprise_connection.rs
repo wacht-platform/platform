@@ -168,7 +168,7 @@ impl CreateEnterpriseConnectionCommand {
         let jit_enabled = request.jit_enabled.unwrap_or(true);
         let attribute_mapping = request
             .attribute_mapping
-            .unwrap_or_else(|| serde_json::json!({}));
+            .unwrap_or_else(common::json_utils::empty_object);
 
         let now = Utc::now();
         let connection = sqlx::query_as::<_, EnterpriseConnection>(

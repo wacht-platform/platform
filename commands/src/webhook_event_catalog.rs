@@ -1,3 +1,4 @@
+use common::ResultExt;
 use serde::Deserialize;
 use sqlx::query_as;
 
@@ -35,7 +36,7 @@ fn parse_catalog_events(
     catalog: &WebhookEventCatalog,
 ) -> Result<Vec<WebhookEventDefinition>, AppError> {
     serde_json::from_value(catalog.events.clone())
-        .map_err(|e| AppError::Internal(format!("Failed to parse current events: {}", e)))
+        .map_err_internal("Failed to parse current events")
 }
 
 async fn update_catalog_events(
@@ -45,7 +46,7 @@ async fn update_catalog_events(
     events: &[WebhookEventDefinition],
 ) -> Result<WebhookEventCatalog, AppError> {
     let events_json = serde_json::to_value(events)
-        .map_err(|e| AppError::Internal(format!("Failed to serialize updated events: {}", e)))?;
+        .map_err_internal("Failed to serialize updated events")?;
 
     let updated_catalog = query_as!(
         WebhookEventCatalog,

@@ -1,3 +1,4 @@
+use common::ResultExt;
 use super::core::AgentExecutor;
 
 use crate::llm::{SemanticLlmMessage, SemanticLlmRequest};
@@ -778,7 +779,7 @@ Rules:\n\
             .generate_text_from_prompt(request)
             .await
             .map(|output| output.text)
-            .map_err(|e| AppError::Internal(format!("journal compaction summary failed: {e}")))
+            .map_err_internal("journal compaction summary failed")
     }
 
     /// Order matters: journal first (idempotent by marker), then DB. On
@@ -850,7 +851,7 @@ Rules:\n\
         .await?;
 
         let payload_value = serde_json::to_value(&handoff)
-            .map_err(|e| AppError::Internal(format!("serialize handoff payload: {e}")))?;
+            .map_err_internal("serialize handoff payload")?;
         commands::WriteAssignmentResultPayloadCommand::new(assignment_id, payload_value)
             .execute_with_db(self.ctx.app_state.db_router.writer())
             .await?;

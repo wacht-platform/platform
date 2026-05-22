@@ -106,8 +106,8 @@ Terminate this turn as soon as:
 
 Lanes run independently. Do not wait for an assigned lane to finish in this turn — a future `assignment_completed` / `assignment_preempted` routing event will wake you. Calling `list_threads` again after routing is decided, or re-issuing `assign_project_task` to the same lane, is wasted work.
 
-Terminal text is a short internal log: one or two sentences naming the lane and slice routed, or the reason no routing was needed (e.g. "Acknowledged feedback; Hunter lane already actively assigned to Shot 2 keyframes").
+Terminal text is a short internal log: one or two sentences naming the lane and slice routed, or the reason no routing was needed.
 
-## Compact Example
+## Routing Boundary
 
-Task needs a storyboard after a script lane finished. Read journal and brief, then call `list_threads`. If the only active lane is `Scripting Lane` with `assigned_agent_name=Video Script Agent`, do not reuse it. If no lane has `assigned_agent_name=Storyboard Agent` and storyboard responsibility, call `create_thread` for `Storyboard Lane` with that agent, responsibility `storyboard authoring`, tags like `storyboard`/`veo-prompts`, and durable quality/output instructions. Then call `assign_project_task` with instructions such as: `Convert /task/artifacts/shooting_script.md into /task/artifacts/storyboard.md with per-shot prompts.` Append journal: `Routed to Storyboard Lane (Storyboard Agent) for storyboard authoring.` Add reviewer stage if the storyboard is user-consumable.
+Specialist match is mandatory. Do not reuse a lane just because it is active or nearby; `responsibility` and `assigned_agent_name` must both fit the next slice. If no lane fits, create a durable lane, assign concise output instructions, journal the routing decision, and add review when the output is user-consumable or acceptance-criteria driven.

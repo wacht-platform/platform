@@ -1,3 +1,4 @@
+use common::ResultExt;
 use super::*;
 
 pub(super) fn backend_domain(backend_host: &str) -> &str {
@@ -38,6 +39,6 @@ pub(super) fn parse_or_default_email_records(
     value
         .map(serde_json::from_value)
         .transpose()
-        .map_err(|e| AppError::Internal(format!("Invalid email_verification_records JSON: {}", e)))
+        .map_err_internal("Invalid email_verification_records JSON")
         .map(Option::unwrap_or_default)
 }

@@ -1,3 +1,4 @@
+use common::ResultExt;
 use chrono::{DateTime, Duration, Utc};
 
 use common::{capabilities::HasRedisProvider, error::AppError};
@@ -18,7 +19,7 @@ impl CheckEndpointFailuresCommand {
             .redis_provider()
             .get_multiplexed_async_connection()
             .await
-            .map_err(|e| AppError::Internal(format!("Redis connection failed: {}", e)))?;
+            .map_err_internal("Redis connection failed")?;
 
         let failure_key = format!("webhook:endpoint:failures:{}", self.endpoint_id);
         let failure_count: i64 = redis_conn.get(&failure_key).await.unwrap_or(0);
@@ -52,19 +53,19 @@ impl IncrementEndpointFailuresCommand {
             .redis_provider()
             .get_multiplexed_async_connection()
             .await
-            .map_err(|e| AppError::Internal(format!("Redis connection failed: {}", e)))?;
+            .map_err_internal("Redis connection failed")?;
 
         let failure_key = format!("webhook:endpoint:failures:{}", self.endpoint_id);
         let failure_count: i64 = redis_conn
             .incr(&failure_key, 1)
             .await
-            .map_err(|e| AppError::Internal(format!("Redis incr failed: {}", e)))?;
+            .map_err_internal("Redis incr failed")?;
 
         if failure_count == 1 {
             let _: () = redis_conn
                 .expire(&failure_key, 86400)
                 .await
-                .map_err(|e| AppError::Internal(format!("Redis expire failed: {}", e)))?;
+                .map_err_internal("Redis expire failed")?;
         }
 
         Ok(failure_count)
@@ -87,13 +88,13 @@ impl ClearEndpointFailuresCommand {
             .redis_provider()
             .get_multiplexed_async_connection()
             .await
-            .map_err(|e| AppError::Internal(format!("Redis connection failed: {}", e)))?;
+            .map_err_internal("Redis connection failed")?;
 
         let failure_key = format!("webhook:endpoint:failures:{}", self.endpoint_id);
         let _: () = redis_conn
             .del(&failure_key)
             .await
-            .map_err(|e| AppError::Internal(format!("Redis del failed: {}", e)))?;
+            .map_err_internal("Redis del failed")?;
 
         Ok(())
     }

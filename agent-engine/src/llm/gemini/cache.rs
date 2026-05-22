@@ -1,3 +1,4 @@
+use common::ResultExt;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
 use std::time::Duration;
@@ -254,7 +255,7 @@ impl GeminiClient {
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
             .send()
             .await
-            .map_err(|e| AppError::Internal(format!("Gemini cache create request failed: {e}")))?;
+            .map_err_internal("Gemini cache create request failed")?;
 
         if !cache_response.status().is_success() {
             let status = cache_response.status();

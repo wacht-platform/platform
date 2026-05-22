@@ -1,3 +1,4 @@
+use common::ResultExt;
 use common::{HasNatsProvider, error::AppError};
 use dto::json::nats::NatsTaskMessage;
 
@@ -33,11 +34,11 @@ impl EnqueueWebhookDeliveryCommand {
             .publish(
                 "worker.tasks.webhook.deliver",
                 serde_json::to_vec(&task_message)
-                    .map_err(|e| AppError::Internal(format!("Failed to serialize task: {}", e)))?
+                    .map_err_internal("Failed to serialize task")?
                     .into(),
             )
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {}", e)))?;
+            .map_err_internal("Failed to publish to NATS")?;
 
         Ok(())
     }

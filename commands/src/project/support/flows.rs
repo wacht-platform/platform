@@ -1,3 +1,4 @@
+use common::ResultExt;
 use super::*;
 
 fn next_b2b_role_ids<D>(deps: &D) -> Result<(i64, i64, i64, i64), AppError>
@@ -309,7 +310,7 @@ pub(in crate::project) fn decode_public_custom_smtp_config(
     let decoded = raw
         .map(serde_json::from_value)
         .transpose()
-        .map_err(|e| AppError::Internal(format!("Invalid custom_smtp_config JSON: {}", e)))?
+        .map_err_internal("Invalid custom_smtp_config JSON")?
         .map(|mut config: CustomSmtpConfig| {
             config.password = String::new();
             config

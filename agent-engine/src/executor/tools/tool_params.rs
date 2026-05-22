@@ -1,3 +1,4 @@
+use common::ResultExt;
 use common::error::AppError;
 use dto::json::agent_executor::ToolCallRequest;
 use models::AiTool;
@@ -20,7 +21,7 @@ impl PlannedToolCall {
     pub(crate) fn input_value(&self) -> Result<Value, AppError> {
         self.request
             .input_value()
-            .map_err(|e| AppError::Internal(format!("Failed to serialize tool input: {e}")))
+            .map_err_internal("Failed to serialize tool input")
     }
 }
 

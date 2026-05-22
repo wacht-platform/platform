@@ -153,7 +153,7 @@ impl CreateApiKeyCommand {
             key_hash,
             key_suffix,
             serde_json::to_value(&self.permissions)?,
-            self.metadata.unwrap_or(serde_json::json!({})),
+            self.metadata.unwrap_or_else(common::json_utils::empty_object),
             self.rate_limit_scheme_slug,
             self.expires_at,
             self.owner_user_id,

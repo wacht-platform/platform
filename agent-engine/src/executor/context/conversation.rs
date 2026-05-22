@@ -1,3 +1,4 @@
+use common::ResultExt;
 use super::core::AgentExecutor;
 use crate::executor::runtime::step_control::{
     DATABASE_ERROR_RETRY_STEP, LLM_REQUEST_FAILED_STEP, RETRYABLE_EXECUTION_ERROR_STEP,
@@ -2037,7 +2038,7 @@ Output plain text only — no JSON, no code fences, no surrounding prose."#,
             .generate_text_from_prompt(request)
             .await
             .map(|output| output.text)
-            .map_err(|e| AppError::Internal(format!("Summary generation failed: {e}")))?;
+            .map_err_internal("Summary generation failed")?;
 
         let summary_record = self
             .create_conversation(
@@ -2113,7 +2114,7 @@ Output plain text. No JSON, no code fences, no preface.";
             .generate_text_from_prompt(request)
             .await
             .map(|output| output.text)
-            .map_err(|e| AppError::Internal(format!("recent activity brief failed: {e}")))?;
+            .map_err_internal("recent activity brief failed")?;
 
         let trimmed = brief.trim();
         if trimmed.is_empty() {

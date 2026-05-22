@@ -1,3 +1,4 @@
+use common::ResultExt;
 use chrono::Utc;
 use common::{HasDbRouter, HasRedisProvider, error::AppError};
 use redis::AsyncCommands;
@@ -19,7 +20,7 @@ impl EnqueueOAuthGrantLastUsed {
             .redis_provider()
             .get_multiplexed_async_connection()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to connect redis: {}", e)))?;
+            .map_err_internal("Failed to connect redis")?;
 
         let member = format!(
             "{}:{}:{}",
@@ -29,11 +30,11 @@ impl EnqueueOAuthGrantLastUsed {
         let _: () = redis_conn
             .zadd(OAUTH_GRANT_LAST_USED_DIRTY_KEY, member, score)
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to enqueue grant usage: {}", e)))?;
+            .map_err_internal("Failed to enqueue grant usage")?;
         let _: bool = redis_conn
             .expire(OAUTH_GRANT_LAST_USED_DIRTY_KEY, 604800)
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to set dirty-key expiry: {}", e)))?;
+            .map_err_internal("Failed to set dirty-key expiry")?;
 
         Ok(())
     }
@@ -54,14 +55,14 @@ impl SyncOAuthGrantLastUsedBatch {
             .redis_provider()
             .get_multiplexed_async_connection()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to connect redis: {}", e)))?;
+            .map_err_internal("Failed to connect redis")?;
 
         let popped: Vec<(String, f64)> = redis::cmd("ZPOPMIN")
             .arg(OAUTH_GRANT_LAST_USED_DIRTY_KEY)
             .arg(batch_size)
             .query_async(&mut redis_conn)
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to pop dirty grants: {}", e)))?;
+            .map_err_internal("Failed to pop dirty grants")?;
 
         if popped.is_empty() {
             return Ok(0);

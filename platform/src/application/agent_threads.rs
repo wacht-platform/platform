@@ -1,3 +1,4 @@
+use common::ResultExt;
 use commands::{
     CreateActorCommand, CreateActorProjectCommand, CreateAgentThreadCommand,
     CreateProjectTaskBoardItemCommand, CreateProjectTaskScheduleCommand,
@@ -245,27 +246,6 @@ pub struct UploadedTaskWorkspaceFile {
     pub size_bytes: u64,
 }
 
-fn sanitize_upload_filename(name: &str) -> Option<String> {
-    let mut out = String::with_capacity(name.len());
-    let mut prev_underscore = false;
-    for ch in name.chars() {
-        let is_allowed = ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || ch == '-';
-        if is_allowed {
-            out.push(ch);
-            prev_underscore = false;
-        } else if !prev_underscore {
-            out.push('_');
-            prev_underscore = true;
-        }
-    }
-    let trimmed = out.trim_matches('_');
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
 pub async fn upload_task_workspace_files(
     app_state: &AppState,
     deployment_id: i64,
@@ -297,7 +277,7 @@ pub async fn upload_task_workspace_files(
                 MAX_TASK_WORKSPACE_UPLOAD_BYTES / (1024 * 1024)
             )));
         }
-        let safe_name = sanitize_upload_filename(&file.original_name).ok_or_else(|| {
+        let safe_name = common::sanitize_filename(&file.original_name).ok_or_else(|| {
             AppError::BadRequest(format!("filename '{}' is invalid", file.original_name))
         })?;
         let id = app_state.sf.next_id()? as i64;
@@ -367,7 +347,7 @@ pub fn merge_attachments_into_metadata(
     for attachment in new_attachments {
         merged.push(
             serde_json::to_value(attachment)
-                .map_err(|e| AppError::Internal(format!("serialize attachment: {e}")))?,
+                .map_err_internal("serialize attachment")?,
         );
     }
     obj.insert("attachments".to_string(), serde_json::Value::Array(merged));
@@ -1359,8 +1339,10 @@ pub async fn create_project_task_board_item(
     request: CreateProjectTaskBoardItemRequest,
     attachments: Vec<WorkspaceUploadInput>,
 ) -> Result<ProjectTaskBoardItem, AppError> {
-    let project = get_actor_project_by_id(app_state, deployment_id, project_id).await?;
-    let board = get_project_task_board_by_project_id(app_state, deployment_id, project_id).await?;
+    let (project, board) = tokio::try_join!(
+        get_actor_project_by_id(app_state, deployment_id, project_id),
+        get_project_task_board_by_project_id(app_state, deployment_id, project_id),
+    )?;
     let item_id = app_state.sf.next_id()? as i64;
     let task_key = format!("TASK-{}", item_id);
     let status = request.status.unwrap_or_else(|| "pending".to_string());
@@ -1503,17 +1485,19 @@ pub async fn update_project_task_board_item(
     request: UpdateProjectTaskBoardItemRequest,
     attachments: Vec<WorkspaceUploadInput>,
 ) -> Result<ProjectTaskBoardItem, AppError> {
-    let item = get_project_task_board_item_by_id(app_state, deployment_id, item_id).await?;
-    let board = get_project_task_board_by_project_id(app_state, deployment_id, project_id).await?;
+    let project_query = GetActorProjectByIdQuery::new(project_id, deployment_id);
+    let (item, board, project_opt) = tokio::try_join!(
+        get_project_task_board_item_by_id(app_state, deployment_id, item_id),
+        get_project_task_board_by_project_id(app_state, deployment_id, project_id),
+        project_query.execute_with_db(app_state.db_router.reader(ReadConsistency::Strong)),
+    )?;
     if item.board_id != board.id {
         return Err(AppError::NotFound(
             "Project task board item not found".to_string(),
         ));
     }
-    let project = GetActorProjectByIdQuery::new(project_id, deployment_id)
-        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
-        .await?
-        .ok_or_else(|| AppError::NotFound("Project not found".to_string()))?;
+    let project =
+        project_opt.ok_or_else(|| AppError::NotFound("Project not found".to_string()))?;
 
     let uploaded = upload_task_workspace_files(
         app_state,
@@ -1952,6 +1936,6 @@ fn validate_and_serialize_mounts(
             .map_err(|e| AppError::BadRequest(e.to_string()))?;
     }
     let value = serde_json::to_value(mounts)
-        .map_err(|e| AppError::Internal(format!("Failed to serialize mounts: {e}")))?;
+        .map_err_internal("Failed to serialize mounts")?;
     Ok(Some(value))
 }

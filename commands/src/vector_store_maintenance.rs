@@ -1,3 +1,4 @@
+use common::ResultExt;
 use chrono::{Duration, Utc};
 use common::{
     HasDbRouter, HasEncryptionProvider, HasNatsProvider, count_indexable_knowledge_base_rows,
@@ -52,7 +53,7 @@ impl DispatchVectorStoreMaintenanceTaskCommand {
             .publish(
                 "worker.tasks.vector_store.maintain",
                 serde_json::to_vec(&task_message)
-                    .map_err(|e| AppError::Internal(format!("Failed to serialize task: {}", e)))?
+                    .map_err_internal("Failed to serialize task")?
                     .into(),
             )
             .await

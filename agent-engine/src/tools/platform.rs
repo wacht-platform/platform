@@ -1,3 +1,4 @@
+use common::ResultExt;
 use super::ToolExecutor;
 use common::error::AppError;
 use dto::json::{ApiToolResult, PlatformEventResult, StreamEvent};
@@ -48,7 +49,7 @@ impl ToolExecutor {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(timeout_secs as u64))
             .build()
-            .map_err(|e| AppError::Internal(format!("Failed to build HTTP client: {}", e)))?;
+            .map_err_internal("Failed to build HTTP client")?;
 
         let mut request_builder = match config.method {
             HttpMethod::GET => client.get(&url),
@@ -128,7 +129,7 @@ impl ToolExecutor {
             .get("event_data")
             .cloned()
             .or_else(|| config.event_data.clone())
-            .unwrap_or(serde_json::json!({}));
+            .unwrap_or_else(common::json_utils::empty_object);
 
         if let Some(channel) = &self.channel {
             let event = StreamEvent::PlatformEvent(config.event_label.clone(), event_data.clone());

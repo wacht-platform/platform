@@ -1,3 +1,4 @@
+use common::ResultExt;
 use commands::session_ticket::{AgentSessionIdentifier, SessionTicketType};
 use commands::{CreateActorCommand, GenerateSessionTicketCommand};
 use dto::json::session_ticket::{AgentSessionIdentifierDto, CreateSessionTicketRequest};
@@ -52,7 +53,7 @@ fn parse_console_deployment_id() -> Result<i64, AppError> {
     std::env::var("CONSOLE_DEPLOYMENT_ID")
         .map_err(|_| AppError::Internal("CONSOLE_DEPLOYMENT_ID is not set".to_string()))?
         .parse::<i64>()
-        .map_err(|e| AppError::Internal(format!("Invalid CONSOLE_DEPLOYMENT_ID: {}", e)))
+        .map_err_internal("Invalid CONSOLE_DEPLOYMENT_ID")
 }
 
 fn map_agent_session_identifier(identifier: AgentSessionIdentifierDto) -> AgentSessionIdentifier {

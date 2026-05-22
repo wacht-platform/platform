@@ -23,7 +23,7 @@ pub async fn create_actor(
         request.subject_type,
         request.external_key,
     )
-    .with_metadata(request.metadata.unwrap_or_else(|| serde_json::json!({})));
+    .with_metadata(request.metadata.unwrap_or_else(common::json_utils::empty_object));
 
     if let Some(display_name) = request.display_name {
         cmd = cmd.with_display_name(display_name);

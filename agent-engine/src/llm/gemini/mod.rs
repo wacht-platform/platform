@@ -2,6 +2,7 @@ mod billing;
 mod cache;
 mod types;
 
+use common::ResultExt;
 use crate::json_schema::normalize_gemini_function_schema;
 use common::error::AppError;
 use serde::{Deserialize, Serialize};
@@ -557,7 +558,7 @@ fn serialize_gemini_request_inner(
         "generationConfig": generation_config,
         "safetySettings": gemini_safety_settings(),
     }))
-    .map_err(|e| AppError::Internal(format!("Failed to serialize LLM request: {e}")))
+    .map_err_internal("Failed to serialize LLM request")
 }
 
 fn gemini_safety_settings() -> Value {
@@ -608,7 +609,7 @@ fn inject_safety_steering(body: &str, block_reason: &str) -> Result<String, AppE
         );
     }
     serde_json::to_string(&value)
-        .map_err(|e| AppError::Internal(format!("Failed to re-serialize Gemini request: {e}")))
+        .map_err_internal("Failed to re-serialize Gemini request")
 }
 
 // Gemini 2.5 uses thinkingBudget (integer); Gemini 3+ uses thinkingLevel (string).

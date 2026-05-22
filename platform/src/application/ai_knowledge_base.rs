@@ -35,29 +35,6 @@ pub struct UploadKnowledgeBaseDocumentInput {
     pub file_type: Option<String>,
 }
 
-fn sanitize_upload_filename(name: &str) -> Option<String> {
-    let mut out = String::with_capacity(name.len());
-    let mut prev_underscore = false;
-
-    for ch in name.chars() {
-        let is_allowed = ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || ch == '-';
-        if is_allowed {
-            out.push(ch);
-            prev_underscore = false;
-        } else if !prev_underscore {
-            out.push('_');
-            prev_underscore = true;
-        }
-    }
-
-    let trimmed = out.trim_matches('_');
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
 fn knowledge_base_not_found_error() -> ApiErrorResponse {
     (
         axum::http::StatusCode::NOT_FOUND,
@@ -95,7 +72,7 @@ pub async fn create_ai_knowledge_base(
     deployment_id: i64,
     request: CreateKnowledgeBaseRequest,
 ) -> Result<AiKnowledgeBase, AppError> {
-    let configuration = request.configuration.unwrap_or(serde_json::json!({}));
+    let configuration = request.configuration.unwrap_or_else(common::json_utils::empty_object);
     let create_command = CreateAiKnowledgeBaseCommand::new(
         deployment_id,
         request.name,
@@ -192,7 +169,7 @@ pub async fn upload_knowledge_base_document(
     kb_id: i64,
     input: UploadKnowledgeBaseDocumentInput,
 ) -> Result<AiKnowledgeBaseDocument, ApiErrorResponse> {
-    let file_name = sanitize_upload_filename(&input.file_name).ok_or((
+    let file_name = common::sanitize_filename(&input.file_name).ok_or((
         axum::http::StatusCode::BAD_REQUEST,
         "Invalid filename".to_string(),
     ))?;

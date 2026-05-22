@@ -1,3 +1,4 @@
+use common::ResultExt;
 use chrono::Utc;
 use common::{HasIdProvider, HasRedisProvider, error::AppError};
 use redis::AsyncCommands;
@@ -132,7 +133,7 @@ impl GenerateSessionTicketCommand {
         let ticket_id = deps
             .id_provider()
             .next_id()
-            .map_err(|e| AppError::Internal(format!("Failed to generate ticket ID: {}", e)))?
+            .map_err_internal("Failed to generate ticket ID")?
             as i64;
         // Validate inputs based on ticket type
         match self.ticket_type {
@@ -188,7 +189,7 @@ impl GenerateSessionTicketCommand {
 
         // Serialize and store in Redis
         let payload_json = serde_json::to_string(&payload)
-            .map_err(|e| AppError::Internal(format!("Failed to serialize ticket: {}", e)))?;
+            .map_err_internal("Failed to serialize ticket")?;
 
         let redis_key = format!("session:ticket:{}", ticket);
 
@@ -196,11 +197,11 @@ impl GenerateSessionTicketCommand {
             .redis_provider()
             .get_multiplexed_async_connection()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to connect to Redis: {}", e)))?;
+            .map_err_internal("Failed to connect to Redis")?;
 
         conn.set_ex::<_, _, ()>(&redis_key, &payload_json, ttl_seconds)
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to store ticket in Redis: {}", e)))?;
+            .map_err_internal("Failed to store ticket in Redis")?;
 
         Ok(GenerateSessionTicketResponse { ticket, expires_at })
     }

@@ -20,10 +20,7 @@ Class matters more than path:
 - "transient sandbox error" / "timed out" / "no responders" / "sandbox not ready" — infrastructure. File probably exists; transport dropped. Wait one turn, retry once. Persists → tell user sandbox degraded. Never pretend you read it. Never invent workarounds.
 - `execute_command` exit_code ≠ 0 — normal shell failure as data. Read stdout/stderr. `command not found` = binary missing on image, not platform broken.
 
-Misreading class is the most expensive mistake here. Transport blip ≠ missing file.
-
-Good: transient error → wait, retry once → second failure → tell user pipe degraded.
-Bad: transient error → assume missing → `cp` to /workspace → fail same → keep moving the file.
+Misreading class is the most expensive mistake here. Transport blip is not a missing file: wait, retry once, then report sandbox degradation instead of copying/renaming/recreating paths.
 
 ## Do not fight the sandbox
 

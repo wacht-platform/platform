@@ -1,3 +1,4 @@
+use common::ResultExt;
 use commands::agent_execution::UploadFilesToS3Command;
 use commands::{
     AdvanceThreadExecutionTokenCommand, CreateConversationCommand,
@@ -35,7 +36,7 @@ fn next_conversation_id(app_state: &AppState) -> Result<i64, AppError> {
     Ok(app_state
         .sf
         .next_id()
-        .map_err(|e| AppError::Internal(format!("Failed to generate conversation ID: {}", e)))?
+        .map_err_internal("Failed to generate conversation ID")?
         as i64)
 }
 
@@ -319,15 +320,14 @@ pub async fn execute_agent_async(
                 .parse::<i64>()
                 .map_err(|_| AppError::BadRequest("Invalid request_message_id".to_string()))?;
 
-            let request_conversation = GetConversationByIdQuery::new(request_message_id)
-                .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
-                .await?;
+            let conv_query = GetConversationByIdQuery::new(request_message_id);
+            let recent_query = GetRecentConversationsQuery::new(thread_id, 50);
+            let (request_conversation, recent_conversations) = tokio::try_join!(
+                conv_query.execute_with_db(app_state.db_router.reader(ReadConsistency::Strong)),
+                recent_query.execute_with_db(app_state.db_router.reader(ReadConsistency::Strong)),
+            )?;
 
             let pending_request = parse_pending_approval_request(request_conversation, thread_id)?;
-
-            let recent_conversations = GetRecentConversationsQuery::new(thread_id, 50)
-                .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
-                .await?;
 
             let already_resolved = recent_conversations.into_iter().any(|conversation| {
                 matches!(

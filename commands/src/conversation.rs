@@ -1,3 +1,4 @@
+use common::ResultExt;
 use common::error::AppError;
 use models::{ConversationContent, ConversationMessageType, ConversationRecord};
 
@@ -56,7 +57,7 @@ impl CreateConversationCommand {
 
         // Convert typed content to JSON for database storage
         let content_json = serde_json::to_value(&self.content)
-            .map_err(|e| AppError::Internal(format!("Failed to serialize content: {}", e)))?;
+            .map_err_internal("Failed to serialize content")?;
 
         // Convert enum to string for database storage
         let message_type_str = match self.message_type {

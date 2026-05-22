@@ -1,3 +1,4 @@
+use common::ResultExt;
 use commands::{
     PendingDeploymentStorageConfig, UpdateDeploymentAiSettingsCommand,
     test_deployment_storage_connection,
@@ -351,5 +352,5 @@ fn decrypt_existing_storage_secret(
 
     deps.encryption_provider()
         .decrypt(encrypted)
-        .map_err(|error| AppError::Internal(format!("Failed to decrypt {field_name}: {error}")))
+        .map_err_internal(format!("Failed to decrypt {field_name}"))
 }

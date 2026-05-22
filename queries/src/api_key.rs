@@ -123,7 +123,7 @@ fn map_api_key(row: &sqlx::postgres::PgRow) -> ApiKey {
         key_suffix: row.get("key_suffix"),
         key_hash: row.get("key_hash"),
         permissions: parse_json_array(permissions),
-        metadata: metadata.unwrap_or_else(|| serde_json::json!({})),
+        metadata: metadata.unwrap_or_else(common::json_utils::empty_object),
         rate_limits: json_default(rate_limits),
         rate_limit_scheme_slug: row.get("rate_limit_scheme_slug"),
         owner_user_id: row.get("owner_user_id"),

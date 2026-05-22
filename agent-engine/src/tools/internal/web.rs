@@ -1,3 +1,4 @@
+use common::ResultExt;
 use super::ToolExecutor;
 use commands::DeductPulseCreditsCommand;
 use common::error::AppError;
@@ -376,7 +377,7 @@ impl ToolExecutor {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(PARALLEL_REQUEST_TIMEOUT_SECS))
             .build()
-            .map_err(|e| AppError::Internal(format!("Failed to build Parallel client: {e}")))?;
+            .map_err_internal("Failed to build Parallel client")?;
         let url = format!("{PARALLEL_API_BASE_URL}{path}");
 
         let response = client

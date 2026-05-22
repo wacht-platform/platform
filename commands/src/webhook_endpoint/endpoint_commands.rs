@@ -43,7 +43,7 @@ async fn replace_endpoint_subscriptions(
             subscription
                 .filter_rules
                 .clone()
-                .unwrap_or_else(|| serde_json::json!({}))
+                .unwrap_or_else(common::json_utils::empty_object)
         )
         .execute(&mut **tx)
         .await?;
@@ -159,7 +159,7 @@ impl CreateWebhookEndpointCommand {
         let mut tx = deps.writer_pool().begin().await?;
         let endpoint_id = deps.id_provider().next_id()? as i64;
 
-        let headers_json = self.headers.unwrap_or_else(|| serde_json::json!({}));
+        let headers_json = self.headers.unwrap_or_else(common::json_utils::empty_object);
 
         let endpoint = query_as!(
             WebhookEndpoint,

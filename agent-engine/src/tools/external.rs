@@ -6,6 +6,7 @@
 //! and the actor's active connections, then returns candidate tool defs that
 //! the search meta-tool surfaces to the LLM.
 
+use common::ResultExt;
 use common::error::AppError;
 use common::state::AppState;
 use models::{
@@ -141,7 +142,7 @@ async fn load_composio_runtime_settings(
         state
             .encryption_service
             .decrypt(&enc)
-            .map_err(|e| AppError::Internal(format!("composio key decrypt: {e}")))?
+            .map_err_internal("composio key decrypt")?
     };
 
     let apps: Vec<ComposioEnabledApp> =
@@ -293,12 +294,12 @@ pub async fn search_external_tools(
                 .query(&params)
                 .send()
                 .await
-                .map_err(|e| AppError::Internal(format!("composio tools search: {e}")))?;
+                .map_err_internal("composio tools search")?;
             let status = resp.status();
             let text = resp
                 .text()
                 .await
-                .map_err(|e| AppError::Internal(format!("composio search body: {e}")))?;
+                .map_err_internal("composio search body")?;
             if !status.is_success() {
                 return Err(AppError::Internal(format!(
                     "composio tools search ({toolkit}) returned {status}: {text}"
@@ -382,12 +383,12 @@ pub async fn list_external_tools_for_deployment(
                 .query(&params)
                 .send()
                 .await
-                .map_err(|e| AppError::Internal(format!("composio tools list: {e}")))?;
+                .map_err_internal("composio tools list")?;
             let status = resp.status();
             let text = resp
                 .text()
                 .await
-                .map_err(|e| AppError::Internal(format!("composio list body: {e}")))?;
+                .map_err_internal("composio list body")?;
             if !status.is_success() {
                 return Err(AppError::Internal(format!(
                     "composio list ({toolkit}) returned {status}: {text}"
@@ -473,13 +474,13 @@ pub async fn execute_external_tool(
         .json(&body)
         .send()
         .await
-        .map_err(|e| AppError::Internal(format!("composio execute: {e}")))?;
+        .map_err_internal("composio execute")?;
 
     let status = resp.status();
     let text = resp
         .text()
         .await
-        .map_err(|e| AppError::Internal(format!("composio execute body: {e}")))?;
+        .map_err_internal("composio execute body")?;
 
     if !status.is_success() {
         return Err(AppError::Internal(format!(

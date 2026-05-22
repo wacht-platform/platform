@@ -1,3 +1,4 @@
+use common::ResultExt;
 use common::smtp::{SmtpConfig, SmtpService};
 use common::{
     HasDbRouter, HasEncryptionProvider, HasPostmarkProvider, HasTemplateRenderer,
@@ -85,7 +86,7 @@ impl SendEmailCommand {
             .custom_smtp_config
             .map(|v| serde_json::from_value(v))
             .transpose()
-            .map_err(|e| AppError::Internal(format!("Invalid custom_smtp_config JSON: {}", e)))?;
+            .map_err_internal("Invalid custom_smtp_config JSON")?;
 
         if email_provider == EmailProvider::CustomSmtp {
             if let Some(config) = &smtp_config {
@@ -230,7 +231,7 @@ impl SendRawEmailCommand {
             .custom_smtp_config
             .map(|v| serde_json::from_value(v))
             .transpose()
-            .map_err(|e| AppError::Internal(format!("Invalid custom_smtp_config JSON: {}", e)))?;
+            .map_err_internal("Invalid custom_smtp_config JSON")?;
 
         if email_provider == EmailProvider::CustomSmtp {
             if let Some(config) = &smtp_config {

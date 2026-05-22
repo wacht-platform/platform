@@ -1,3 +1,4 @@
+use common::ResultExt;
 use common::{HasNatsProvider, error::AppError};
 use dto::json::nats::NatsTaskMessage;
 use serde_json;
@@ -40,7 +41,7 @@ impl DispatchDocumentProcessingTaskCommand {
             .publish(
                 "worker.tasks.document.process",
                 serde_json::to_vec(&task_message)
-                    .map_err(|e| AppError::Internal(format!("Failed to serialize task: {}", e)))?
+                    .map_err_internal("Failed to serialize task")?
                     .into(),
             )
             .await

@@ -1,3 +1,4 @@
+use common::ResultExt;
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use clickhouse::Row;
@@ -471,7 +472,7 @@ fn base_where(
 fn parse_rate_limits(raw: Option<&str>) -> Result<Option<Value>, AppError> {
     raw.map(|v| serde_json::from_str::<Value>(v))
         .transpose()
-        .map_err(|e| AppError::Internal(format!("Invalid rate_limits JSON: {}", e)))
+        .map_err_internal("Invalid rate_limits JSON")
 }
 
 #[derive(Debug, Clone, Row, Deserialize)]

@@ -1,3 +1,4 @@
+use common::ResultExt;
 use serde::Deserialize;
 use sqlx::{Row, query, query_as};
 
@@ -498,19 +499,19 @@ impl GetWebhookEventsQuery {
 
         let catalog_slug: Option<String> = row
             .try_get("event_catalog_slug")
-            .map_err(|e| AppError::Internal(format!("Invalid event_catalog_slug field: {}", e)))?;
+            .map_err_internal("Invalid event_catalog_slug field")?;
         if catalog_slug.is_none() {
             return Ok(Vec::new());
         }
 
         let events_value: Option<serde_json::Value> = row
             .try_get("events")
-            .map_err(|e| AppError::Internal(format!("Invalid events field: {}", e)))?;
+            .map_err_internal("Invalid events field")?;
         let events_value = events_value
             .ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))?;
 
         serde_json::from_value(events_value)
-            .map_err(|e| AppError::Internal(format!("Invalid catalog events format: {}", e)))
+            .map_err_internal("Invalid catalog events format")
     }
 }
 

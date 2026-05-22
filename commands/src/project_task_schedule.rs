@@ -1,3 +1,4 @@
+use common::ResultExt;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use common::{HasDbRouter, HasIdProvider, HasNatsJetStreamProvider, error::AppError};
 use models::{
@@ -83,7 +84,7 @@ impl CreateProjectTaskScheduleCommand {
             validate_mount(mount).map_err(|e| AppError::BadRequest(e.to_string()))?;
         }
         let mounts_value = serde_json::to_value(&initial_mounts)
-            .map_err(|e| AppError::Internal(format!("Failed to serialize mounts: {e}")))?;
+            .map_err_internal("Failed to serialize mounts")?;
 
         let now = Utc::now();
         let schedule = sqlx::query_as!(
@@ -184,7 +185,7 @@ impl UpdateProjectTaskScheduleCommand {
             }
             Some(
                 serde_json::to_value(mounts)
-                    .map_err(|e| AppError::Internal(format!("Failed to serialize mounts: {e}")))?,
+                    .map_err_internal("Failed to serialize mounts")?,
             )
         } else {
             None
@@ -304,7 +305,7 @@ impl MaterializeProjectTaskScheduleCommand {
         let task_key = format!("TASK-{}", new_item_id);
         let template: ScheduleTemplatePayload =
             serde_json::from_value(row.template_payload.clone())
-                .map_err(|e| AppError::Internal(format!("Invalid template_payload: {e}")))?;
+                .map_err_internal("Invalid template_payload")?;
         let mut metadata: ProjectTaskBoardItemMetadata = template.metadata.clone();
         metadata.schedule_carryover = Some(ScheduleCarryover {
             schedule_id: self.schedule_id,

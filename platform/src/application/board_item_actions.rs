@@ -1,4 +1,5 @@
-use commands::event_log::{self, EVENT_LOG_WORK_SUBJECT, InsertEventLogCommand};
+use common::ResultExt;
+use commands::event_log::{self, EVENT_LOG_WORK_SUBJECT, EventLogPayload, InsertEventLogCommand};
 use commands::{
     CreateProjectTaskBoardItemAssignmentCommand, CreateProjectTaskBoardItemCommand,
     EnsureProjectTaskBoardCommand, SetBoardItemPendingApprovalCommand,
@@ -114,7 +115,7 @@ pub async fn answer_project_task_board_item_question(
 
     let freeform_text = submission.freeform_trimmed();
     let answers_json = serde_json::to_value(&submission.answers)
-        .map_err(|e| AppError::Internal(format!("serialize answers: {e}")))?;
+        .map_err_internal("serialize answers")?;
     let response_content = ConversationContent::ClarificationResponse {
         request_message_id: None,
         answers: answers_json.clone(),
@@ -148,19 +149,20 @@ pub async fn answer_project_task_board_item_question(
     .await?;
 
     let event_log_id = app_state.sf.next_id()? as i64;
-    let mut payload = json!({
-        "event_log_id": event_log_id.to_string(),
-        "deployment_id": "0",
-        "thread_id": assignment.thread_id.to_string(),
-        "assignment_id": assignment_id.to_string(),
-        "board_item_id": assignment.board_item_id.to_string(),
-        "kind": "assignment_execution",
-        "summary": "User answered the pending clarification; resume the assignment.",
-        "answers": answers_json,
-    });
+    let mut builder = EventLogPayload::new(
+        event_log_id,
+        0,
+        assignment.thread_id,
+        "assignment_execution",
+    )
+    .with_id("assignment_id", assignment_id)
+    .with_id("board_item_id", assignment.board_item_id)
+    .with("summary", "User answered the pending clarification; resume the assignment.")
+    .with("answers", answers_json);
     if let Some(text) = freeform_text.as_ref() {
-        payload["freeform_text"] = serde_json::Value::String(text.clone());
+        builder = builder.with("freeform_text", text.clone());
     }
+    let payload = builder.build();
     InsertEventLogCommand::new(
         event_log_id,
         item.board_id,
@@ -305,16 +307,17 @@ pub async fn approve_project_task_board_item_tool(
     .await?;
 
     let event_log_id = app_state.sf.next_id()? as i64;
-    let payload = json!({
-        "event_log_id": event_log_id.to_string(),
-        "deployment_id": deployment_id.to_string(),
-        "thread_id": assignment.thread_id.to_string(),
-        "assignment_id": assignment.id.to_string(),
-        "board_item_id": assignment.board_item_id.to_string(),
-        "kind": "assignment_execution",
-        "summary": "User responded to the pending approval; resume the assignment.",
-        "approvals": submission.approvals,
-    });
+    let payload = EventLogPayload::new(
+        event_log_id,
+        deployment_id,
+        assignment.thread_id,
+        "assignment_execution",
+    )
+    .with_id("assignment_id", assignment.id)
+    .with_id("board_item_id", assignment.board_item_id)
+    .with("summary", "User responded to the pending approval; resume the assignment.")
+    .with_serializable("approvals", submission.approvals)
+    .build();
     InsertEventLogCommand::new(
         event_log_id,
         deployment_id,
@@ -413,15 +416,16 @@ pub async fn create_project_task_board_item_comment(
 
     if let Some(coord_thread_id) = coordinator_thread_id {
         let event_log_id = app_state.sf.next_id()? as i64;
-        let payload = json!({
-            "event_log_id": event_log_id.to_string(),
-            "deployment_id": deployment_id.to_string(),
-            "thread_id": coord_thread_id.to_string(),
-            "board_item_id": item_id.to_string(),
-            "kind": "task_routing",
-            "routing_reason": "user_feedback",
-            "title": item.title,
-        });
+        let payload = EventLogPayload::new(
+            event_log_id,
+            deployment_id,
+            coord_thread_id,
+            "task_routing",
+        )
+        .with_id("board_item_id", item_id)
+        .with("routing_reason", "user_feedback")
+        .with("title", item.title.clone())
+        .build();
         InsertEventLogCommand::new(
             event_log_id,
             deployment_id,

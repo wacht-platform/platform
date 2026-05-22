@@ -5,6 +5,7 @@ mod terminal_review;
 mod tool_schema;
 pub(crate) use super::core;
 
+use common::ResultExt;
 use super::core::AgentExecutor;
 use templatekit::{render_template_with_prompt, AgentTemplates};
 
@@ -1055,7 +1056,7 @@ impl AgentExecutor {
                 reason: String,
             }
             let args: AbortArgs = serde_json::from_value(abort_call.arguments.clone())
-                .map_err(|e| AppError::Internal(format!("abort_task args malformed: {e}")))?;
+                .map_err_internal("abort_task args malformed")?;
             self.abort_current_assignment_execution(&AbortDirective {
                 outcome: args.outcome,
                 reason: args.reason,

@@ -1,3 +1,4 @@
+use common::ResultExt;
 use common::error::AppError;
 use josekit::jws::{ES256, JwsHeader};
 use josekit::jwt::{self, JwtPayload};
@@ -45,7 +46,7 @@ impl GenerateImpersonationTokenCommand {
         .bind(self.user_id)
         .fetch_optional(executor)
         .await
-        .map_err(|e| AppError::Internal(format!("Failed to fetch impersonation context: {}", e)))?
+        .map_err_internal("Failed to fetch impersonation context")?
         .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
         let disabled: bool = row.get("disabled");
@@ -70,26 +71,26 @@ impl GenerateImpersonationTokenCommand {
 
         payload
             .set_claim("user_id", Some(serde_json::json!(self.user_id.to_string())))
-            .map_err(|e| AppError::Internal(format!("Failed to set user_id claim: {}", e)))?;
+            .map_err_internal("Failed to set user_id claim")?;
         payload
             .set_claim(
                 "deployment_id",
                 Some(serde_json::json!(self.deployment_id.to_string())),
             )
-            .map_err(|e| AppError::Internal(format!("Failed to set deployment_id claim: {}", e)))?;
+            .map_err_internal("Failed to set deployment_id claim")?;
         payload
             .set_claim("type", Some(serde_json::json!("impersonation")))
-            .map_err(|e| AppError::Internal(format!("Failed to set type claim: {}", e)))?;
+            .map_err_internal("Failed to set type claim")?;
 
         let signer = ES256
             .signer_from_pem(&private_key)
-            .map_err(|e| AppError::Internal(format!("Failed to create signer: {}", e)))?;
+            .map_err_internal("Failed to create signer")?;
 
         let mut header = JwsHeader::new();
         header.set_token_type("JWT");
 
         let token = jwt::encode_with_signer(&payload, &header, &signer)
-            .map_err(|e| AppError::Internal(format!("Failed to encode JWT: {}", e)))?;
+            .map_err_internal("Failed to encode JWT")?;
 
         let redirect_url = format!(
             "https://{}/sign-in?impersonation_token={}",

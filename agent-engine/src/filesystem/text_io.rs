@@ -1,3 +1,4 @@
+use common::ResultExt;
 use super::{AgentFilesystem, EditFileResult, ReadFileResult, WriteFileResult};
 use crate::sandbox::{ExecRequest, SandboxError};
 use commands::WriteToDeploymentStorageCommand;
@@ -271,7 +272,7 @@ impl AgentFilesystem {
                 exec_id: None,
             })
             .await
-            .map_err(|e| AppError::Internal(format!("search: {}", e)))?;
+            .map_err_internal("search")?;
 
         if result.exit_code != 0 && result.exit_code != 1 {
             return Err(AppError::Internal(format!(

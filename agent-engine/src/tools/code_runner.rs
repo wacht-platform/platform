@@ -1,3 +1,4 @@
+use common::ResultExt;
 use super::ToolExecutor;
 use crate::filesystem::AgentFilesystem;
 use crate::sandbox::ExecRequest;
@@ -73,7 +74,7 @@ impl ToolExecutor {
                 exec_id: None,
             })
             .await
-            .map_err(|err| AppError::Internal(format!("code runner exec: {err}")))?;
+            .map_err_internal("code runner exec")?;
 
         if result.exit_code != 0 {
             return Err(AppError::Internal(format_code_runner_failure(

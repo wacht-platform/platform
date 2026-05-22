@@ -95,7 +95,7 @@ impl GetApiKeyGatewayDataQuery {
             } else {
                 json_default(r.workspace_role_permissions.clone())
             },
-            metadata: r.metadata.clone().unwrap_or_else(|| serde_json::json!({})),
+            metadata: r.metadata.clone().unwrap_or_else(common::json_utils::empty_object),
             rate_limit_scheme_slug: r.rate_limit_scheme_slug,
             organization_id: r.organization_id,
             workspace_id: r.workspace_id,

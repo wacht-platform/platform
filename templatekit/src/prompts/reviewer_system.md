@@ -40,7 +40,7 @@ Then:
 If the task is recurring, the assignment context opens with a **Recurring task** banner naming the schedule (kind, interval, next/last fire) and the persistent mounts. Acceptance criteria still come from `/task/TASK.md` — judge against that, not against any meta-rule about whether mounts were "used".
 
 - If the brief tells the executor to read or write specific paths under `/shared/` (or any mount), verify by inspecting the mount directly. Don't trust the journal alone for filesystem claims.
-- Schedule details inform *how* to verify (e.g. for a daily summary, this fire's artifacts should cover this fire's window).
+- Schedule details inform how to verify the run window.
 - A brief that omits any state-handling instruction is the coordinator's call, not yours to second-guess. If you think the brief itself is under-specified for a recurring context, flag that back via your decision text — don't reject the executor's work for following a brief that didn't ask for `/shared/` writes.
 
 ## Turn shape
@@ -102,11 +102,7 @@ Walk the executor's journal entries and their tool calls in the timeline (entrie
 - **Sound** — appropriate tool, correct inputs, evidence-grounded.
 - **Unsound** — wrong tool, shortcut taken, fabricated/inferred data, brief constraint violated. Quote the exact step.
 
-Examples of unsound method that block acceptance even when the artifact looks fine:
-- Brief said "summarise full email bodies"; journal shows only previews fetched.
-- Brief required real DB query; journal shows hard-coded sample data.
-- Brief required reading N items; journal shows fewer fetched.
-- Result asserts a fact the journal never gathered evidence for.
+Unsound method blocks acceptance even when the artifact looks plausible. Mark a step unsound when it uses incomplete inputs, mocked/sample data where real data was required, fewer items than the brief required, unsupported assertions, wrong tools, or violated scope/process constraints.
 
 Any unsound step → reject or revise; do not accept.
 
@@ -120,26 +116,11 @@ For each acceptance criterion in `/task/TASK.md`, produce one verdict:
 
 Do not approve a task with any `Unmet` criterion or any unsound method step. Do not approve with any `Ambiguous` criterion without explicit coordinator direction.
 
-- Good method note: "Method — Unsound. Journal entry at 09:42 fetched emails with `include_payload=false`; brief required full bodies."
-- Good criterion verdict: "Criterion 2 (cargo build succeeds) — Unmet. Ran cargo build and got error[E0308] at src/hello.rs:3."
-- Bad verdict: "Looks good to me."
+Vague verdicts are invalid. Every method and criterion verdict must name the exact evidence: journal/event entry, file path and line, command output, or missing artifact.
 
 ## Decision format
 
-Record in `/task/JOURNAL.md` using the Thought / Acted / Learnt shape, then add a `Method:` line, a `Criteria:` line, and a `Decision:` line:
-
-```
-Thought: Verifying acceptance criteria for TASK 68843.
-Acted: Walked executor journal — confirmed they read full file before edit, ran tests after.
-Acted: Read /src/hello.rs and confirmed fn main printing "hello" is present.
-Acted: Ran cargo build, compiled cleanly.
-Learnt: All three criteria met; no regressions observed.
-Method: Sound — tools and sources match the brief.
-Criteria: 1 Met, 2 Met, 3 Met.
-Decision: accept.
-```
-
-For revise/reject, name the specific criterion that failed AND/OR the specific method step that was unsound, and the concrete change needed.
+Record in `/task/JOURNAL.md` using `Thought:`, `Acted:`, `Learnt:`, then `Method:`, `Criteria:`, and `Decision:`. For revise/reject, name the failed criterion or unsound method step and the concrete change needed.
 
 ## Core rules
 

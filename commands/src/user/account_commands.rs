@@ -1,3 +1,4 @@
+use common::ResultExt;
 use chrono::Utc;
 use serde_json::json;
 use sqlx::Execute;
@@ -276,7 +277,7 @@ impl UpdateUserCommand {
 
         let arguments = query
             .take_arguments()
-            .map_err(|e| AppError::Internal(format!("{ERR_BUILD_QUERY_ARGS}: {}", e)))?;
+            .map_err_internal(format!("{ERR_BUILD_QUERY_ARGS}"))?;
         let sql = query.sql();
 
         if let Some(args) = arguments {

@@ -2,15 +2,12 @@ You are compacting an execution into a dense, reasoning-AND-content-preserving l
 
 **Current Date/Time**: {{current_datetime_utc}}
 
-Emit four sections: `Thought`, `Acted`, `Learnt`, `Open`. Lines are atomic items. No prose paragraphs. No filler ("Let me check", "Sure", acknowledgments). Keep IDs, filenames, line numbers, error strings, URLs, slugs verbatim.
+Emit four sections: `Thought`, `Acted`, `Learnt`, `Open`. Lines are atomic items. No prose paragraphs, acknowledgments, or filler. Keep IDs, filenames, line numbers, error strings, URLs, slugs verbatim.
 
 ## Sections
 
 ### Thought
-One line per reason-to-act. **Why** was this done, not what.
-
-- Good: `User flagged stuck task — needed to find why coordinator wasn't re-routing.`
-- Bad: `Started the investigation.`
+One line per reason-to-act. Record why action was needed, not generic activity.
 
 ### Acted
 One entry per concrete action. Name the tool + key arguments + the observable result.
@@ -19,53 +16,17 @@ One entry per concrete action. Name the tool + key arguments + the observable re
 
 Use multi-line entries when content warrants it. Quote bodies, subjects, file contents, JSON results inline. Truncate only when content is truly large (>2KB) or repetitive — and even then, preserve the substantive parts (subject lines, sender, key fields, first/last paragraphs of long text).
 
-Format each entry as labelled prose so the tool that was called and its full payload are preserved without using function-call notation:
-
-- Good:
-  ```
-  Tool: gmail_create_email_draft.
-  Args: to="x@y.com", subject="Recognition of Super Genius Status",
-    body="Hi,\n\nI'm writing to officially recognize that you are a super genius. The evidence is clear, and it's time it was stated plainly.\n\nBest regards,\nLuke".
-  Result: draft_id=r1572417686208685205.
-  ```
-- Good:
-  ```
-  Tool: read_file.
-  Args: path=/task/TASK.md.
-  Result: 4 acceptance criteria, 2 unmet —
-    [x] Wire approval gate
-    [x] Persist loaded tools
-    [ ] Add audit log
-    [ ] Smoke test gmail flow.
-  ```
-- Good:
-  ```
-  Tool: gmail_fetch_emails.
-  Args: query="from:snipextt@gmail.com", max=10.
-  Result: 3 messages —
-    1. id=18c... subject="Re: deploy" from=snipextt@gmail.com date=2026-04-25 snippet="Looks good, merging now"
-    2. id=18b... subject="invoice" ...
-  ```
-- Bad: "Created a draft." / "Fetched some emails." / "Output saved to /scratch/..." — these all hide what was in the payload.
-
-Use plain `Tool:` / `Args:` / `Result:` labels rather than `tool_name(args)` syntax — the labelled form preserves all the same information without modelling a function-call shape that future agents will mimic in their prose.
+Format each entry as labelled prose: `Tool:`, `Args:`, `Result:`. Include key payload fields inline. Do not write vague summaries that hide what was fetched, drafted, read, or changed.
 
 If a tool wrote large output to `/scratch/<path>`, still record the salient content inline — the scratch file may not survive.
 
 ### Learnt
-One line per new fact. What's true now that wasn't known before this window. Surprises. Confirmed/invalidated invariants. Identity facts (e.g. user's email, account names, IDs) belong here, verbatim.
-
-- Good: `User identity confirmed: Luke Fran <lukefran77@gmail.com>.`
-- Good: `Reconciler only sweeps claimed thread_events; pending orphans fall through.`
-- Bad: `Learned about the reconciler.`
+One line per new fact. Include exact identities, IDs, paths, confirmed/invalidated invariants, and surprises. Avoid vague "learned about X" lines.
 
 Skip if truly nothing new.
 
 ### Open
-Only real blockers, required user input, or genuinely incomplete work at the end of the window. Empty if nothing applies.
-
-- Good: `Awaiting redeploy — current binary predates max_retries fix.`
-- Omit: `Could refactor this later.`
+Only real blockers, required user input, or genuinely incomplete work at the end of the window. Leave empty for optional future cleanup.
 
 ## Rules
 
@@ -80,7 +41,4 @@ Only real blockers, required user input, or genuinely incomplete work at the end
 
 ## Trivial cases
 
-Short interactions (greeting, single-turn Q&A): a single line under `Acted` is enough.
-
-- `Acted: greeted user.`
-- `Acted: answered "2+2=4".`
+Short greetings or single-turn Q&A can be summarized as one `Acted` line.

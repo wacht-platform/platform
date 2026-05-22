@@ -90,39 +90,38 @@ impl<'a> InsertTaskRoutingEvent<'a> {
     where
         E: sqlx::Executor<'e, Database = Postgres>,
     {
-        let mut payload = serde_json::json!({
-            "event_log_id": self.event_log_id.to_string(),
-            "deployment_id": self.deployment_id.to_string(),
-            "thread_id": self.coordinator_thread_id.to_string(),
-            "board_item_id": self.board_item.id.to_string(),
-            "kind": "task_routing",
-            "routing_reason": self.routing_reason,
-            "summary": self.summary,
-            "note": self.note,
-        });
-        if let Some(map) = payload.as_object_mut() {
-            if let Some(prev) = self
-                .previous_status
-                .filter(|s| !s.is_empty() && s != &self.board_item.status)
-            {
-                map.insert(
-                    "previous_status".to_string(),
-                    serde_json::Value::String(prev),
-                );
-            }
-            if !self.changed_fields.is_empty() {
-                map.insert(
-                    "changed_fields".to_string(),
+        let mut payload_builder = crate::event_log::EventLogPayload::new(
+            self.event_log_id,
+            self.deployment_id,
+            self.coordinator_thread_id,
+            "task_routing",
+        )
+        .with_id("board_item_id", self.board_item.id)
+        .with("routing_reason", self.routing_reason)
+        .with_serializable("summary", self.summary)
+        .with_serializable("note", self.note);
+        if let Some(prev) = self
+            .previous_status
+            .filter(|s| !s.is_empty() && s != &self.board_item.status)
+        {
+            payload_builder
+                .as_object_mut()
+                .insert("previous_status".into(), serde_json::Value::String(prev));
+        }
+        if !self.changed_fields.is_empty() {
+            payload_builder
+                .as_object_mut()
+                .insert(
+                    "changed_fields".into(),
                     serde_json::to_value(&self.changed_fields).unwrap_or(serde_json::Value::Null),
                 );
-            }
-            if let Some(last) = self.last_assignment_result_status.filter(|s| !s.is_empty()) {
-                map.insert(
-                    "last_assignment_result_status".to_string(),
-                    serde_json::Value::String(last),
-                );
-            }
         }
+        if let Some(last) = self.last_assignment_result_status.filter(|s| !s.is_empty()) {
+            payload_builder
+                .as_object_mut()
+                .insert("last_assignment_result_status".into(), serde_json::Value::String(last));
+        }
+        let payload = payload_builder.build();
 
         // jsonb_set keeps payload.event_log_id consistent with the existing
         // row's id when we coalesce a fresh routing event into an
@@ -612,13 +611,14 @@ where
         .await?;
 
         let wake_event_id = deps.id_provider().next_id()? as i64;
-        let payload = serde_json::json!({
-            "event_log_id": wake_event_id.to_string(),
-            "deployment_id": deployment_id.to_string(),
-            "thread_id": sub.thread_id.to_string(),
-            "kind": "thread_subscription_delivery",
-            "board_item_id": board_item.id.to_string(),
-        });
+        let payload = crate::event_log::EventLogPayload::new(
+            wake_event_id,
+            deployment_id,
+            sub.thread_id,
+            "thread_subscription_delivery",
+        )
+        .with_id("board_item_id", board_item.id)
+        .build();
         let idempotency_key = format!(
             "thread_subscription_delivery_{}_{}",
             sub.thread_id, wake_event_id

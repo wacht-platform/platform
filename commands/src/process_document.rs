@@ -1,3 +1,4 @@
+use common::ResultExt;
 use crate::{
     DispatchVectorStoreMaintenanceTaskCommand, GenerateEmbeddingsCommand,
     ResolveDeploymentStorageCommand, VECTOR_STORE_KNOWLEDGE_BASE,
@@ -75,7 +76,7 @@ impl ProcessDocumentCommand {
             .body
             .collect()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to read file content: {}", e)))?
+            .map_err_internal("Failed to read file content")?
             .into_bytes()
             .to_vec();
 

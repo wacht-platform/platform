@@ -1,3 +1,4 @@
+use common::ResultExt;
 use common::error::AppError;
 use models::{
     AgentHooksConfig, AgentModelOverride, AgentToolApprovalRule, AiAgentWithDetails,
@@ -17,7 +18,7 @@ fn build_override(provider: Option<String>, model: Option<String>) -> Option<Age
 
 fn parse_sub_agents(value: serde_json::Value) -> Result<Option<Vec<i64>>, AppError> {
     let parsed = serde_json::from_value::<Vec<i64>>(value)
-        .map_err(|e| AppError::Internal(format!("Failed to parse sub_agents: {}", e)))?;
+        .map_err_internal("Failed to parse sub_agents")?;
     Ok(Some(parsed))
 }
 
@@ -425,7 +426,7 @@ impl GetAiAgentByIdWithFeatures {
         .map_err(AppError::Database)?;
 
         let tools = serde_json::from_value(row.tools)
-            .map_err(|e| AppError::Internal(format!("Failed to deserialize tools: {}", e)))?;
+            .map_err_internal("Failed to deserialize tools")?;
         let knowledge_bases = serde_json::from_value(row.knowledge_bases).map_err(|e| {
             AppError::Internal(format!("Failed to deserialize knowledge bases: {}", e))
         })?;

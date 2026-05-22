@@ -1,3 +1,4 @@
+use common::ResultExt;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
 use models::{Session, SignIn};
@@ -131,17 +132,17 @@ impl GetSessionWithActiveContextQuery {
 
         let user_id: Option<i64> = row
             .try_get("user_id")
-            .map_err(|e| AppError::Internal(format!("Invalid user_id field: {}", e)))?;
+            .map_err_internal("Invalid user_id field")?;
         let user_id = user_id
             .filter(|id| *id > 0)
             .ok_or_else(|| AppError::NotFound("No active user for session".to_string()))?;
 
         let active_organization_id: Option<i64> = row
             .try_get("organization_id")
-            .map_err(|e| AppError::Internal(format!("Invalid organization_id field: {}", e)))?;
+            .map_err_internal("Invalid organization_id field")?;
         let active_workspace_id: Option<i64> = row
             .try_get("workspace_id")
-            .map_err(|e| AppError::Internal(format!("Invalid workspace_id field: {}", e)))?;
+            .map_err_internal("Invalid workspace_id field")?;
 
         Ok(SessionContext {
             user_id,
@@ -234,7 +235,7 @@ impl GetSessionWithSignInsQuery {
             .map(|row| -> Result<Option<SignIn>, AppError> {
                 let signin_id: Option<i64> = row
                     .try_get("signin_id")
-                    .map_err(|e| AppError::Internal(format!("Invalid signin_id field: {}", e)))?;
+                    .map_err_internal("Invalid signin_id field")?;
 
                 Ok(signin_id.map(|id| {
                     normalize_signin(

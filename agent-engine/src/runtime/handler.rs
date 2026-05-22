@@ -1,3 +1,4 @@
+use common::ResultExt;
 use std::sync::Arc;
 
 use crate::executor::core::AgentExecutorBuilder;
@@ -176,7 +177,7 @@ impl AgentHandler {
             let initial = runtime
                 .ensure_task_sandbox(spec.clone())
                 .await
-                .map_err(|err| AppError::Internal(format!("ensure task sandbox: {err}")))?;
+                .map_err_internal("ensure task sandbox")?;
             let initial_arc: Arc<dyn SandboxHandle> = Arc::from(initial);
             let label = format!("task[{}/{}]", spec.project_id, spec.task_key);
             let recreate_runtime = runtime.clone();
@@ -206,7 +207,7 @@ impl AgentHandler {
         let initial = runtime
             .ensure_thread_sandbox(spec.clone())
             .await
-            .map_err(|err| AppError::Internal(format!("ensure thread sandbox: {err}")))?;
+            .map_err_internal("ensure thread sandbox")?;
         let initial_arc: Arc<dyn SandboxHandle> = Arc::from(initial);
         let label = format!("thread[{}]", spec.thread_id);
         let recreate_runtime = runtime.clone();
@@ -251,7 +252,7 @@ impl AgentHandler {
             return Ok(None);
         };
         let mounts = models::project_task_schedule::parse_mounts(&item.mounts)
-            .map_err(|e| AppError::Internal(format!("Invalid task mounts: {e}")))?
+            .map_err_internal("Invalid task mounts")?
             .into_iter()
             .map(|m| SandboxMount {
                 mount_path: m.mount_path,
@@ -726,7 +727,7 @@ async fn publish_stream_event(
     let subject = format!("agent_execution_stream.thread:{thread_key}");
 
     let (message_type, payload) = dto::json::encode_stream_event(&event)
-        .map_err(|e| AppError::Internal(format!("Failed to encode stream event: {e}")))?;
+        .map_err_internal("Failed to encode stream event")?;
 
     let mut headers = async_nats::HeaderMap::new();
     headers.insert("message_type", message_type.as_header_value());
@@ -736,7 +737,7 @@ async fn publish_stream_event(
     jetstream
         .publish_with_headers(subject.clone(), headers, payload.clone().into())
         .await
-        .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {e}")))?;
+        .map_err_internal("Failed to publish to NATS")?;
 
     use commands::webhook_trigger::TriggerWebhookEventCommand;
 

@@ -1,3 +1,4 @@
+use common::ResultExt;
 use common::{EmbeddingApiProvider, HasEmbeddingProvider, HasEncryptionProvider, error::AppError};
 use models::{
     DeploymentAiSettings, DeploymentEmbeddingProvider, DeploymentLlmProvider,
@@ -322,7 +323,7 @@ fn resolve_api_key(
 
     deps.encryption_provider()
         .decrypt(encrypted)
-        .map_err(|e| AppError::Internal(format!("Failed to decrypt {provider_name} API key: {e}")))
+        .map_err_internal(format!("Failed to decrypt {provider_name} API key"))
 }
 
 fn embedding_provider_key(provider: &DeploymentEmbeddingProvider) -> EmbeddingApiProvider {

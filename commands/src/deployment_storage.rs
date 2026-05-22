@@ -1,3 +1,4 @@
+use common::ResultExt;
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_s3::Client as S3Client;
 use aws_sdk_s3::config::{Builder as S3ConfigBuilder, Credentials};
@@ -480,5 +481,5 @@ where
     let encrypted = required_storage_field(field_name, encrypted_value)?;
     deps.encryption_provider()
         .decrypt(encrypted)
-        .map_err(|error| AppError::Internal(format!("Failed to decrypt {field_name}: {error}")))
+        .map_err_internal(format!("Failed to decrypt {field_name}"))
 }

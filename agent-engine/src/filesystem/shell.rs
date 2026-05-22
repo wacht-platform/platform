@@ -1,3 +1,4 @@
+use common::ResultExt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -66,7 +67,7 @@ impl ShellExecutor {
                 exec_id: None,
             })
             .await
-            .map_err(|err| AppError::Internal(format!("sandbox exec: {err}")))?;
+            .map_err_internal("sandbox exec")?;
 
         Ok(ShellOutput {
             stdout: String::from_utf8_lossy(&result.stdout).into_owned(),
