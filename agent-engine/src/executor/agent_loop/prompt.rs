@@ -909,7 +909,7 @@ impl AgentExecutor {
         } else {
             self.get_conversation_history_for_llm().await
         };
-        let current_request_entry = conversation_history.pop().unwrap_or_else(|| {
+        let mut current_request_entry = conversation_history.pop().unwrap_or_else(|| {
             LlmHistoryEntry::with_parts(
                 "user",
                 "user_message",
@@ -921,6 +921,20 @@ impl AgentExecutor {
                 })],
             )
         });
+
+        if current_request_entry.entry_type == "trigger" {
+            if let Some(brief) = self.current_trigger_brief.as_deref() {
+                let trimmed = brief.trim();
+                if !trimmed.is_empty() {
+                    current_request_entry = LlmHistoryEntry::with_content(
+                        current_request_entry.role.clone(),
+                        current_request_entry.entry_type.clone(),
+                        current_request_entry.timestamp.clone(),
+                        trimmed.to_string(),
+                    );
+                }
+            }
+        }
 
         ConversationPromptContext {
             conversation_history_prefix: conversation_history,

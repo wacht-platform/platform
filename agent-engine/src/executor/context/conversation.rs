@@ -665,27 +665,8 @@ impl AgentExecutor {
         history
     }
 
-    fn latest_trigger_marker_id(&self) -> Option<i64> {
-        self.conversations
-            .iter()
-            .rev()
-            .find(|c| {
-                matches!(
-                    c.message_type,
-                    ConversationMessageType::AssignmentExecutionTrigger
-                        | ConversationMessageType::TaskRoutingTrigger
-                )
-            })
-            .map(|c| c.id)
-    }
 
     fn render_trigger_marker(&self, conv: &ConversationRecord) -> String {
-        let is_latest = Some(conv.id) == self.latest_trigger_marker_id();
-        if is_latest {
-            if let Some(brief) = self.current_trigger_brief.as_deref() {
-                return brief.to_string();
-            }
-        }
         self.trigger_stub(&conv.content)
     }
 
