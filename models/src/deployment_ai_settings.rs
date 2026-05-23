@@ -146,6 +146,106 @@ pub struct DeploymentAiSettingsResponse {
     pub storage: DeploymentStorageSettingsResponse,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct DeploymentAiProviderProfile {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    pub provider: String,
+    pub name: String,
+    pub slug: String,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub organization: Option<String>,
+    pub project: Option<String>,
+    pub default_model: Option<String>,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeploymentAiProviderProfileResponse {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    pub provider: DeploymentLlmProvider,
+    pub name: String,
+    pub slug: String,
+    pub api_key_set: bool,
+    pub base_url: Option<String>,
+    pub organization: Option<String>,
+    pub project: Option<String>,
+    pub default_model: Option<String>,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<DeploymentAiProviderProfile> for DeploymentAiProviderProfileResponse {
+    fn from(profile: DeploymentAiProviderProfile) -> Self {
+        Self {
+            id: profile.id,
+            deployment_id: profile.deployment_id,
+            provider: match profile.provider.as_str() {
+                "openai" => DeploymentLlmProvider::Openai,
+                "openrouter" => DeploymentLlmProvider::Openrouter,
+                _ => DeploymentLlmProvider::Gemini,
+            },
+            name: profile.name,
+            slug: profile.slug,
+            api_key_set: profile.api_key.is_some(),
+            base_url: profile.base_url,
+            organization: profile.organization,
+            project: profile.project,
+            default_model: profile.default_model,
+            enabled: profile.enabled,
+            created_at: profile.created_at,
+            updated_at: profile.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateDeploymentAiProviderProfileRequest {
+    pub provider: DeploymentLlmProvider,
+    pub name: String,
+    pub slug: String,
+    pub api_key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub organization: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateDeploymentAiProviderProfileRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slug: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub organization: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
 impl From<DeploymentAiSettings> for DeploymentAiSettingsResponse {
     fn from(settings: DeploymentAiSettings) -> Self {
         Self {

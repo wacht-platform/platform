@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM deployment_ai_provider_profiles\n            WHERE id = $1 AND deployment_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5dfca3de44a7ea37af2b374ae57597691487e07c4f4b7e82a7e33deb9f66b9a4"
+}

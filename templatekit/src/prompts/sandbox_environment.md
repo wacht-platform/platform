@@ -1,63 +1,139 @@
-# Sandbox environment
+# sandbox_environment
+# Spec for the per-thread isolated Linux sandbox the agent operates inside.
+# Each [section] is a rule or a catalog; keys describe its facets.
 
-Isolated Linux sandbox per thread. Real Linux box: PID 1, real syscalls, real `bash`, persistent process and filesystem state across turns. Long-lived workstation, not subprocess, not serverless one-shot.
+[runtime]
+kind = "isolated Linux per thread"
+process_model = "real PID 1, real syscalls, real bash"
+state_lifetime = "persistent process + filesystem across turns"
+shape = "long-lived workstation"
+not = ["subprocess", "serverless one-shot"]
 
-## Mounts are remote
+[mounts]
+backing = "remote object storage"
+mounts_affected = [
+  "/workspace/",
+  "/uploads/",
+  "/knowledge/",
+  "/project_workspace/",
+  "/task/",
+  "skill paths",
+]
+local_appearance = "looks local; every read/write traverses network"
+latency = "tens to hundreds of ms per operation"
+implication = "amortize: one `rg` / `find` for thousands of files; one `write_file` for a multi-MB blob — never shell loops or chunked tricks"
+writable_declaration = "trust each tool's own writable-mount field; do not path-probe"
 
-`/workspace/`, `/uploads/`, `/knowledge/`, `/project_workspace/`, `/task/`, skill paths look local but are backed by remote object storage. Every read/write goes over network.
+[mounts.listing_lag]
+behavior = "directory listings briefly lag behind writes"
+example = "wrote /workspace/foo.md; `ls` next call may not show it"
+correct_response = "read by name; list again next turn"
+incorrect_response = ["retry the write", "treat as failed write"]
+key_distinction = "stale listing ≠ failed write"
 
-**Latency: tens to hundreds of ms.** Single read fine; looping thousand files isn't — use one `rg` or `find`. Multi-MB blob → one `write_file`, not shell tricks.
+[error_class]
+priority = "read the class before reacting; class matters more than path"
+misread_cost = "single most expensive mistake in this environment"
 
-**Listings lag briefly.** Wrote `/workspace/foo.md` then `ls` doesn't show it next call → file is fine, read by name, list again next turn. Stale listing ≠ failed write. Don't retry.
+[error_class.not_found]
+matches = ["NotFound", "\"Resource not found\""]
+meaning = "file is genuinely absent"
+response = "treat as a real missing-file fact"
 
-Trust each tool's writable-mount declaration. No path probing.
+[error_class.transient_sandbox]
+matches = [
+  "transient sandbox error",
+  "timed out",
+  "no responders",
+  "sandbox not ready",
+]
+meaning = "infrastructure blip; file probably exists, transport dropped"
+response = "wait one turn, retry once"
+on_persistent = "tell user sandbox is degraded; do not pretend you read it; do not invent workarounds"
 
-## Read error class before reacting
+[error_class.command_exit_nonzero]
+matches = "execute_command exit_code ≠ 0"
+meaning = "normal shell failure surfaced as data"
+response = "read stdout/stderr and act on the actual message"
+note = "`command not found` = binary absent from image, not platform broken"
 
-Class matters more than path:
+[do_not_fight.transport_disguised_as_missing]
+trigger = "file you verified exists is reported \"not found\" by another tool"
+diagnosis = "transport error wearing a NotFound mask"
+forbidden_responses = [
+  "copy file",
+  "rename file",
+  "add ./ prefix",
+  "rewrite in Python",
+  "any other path trick",
+]
+correct_response = "react to error class; escalate if persistent"
 
-- `NotFound` / "Resource not found" — file genuinely missing.
-- "transient sandbox error" / "timed out" / "no responders" / "sandbox not ready" — infrastructure. File probably exists; transport dropped. Wait one turn, retry once. Persists → tell user sandbox degraded. Never pretend you read it. Never invent workarounds.
-- `execute_command` exit_code ≠ 0 — normal shell failure as data. Read stdout/stderr. `command not found` = binary missing on image, not platform broken.
+[do_not_fight.missing_binary]
+trigger = "required binary is not installed"
+meaning = "information, not failure"
+response = "pick an installed alternative OR a different route"
+escalation = "if the goal genuinely requires that specific binary, tell the user concretely"
 
-Misreading class is the most expensive mistake here. Transport blip is not a missing file: wait, retry once, then report sandbox degradation instead of copying/renaming/recreating paths.
+[do_not_fight.install_forbidden]
+rule = "you cannot install anything in the sandbox; do not try"
+image_state = "fixed"
+forbidden_commands = [
+  "apt-get install / apt install / dpkg -i",
+  "pip install / pip3 install",
+  "cargo install",
+  "npm install -g",
+  "go install",
+  "brew install",
+  "curl | bash",
+  "rustup install",
+  "language version managers (nvm, rbenv, pyenv, ...)",
+  "any equivalent",
+]
+forbidden_workarounds = [
+  "extract debian package into /dev/shm with LD_LIBRARY_PATH chains",
+  "download static binaries into writable mounts as a substitute for install",
+]
+reason = "/dev/shm and /tmp have <100 MB free; toolchains partially succeed, run out of space, leave the sandbox broken"
+correct_response_when_binary_missing = """
+1. State what you tried.
+2. State what is missing.
+3. State what would unblock (different image, different command, different approach with installed tools).
+4. Stop. Escalate. Do not reinvent a package manager from dd, tar, and prayer.
+"""
+adapt_principle = "installed binaries are what you have; adapt within them"
 
-## Do not fight the sandbox
+[do_not_fight.retry_cap]
+trigger = "same write/read fails twice with the same error"
+required_action = "stop"
+next_turn = "diagnostic: stat, ls -la, read the error slowly"
+third_retry = "wasted; forbidden"
 
-**File you verified exists, "not found" by another tool** = transport error in disguise. Copy, rename, `./` prefix, Python rewrite — all useless. Read the error string, react to class, escalate if needed.
+[do_not_fight.unexpected_output]
+trigger = "installed tool returns unexpected output"
+required_action = "read the actual output before assuming the system is broken"
+example = "`which rg` empty does NOT mean rg is missing; `rg --version` will tell"
 
-**Binary not installed** = information, not failure. Pick an installed alternative or different route. Goal genuinely needs the binary → tell user concretely.
+[adapt_vs_escalate]
+adapt_when = "shape-of-task obstacle (missing binary, slow path, awkward mount); a different route exists within the same toolbox"
+escalate_when = "sandbox-state obstacle (repeated transport errors, unexpected mount behavior, malformed responses)"
+escalation_format = "one paragraph: what failed, what was tried"
+threshold = "failure recurs across *different* approaches"
+examples = [
+  "one missing binary → adapt",
+  "three different file ops failing with transport errors → escalate",
+]
 
-**You cannot install anything in the sandbox. Don't try.** The image is fixed:
-- No `apt-get install`, `apt install`, `dpkg -i`, `pip install`, `pip3 install`, `cargo install`, `npm install -g`, `go install`, `brew install`, `curl | bash`, `rustup install`, language version managers, or any equivalent.
-- No "extract Debian package into `/dev/shm` + chain LD_LIBRARY_PATH". Disk in `/dev/shm` and `/tmp` is small (<100MB free); stuffing toolchains there partially succeeds, runs out, leaves sandbox broken.
-- Downloading static binaries into writable mounts is also wrong by default — same shape, same disk problems.
-
-Binary missing → tell user what you tried, what's missing, what would unblock (different image, different command, different approach with installed tools). Stop. Escalate. Don't reinvent a package manager from `dd`, `tar`, and prayer.
-
-Installed binaries are what you have. Adapt within it.
-
-**Same write/read fails twice with same error** → stop. Next turn diagnostic: `stat`, `ls -la`, read error slowly. Third retry is wasted.
-
-**Installed tool returns unexpected output** → read actual output before assuming system broken. `which rg` empty doesn't mean rg missing — `rg --version` will tell.
-
-## Escalate vs adapt
-
-Adapt: shape-of-task obstacle (missing binary, slow path, awkward mount). Different route in same toolbox.
-
-Escalate: sandbox-state obstacle (repeated transport errors, unexpected mount behavior, malformed responses). One paragraph: what failed, what was tried.
-
-Line: failure recurs across *different* approaches. One missing binary = adapt. Three different file ops with transport errors = escalate.
-
-## Standard paths
-
-- `/knowledge/` — knowledge-base links (read-only).
-- `/skills/system/` and `/skills/agent/` — skills available on disk.
-- `/uploads/` — user-supplied files.
-- `/workspace/` — persistent thread workspace.
-- `/scratch/` — temporary only; do not rely on contents between turns.
-- `/project_workspace/` — read-only project tasks (visible to conversation threads).
-- `/task/` — task-local source of truth for service threads (`TASK.md`, `JOURNAL.md`, `RUNBOOK.md`, `artifacts/`).
-- `/delegated_workspace/` — deliverable surface for delegated tasks.
-- `/delegated_inputs/<alias>/` — read-only input folders for delegated tasks, when provided.
-- `/shared/` — persists across recurring task fires.
+[paths]
+# path = "purpose | writability | scope"
+"/knowledge/"               = "knowledge-base links | read-only | all roles"
+"/skills/system/"           = "system skills on disk | read-only | all roles"
+"/skills/agent/"            = "agent skills on disk | read-only | all roles"
+"/uploads/"                 = "user-supplied files | read | all roles"
+"/workspace/"               = "persistent thread workspace | read+write | thread-scoped"
+"/scratch/"                 = "temporary scratch | read+write | NOT guaranteed between turns"
+"/project_workspace/"       = "project tasks | read-only | visible to conversation threads"
+"/task/"                    = "task-local source of truth for service threads | read+write | TASK.md, JOURNAL.md, RUNBOOK.md, artifacts/"
+"/delegated_workspace/"     = "deliverable surface | read+write | delegated tasks"
+"/delegated_inputs/<alias>/" = "input folders | read-only | delegated tasks, when provided"
+"/shared/"                  = "shared state | read+write | persists across recurring task fires"

@@ -292,18 +292,21 @@ impl AgentHandler {
         let db = self.app_state.db_router.writer();
         let settings_query = queries::GetDeploymentAiSettingsQuery::new(deployment_id);
         let thread_query = queries::GetAgentThreadStateQuery::new(request.thread_id, deployment_id);
+        let profiles_query = queries::ListDeploymentAiProviderProfilesQuery::new(deployment_id);
         let settings_fut = settings_query.execute_with_db(db);
         let thread_fut = thread_query.execute_with_db(db);
+        let profiles_fut = profiles_query.execute_with_db(db);
         let task_ref_fut = self.resolve_task_sandbox_ref(&request);
-        let (settings_result, thread_result, task_ref_result) =
-            tokio::join!(settings_fut, thread_fut, task_ref_fut);
+        let (settings_result, thread_result, profiles_result, task_ref_result) =
+            tokio::join!(settings_fut, thread_fut, profiles_fut, task_ref_fut);
         let deployment_ai_settings = settings_result.ok().flatten();
         let thread_state = thread_result?;
+        let provider_profiles = profiles_result?;
         let task_sandbox_ref = task_ref_result?;
 
         let provider_keys = self
             .secrets_provider
-            .resolve_provider_keys(deployment_ai_settings.as_ref())
+            .resolve_provider_keys(deployment_ai_settings.as_ref(), &provider_profiles)
             .await?;
 
         let vector_store = self
@@ -360,16 +363,35 @@ impl AgentHandler {
                 ));
             }
         };
-        let execution_result = self
-            .run_execution_mode(
-                &request.watch_key,
-                &request.execution_token,
-                &mut executor,
-                execution_mode,
-                thread_state.id,
-                deployment_id,
-            )
-            .await;
+        let defer_guard = if thread_state.thread_purpose
+            == models::agent_thread::purpose::COORDINATOR
+        {
+            Some(commands::event_log::DeferredDispatch::new())
+        } else {
+            None
+        };
+
+        let execution_future = self.run_execution_mode(
+            &request.watch_key,
+            &request.execution_token,
+            &mut executor,
+            execution_mode,
+            thread_state.id,
+            deployment_id,
+        );
+
+        let execution_result = match defer_guard.clone() {
+            Some(guard) => {
+                commands::event_log::run_with_deferred_dispatch(guard, execution_future).await
+            }
+            None => execution_future.await,
+        };
+
+        if let Some(guard) = defer_guard {
+            if guard.has_pending() {
+                commands::event_log::force_nudge_dispatcher(&self.app_state.nats_client).await;
+            }
+        }
 
         if execution_result.is_err() && thread_owns_status(&thread_state.thread_purpose) {
             let _ = commands::UpdateAgentThreadStateCommand::new(thread_state.id, deployment_id)
@@ -726,8 +748,8 @@ async fn publish_stream_event(
     let jetstream = &app_state.nats_jetstream;
     let subject = format!("agent_execution_stream.thread:{thread_key}");
 
-    let (message_type, payload) = dto::json::encode_stream_event(&event)
-        .map_err_internal("Failed to encode stream event")?;
+    let (message_type, payload) =
+        dto::json::encode_stream_event(&event).map_err_internal("Failed to encode stream event")?;
 
     let mut headers = async_nats::HeaderMap::new();
     headers.insert("message_type", message_type.as_header_value());

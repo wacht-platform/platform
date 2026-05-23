@@ -26,6 +26,9 @@ const MAX_RETRIES: u32 = 15;
 pub struct OpenAiClient {
     api_key: String,
     model: String,
+    chat_completions_url: String,
+    organization: Option<String>,
+    project: Option<String>,
     client: reqwest::Client,
     deployment_id: Option<i64>,
     thread_id: Option<i64>,
@@ -134,10 +137,31 @@ impl OpenAiClient {
         Ok(Self::new(api_key, model.to_string()))
     }
 
+    pub fn from_profile(
+        profile_api_key: Option<String>,
+        model: &str,
+        base_url: Option<String>,
+        organization: Option<String>,
+        project: Option<String>,
+    ) -> Result<Self, AppError> {
+        let Some(api_key) = profile_api_key else {
+            return Err(AppError::BadRequest(
+                "OpenAI API key is not configured for this provider profile".to_string(),
+            ));
+        };
+
+        Ok(Self::new(api_key, model.to_string())
+            .with_base_url(base_url)
+            .with_headers(organization, project))
+    }
+
     pub fn new(api_key: String, model: String) -> Self {
         Self {
             api_key,
             model,
+            chat_completions_url: OPENAI_CHAT_COMPLETIONS_URL.to_string(),
+            organization: None,
+            project: None,
             client: reqwest::Client::new(),
             deployment_id: None,
             thread_id: None,
@@ -145,6 +169,30 @@ impl OpenAiClient {
             nats_client: None,
             is_byok: true,
         }
+    }
+
+    fn with_base_url(mut self, base_url: Option<String>) -> Self {
+        if let Some(base_url) = base_url
+            .map(|value| value.trim().trim_end_matches('/').to_string())
+            .filter(|value| !value.is_empty())
+        {
+            self.chat_completions_url = if base_url.ends_with("/chat/completions") {
+                base_url
+            } else {
+                format!("{}/chat/completions", base_url.trim_end_matches("/v1"))
+            };
+        }
+        self
+    }
+
+    fn with_headers(mut self, organization: Option<String>, project: Option<String>) -> Self {
+        self.organization = organization
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        self.project = project
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        self
     }
 
     pub fn with_billing_context(
@@ -440,11 +488,21 @@ impl OpenAiClient {
         let response_text = loop {
             let request = self
                 .client
-                .post(OPENAI_CHAT_COMPLETIONS_URL)
+                .post(&self.chat_completions_url)
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("Content-Type", "application/json")
                 .json(&request_body)
                 .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS));
+            let request = if let Some(organization) = self.organization.as_deref() {
+                request.header("OpenAI-Organization", organization)
+            } else {
+                request
+            };
+            let request = if let Some(project) = self.project.as_deref() {
+                request.header("OpenAI-Project", project)
+            } else {
+                request
+            };
 
             let response = match request.send().await {
                 Ok(response) => response,

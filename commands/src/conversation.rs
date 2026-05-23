@@ -56,8 +56,8 @@ impl CreateConversationCommand {
         let now = Utc::now();
 
         // Convert typed content to JSON for database storage
-        let content_json = serde_json::to_value(&self.content)
-            .map_err_internal("Failed to serialize content")?;
+        let content_json =
+            serde_json::to_value(&self.content).map_err_internal("Failed to serialize content")?;
 
         // Convert enum to string for database storage
         let message_type_str = match self.message_type {
@@ -75,6 +75,7 @@ impl CreateConversationCommand {
             }
             ConversationMessageType::AssignmentExecutionTrigger => "assignment_execution_trigger",
             ConversationMessageType::TaskRoutingTrigger => "task_routing_trigger",
+            ConversationMessageType::TaskHandoffReceived => "task_handoff_received",
         };
 
         let record = sqlx::query_as::<_, ConversationRecord>(

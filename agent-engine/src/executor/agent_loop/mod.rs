@@ -5,8 +5,8 @@ mod terminal_review;
 mod tool_schema;
 pub(crate) use super::core;
 
-use common::ResultExt;
 use super::core::AgentExecutor;
+use common::ResultExt;
 use templatekit::{render_template_with_prompt, AgentTemplates};
 
 use commands::UpdateAgentThreadStateCommand;
@@ -1274,6 +1274,7 @@ impl AgentExecutor {
             Self::sanitize_user_facing_message(&text, "Completed the requested work.");
 
         const MAX_REVIEW_CONTINUES: usize = 2;
+        let mut completion_decision: Option<terminal_review::TerminalReviewDecision> = None;
         if self.terminal_review_continue_count < MAX_REVIEW_CONTINUES {
             let decision = match self.review_terminal_state(&safe_message).await {
                 Ok(d) => d,
@@ -1288,6 +1289,10 @@ impl AgentExecutor {
                     terminal_review::TerminalReviewDecision {
                         decision: terminal_review::TerminalReviewChoice::Complete,
                         hint: None,
+                        summary: None,
+                        artifacts: None,
+                        blockers: None,
+                        next_actions: None,
                     }
                 }
             };
@@ -1338,9 +1343,14 @@ impl AgentExecutor {
                 );
                 return Ok(true);
             }
+            completion_decision = Some(decision);
         }
 
         self.terminal_review_continue_count = 0;
+
+        self.persist_task_handoff_summary(&safe_message, completion_decision.as_ref())
+            .await;
+
         self.store_conversation(
             ConversationContent::Steer {
                 message: safe_message,
@@ -1359,6 +1369,195 @@ impl AgentExecutor {
             .await?;
 
         Ok(false)
+    }
+
+    async fn persist_task_handoff_summary(
+        &self,
+        fallback_summary: &str,
+        decision: Option<&terminal_review::TerminalReviewDecision>,
+    ) {
+        if self.is_conversation_thread {
+            return;
+        }
+        let Some(board_item_id) = self.current_board_item_id() else {
+            return;
+        };
+
+        let role_str = if self.is_coordinator_thread {
+            "coordinator"
+        } else if self.is_review_thread {
+            "reviewer"
+        } else {
+            "executor"
+        };
+
+        let summary = decision
+            .and_then(|d| d.summary.clone())
+            .unwrap_or_else(|| fallback_summary.to_string());
+        let artifacts = decision.and_then(|d| d.artifacts.clone());
+        let blockers = decision.and_then(|d| d.blockers.clone());
+        let next_actions = decision.and_then(|d| d.next_actions.clone());
+
+        let handoff_id = match self.ctx.app_state.sf.next_id() {
+            Ok(id) => id as i64,
+            Err(error) => {
+                tracing::warn!(?error, "snowflake id allocation for task handoff failed");
+                return;
+            }
+        };
+
+        let mut cmd = commands::CreateTaskHandoffSummaryCommand::new(
+            handoff_id,
+            self.ctx.agent.deployment_id,
+            board_item_id,
+            self.ctx.thread_id,
+            role_str,
+            "completed",
+            summary.clone(),
+        )
+        .with_execution_run_id(self.ctx.execution_run_id);
+        if let Some(value) = artifacts.clone() {
+            cmd = cmd.with_artifacts(value);
+        }
+        if let Some(value) = blockers.clone() {
+            cmd = cmd.with_blockers(value);
+        }
+        if let Some(value) = next_actions.clone() {
+            cmd = cmd.with_next_actions(value);
+        }
+
+        let inserted_handoff = match cmd
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await
+        {
+            Ok(row) => row,
+            Err(error) => {
+                tracing::warn!(
+                    thread_id = self.ctx.thread_id,
+                    board_item_id,
+                    ?error,
+                    "failed to persist task handoff summary"
+                );
+                return;
+            }
+        };
+
+        let recipient_thread_id = match self.resolve_handoff_recipient(board_item_id).await {
+            Ok(Some(id)) if id != self.ctx.thread_id => id,
+            Ok(_) => return,
+            Err(error) => {
+                tracing::warn!(
+                    thread_id = self.ctx.thread_id,
+                    board_item_id,
+                    ?error,
+                    "failed to resolve handoff recipient"
+                );
+                return;
+            }
+        };
+
+        let recipient_conv_id = match self.ctx.app_state.sf.next_id() {
+            Ok(id) => id as i64,
+            Err(error) => {
+                tracing::warn!(?error, "snowflake id allocation for handoff conversation failed");
+                return;
+            }
+        };
+
+        let content = ConversationContent::TaskHandoffReceived {
+            source_thread_id: self.ctx.thread_id,
+            board_item_id,
+            source_role: role_str.to_string(),
+            outcome: "completed".to_string(),
+            summary,
+            artifacts,
+            blockers,
+            next_actions,
+            completed_at: inserted_handoff.created_at,
+        };
+
+        let mut conv_cmd = commands::CreateConversationCommand::new(
+            recipient_conv_id,
+            recipient_thread_id,
+            content,
+            models::ConversationMessageType::TaskHandoffReceived,
+        )
+        .with_board_item_id(board_item_id);
+        conv_cmd = conv_cmd.with_metadata(serde_json::json!({
+            "handoff_id": inserted_handoff.id.to_string(),
+        }));
+
+        if let Err(error) = conv_cmd
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await
+        {
+            tracing::warn!(
+                thread_id = self.ctx.thread_id,
+                recipient_thread_id,
+                board_item_id,
+                ?error,
+                "failed to write handoff conversation record on recipient thread"
+            );
+            return;
+        }
+
+        if let Err(error) = commands::mark_subscription_notifications_consumed_for_board_item(
+            self.ctx.app_state.db_router.writer(),
+            recipient_thread_id,
+            board_item_id,
+        )
+        .await
+        {
+            tracing::warn!(
+                recipient_thread_id,
+                board_item_id,
+                ?error,
+                "failed to consume pending subscription notifications after handoff"
+            );
+        }
+    }
+
+    async fn resolve_handoff_recipient(
+        &self,
+        board_item_id: i64,
+    ) -> Result<Option<i64>, AppError> {
+        let Some(board_item) =
+            queries::GetProjectTaskBoardItemByIdQuery::new(board_item_id)
+                .execute_with_db(self.ctx.app_state.db_router.writer())
+                .await?
+        else {
+            return Ok(None);
+        };
+
+        let is_delegated = board_item
+            .metadata
+            .get("kind")
+            .and_then(|v| v.as_str())
+            == Some("delegated_task");
+        if is_delegated {
+            if let Some(id) = board_item
+                .metadata
+                .get("delegated_by_thread_id")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<i64>().ok())
+            {
+                return Ok(Some(id));
+            }
+        }
+
+        let Some(board) = queries::GetProjectTaskBoardByIdQuery::new(
+            board_item.board_id,
+            self.ctx.agent.deployment_id,
+        )
+        .execute_with_db(self.ctx.app_state.db_router.writer())
+        .await?
+        else {
+            return Ok(None);
+        };
+
+        queries::GetProjectCoordinatorThreadIdQuery::new(board.project_id)
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await
     }
 
     pub(super) fn derive_input_safety_signals(&self) -> Vec<String> {

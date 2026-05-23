@@ -58,6 +58,7 @@ fn parse_conversation_message_type(value: &str) -> Result<ConversationMessageTyp
         }
         "assignment_execution_trigger" => Ok(ConversationMessageType::AssignmentExecutionTrigger),
         "task_routing_trigger" => Ok(ConversationMessageType::TaskRoutingTrigger),
+        "task_handoff_received" => Ok(ConversationMessageType::TaskHandoffReceived),
         other => Err(AppError::Internal(format!(
             "Unknown conversation message_type '{}'",
             other
@@ -492,14 +493,19 @@ impl GetBoardItemConversationHistoryQuery {
                 SELECT COALESCE(last_summary_id, 0) AS last_summary_id
                 FROM (SELECT 1) dummy
                 LEFT JOIN last_summary ON TRUE
+            ),
+            tail AS (
+                SELECT
+                    c.id, c.thread_id, c.board_item_id, c.execution_run_id, c.timestamp, c.content, c.message_type,
+                    c.created_at, c.updated_at, c.metadata
+                FROM conversations c, last_summary_with_default ls
+                WHERE c.board_item_id = $1
+                  AND c.thread_id = $2
+                  AND c.id >= ls.last_summary_id
+                ORDER BY c.id DESC
+                LIMIT 200
             )
-            SELECT
-                c.id, c.thread_id, c.board_item_id, c.execution_run_id, c.timestamp, c.content, c.message_type,
-                c.created_at, c.updated_at, c.metadata
-            FROM conversations c, last_summary_with_default ls
-            WHERE c.board_item_id = $1
-              AND c.id >= ls.last_summary_id
-            ORDER BY c.id ASC
+            SELECT * FROM tail ORDER BY id ASC
             "#,
         )
         .bind(self.board_item_id)

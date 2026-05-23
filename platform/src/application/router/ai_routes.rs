@@ -156,6 +156,17 @@ pub(super) fn ai_routes() -> Router<AppState> {
             get(api::ai_settings::get_ai_settings).put(api::ai_settings::update_ai_settings),
         )
         .route(
+            "/ai/settings/provider-profiles",
+            get(api::ai_settings::list_ai_provider_profiles)
+                .post(api::ai_settings::create_ai_provider_profile),
+        )
+        .route(
+            "/ai/settings/provider-profiles/{profile_id}",
+            get(api::ai_settings::get_ai_provider_profile)
+                .patch(api::ai_settings::update_ai_provider_profile)
+                .delete(api::ai_settings::delete_ai_provider_profile),
+        )
+        .route(
             "/ai/actor-projects",
             get(api::agent_threads::list_actor_projects_flat)
                 .post(api::agent_threads::create_actor_project_flat),

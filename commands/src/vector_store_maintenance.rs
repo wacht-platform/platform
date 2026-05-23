@@ -1,5 +1,5 @@
-use common::ResultExt;
 use chrono::{Duration, Utc};
+use common::ResultExt;
 use common::{
     HasDbRouter, HasEncryptionProvider, HasNatsProvider, count_indexable_knowledge_base_rows,
     count_indexable_memory_rows_for_dimension, create_knowledge_base_vector_index,

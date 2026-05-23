@@ -15,8 +15,8 @@ impl UpsertAgentThreadTaskSubscriptionCommand {
     where
         E: sqlx::Executor<'e, Database = Postgres>,
     {
-        let kinds_json = serde_json::to_value(&self.event_kinds)
-            .map_err_internal("serialize event_kinds")?;
+        let kinds_json =
+            serde_json::to_value(&self.event_kinds).map_err_internal("serialize event_kinds")?;
 
         let row = sqlx::query!(
             r#"

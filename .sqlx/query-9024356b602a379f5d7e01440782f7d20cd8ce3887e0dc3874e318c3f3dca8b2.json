@@ -1,0 +1,94 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, created_at, updated_at\n            FROM deployment_ai_provider_profiles\n            WHERE deployment_id = $1\n            ORDER BY created_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "api_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "base_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "organization",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "project",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "default_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9024356b602a379f5d7e01440782f7d20cd8ce3887e0dc3874e318c3f3dca8b2"
+}

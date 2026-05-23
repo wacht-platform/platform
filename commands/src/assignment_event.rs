@@ -1,5 +1,5 @@
 use chrono::Utc;
-use common::{HasDbRouter, HasIdProvider, ReadConsistency, error::AppError};
+use common::{HasDbRouter, HasIdProvider, HasNatsJetStreamProvider, ReadConsistency, error::AppError};
 use models::{ProjectTaskBoardItem, ProjectTaskBoardItemAssignment, TaskSubscriptionEventKind};
 use queries::{ListProjectTaskBoardItemAssignmentsQuery, ListSubscribersForBoardItemQuery};
 use serde::Serialize;
@@ -109,17 +109,16 @@ impl<'a> InsertTaskRoutingEvent<'a> {
                 .insert("previous_status".into(), serde_json::Value::String(prev));
         }
         if !self.changed_fields.is_empty() {
-            payload_builder
-                .as_object_mut()
-                .insert(
-                    "changed_fields".into(),
-                    serde_json::to_value(&self.changed_fields).unwrap_or(serde_json::Value::Null),
-                );
+            payload_builder.as_object_mut().insert(
+                "changed_fields".into(),
+                serde_json::to_value(&self.changed_fields).unwrap_or(serde_json::Value::Null),
+            );
         }
         if let Some(last) = self.last_assignment_result_status.filter(|s| !s.is_empty()) {
-            payload_builder
-                .as_object_mut()
-                .insert("last_assignment_result_status".into(), serde_json::Value::String(last));
+            payload_builder.as_object_mut().insert(
+                "last_assignment_result_status".into(),
+                serde_json::Value::String(last),
+            );
         }
         let payload = payload_builder.build();
 
@@ -173,36 +172,58 @@ impl<'a> InsertTaskRoutingEvent<'a> {
     }
 }
 
-/// Mark every claimed/in_progress assignment for a board item as
-/// cancelled+preempted. Returns true when at least one row was updated.
-/// Mirrors the frontend-api `preemptActiveBoardItemAssignment` flow used on
-/// task content edits and user comments.
 pub async fn preempt_active_board_item_assignments<'e, E>(
     executor: E,
     board_item_id: i64,
     summary: &str,
-) -> Result<bool, AppError>
+) -> Result<Vec<i64>, AppError>
 where
     E: sqlx::Executor<'e, Database = Postgres>,
 {
-    let result = sqlx::query!(
+    let rows = sqlx::query!(
         r#"
-        UPDATE project_task_board_item_assignments
-        SET status = 'cancelled',
-            result_status = 'preempted',
-            completed_at = NOW(),
-            result_summary = $2,
-            updated_at = NOW()
-        WHERE board_item_id = $1
-          AND status IN ('claimed', 'in_progress')
+        WITH preempted AS (
+            UPDATE project_task_board_item_assignments
+            SET status = 'cancelled',
+                result_status = 'preempted',
+                completed_at = NOW(),
+                result_summary = $2,
+                updated_at = NOW()
+            WHERE board_item_id = $1
+              AND status IN ('claimed', 'in_progress')
+            RETURNING id
+        )
+        SELECT DISTINCT ON (el.aggregate_id)
+            el.id AS "event_log_id!"
+        FROM event_log el
+        JOIN preempted p ON p.id = el.aggregate_id
+        WHERE el.aggregate_type = 'assignment'
+          AND el.event_type = 'assignment_execution'
+        ORDER BY el.aggregate_id, el.id DESC
         "#,
         board_item_id,
         summary,
     )
-    .execute(executor)
+    .fetch_all(executor)
     .await?;
 
-    Ok(result.rows_affected() > 0)
+    Ok(rows.into_iter().map(|r| r.event_log_id).collect())
+}
+
+pub async fn signal_preempted_executor(
+    jetstream: &async_nats::jetstream::Context,
+    event_log_id: i64,
+) {
+    let key = format!("event_log_{event_log_id}");
+    let token = format!(
+        "preempted-{event_log_id}-{}",
+        chrono::Utc::now().timestamp_millis()
+    );
+    if let Err(error) =
+        crate::agent_execution::write_execution_watch_key(jetstream, &key, &token).await
+    {
+        tracing::warn!(event_log_id, %error, "preemption watch key bump failed");
+    }
 }
 
 /// Mark pending `task_routing` event_log rows for a board item as published,
@@ -355,7 +376,7 @@ pub struct BoardItemEditOutcome {
 impl<'a> ApplyBoardItemEditCommand<'a> {
     pub async fn execute<D>(self, deps: &D) -> Result<BoardItemEditOutcome, AppError>
     where
-        D: HasDbRouter + HasIdProvider + ?Sized,
+        D: HasDbRouter + HasIdProvider + HasNatsJetStreamProvider + ?Sized,
     {
         let pool = deps.writer_pool();
         let original = sqlx::query_as!(
@@ -473,11 +494,12 @@ impl<'a> ApplyBoardItemEditCommand<'a> {
         .fetch_one(&mut *tx)
         .await?;
 
-        let preempted = if content_changed || cancelled_now {
+        let preempted_event_log_ids = if content_changed || cancelled_now {
             preempt_active_board_item_assignments(&mut *tx, item.id, self.preempt_summary).await?
         } else {
-            false
+            Vec::new()
         };
+        let preempted = !preempted_event_log_ids.is_empty();
 
         let mut routed = false;
         if cancelled_now {
@@ -542,6 +564,10 @@ impl<'a> ApplyBoardItemEditCommand<'a> {
         }
 
         tx.commit().await?;
+
+        for event_log_id in &preempted_event_log_ids {
+            signal_preempted_executor(deps.nats_jetstream_provider(), *event_log_id).await;
+        }
 
         Ok(BoardItemEditOutcome {
             item,
@@ -686,6 +712,37 @@ where
           AND COALESCE(metadata->>'consumed_at', '') = ''
         "#,
         thread_id,
+    )
+    .execute(executor)
+    .await?;
+    Ok(res.rows_affected())
+}
+
+pub async fn mark_subscription_notifications_consumed_for_board_item<'e, E>(
+    executor: E,
+    thread_id: i64,
+    board_item_id: i64,
+) -> Result<u64, AppError>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let board_item_str = board_item_id.to_string();
+    let res = sqlx::query!(
+        r#"
+        UPDATE conversations
+        SET metadata = jsonb_set(
+                COALESCE(metadata, '{}'::jsonb),
+                '{consumed_at}',
+                to_jsonb(NOW()::text)
+            ),
+            updated_at = NOW()
+        WHERE thread_id = $1
+          AND message_type = 'task_subscription_notification'
+          AND COALESCE(metadata->>'consumed_at', '') = ''
+          AND content->>'board_item_id' = $2
+        "#,
+        thread_id,
+        board_item_str,
     )
     .execute(executor)
     .await?;

@@ -6,9 +6,9 @@
 //! and the actor's active connections, then returns candidate tool defs that
 //! the search meta-tool surfaces to the LLM.
 
-use common::ResultExt;
 use common::error::AppError;
 use common::state::AppState;
+use common::ResultExt;
 use models::{
     AiTool, AiToolConfiguration, AiToolType, ComposioEnabledApp, VirtualToolConfiguration,
 };
@@ -296,10 +296,7 @@ pub async fn search_external_tools(
                 .await
                 .map_err_internal("composio tools search")?;
             let status = resp.status();
-            let text = resp
-                .text()
-                .await
-                .map_err_internal("composio search body")?;
+            let text = resp.text().await.map_err_internal("composio search body")?;
             if !status.is_success() {
                 return Err(AppError::Internal(format!(
                     "composio tools search ({toolkit}) returned {status}: {text}"
@@ -385,10 +382,7 @@ pub async fn list_external_tools_for_deployment(
                 .await
                 .map_err_internal("composio tools list")?;
             let status = resp.status();
-            let text = resp
-                .text()
-                .await
-                .map_err_internal("composio list body")?;
+            let text = resp.text().await.map_err_internal("composio list body")?;
             if !status.is_success() {
                 return Err(AppError::Internal(format!(
                     "composio list ({toolkit}) returned {status}: {text}"

@@ -291,7 +291,9 @@ impl UpsertInvoiceCommand {
             period_end: row.period_end,
             attempt_count: require_opt(row.attempt_count, "attempt_count")?,
             next_payment_attempt: row.next_payment_attempt,
-            metadata: row.metadata.unwrap_or_else(common::json_utils::empty_object),
+            metadata: row
+                .metadata
+                .unwrap_or_else(common::json_utils::empty_object),
         })
     }
 }

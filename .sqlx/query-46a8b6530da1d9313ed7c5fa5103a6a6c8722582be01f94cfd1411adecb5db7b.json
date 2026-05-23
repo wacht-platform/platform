@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH preempted AS (\n            UPDATE project_task_board_item_assignments\n            SET status = 'cancelled',\n                result_status = 'preempted',\n                completed_at = NOW(),\n                result_summary = $2,\n                updated_at = NOW()\n            WHERE board_item_id = $1\n              AND status IN ('claimed', 'in_progress')\n            RETURNING id\n        )\n        SELECT DISTINCT ON (el.aggregate_id)\n            el.id AS \"event_log_id!\"\n        FROM event_log el\n        JOIN preempted p ON p.id = el.aggregate_id\n        WHERE el.aggregate_type = 'assignment'\n          AND el.event_type = 'assignment_execution'\n        ORDER BY el.aggregate_id, el.id DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "event_log_id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "46a8b6530da1d9313ed7c5fa5103a6a6c8722582be01f94cfd1411adecb5db7b"
+}

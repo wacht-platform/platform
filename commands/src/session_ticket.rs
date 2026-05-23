@@ -1,5 +1,5 @@
-use common::ResultExt;
 use chrono::Utc;
+use common::ResultExt;
 use common::{HasIdProvider, HasRedisProvider, error::AppError};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
@@ -133,8 +133,7 @@ impl GenerateSessionTicketCommand {
         let ticket_id = deps
             .id_provider()
             .next_id()
-            .map_err_internal("Failed to generate ticket ID")?
-            as i64;
+            .map_err_internal("Failed to generate ticket ID")? as i64;
         // Validate inputs based on ticket type
         match self.ticket_type {
             SessionTicketType::Impersonation => {
@@ -188,8 +187,8 @@ impl GenerateSessionTicketCommand {
         };
 
         // Serialize and store in Redis
-        let payload_json = serde_json::to_string(&payload)
-            .map_err_internal("Failed to serialize ticket")?;
+        let payload_json =
+            serde_json::to_string(&payload).map_err_internal("Failed to serialize ticket")?;
 
         let redis_key = format!("session:ticket:{}", ticket);
 

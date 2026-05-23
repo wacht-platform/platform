@@ -1,4 +1,3 @@
-use common::ResultExt;
 use commands::agent_execution::UploadFilesToS3Command;
 use commands::{
     AdvanceThreadExecutionTokenCommand, CreateConversationCommand,
@@ -6,6 +5,7 @@ use commands::{
     event_log::{self, EnqueueThreadWorkEvent},
 };
 use common::ReadConsistency;
+use common::ResultExt;
 use common::error::AppError;
 use dto::json::deployment::{ExecuteAgentRequest, ExecuteAgentResponse};
 use models::{
@@ -36,8 +36,7 @@ fn next_conversation_id(app_state: &AppState) -> Result<i64, AppError> {
     Ok(app_state
         .sf
         .next_id()
-        .map_err_internal("Failed to generate conversation ID")?
-        as i64)
+        .map_err_internal("Failed to generate conversation ID")? as i64)
 }
 
 fn parse_pending_approval_request(

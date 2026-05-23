@@ -189,7 +189,23 @@ pub struct AgentLoopPromptEnvelope {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_sibling_thread_tail: Option<LastSiblingThreadTail>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_iteration_tool_errors_block: Option<LastIterationToolErrorsBlock>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub live_context_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LastIterationToolError {
+    pub timestamp: String,
+    pub tool_name: String,
+    pub input_preview: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LastIterationToolErrorsBlock {
+    pub kind: String,
+    pub items: Vec<LastIterationToolError>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

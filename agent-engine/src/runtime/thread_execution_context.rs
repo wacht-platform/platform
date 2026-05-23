@@ -4,7 +4,7 @@ use common::error::AppError;
 use common::state::AppState;
 use models::{
     default_embedding_dimension, is_supported_embedding_dimension, AgentThreadState,
-    AiAgentWithFeatures, DeploymentAiSettings,
+    AiAgentWithFeatures, DeploymentAiProviderProfile, DeploymentAiSettings,
 };
 use queries::GetAgentThreadStateQuery;
 use tokio::sync::RwLock;
@@ -24,11 +24,24 @@ pub struct DeploymentProviderKeys {
     pub strong_model: Option<String>,
     pub weak_model: Option<String>,
     pub embedding_dimension: i32,
+    pub provider_profiles: Vec<ResolvedProviderProfile>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedProviderProfile {
+    pub id: i64,
+    pub provider: String,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub organization: Option<String>,
+    pub project: Option<String>,
+    pub default_model: Option<String>,
 }
 
 impl DeploymentProviderKeys {
     pub fn from_settings(
         settings: Option<&DeploymentAiSettings>,
+        profiles: &[DeploymentAiProviderProfile],
         encryption_service: &common::EncryptionService,
     ) -> Result<Self, AppError> {
         let embedding_dimension = settings
@@ -66,6 +79,25 @@ impl DeploymentProviderKeys {
             strong_model: settings.and_then(|s| s.strong_model.clone()),
             weak_model: settings.and_then(|s| s.weak_model.clone()),
             embedding_dimension,
+            provider_profiles: profiles
+                .iter()
+                .filter(|profile| profile.enabled)
+                .map(|profile| {
+                    Ok(ResolvedProviderProfile {
+                        id: profile.id,
+                        provider: profile.provider.clone(),
+                        api_key: profile
+                            .api_key
+                            .as_deref()
+                            .map(|value| encryption_service.decrypt(value))
+                            .transpose()?,
+                        base_url: profile.base_url.clone(),
+                        organization: profile.organization.clone(),
+                        project: profile.project.clone(),
+                        default_model: profile.default_model.clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>, AppError>>()?,
         })
     }
 }
@@ -99,15 +131,56 @@ impl ThreadExecutionContext {
                 .as_ref()
                 .or(self.agent.strong_model.as_ref()),
         }?;
-        if candidate.provider.trim().is_empty() || candidate.model.trim().is_empty() {
+        let has_provider_override = candidate
+            .provider
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some()
+            && candidate
+                .model
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_some();
+        if !has_provider_override && candidate.profile_id.is_none() {
             return None;
         }
         Some(candidate)
     }
 
+    fn agent_profile_for(&self, role: LlmRole) -> Option<&ResolvedProviderProfile> {
+        let profile_id = self.agent_override_for(role)?.profile_id?;
+        self.provider_keys
+            .provider_profiles
+            .iter()
+            .find(|profile| profile.id == profile_id)
+    }
+
+    fn ensure_agent_profile_available(&self, role: LlmRole) -> Result<(), AppError> {
+        let Some(profile_id) = self
+            .agent_override_for(role)
+            .and_then(|override_| override_.profile_id)
+        else {
+            return Ok(());
+        };
+        if self.agent_profile_for(role).is_none() {
+            return Err(AppError::BadRequest(format!(
+                "Agent model profile {} is not available for this deployment",
+                profile_id
+            )));
+        }
+        Ok(())
+    }
+
     fn llm_provider(&self, role: LlmRole) -> &str {
+        if let Some(profile) = self.agent_profile_for(role) {
+            return profile.provider.as_str();
+        }
         if let Some(over) = self.agent_override_for(role) {
-            return over.provider.as_str();
+            if let Some(provider) = over.provider.as_deref().filter(|value| !value.is_empty()) {
+                return provider;
+            }
         }
         let provider = match role {
             LlmRole::Strong => self.provider_keys.strong_llm_provider.as_deref(),
@@ -120,14 +193,27 @@ impl ThreadExecutionContext {
 
     fn resolve_model_name(&self, role: LlmRole) -> &str {
         if let Some(over) = self.agent_override_for(role) {
-            return over.model.as_str();
+            if let Some(model) = over.model.as_deref().filter(|value| !value.is_empty()) {
+                return model;
+            }
         }
-        let deployment_default = match role {
-            LlmRole::Strong => self.provider_keys.strong_model.as_deref(),
-            LlmRole::Weak => self.provider_keys.weak_model.as_deref(),
-        };
-        if let Some(value) = deployment_default.filter(|v| !v.trim().is_empty()) {
-            return value;
+        if let Some(profile) = self.agent_profile_for(role) {
+            if let Some(model) = profile
+                .default_model
+                .as_deref()
+                .filter(|value| !value.is_empty())
+            {
+                return model;
+            }
+        }
+        if self.agent_profile_for(role).is_none() {
+            let deployment_default = match role {
+                LlmRole::Strong => self.provider_keys.strong_model.as_deref(),
+                LlmRole::Weak => self.provider_keys.weak_model.as_deref(),
+            };
+            if let Some(value) = deployment_default.filter(|v| !v.trim().is_empty()) {
+                return value;
+            }
         }
         let provider = self.llm_provider(role);
         let fallback = match (role, provider) {
@@ -228,6 +314,7 @@ impl ThreadExecutionContext {
     }
 
     pub async fn create_llm(&self, role: LlmRole) -> Result<ResolvedLlm, AppError> {
+        self.ensure_agent_profile_available(role)?;
         let model = self.resolve_model_name(role);
         let provider = self.llm_provider(role);
         match provider {
@@ -246,14 +333,23 @@ impl ThreadExecutionContext {
                 return Ok(ResolvedLlm::new(Arc::new(client), model));
             }
             "openai" => {
-                let client =
+                let client = if let Some(profile) = self.agent_profile_for(role) {
+                    OpenAiClient::from_profile(
+                        profile.api_key.clone(),
+                        model,
+                        profile.base_url.clone(),
+                        profile.organization.clone(),
+                        profile.project.clone(),
+                    )?
+                } else {
                     OpenAiClient::from_api_key(self.provider_keys.openai_api_key.clone(), model)?
-                        .with_billing_context(
-                            self.agent.deployment_id,
-                            self.thread_id,
-                            self.actor_id,
-                            self.app_state.nats_client.clone(),
-                        );
+                }
+                .with_billing_context(
+                    self.agent.deployment_id,
+                    self.thread_id,
+                    self.actor_id,
+                    self.app_state.nats_client.clone(),
+                );
                 return Ok(ResolvedLlm::new(Arc::new(client), model));
             }
             _ => {}

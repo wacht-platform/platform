@@ -45,8 +45,8 @@ async fn update_catalog_events(
     slug: &str,
     events: &[WebhookEventDefinition],
 ) -> Result<WebhookEventCatalog, AppError> {
-    let events_json = serde_json::to_value(events)
-        .map_err_internal("Failed to serialize updated events")?;
+    let events_json =
+        serde_json::to_value(events).map_err_internal("Failed to serialize updated events")?;
 
     let updated_catalog = query_as!(
         WebhookEventCatalog,

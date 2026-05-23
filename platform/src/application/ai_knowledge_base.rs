@@ -72,7 +72,9 @@ pub async fn create_ai_knowledge_base(
     deployment_id: i64,
     request: CreateKnowledgeBaseRequest,
 ) -> Result<AiKnowledgeBase, AppError> {
-    let configuration = request.configuration.unwrap_or_else(common::json_utils::empty_object);
+    let configuration = request
+        .configuration
+        .unwrap_or_else(common::json_utils::empty_object);
     let create_command = CreateAiKnowledgeBaseCommand::new(
         deployment_id,
         request.name,

@@ -1,19 +1,25 @@
-use common::ResultExt;
 use commands::{
-    PendingDeploymentStorageConfig, UpdateDeploymentAiSettingsCommand,
-    test_deployment_storage_connection,
+    CreateDeploymentAiProviderProfileCommand, DeleteDeploymentAiProviderProfileCommand,
+    PendingDeploymentStorageConfig, UpdateDeploymentAiProviderProfileCommand,
+    UpdateDeploymentAiSettingsCommand, test_deployment_storage_connection,
 };
 use common::HasEncryptionProvider;
+use common::ResultExt;
 use common::db_router::ReadConsistency;
 use common::error::AppError;
 use models::{
+    CreateDeploymentAiProviderProfileRequest, DeploymentAiProviderProfileResponse,
     DeploymentAiSettings, DeploymentAiSettingsResponse, DeploymentLlmProvider,
     DeploymentStorageProvider, DeploymentStorageSettingsResponse,
-    UpdateDeploymentAiSettingsRequest, UpdateDeploymentStorageSettingsRequest,
-    default_embedding_dimension, default_embedding_model_for_provider, default_embedding_provider,
+    UpdateDeploymentAiProviderProfileRequest, UpdateDeploymentAiSettingsRequest,
+    UpdateDeploymentStorageSettingsRequest, default_embedding_dimension,
+    default_embedding_model_for_provider, default_embedding_provider,
     is_supported_embedding_dimension,
 };
-use queries::GetDeploymentAiSettingsQuery;
+use queries::{
+    GetDeploymentAiProviderProfileQuery, GetDeploymentAiSettingsQuery,
+    ListDeploymentAiProviderProfilesQuery,
+};
 
 use crate::application::AppState;
 use crate::application::ai_settings_admission::{
@@ -114,6 +120,67 @@ pub async fn update_ai_settings(
         .await?;
 
     Ok(DeploymentAiSettingsResponse::from(settings))
+}
+
+pub async fn list_ai_provider_profiles(
+    app_state: &AppState,
+    deployment_id: i64,
+) -> Result<Vec<DeploymentAiProviderProfileResponse>, AppError> {
+    let profiles = ListDeploymentAiProviderProfilesQuery::new(deployment_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
+        .await?;
+    Ok(profiles
+        .into_iter()
+        .map(DeploymentAiProviderProfileResponse::from)
+        .collect())
+}
+
+pub async fn create_ai_provider_profile(
+    app_state: &AppState,
+    deployment_id: i64,
+    request: CreateDeploymentAiProviderProfileRequest,
+) -> Result<DeploymentAiProviderProfileResponse, AppError> {
+    let id = app_state.sf.next_id()? as i64;
+    let deps = deps::from_app(app_state).db().enc();
+    let profile = CreateDeploymentAiProviderProfileCommand::new(id, deployment_id, request)
+        .execute_with_deps(&deps)
+        .await?;
+    Ok(DeploymentAiProviderProfileResponse::from(profile))
+}
+
+pub async fn get_ai_provider_profile(
+    app_state: &AppState,
+    deployment_id: i64,
+    profile_id: i64,
+) -> Result<DeploymentAiProviderProfileResponse, AppError> {
+    let profile = GetDeploymentAiProviderProfileQuery::new(deployment_id, profile_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
+        .await?;
+    Ok(DeploymentAiProviderProfileResponse::from(profile))
+}
+
+pub async fn update_ai_provider_profile(
+    app_state: &AppState,
+    deployment_id: i64,
+    profile_id: i64,
+    request: UpdateDeploymentAiProviderProfileRequest,
+) -> Result<DeploymentAiProviderProfileResponse, AppError> {
+    let deps = deps::from_app(app_state).db().enc();
+    let profile = UpdateDeploymentAiProviderProfileCommand::new(deployment_id, profile_id, request)
+        .execute_with_deps(&deps)
+        .await?;
+    Ok(DeploymentAiProviderProfileResponse::from(profile))
+}
+
+pub async fn delete_ai_provider_profile(
+    app_state: &AppState,
+    deployment_id: i64,
+    profile_id: i64,
+) -> Result<(), AppError> {
+    let deps = deps::from_app(app_state).db();
+    DeleteDeploymentAiProviderProfileCommand::new(deployment_id, profile_id)
+        .execute_with_deps(&deps)
+        .await
 }
 
 fn normalize_ai_settings_updates(

@@ -1,4 +1,3 @@
-use common::ResultExt;
 use commands::event_log::{self, EVENT_LOG_WORK_SUBJECT, EventLogPayload, InsertEventLogCommand};
 use commands::{
     CreateProjectTaskBoardItemAssignmentCommand, CreateProjectTaskBoardItemCommand,
@@ -6,6 +5,7 @@ use commands::{
     SetBoardItemPendingQuestionCommand,
 };
 use common::HasDbRouter;
+use common::ResultExt;
 use common::error::AppError;
 use dto::json::ask_user::{AnswerSubmission, validate_answers};
 use models::{
@@ -114,8 +114,8 @@ pub async fn answer_project_task_board_item_question(
         .ok_or_else(|| AppError::NotFound("assignment not found".to_string()))?;
 
     let freeform_text = submission.freeform_trimmed();
-    let answers_json = serde_json::to_value(&submission.answers)
-        .map_err_internal("serialize answers")?;
+    let answers_json =
+        serde_json::to_value(&submission.answers).map_err_internal("serialize answers")?;
     let response_content = ConversationContent::ClarificationResponse {
         request_message_id: None,
         answers: answers_json.clone(),
@@ -157,7 +157,10 @@ pub async fn answer_project_task_board_item_question(
     )
     .with_id("assignment_id", assignment_id)
     .with_id("board_item_id", assignment.board_item_id)
-    .with("summary", "User answered the pending clarification; resume the assignment.")
+    .with(
+        "summary",
+        "User answered the pending clarification; resume the assignment.",
+    )
     .with("answers", answers_json);
     if let Some(text) = freeform_text.as_ref() {
         builder = builder.with("freeform_text", text.clone());
@@ -315,7 +318,10 @@ pub async fn approve_project_task_board_item_tool(
     )
     .with_id("assignment_id", assignment.id)
     .with_id("board_item_id", assignment.board_item_id)
-    .with("summary", "User responded to the pending approval; resume the assignment.")
+    .with(
+        "summary",
+        "User responded to the pending approval; resume the assignment.",
+    )
     .with_serializable("approvals", submission.approvals)
     .build();
     InsertEventLogCommand::new(
@@ -403,7 +409,7 @@ pub async fn create_project_task_board_item_comment(
     .execute_with_db(&mut *tx)
     .await?;
 
-    commands::preempt_active_board_item_assignments(
+    let preempted_event_log_ids = commands::preempt_active_board_item_assignments(
         &mut *tx,
         item_id,
         "Preempted by user comment.",
@@ -416,16 +422,12 @@ pub async fn create_project_task_board_item_comment(
 
     if let Some(coord_thread_id) = coordinator_thread_id {
         let event_log_id = app_state.sf.next_id()? as i64;
-        let payload = EventLogPayload::new(
-            event_log_id,
-            deployment_id,
-            coord_thread_id,
-            "task_routing",
-        )
-        .with_id("board_item_id", item_id)
-        .with("routing_reason", "user_feedback")
-        .with("title", item.title.clone())
-        .build();
+        let payload =
+            EventLogPayload::new(event_log_id, deployment_id, coord_thread_id, "task_routing")
+                .with_id("board_item_id", item_id)
+                .with("routing_reason", "user_feedback")
+                .with("title", item.title.clone())
+                .build();
         InsertEventLogCommand::new(
             event_log_id,
             deployment_id,
@@ -442,6 +444,10 @@ pub async fn create_project_task_board_item_comment(
     }
 
     tx.commit().await?;
+
+    for event_log_id in &preempted_event_log_ids {
+        commands::signal_preempted_executor(&app_state.nats_jetstream, *event_log_id).await;
+    }
 
     if coordinator_thread_id.is_some() {
         event_log::nudge_dispatcher(&app_state.nats_client).await;

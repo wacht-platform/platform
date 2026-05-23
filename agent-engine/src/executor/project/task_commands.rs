@@ -1,5 +1,5 @@
-use common::ResultExt;
 use super::core::AgentExecutor;
+use common::ResultExt;
 
 use crate::llm::{SemanticLlmMessage, SemanticLlmRequest};
 use crate::runtime::task_workspace::{
@@ -850,8 +850,8 @@ Rules:\n\
         )
         .await?;
 
-        let payload_value = serde_json::to_value(&handoff)
-            .map_err_internal("serialize handoff payload")?;
+        let payload_value =
+            serde_json::to_value(&handoff).map_err_internal("serialize handoff payload")?;
         commands::WriteAssignmentResultPayloadCommand::new(assignment_id, payload_value)
             .execute_with_db(self.ctx.app_state.db_router.writer())
             .await?;

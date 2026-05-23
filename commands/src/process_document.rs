@@ -1,4 +1,3 @@
-use common::ResultExt;
 use crate::{
     DispatchVectorStoreMaintenanceTaskCommand, GenerateEmbeddingsCommand,
     ResolveDeploymentStorageCommand, VECTOR_STORE_KNOWLEDGE_BASE,
@@ -6,6 +5,7 @@ use crate::{
     build_multimodal_retrieval_document_parts, resolve_deployment_embedding_dimension,
     resolve_deployment_embedding_settings,
 };
+use common::ResultExt;
 use common::{
     EmbeddingApiProvider, EmbeddingPart, HasDbRouter, HasEmbeddingProvider, HasEncryptionProvider,
     HasNatsProvider, HasTextProcessingProvider, KnowledgeBaseChunkRecord, error::AppError,

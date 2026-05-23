@@ -1,5 +1,5 @@
-use common::ResultExt;
 use super::*;
+use common::ResultExt;
 
 pub(super) fn backend_domain(backend_host: &str) -> &str {
     if backend_host.starts_with("frontend.") {

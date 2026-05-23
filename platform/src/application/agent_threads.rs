@@ -1,4 +1,3 @@
-use common::ResultExt;
 use commands::{
     CreateActorCommand, CreateActorProjectCommand, CreateAgentThreadCommand,
     CreateProjectTaskBoardItemCommand, CreateProjectTaskScheduleCommand,
@@ -6,6 +5,7 @@ use commands::{
     UpdateProjectTaskScheduleCommand, UpsertThreadAgentAssignmentCommand,
 };
 use common::ReadConsistency;
+use common::ResultExt;
 use common::error::AppError;
 use dto::json::deployment::{
     CreateActorProjectRequest, CreateActorRequest, CreateAgentThreadRequest,
@@ -345,10 +345,7 @@ pub fn merge_attachments_into_metadata(
         .unwrap_or_default();
     let mut merged = existing_attachments;
     for attachment in new_attachments {
-        merged.push(
-            serde_json::to_value(attachment)
-                .map_err_internal("serialize attachment")?,
-        );
+        merged.push(serde_json::to_value(attachment).map_err_internal("serialize attachment")?);
     }
     obj.insert("attachments".to_string(), serde_json::Value::Array(merged));
     Ok(metadata)
@@ -1496,8 +1493,7 @@ pub async fn update_project_task_board_item(
             "Project task board item not found".to_string(),
         ));
     }
-    let project =
-        project_opt.ok_or_else(|| AppError::NotFound("Project not found".to_string()))?;
+    let project = project_opt.ok_or_else(|| AppError::NotFound("Project not found".to_string()))?;
 
     let uploaded = upload_task_workspace_files(
         app_state,
@@ -1935,7 +1931,6 @@ fn validate_and_serialize_mounts(
         models::project_task_schedule::validate_mount(m)
             .map_err(|e| AppError::BadRequest(e.to_string()))?;
     }
-    let value = serde_json::to_value(mounts)
-        .map_err_internal("Failed to serialize mounts")?;
+    let value = serde_json::to_value(mounts).map_err_internal("Failed to serialize mounts")?;
     Ok(Some(value))
 }

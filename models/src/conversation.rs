@@ -54,6 +54,7 @@ pub enum ConversationMessageType {
     /// Coordinator-thread trigger: a board item routed back for decision.
     /// Same shape — thin marker, brief rehydrated.
     TaskRoutingTrigger,
+    TaskHandoffReceived,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,6 +157,22 @@ pub enum ConversationContent {
         routing_reason: Option<String>,
         triggered_at: DateTime<Utc>,
     },
+    TaskHandoffReceived {
+        #[serde(with = "crate::utils::serde::i64_as_string")]
+        source_thread_id: i64,
+        #[serde(with = "crate::utils::serde::i64_as_string")]
+        board_item_id: i64,
+        source_role: String,
+        outcome: String,
+        summary: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        artifacts: Option<Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        blockers: Option<Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        next_actions: Option<Value>,
+        completed_at: DateTime<Utc>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,6 +246,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
             }
             "assignment_execution_trigger" => ConversationMessageType::AssignmentExecutionTrigger,
             "task_routing_trigger" => ConversationMessageType::TaskRoutingTrigger,
+            "task_handoff_received" => ConversationMessageType::TaskHandoffReceived,
             _ => {
                 return Err(sqlx::Error::ColumnDecode {
                     index: "message_type".to_string(),

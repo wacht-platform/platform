@@ -1,9 +1,9 @@
-use common::ResultExt;
 use super::core::AgentExecutor;
 use crate::executor::runtime::step_control::{
     DATABASE_ERROR_RETRY_STEP, LLM_REQUEST_FAILED_STEP, RETRYABLE_EXECUTION_ERROR_STEP,
 };
 use crate::llm::{SemanticLlmContentBlock, SemanticLlmMessage, SemanticLlmRequest};
+use common::ResultExt;
 use templatekit::render_prompt_text;
 
 use commands::CreateConversationCommand;
@@ -649,6 +649,16 @@ impl AgentExecutor {
                     ));
                     i += 1;
                 }
+                ConversationMessageType::TaskHandoffReceived => {
+                    let text = self.render_task_handoff_received(conv);
+                    history.push(LlmHistoryEntry::with_content(
+                        "user",
+                        "task_handoff_received",
+                        timestamp.clone(),
+                        text,
+                    ));
+                    i += 1;
+                }
             }
         }
 
@@ -677,6 +687,52 @@ impl AgentExecutor {
             }
         }
         self.trigger_stub(&conv.content)
+    }
+
+    pub(crate) fn render_task_handoff_received(&self, conv: &ConversationRecord) -> String {
+        let ConversationContent::TaskHandoffReceived {
+            source_thread_id,
+            board_item_id,
+            source_role,
+            outcome,
+            summary,
+            artifacts,
+            blockers,
+            next_actions,
+            completed_at,
+        } = &conv.content
+        else {
+            return String::new();
+        };
+
+        let mut out = format!(
+            "HANDOFF from thread #{} ({}, {}) on board_item #{} at {}\nsummary: {}",
+            source_thread_id,
+            source_role,
+            outcome,
+            board_item_id,
+            completed_at.format("%Y-%m-%dT%H:%M:%SZ"),
+            summary,
+        );
+        if let Some(items) = artifacts {
+            if let Some(text) = format_handoff_list_field("artifacts", items) {
+                out.push('\n');
+                out.push_str(&text);
+            }
+        }
+        if let Some(items) = blockers {
+            if let Some(text) = format_handoff_list_field("blockers", items) {
+                out.push('\n');
+                out.push_str(&text);
+            }
+        }
+        if let Some(items) = next_actions {
+            if let Some(text) = format_handoff_list_field("next_actions", items) {
+                out.push('\n');
+                out.push_str(&text);
+            }
+        }
+        out
     }
 
     fn trigger_stub(&self, content: &ConversationContent) -> String {
@@ -774,336 +830,7 @@ impl AgentExecutor {
     }
 
     pub(crate) async fn get_task_history_for_llm(&self) -> Vec<LlmHistoryEntry> {
-        let own_thread_id = self.ctx.thread_id;
-
-        let mut entries: Vec<(bool, chrono::DateTime<chrono::Utc>, LlmHistoryEntry)> = Vec::new();
-        let current_execution_run_id = self.ctx.execution_run_id;
-
-        for conv in &self.conversations {
-            let timestamp = Some(conv.created_at.to_rfc3339());
-            let is_cross = matches!(conv.thread_id, Some(tid) if tid != own_thread_id);
-            let cross_tid = conv.thread_id.filter(|tid| *tid != own_thread_id);
-            let is_timeline = conv
-                .execution_run_id
-                .map(|id| id != current_execution_run_id)
-                .unwrap_or(true);
-            let tag = |body: String| -> String {
-                match cross_tid {
-                    Some(tid) => match self.task_thread_meta.iter().find(|m| m.thread_id == tid) {
-                        Some(m) => {
-                            format!(
-                                "[thread #{tid} \"{}\" ({})] {body}",
-                                m.title, m.thread_purpose
-                            )
-                        }
-                        None => format!("[thread #{tid}] {body}"),
-                    },
-                    None => body,
-                }
-            };
-
-            match conv.message_type {
-                ConversationMessageType::ExecutionSummary => {
-                    if let ConversationContent::ExecutionSummary {
-                        user_message,
-                        agent_execution,
-                    } = &conv.content
-                    {
-                        let body = format!(
-                            "[Compressed prior history]\nOriginal request: {user_message}\n\n{agent_execution}"
-                        );
-                        entries.push((
-                            is_timeline,
-                            conv.created_at,
-                            LlmHistoryEntry::with_content(
-                                if is_cross { "user" } else { "model" },
-                                "execution_summary",
-                                timestamp,
-                                tag(body),
-                            ),
-                        ));
-                    }
-                }
-                ConversationMessageType::UserMessage => {
-                    if let ConversationContent::UserMessage {
-                        message,
-                        sender_name,
-                        ..
-                    } = &conv.content
-                    {
-                        let mut entry = LlmHistoryEntry::with_content(
-                            "user",
-                            "user_message",
-                            timestamp,
-                            tag(message.clone()),
-                        );
-                        entry.sender = sender_name.clone();
-                        entries.push((is_timeline, conv.created_at, entry));
-                    }
-                }
-                ConversationMessageType::Steer => {
-                    if let ConversationContent::Steer { message, .. } = &conv.content {
-                        entries.push((
-                            is_timeline,
-                            conv.created_at,
-                            LlmHistoryEntry::with_content(
-                                if is_cross { "user" } else { "model" },
-                                "steer",
-                                timestamp,
-                                tag(message.trim().to_string()),
-                            ),
-                        ));
-                    }
-                }
-                ConversationMessageType::ToolResult => {
-                    if let ConversationContent::ToolResult {
-                        tool_name,
-                        status,
-                        input,
-                        output,
-                        error,
-                    } = &conv.content
-                    {
-                        let narrative = if is_timeline {
-                            let action = Self::describe_tool_action(tool_name, input);
-                            format!(
-                                "Tool call: {action}\n[output not preserved in timeline view — re-run this tool yourself if you need the content]"
-                            )
-                        } else {
-                            Self::render_tool_event(
-                                tool_name,
-                                status.as_str(),
-                                input,
-                                output.as_ref(),
-                                error.as_deref(),
-                            )
-                        };
-                        entries.push((
-                            is_timeline,
-                            conv.created_at,
-                            LlmHistoryEntry::with_content(
-                                "user",
-                                "tool_result",
-                                timestamp,
-                                tag(narrative),
-                            ),
-                        ));
-                    }
-                }
-                ConversationMessageType::SystemDecision => {
-                    if let ConversationContent::SystemDecision { step, .. } = &conv.content {
-                        if is_cross && step != "abort" {
-                            continue;
-                        }
-                        if let Some(mut entry) = self.system_decision_history_entry(conv) {
-                            if is_cross {
-                                let body = entry.content.unwrap_or_default();
-                                entry.content = Some(tag(body));
-                                entry.role = "user".to_string();
-                            }
-                            entries.push((is_timeline, conv.created_at, entry));
-                        }
-                    }
-                }
-                ConversationMessageType::ApprovalRequest => {
-                    if let ConversationContent::ApprovalRequest { description, tools } =
-                        &conv.content
-                    {
-                        let mut text = String::from("Requested user approval to use tools:");
-                        for t in tools {
-                            text.push_str(&format!("\n  - {}", t.tool_name));
-                        }
-                        text.push_str(&format!("\nReason: {description}"));
-                        entries.push((
-                            is_timeline,
-                            conv.created_at,
-                            LlmHistoryEntry::with_content(
-                                if is_cross { "user" } else { "model" },
-                                "approval_request",
-                                timestamp,
-                                tag(text),
-                            ),
-                        ));
-                    }
-                }
-                ConversationMessageType::ApprovalResponse => {
-                    if let ConversationContent::ApprovalResponse { approvals, .. } = &conv.content {
-                        let mut text = String::from("User responded to approval request:");
-                        for d in approvals {
-                            let mode = match d.mode {
-                                models::ToolApprovalMode::AllowOnce => "allowed once",
-                                models::ToolApprovalMode::AllowAlways => "always allowed",
-                            };
-                            text.push_str(&format!("\n  - {}: {}", d.tool_name, mode));
-                        }
-                        entries.push((
-                            is_timeline,
-                            conv.created_at,
-                            LlmHistoryEntry::with_content(
-                                "user",
-                                "approval_response",
-                                timestamp,
-                                tag(text),
-                            ),
-                        ));
-                    }
-                }
-                ConversationMessageType::ClarificationRequest => {
-                    if let ConversationContent::ClarificationRequest { questions, context } =
-                        &conv.content
-                    {
-                        let parsed: Vec<models::Question> =
-                            serde_json::from_value(questions.clone()).unwrap_or_default();
-                        let mut text = String::from("Asked the user:");
-                        for q in &parsed {
-                            text.push_str(&format!("\n- {}", q.text.trim()));
-                        }
-                        if let Some(ctx) = context.as_deref().filter(|s| !s.is_empty()) {
-                            text.push_str(&format!("\nContext: {ctx}"));
-                        }
-                        entries.push((
-                            is_timeline,
-                            conv.created_at,
-                            LlmHistoryEntry::with_content(
-                                if is_cross { "user" } else { "model" },
-                                "clarification",
-                                timestamp,
-                                tag(text),
-                            ),
-                        ));
-                    }
-                }
-                ConversationMessageType::TaskSubscriptionNotification => {
-                    if let ConversationContent::TaskSubscriptionDelivery { summary } = &conv.content
-                    {
-                        entries.push((
-                            is_timeline,
-                            conv.created_at,
-                            LlmHistoryEntry::with_content(
-                                "user",
-                                "task_subscription_delivery",
-                                Some(conv.created_at.to_rfc3339()),
-                                tag(summary.clone()),
-                            ),
-                        ));
-                    }
-                }
-                ConversationMessageType::ClarificationResponse => {
-                    if let ConversationContent::ClarificationResponse { answers, .. } =
-                        &conv.content
-                    {
-                        let parsed: Vec<models::QuestionAnswer> =
-                            serde_json::from_value(answers.clone()).unwrap_or_default();
-                        let mut text = String::from("User answered:");
-                        for a in &parsed {
-                            let answer_value = Self::describe_answer_value(&a.value);
-                            match self.lookup_question_text_by_id(&a.question_id) {
-                                Some(question_text) => text.push_str(&format!(
-                                    "\n- \"{}\" → {}",
-                                    question_text.trim(),
-                                    answer_value
-                                )),
-                                None => text
-                                    .push_str(&format!("\n- {}: {}", a.question_id, answer_value)),
-                            }
-                        }
-                        entries.push((
-                            is_timeline,
-                            conv.created_at,
-                            LlmHistoryEntry::with_content(
-                                "user",
-                                "clarification_response",
-                                timestamp,
-                                tag(text),
-                            ),
-                        ));
-                    }
-                }
-                ConversationMessageType::AssignmentExecutionTrigger
-                | ConversationMessageType::TaskRoutingTrigger => {
-                    let text = self.render_trigger_marker(conv);
-                    entries.push((
-                        is_timeline,
-                        conv.created_at,
-                        LlmHistoryEntry::with_content("user", "trigger", timestamp, tag(text)),
-                    ));
-                }
-            }
-        }
-
-        for event in &self.routing_events {
-            let mut text = format!(
-                "[Task event] task_routing reason={}",
-                event.routing_reason.as_deref().unwrap_or("unspecified")
-            );
-            if let Some(coord) = event.coordinator_thread_id {
-                text.push_str(&format!(" → coordinator #{coord}"));
-            }
-            if let Some(s) = event.summary.as_deref().filter(|s| !s.is_empty()) {
-                text.push_str(&format!("\n  summary: {s}"));
-            }
-            if let Some(n) = event.note.as_deref().filter(|s| !s.is_empty()) {
-                text.push_str(&format!("\n  note: {n}"));
-            }
-            entries.push((
-                true,
-                event.created_at,
-                LlmHistoryEntry::with_content(
-                    "user",
-                    "task_event",
-                    Some(event.created_at.to_rfc3339()),
-                    text,
-                ),
-            ));
-        }
-
-        entries.sort_by_key(|(_, ts, _)| *ts);
-
-        let mut prior_lines: Vec<String> = Vec::new();
-        let mut current: Vec<LlmHistoryEntry> = Vec::new();
-        for (is_timeline, ts, entry) in entries {
-            if is_timeline {
-                let body = entry.content.clone().unwrap_or_default();
-                if body.trim().is_empty() {
-                    continue;
-                }
-                prior_lines.push(format!(
-                    "[{}][{}] {}",
-                    ts.format("%Y-%m-%dT%H:%M:%SZ"),
-                    entry.entry_type,
-                    body
-                ));
-            } else {
-                current.push(entry);
-            }
-        }
-
-        let mut out: Vec<LlmHistoryEntry> = Vec::new();
-        if !prior_lines.is_empty() && current.is_empty() {
-            current.push(LlmHistoryEntry::with_content(
-                "user",
-                "user_message",
-                None,
-                "[No new request — continue from prior task history.]".to_string(),
-            ));
-        }
-        if !prior_lines.is_empty() {
-            let mut block = String::from(
-                "PRIOR TASK HISTORY\n\nBelow are conversation records from earlier executions of this task. Do not respond to them — use them only as background. Refer to /task/JOURNAL.md for the durable summary.\n",
-            );
-            for line in prior_lines {
-                block.push('\n');
-                block.push_str(&line);
-            }
-            out.push(LlmHistoryEntry::with_content(
-                "user",
-                "prior_task_history",
-                None,
-                block,
-            ));
-        }
-        out.extend(current);
-        out
+        self.get_conversation_history_for_llm().await
     }
 
     fn format_clarification_entry(
@@ -2275,8 +2002,41 @@ Output plain text. No JSON, no code fences, no preface.";
                     .map(|r| format!(" reason={r}"))
                     .unwrap_or_default()
             ),
+            ConversationContent::TaskHandoffReceived {
+                source_thread_id,
+                source_role,
+                outcome,
+                summary,
+                ..
+            } => format!(
+                "TASK_HANDOFF from #{source_thread_id} ({source_role}, {outcome}): {summary}"
+            ),
         }
     }
+}
+
+fn format_handoff_list_field(label: &str, value: &Value) -> Option<String> {
+    let Some(array) = value.as_array() else {
+        let serialized = serde_json::to_string(value).ok()?;
+        if serialized == "null" || serialized.is_empty() {
+            return None;
+        }
+        return Some(format!("{label}: {serialized}"));
+    };
+    if array.is_empty() {
+        return None;
+    }
+    let mut out = format!("{label}:");
+    for item in array {
+        let line = match item {
+            Value::String(s) => s.clone(),
+            Value::Object(_) => serde_json::to_string(item).unwrap_or_else(|_| "<unrenderable>".into()),
+            _ => serde_json::to_string(item).unwrap_or_else(|_| "<unrenderable>".into()),
+        };
+        out.push_str("\n  - ");
+        out.push_str(&line);
+    }
+    Some(out)
 }
 
 fn compact_json_preview(value: &Value, limit: usize) -> String {
@@ -2338,5 +2098,6 @@ fn conversation_message_type_label(message_type: &ConversationMessageType) -> &'
         ConversationMessageType::TaskSubscriptionNotification => "task_subscription_notification",
         ConversationMessageType::AssignmentExecutionTrigger => "assignment_execution_trigger",
         ConversationMessageType::TaskRoutingTrigger => "task_routing_trigger",
+        ConversationMessageType::TaskHandoffReceived => "task_handoff_received",
     }
 }

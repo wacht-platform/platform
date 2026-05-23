@@ -5,8 +5,16 @@ use crate::{AgentToolApprovalRule, AiKnowledgeBase, AiTool};
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
 pub struct AgentModelOverride {
-    pub provider: String,
-    pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "crate::utils::serde::i64_as_string_option"
+    )]
+    pub profile_id: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

@@ -1,6 +1,6 @@
-use common::ResultExt;
 use commands::session_ticket::{AgentSessionIdentifier, SessionTicketType};
 use commands::{CreateActorCommand, GenerateSessionTicketCommand};
+use common::ResultExt;
 use dto::json::session_ticket::{AgentSessionIdentifierDto, CreateSessionTicketRequest};
 use queries::{GetActorByIdQuery, GetDeploymentWithSettingsQuery};
 

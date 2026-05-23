@@ -2,9 +2,9 @@ mod billing;
 mod cache;
 mod types;
 
-use common::ResultExt;
 use crate::json_schema::normalize_gemini_function_schema;
 use common::error::AppError;
+use common::ResultExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -608,8 +608,7 @@ fn inject_safety_steering(body: &str, block_reason: &str) -> Result<String, AppE
             Value::String(format!("{existing}{steering}")),
         );
     }
-    serde_json::to_string(&value)
-        .map_err_internal("Failed to re-serialize Gemini request")
+    serde_json::to_string(&value).map_err_internal("Failed to re-serialize Gemini request")
 }
 
 // Gemini 2.5 uses thinkingBudget (integer); Gemini 3+ uses thinkingLevel (string).

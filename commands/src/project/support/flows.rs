@@ -1,5 +1,5 @@
-use common::ResultExt;
 use super::*;
+use common::ResultExt;
 
 fn next_b2b_role_ids<D>(deps: &D) -> Result<(i64, i64, i64, i64), AppError>
 where

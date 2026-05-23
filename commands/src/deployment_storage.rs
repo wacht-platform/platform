@@ -1,8 +1,8 @@
-use common::ResultExt;
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_s3::Client as S3Client;
 use aws_sdk_s3::config::{Builder as S3ConfigBuilder, Credentials};
 use aws_sdk_s3::primitives::ByteStream;
+use common::ResultExt;
 use common::{
     HasDbRouter, HasEncryptionProvider, VectorStoreConfig, build_vector_store_config,
     db_router::ReadConsistency, error::AppError,

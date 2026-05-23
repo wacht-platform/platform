@@ -66,7 +66,7 @@ fn project_task_assignments_schema() -> SchemaField {
                 SchemaField {
                     name: "instructions".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Optional task-specific instructions for this assignment stage.".to_string()),
+                    description: Some("Verbose, self-contained brief for this assignment stage. The assignee's conversation history is scoped to their own thread, so this field is the only direct context that crosses from coordinator to assignee. Cover: what to produce, where inputs/outputs live, every constraint, every prior artifact/decision the assignee must inherit, every acceptance criterion, the current deliverable state, and any blockers from prior runs. Terse briefs cause re-work loops because the assignee reconstructs missing context from memory or hallucinates. Required for executor and review stages.".to_string()),
                     required: false,
                     ..Default::default()
                 },

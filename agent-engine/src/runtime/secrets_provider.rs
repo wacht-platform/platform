@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use common::error::AppError;
-use models::DeploymentAiSettings;
+use models::{DeploymentAiProviderProfile, DeploymentAiSettings};
 
 use super::thread_execution_context::DeploymentProviderKeys;
 
@@ -9,6 +9,7 @@ pub trait SecretsProvider: Send + Sync {
     async fn resolve_provider_keys(
         &self,
         settings: Option<&DeploymentAiSettings>,
+        profiles: &[DeploymentAiProviderProfile],
     ) -> Result<DeploymentProviderKeys, AppError>;
 }
 
@@ -28,7 +29,8 @@ impl SecretsProvider for SettingsSecretsProvider {
     async fn resolve_provider_keys(
         &self,
         settings: Option<&DeploymentAiSettings>,
+        profiles: &[DeploymentAiProviderProfile],
     ) -> Result<DeploymentProviderKeys, AppError> {
-        DeploymentProviderKeys::from_settings(settings, &self.encryption_service)
+        DeploymentProviderKeys::from_settings(settings, profiles, &self.encryption_service)
     }
 }

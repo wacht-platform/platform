@@ -44,9 +44,53 @@ pub const DISPATCHER_WAKE_SUBJECT: &str = "agent.outbox.wake";
 /// from event_log rows.
 pub const EVENT_LOG_WORK_SUBJECT: &str = "worker.tasks.agent.event_log_work";
 
-/// Fire-and-forget poke at the dispatcher. Failures are intentionally
-/// swallowed: a missed nudge degrades to the 30s safety poll.
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+pub struct DeferredDispatch {
+    pending: AtomicBool,
+}
+
+impl DeferredDispatch {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            pending: AtomicBool::new(false),
+        })
+    }
+
+    pub fn has_pending(&self) -> bool {
+        self.pending.load(Ordering::Acquire)
+    }
+
+    fn mark_pending(&self) {
+        self.pending.store(true, Ordering::Release);
+    }
+}
+
+tokio::task_local! {
+    static DEFER_GUARD: Arc<DeferredDispatch>;
+}
+
+pub async fn run_with_deferred_dispatch<F, T>(guard: Arc<DeferredDispatch>, fut: F) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    DEFER_GUARD.scope(guard, fut).await
+}
+
 pub async fn nudge_dispatcher(nats: &async_nats::Client) {
+    let deferred = DEFER_GUARD.try_with(|g| {
+        g.mark_pending();
+    });
+    if deferred.is_ok() {
+        return;
+    }
+    let _ = nats
+        .publish(DISPATCHER_WAKE_SUBJECT.to_string(), Vec::new().into())
+        .await;
+}
+
+pub async fn force_nudge_dispatcher(nats: &async_nats::Client) {
     let _ = nats
         .publish(DISPATCHER_WAKE_SUBJECT.to_string(), Vec::new().into())
         .await;
@@ -72,8 +116,14 @@ impl EventLogPayload {
         kind: impl Into<String>,
     ) -> Self {
         let mut map = serde_json::Map::with_capacity(4);
-        map.insert("event_log_id".into(), Value::String(event_log_id.to_string()));
-        map.insert("deployment_id".into(), Value::String(deployment_id.to_string()));
+        map.insert(
+            "event_log_id".into(),
+            Value::String(event_log_id.to_string()),
+        );
+        map.insert(
+            "deployment_id".into(),
+            Value::String(deployment_id.to_string()),
+        );
         map.insert("thread_id".into(), Value::String(thread_id.to_string()));
         map.insert("kind".into(), Value::String(kind.into()));
         Self { map }
@@ -91,11 +141,16 @@ impl EventLogPayload {
     pub fn with_opt_id(self, key: impl Into<String>, id: Option<i64>) -> Self {
         self.with(
             key,
-            id.map(|n| Value::String(n.to_string())).unwrap_or(Value::Null),
+            id.map(|n| Value::String(n.to_string()))
+                .unwrap_or(Value::Null),
         )
     }
 
-    pub fn with_serializable<T: serde::Serialize>(mut self, key: impl Into<String>, value: T) -> Self {
+    pub fn with_serializable<T: serde::Serialize>(
+        mut self,
+        key: impl Into<String>,
+        value: T,
+    ) -> Self {
         if let Ok(v) = serde_json::to_value(value) {
             self.map.insert(key.into(), v);
         }

@@ -1,5 +1,5 @@
-use common::ResultExt;
 use chrono::{DateTime, Utc};
+use common::ResultExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::{query, query_as};
@@ -153,8 +153,8 @@ impl CreateNotificationCommand {
         .await?;
 
         // Convert row to strongly typed Notification
-        let notification = Notification::try_from(row)
-            .map_err_internal(format!("{ERR_CONVERT_NOTIFICATION}"))?;
+        let notification =
+            Notification::try_from(row).map_err_internal(format!("{ERR_CONVERT_NOTIFICATION}"))?;
 
         // Publish to NATS for real-time delivery
         if let Some(user_id) = notification.user_id {

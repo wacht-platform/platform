@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use common::ResultExt;
 use common::error::AppError;
 use models::{
@@ -6,19 +7,101 @@ use models::{
 };
 use sqlx::types::Json;
 
-fn build_override(provider: Option<String>, model: Option<String>) -> Option<AgentModelOverride> {
-    match (provider, model) {
-        (Some(p), Some(m)) => Some(AgentModelOverride {
-            provider: p,
-            model: m,
-        }),
-        _ => None,
+#[derive(sqlx::FromRow)]
+struct AiAgentDetailsRow {
+    id: i64,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    name: String,
+    description: Option<String>,
+    deployment_id: i64,
+    strong_model_provider: Option<String>,
+    strong_model: Option<String>,
+    strong_model_profile_id: Option<i64>,
+    weak_model_provider: Option<String>,
+    weak_model: Option<String>,
+    weak_model_profile_id: Option<i64>,
+    hooks: Json<AgentHooksConfig>,
+    require_approval_mcp: bool,
+    require_approval_virtual: bool,
+    tool_approval_rules: Json<Vec<AgentToolApprovalRule>>,
+    sub_agents: serde_json::Value,
+    tools_count: i64,
+    knowledge_bases_count: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct AiAgentFeaturesRow {
+    id: i64,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    name: String,
+    description: Option<String>,
+    deployment_id: i64,
+    strong_model_provider: Option<String>,
+    strong_model: Option<String>,
+    strong_model_profile_id: Option<i64>,
+    weak_model_provider: Option<String>,
+    weak_model: Option<String>,
+    weak_model_profile_id: Option<i64>,
+    hooks: Json<AgentHooksConfig>,
+    require_approval_mcp: bool,
+    require_approval_virtual: bool,
+    tool_approval_rules: Json<Vec<AgentToolApprovalRule>>,
+    sub_agents: serde_json::Value,
+    tools: serde_json::Value,
+    knowledge_bases: serde_json::Value,
+}
+
+fn map_details_row(row: AiAgentDetailsRow) -> Result<AiAgentWithDetails, AppError> {
+    let sub_agents = parse_sub_agents(row.sub_agents)?;
+
+    Ok(AiAgentWithDetails {
+        id: row.id,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        name: row.name,
+        description: row.description,
+        deployment_id: row.deployment_id,
+        tools_count: row.tools_count,
+        knowledge_bases_count: row.knowledge_bases_count,
+        sub_agents,
+        strong_model: build_override(
+            row.strong_model_provider,
+            row.strong_model,
+            row.strong_model_profile_id,
+        ),
+        weak_model: build_override(
+            row.weak_model_provider,
+            row.weak_model,
+            row.weak_model_profile_id,
+        ),
+        hooks: row.hooks.0,
+        require_approval_mcp: row.require_approval_mcp,
+        require_approval_virtual: row.require_approval_virtual,
+        tool_approval_rules: row.tool_approval_rules.0,
+    })
+}
+
+fn build_override(
+    provider: Option<String>,
+    model: Option<String>,
+    profile_id: Option<i64>,
+) -> Option<AgentModelOverride> {
+    if provider.is_some() || model.is_some() || profile_id.is_some() {
+        Some(AgentModelOverride {
+            provider,
+            model,
+            profile_id,
+        })
+    } else {
+        None
     }
 }
 
 fn parse_sub_agents(value: serde_json::Value) -> Result<Option<Vec<i64>>, AppError> {
-    let parsed = serde_json::from_value::<Vec<i64>>(value)
-        .map_err_internal("Failed to parse sub_agents")?;
+    let parsed =
+        serde_json::from_value::<Vec<i64>>(value).map_err_internal("Failed to parse sub_agents")?;
     Ok(Some(parsed))
 }
 
@@ -67,13 +150,14 @@ impl GetAiAgentsQuery {
     {
         if let Some(search) = &self.search {
             let search_pattern = format!("%{}%", search);
-            let agents = sqlx::query!(
+            let agents = sqlx::query_as!(
+                AiAgentDetailsRow,
                 r#"
                 SELECT
                     a.id, a.created_at, a.updated_at, a.name, a.description,
                     a.deployment_id,
-                    a.strong_model_provider, a.strong_model,
-                    a.weak_model_provider, a.weak_model,
+                    a.strong_model_provider, a.strong_model, a.strong_model_profile_id,
+                    a.weak_model_provider, a.weak_model, a.weak_model_profile_id,
                     a.hooks as "hooks!: Json<AgentHooksConfig>",
                     a.require_approval_mcp,
                     a.require_approval_virtual,
@@ -103,39 +187,17 @@ impl GetAiAgentsQuery {
 
             Ok(agents
                 .into_iter()
-                .map(|agent| -> Result<AiAgentWithDetails, AppError> {
-                    let sub_agents = parse_sub_agents(agent.sub_agents)?;
-
-                    Ok(AiAgentWithDetails {
-                        id: agent.id,
-                        created_at: agent.created_at,
-                        updated_at: agent.updated_at,
-                        name: agent.name,
-                        description: agent.description,
-                        deployment_id: agent.deployment_id,
-                        tools_count: agent.tools_count,
-                        knowledge_bases_count: agent.knowledge_bases_count,
-                        sub_agents,
-                        strong_model: build_override(
-                            agent.strong_model_provider,
-                            agent.strong_model,
-                        ),
-                        weak_model: build_override(agent.weak_model_provider, agent.weak_model),
-                        hooks: agent.hooks.0,
-                        require_approval_mcp: agent.require_approval_mcp,
-                        require_approval_virtual: agent.require_approval_virtual,
-                        tool_approval_rules: agent.tool_approval_rules.0,
-                    })
-                })
+                .map(map_details_row)
                 .collect::<Result<Vec<_>, _>>()?)
         } else {
-            let agents = sqlx::query!(
+            let agents = sqlx::query_as!(
+                AiAgentDetailsRow,
                 r#"
                 SELECT
                     a.id, a.created_at, a.updated_at, a.name, a.description,
                     a.deployment_id,
-                    a.strong_model_provider, a.strong_model,
-                    a.weak_model_provider, a.weak_model,
+                    a.strong_model_provider, a.strong_model, a.strong_model_profile_id,
+                    a.weak_model_provider, a.weak_model, a.weak_model_profile_id,
                     a.hooks as "hooks!: Json<AgentHooksConfig>",
                     a.require_approval_mcp,
                     a.require_approval_virtual,
@@ -163,30 +225,7 @@ impl GetAiAgentsQuery {
 
             Ok(agents
                 .into_iter()
-                .map(|agent| -> Result<AiAgentWithDetails, AppError> {
-                    let sub_agents = parse_sub_agents(agent.sub_agents)?;
-
-                    Ok(AiAgentWithDetails {
-                        id: agent.id,
-                        created_at: agent.created_at,
-                        updated_at: agent.updated_at,
-                        name: agent.name,
-                        description: agent.description,
-                        deployment_id: agent.deployment_id,
-                        tools_count: agent.tools_count,
-                        knowledge_bases_count: agent.knowledge_bases_count,
-                        sub_agents,
-                        strong_model: build_override(
-                            agent.strong_model_provider,
-                            agent.strong_model,
-                        ),
-                        weak_model: build_override(agent.weak_model_provider, agent.weak_model),
-                        hooks: agent.hooks.0,
-                        require_approval_mcp: agent.require_approval_mcp,
-                        require_approval_virtual: agent.require_approval_virtual,
-                        tool_approval_rules: agent.tool_approval_rules.0,
-                    })
-                })
+                .map(map_details_row)
                 .collect::<Result<Vec<_>, _>>()?)
         }
     }
@@ -209,17 +248,18 @@ impl GetAiAgentByIdQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let agent = sqlx::query!(
+        let agent = sqlx::query_as!(
+            AiAgentDetailsRow,
             r#"
             SELECT
                 a.id, a.created_at, a.updated_at, a.name, a.description,
                 a.deployment_id,
-                a.strong_model_provider, a.strong_model,
-                a.weak_model_provider, a.weak_model,
+                a.strong_model_provider, a.strong_model, a.strong_model_profile_id,
+                a.weak_model_provider, a.weak_model, a.weak_model_profile_id,
                 a.hooks as "hooks!: Json<AgentHooksConfig>",
-                    a.require_approval_mcp,
-                    a.require_approval_virtual,
-                    a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+                a.require_approval_mcp,
+                a.require_approval_virtual,
+                a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
                 COALESCE((
                     SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                     FROM ai_agent_sub_agents rel
@@ -239,25 +279,7 @@ impl GetAiAgentByIdQuery {
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("Agent not found".to_string()))?;
 
-        let sub_agents = parse_sub_agents(agent.sub_agents)?;
-
-        Ok(AiAgentWithDetails {
-            id: agent.id,
-            created_at: agent.created_at,
-            updated_at: agent.updated_at,
-            name: agent.name,
-            description: agent.description,
-            deployment_id: agent.deployment_id,
-            tools_count: agent.tools_count,
-            knowledge_bases_count: agent.knowledge_bases_count,
-            sub_agents,
-            strong_model: build_override(agent.strong_model_provider, agent.strong_model),
-            weak_model: build_override(agent.weak_model_provider, agent.weak_model),
-            hooks: agent.hooks.0,
-            require_approval_mcp: agent.require_approval_mcp,
-            require_approval_virtual: agent.require_approval_virtual,
-            tool_approval_rules: agent.tool_approval_rules.0,
-        })
+        map_details_row(agent)
     }
 }
 
@@ -284,17 +306,18 @@ impl GetAiAgentsByIdsQuery {
         if self.agent_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let rows = sqlx::query!(
+        let rows = sqlx::query_as!(
+            AiAgentDetailsRow,
             r#"
             SELECT
                 a.id, a.created_at, a.updated_at, a.name, a.description,
                 a.deployment_id,
-                a.strong_model_provider, a.strong_model,
-                a.weak_model_provider, a.weak_model,
+                a.strong_model_provider, a.strong_model, a.strong_model_profile_id,
+                a.weak_model_provider, a.weak_model, a.weak_model_profile_id,
                 a.hooks as "hooks!: Json<AgentHooksConfig>",
-                    a.require_approval_mcp,
-                    a.require_approval_virtual,
-                    a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+                a.require_approval_mcp,
+                a.require_approval_virtual,
+                a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
                 COALESCE((
                     SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                     FROM ai_agent_sub_agents rel
@@ -315,30 +338,7 @@ impl GetAiAgentsByIdsQuery {
         .await
         .map_err(AppError::Database)?;
 
-        let mut result = Vec::with_capacity(rows.len());
-        for row in rows {
-            let sub_agents = parse_sub_agents(row.sub_agents)?;
-
-            result.push(AiAgentWithDetails {
-                id: row.id,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                name: row.name,
-                description: row.description,
-                deployment_id: row.deployment_id,
-                tools_count: row.tools_count,
-                knowledge_bases_count: row.knowledge_bases_count,
-                sub_agents,
-                strong_model: build_override(row.strong_model_provider, row.strong_model),
-                weak_model: build_override(row.weak_model_provider, row.weak_model),
-                hooks: row.hooks.0,
-                require_approval_mcp: row.require_approval_mcp,
-                require_approval_virtual: row.require_approval_virtual,
-                tool_approval_rules: row.tool_approval_rules.0,
-            });
-        }
-
-        Ok(result)
+        rows.into_iter().map(map_details_row).collect()
     }
 }
 
@@ -355,7 +355,8 @@ impl GetAiAgentByIdWithFeatures {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query!(
+        let row = sqlx::query_as!(
+            AiAgentFeaturesRow,
             r#"
             SELECT
                 a.id,
@@ -364,12 +365,12 @@ impl GetAiAgentByIdWithFeatures {
                 a.description,
                 a.name,
                 a.deployment_id,
-                a.strong_model_provider, a.strong_model,
-                a.weak_model_provider, a.weak_model,
+                a.strong_model_provider, a.strong_model, a.strong_model_profile_id,
+                a.weak_model_provider, a.weak_model, a.weak_model_profile_id,
                 a.hooks as "hooks!: Json<AgentHooksConfig>",
-                    a.require_approval_mcp,
-                    a.require_approval_virtual,
-                    a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+                a.require_approval_mcp,
+                a.require_approval_virtual,
+                a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
                 COALESCE((
                     SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                     FROM ai_agent_sub_agents rel
@@ -425,8 +426,8 @@ impl GetAiAgentByIdWithFeatures {
         .await
         .map_err(AppError::Database)?;
 
-        let tools = serde_json::from_value(row.tools)
-            .map_err_internal("Failed to deserialize tools")?;
+        let tools =
+            serde_json::from_value(row.tools).map_err_internal("Failed to deserialize tools")?;
         let knowledge_bases = serde_json::from_value(row.knowledge_bases).map_err(|e| {
             AppError::Internal(format!("Failed to deserialize knowledge bases: {}", e))
         })?;
@@ -442,8 +443,16 @@ impl GetAiAgentByIdWithFeatures {
             tools,
             knowledge_bases,
             sub_agents,
-            strong_model: build_override(row.strong_model_provider, row.strong_model),
-            weak_model: build_override(row.weak_model_provider, row.weak_model),
+            strong_model: build_override(
+                row.strong_model_provider,
+                row.strong_model,
+                row.strong_model_profile_id,
+            ),
+            weak_model: build_override(
+                row.weak_model_provider,
+                row.weak_model,
+                row.weak_model_profile_id,
+            ),
             hooks: row.hooks.0,
             require_approval_mcp: row.require_approval_mcp,
             require_approval_virtual: row.require_approval_virtual,

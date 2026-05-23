@@ -47,6 +47,7 @@ fn render_sibling_message_kind(content: &models::ConversationContent) -> String 
             "assignment_execution_trigger"
         }
         models::ConversationContent::TaskRoutingTrigger { .. } => "task_routing_trigger",
+        models::ConversationContent::TaskHandoffReceived { .. } => "task_handoff_received",
     }
     .to_string()
 }
@@ -113,6 +114,15 @@ fn render_sibling_message_body(content: &models::ConversationContent) -> String 
         } => format!(
             "task_routing task={task_key} reason={}",
             routing_reason.as_deref().unwrap_or("unspecified")
+        ),
+        models::ConversationContent::TaskHandoffReceived {
+            source_thread_id,
+            source_role,
+            outcome,
+            summary,
+            ..
+        } => format!(
+            "handoff from thread #{source_thread_id} ({source_role}, {outcome}): {summary}"
         ),
     }
 }
@@ -431,6 +441,7 @@ impl AgentExecutor {
                 .map(ToString::to_string),
             most_recent_user_input: self.latest_user_input_snapshot(),
             last_sibling_thread_tail: self.last_sibling_thread_tail(5),
+            last_iteration_tool_errors_block: self.tool_error_window.render_and_advance(),
             live_context_message: None,
         };
 

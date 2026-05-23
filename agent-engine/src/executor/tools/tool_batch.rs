@@ -2,12 +2,33 @@ use super::core::AgentExecutor;
 use super::tool_params::{PlannedToolCall, ResolvedToolCall, ToolExecutionLoopOutcome};
 
 use crate::tools::approval::resolve_approval_action;
+use chrono::Utc;
 use commands::ConsumeOnceApprovalGrantForThreadCommand;
 use common::error::AppError;
 use dto::json::agent_executor::{ApprovalRequestData, ToolCallRequest};
+use dto::json::template_context::LastIterationToolError;
 use models::{AiTool, ApprovalAction, ConversationContent, ConversationMessageType};
 use serde_json::Value;
 use std::collections::HashSet;
+
+const MAX_TOOL_ERROR_SNAPSHOTS: usize = 10;
+const MAX_TOOL_ERROR_INPUT_CHARS: usize = 300;
+const MAX_TOOL_ERROR_MESSAGE_CHARS: usize = 500;
+
+fn truncate_chars(s: &str, max: usize) -> String {
+    let count = s.chars().count();
+    if count <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max).collect();
+    out.push_str("…[truncated]");
+    out
+}
+
+fn input_preview(input: &Value) -> String {
+    let serialized = serde_json::to_string(input).unwrap_or_else(|_| "<unrenderable>".into());
+    truncate_chars(&serialized, MAX_TOOL_ERROR_INPUT_CHARS)
+}
 impl AgentExecutor {
     #[tracing::instrument(
         name = "tools.execute_batch",
@@ -40,10 +61,28 @@ impl AgentExecutor {
             return Ok(ToolExecutionLoopOutcome { any_pending: true });
         }
 
+        let batch_was_empty = planned_calls.is_empty();
+        let mut iteration_errors: Vec<LastIterationToolError> = Vec::new();
+
         for call in planned_calls {
-            let tool = match self.authorize_tool_call(call.tool_name()).await {
+            let tool_name = call.tool_name().to_string();
+            let preview = call
+                .input_value()
+                .ok()
+                .map(|v| input_preview(&v))
+                .unwrap_or_else(|| "<unavailable>".to_string());
+
+            let tool = match self.authorize_tool_call(&tool_name).await {
                 Ok(tool) => tool,
                 Err(error) => {
+                    if iteration_errors.len() < MAX_TOOL_ERROR_SNAPSHOTS {
+                        iteration_errors.push(LastIterationToolError {
+                            timestamp: Utc::now().to_rfc3339(),
+                            tool_name: tool_name.clone(),
+                            input_preview: preview.clone(),
+                            error: truncate_chars(&error.to_string(), MAX_TOOL_ERROR_MESSAGE_CHARS),
+                        });
+                    }
                     self.record_tool_execution_result(&call, Err(error), &mut any_pending)
                         .await?;
                     continue;
@@ -54,11 +93,21 @@ impl AgentExecutor {
                 tool,
             };
 
-            let tool_name = resolved.request.tool_name().to_string();
             let result = self.execute_planned_tool_call(&resolved).await;
 
             if Self::tool_name_mutates_task_graph(&tool_name) && result.is_ok() {
                 self.invalidate_task_graph_snapshot();
+            }
+
+            if let Err(error) = &result {
+                if iteration_errors.len() < MAX_TOOL_ERROR_SNAPSHOTS {
+                    iteration_errors.push(LastIterationToolError {
+                        timestamp: Utc::now().to_rfc3339(),
+                        tool_name: tool_name.clone(),
+                        input_preview: preview,
+                        error: truncate_chars(&error.to_string(), MAX_TOOL_ERROR_MESSAGE_CHARS),
+                    });
+                }
             }
 
             self.record_tool_execution_result(&resolved.request, result, &mut any_pending)
@@ -67,6 +116,10 @@ impl AgentExecutor {
             if any_pending {
                 break;
             }
+        }
+
+        if !batch_was_empty {
+            self.tool_error_window.replace_for_new_batch(iteration_errors);
         }
 
         Ok(ToolExecutionLoopOutcome { any_pending })

@@ -15,6 +15,50 @@ pub enum ResumeContext {
     ApprovalResponse(Vec<dto::json::deployment::ToolApprovalSelection>),
 }
 
+#[derive(Default)]
+pub(crate) struct ToolErrorWindow {
+    pub(crate) errors: Vec<dto::json::template_context::LastIterationToolError>,
+    pub(crate) view_count: u32,
+    pub(crate) last_render: Option<dto::json::template_context::LastIterationToolErrorsBlock>,
+}
+
+impl ToolErrorWindow {
+    pub(crate) fn replace_for_new_batch(
+        &mut self,
+        errors: Vec<dto::json::template_context::LastIterationToolError>,
+    ) {
+        self.errors = errors;
+        self.view_count = 0;
+        self.last_render = None;
+    }
+
+    pub(crate) fn render_and_advance(
+        &mut self,
+    ) -> Option<dto::json::template_context::LastIterationToolErrorsBlock> {
+        if self.errors.is_empty() {
+            self.last_render = None;
+            return None;
+        }
+        let block = match self.view_count {
+            0 => Some(dto::json::template_context::LastIterationToolErrorsBlock {
+                kind: "full".to_string(),
+                items: self.errors.clone(),
+            }),
+            1 => Some(dto::json::template_context::LastIterationToolErrorsBlock {
+                kind: "brief".to_string(),
+                items: self.errors.clone(),
+            }),
+            _ => {
+                self.errors.clear();
+                None
+            }
+        };
+        self.view_count = self.view_count.saturating_add(1);
+        self.last_render = block.clone();
+        block
+    }
+}
+
 pub struct AgentExecutor {
     pub(crate) ctx:
         std::sync::Arc<crate::runtime::thread_execution_context::ThreadExecutionContext>,
@@ -64,6 +108,7 @@ pub struct AgentExecutor {
     pub(crate) repeated_tool_call_count: usize,
     pub(crate) terminal_review_continue_count: usize,
     pub(crate) preloaded_immediate_context: Option<ImmediateContext>,
+    pub(crate) tool_error_window: ToolErrorWindow,
     pub(crate) budget: super::budget::BudgetCounter,
 }
 
@@ -353,6 +398,7 @@ impl AgentExecutorBuilder {
             repeated_tool_call_count: 0,
             terminal_review_continue_count: 0,
             preloaded_immediate_context: Some(immediate_context),
+            tool_error_window: ToolErrorWindow::default(),
             budget: super::budget::BudgetCounter::default(),
         })
     }

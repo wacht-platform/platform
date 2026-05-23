@@ -510,8 +510,7 @@ impl GetWebhookEventsQuery {
         let events_value = events_value
             .ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))?;
 
-        serde_json::from_value(events_value)
-            .map_err_internal("Invalid catalog events format")
+        serde_json::from_value(events_value).map_err_internal("Invalid catalog events format")
     }
 }
 

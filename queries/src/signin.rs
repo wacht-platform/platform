@@ -1,5 +1,5 @@
-use common::ResultExt;
 use chrono::{DateTime, Utc};
+use common::ResultExt;
 use common::error::AppError;
 use models::{Session, SignIn};
 use serde::{Deserialize, Serialize};

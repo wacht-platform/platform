@@ -159,7 +159,9 @@ impl CreateWebhookEndpointCommand {
         let mut tx = deps.writer_pool().begin().await?;
         let endpoint_id = deps.id_provider().next_id()? as i64;
 
-        let headers_json = self.headers.unwrap_or_else(common::json_utils::empty_object);
+        let headers_json = self
+            .headers
+            .unwrap_or_else(common::json_utils::empty_object);
 
         let endpoint = query_as!(
             WebhookEndpoint,

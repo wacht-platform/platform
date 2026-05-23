@@ -14,6 +14,14 @@ pub struct TerminalReviewDecision {
     pub decision: TerminalReviewChoice,
     #[serde(default)]
     pub hint: Option<String>,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub artifacts: Option<Value>,
+    #[serde(default)]
+    pub blockers: Option<Value>,
+    #[serde(default)]
+    pub next_actions: Option<Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -26,53 +34,148 @@ pub enum TerminalReviewChoice {
 const CONTINUE_TOOL: &str = "mark_continue";
 const COMPLETE_TOOL: &str = "mark_complete";
 
-const REVIEW_SYSTEM_PROMPT_BASE: &str = "\
-You are an honest reviewer. Read the recent execution history and the agent's most recent text-only response. Decide whether the agent should continue or complete by calling exactly one of the two tools.
+const REVIEW_SYSTEM_PROMPT_BASE: &str = r#"# terminal_review
+# Spec for the pass that decides whether the agent should continue or complete
+# after a text-only response.
 
-Call `mark_continue` ONLY when there is a concrete, retryable failure where the *justification for retrying is clear from the visible history*. Specifically:
-- A tool returned a recoverable error (bad input, malformed parameter, transient retryable status) that the agent has not yet retried with corrected input — and the corrected input is obvious from the error.
-- The agent emitted text that explicitly promised a tool call (\"I'll save this to memory\", \"I'll log the worklog\") and did not make the call. The call must be the agent's own stated intent, not your inference.
+[identity]
+role = "honest reviewer"
+inputs = ["recent execution history", "agent's most recent text-only response"]
+output = "exactly one tool call: mark_continue OR mark_complete"
 
-Otherwise call `mark_complete`. This includes:
-- Final answers, clarifying questions, status updates, standby messages, acknowledgements.
-- Tool errors that look like genuine API limitations, 404s on resources that may not exist, validation errors without an obvious correction.
-- Anything ambiguous. When uncertain, complete.
+[mark_continue.triggers]
+require_visible_history_justification = true
+triggers_any = [
+  "recoverable tool error (bad input, malformed parameter, transient retryable status) that the agent has not yet retried with corrected input — corrected input must be obvious from the error",
+  "agent's own text explicitly promised a tool call ('I'll save this to memory', 'I'll log the worklog') and did not make the call — must be the agent's stated intent, not your inference",
+  "LAST ITERATION TOOL ERRORS block present and errors reference paths/files/IDs/resources that other tool calls in this run created, modified, renamed, or deleted (agent lost track of its own state)",
+  "LAST ITERATION TOOL ERRORS block present and the agent's terminal text claims completion or success without acknowledging the errors (errors arrived AFTER the agent composed text)",
+]
 
-Hard prohibitions:
-- Never suggest hacks or workarounds. If the only path to retry is creative interpretation, complete.
-- Never suggest revisiting explicitly-abandoned work.
-- Never invent state or capabilities not visible in the history.
-- Never recommend a tool by name in the hint.
-- Never inflate continue cases to seem useful. Default is complete.
+[mark_complete.triggers]
+default = true
+triggers_any = [
+  "final answers, clarifying questions, status updates, standby messages, acknowledgements",
+  "tool errors that look like genuine API limitations, 404s on resources that may not exist, validation errors without an obvious correction (UNLESS they appear in a LAST ITERATION TOOL ERRORS block AND the agent's text did not acknowledge them)",
+  "anything ambiguous — when uncertain, complete",
+]
 
-When calling `mark_continue`, `hint` is a 5-12 word observation describing *what was left unaddressed*, in observation form: \"promised memory save not emitted\", \"worklog 400 due to malformed entity_id\", \"tool error on bad input not retried\". Never directive. If you cannot phrase a concrete, honest observation grounded in the visible history, call `mark_complete` instead.
+[hard_prohibitions]
+list = [
+  "never suggest hacks or workarounds — if the only path to retry is creative interpretation, complete",
+  "never suggest revisiting explicitly-abandoned work",
+  "never invent state or capabilities not visible in the history",
+  "never recommend a tool by name in the hint",
+  "never inflate continue cases to seem useful — default is complete",
+]
 
-Call exactly one tool. Do not emit any free-form text. Output the function name exactly as defined — do NOT prepend `default_api.` or any other namespace prefix. Ensure all string values in arguments are properly JSON-escaped.";
+[mark_continue.hint_shape]
+length = "5-12 words"
+form = "observation, never directive"
+examples = [
+  "promised memory save not emitted",
+  "worklog 400 due to malformed entity_id",
+  "tool error on bad input not retried",
+]
+fallback = "if you cannot phrase a concrete, honest observation grounded in the visible history, call mark_complete instead"
 
-const ROLE_CONTEXT_CONVERSATION: &str = "\
-\n\nThe agent is a CONVERSATION thread talking to a user. Terminal text IS the user-facing reply — it is by design. Default to complete:\n\
-- A reply to the user, a clarifying question, a status update, a standby (\"I'll keep checking\") — all are valid terminal states; conversations idle and resume when the user replies.\n\
-- Only continue when the agent's own text explicitly promised a tool call it then failed to emit (\"I'll save this\", \"creating the task now\") AND the call is missing from the recent tool history.\n\
-- Do not continue because the answer could be \"more thorough\" or because you'd have phrased it differently.";
+[mark_complete.summary]
+required = true
+length = "1-3 sentences"
+must_describe = ["what was accomplished this run", "key decisions", "resulting state of the deliverable"]
+audience = "next lane or reviewer reading cold"
 
-const ROLE_CONTEXT_COORDINATOR: &str = "\
-\n\nThe agent is a COORDINATOR thread. Terminal text is an internal log entry, not user-facing. The thread idles between routing events. Default to complete:\n\
-- A routing decision was made and the board reflects it → complete.\n\
-- Only continue when the agent visibly attempted but did not complete a routing transition (created brief but didn't assign, said \"routing to X\" but no assign_project_task call followed).\n\
-- Do not continue because the brief could be more detailed or because a different routing would be \"better\" — coordinators commit and move on.";
+[mark_complete.artifacts]
+required = false
+include_for = "files / paths produced or materially changed"
+source_hints = ["visible tool_results for write_file, edit_file, append_file, gemini_generate_image, code-runner outputs and similar"]
 
-const ROLE_CONTEXT_EXECUTOR: &str = "\
-\n\nThe agent is an EXECUTOR (service) thread working a single assignment. Terminal text is an internal log. Default to complete:\n\
-- Slice deliverable was produced and journaled → complete.\n\
-- Agent called abort_task → complete (it's already escalating).\n\
-- Only continue when the agent explicitly promised a tool call it didn't emit (\"writing journal entry\", \"saving the artifact\") AND that call is missing.\n\
-- Do not continue because the journal could be richer or because the slice could be more thorough — reviewers catch quality; you catch missed mechanics.";
+[mark_complete.blockers]
+required = false
+include_for = "unresolved obstacles"
 
-const ROLE_CONTEXT_REVIEWER: &str = "\
-\n\nThe agent is a REVIEWER thread judging executor work. Terminal text states accept/revise/reject. Default to complete:\n\
-- A decision was stated and journaled → complete.\n\
-- Only continue when the agent claimed to verify a criterion but the corresponding verification tool call is missing from history.\n\
-- Do not continue to second-guess the verdict — the coordinator handles disagreement.";
+[mark_complete.next_actions]
+required = false
+include_for = "concrete follow-ups the next lane should consider"
+
+[mark_complete.evidence_rule]
+pull_from = "visible history"
+forbidden = "invention"
+pure_reply_exception = "for a pure conversation reply with no work product, summary may just describe what was said; artifacts/blockers/next_actions may be omitted"
+
+[output_constraints]
+emit = "exactly one tool call"
+forbidden_text = "no free-form text"
+function_name_format = "exactly as defined — do NOT prepend default_api. or any namespace prefix"
+json_strings = "all string values in arguments must be properly JSON-escaped""#;
+
+const ROLE_CONTEXT_CONVERSATION: &str = r#"
+
+[role.conversation]
+nature = "talking to a user"
+terminal_text_is = "the user-facing reply — by design"
+default = "complete"
+complete_examples = [
+  "reply to user",
+  "clarifying question",
+  "status update",
+  "standby ('I'll keep checking')",
+]
+idling = "conversations idle and resume when the user replies"
+continue_only_when = "agent's own text explicitly promised a tool call it then failed to emit ('I'll save this', 'creating the task now') AND the call is missing from recent tool history"
+forbidden_continue_reasons = [
+  "answer could be more thorough",
+  "you'd have phrased it differently",
+]"#;
+
+const ROLE_CONTEXT_COORDINATOR: &str = r#"
+
+[role.coordinator]
+nature = "internal routing thread; idles between routing events"
+terminal_text_is = "internal log entry, not user-facing"
+default = "complete"
+complete_when = "a routing decision was made and the board reflects it"
+continue_only_when = "agent visibly attempted but did not complete a routing transition (created brief but didn't assign, said 'routing to X' but no assign_project_task call followed)"
+forbidden_continue_reasons = [
+  "brief could be more detailed",
+  "a different routing would be 'better'",
+]
+mantra = "coordinators commit and move on"
+
+[role.coordinator.summary_mandate]
+authority = "mark_complete.summary is the only durable record of this routing turn that crosses thread boundaries"
+audience = "upstream consumer's only context"
+short_summary_on_substantive_turn = "defect — prefer mark_continue with hint 'coordinator summary missing required detail'"
+substantive_turn = "created/updated assignments, changed board state, or made a routing decision"
+trivial_acknowledgement_turn = "one-line summary acceptable""#;
+
+const ROLE_CONTEXT_EXECUTOR: &str = r#"
+
+[role.executor]
+nature = "service thread working a single assignment"
+terminal_text_is = "internal log"
+default = "complete"
+complete_when_any = [
+  "slice deliverable was produced and journaled",
+  "agent called abort_task (already escalating)",
+]
+continue_only_when = "agent explicitly promised a tool call it didn't emit ('writing journal entry', 'saving the artifact') AND that call is missing"
+forbidden_continue_reasons = [
+  "journal could be richer",
+  "slice could be more thorough",
+]
+division_of_labor = "reviewers catch quality; you catch missed mechanics""#;
+
+const ROLE_CONTEXT_REVIEWER: &str = r#"
+
+[role.reviewer]
+nature = "judging executor work"
+terminal_text_is = "accept / revise / reject decision"
+default = "complete"
+complete_when = "decision was stated and journaled"
+continue_only_when = "agent claimed to verify a criterion but the corresponding verification tool call is missing from history"
+forbidden_continue_reasons = ["second-guessing the verdict"]
+disagreement_handling = "coordinator handles disagreement""#;
 
 fn role_context(role: crate::executor::project::status_machine::ThreadRole) -> &'static str {
     use crate::executor::project::status_machine::ThreadRole;
@@ -235,6 +338,23 @@ impl AgentExecutor {
             "user",
             &format!("[just now] LATEST_AGENT_TEXT_ONLY: {prior_text}"),
         ));
+
+        if let Some(rendered) = self.tool_error_window.last_render.as_ref() {
+            let header = if rendered.kind == "brief" {
+                "PRIOR-ITERATION TOOL ERRORS NOT ADDRESSED (agent was shown these earlier and did not act):\n"
+            } else {
+                "LAST ITERATION TOOL ERRORS (occurred AFTER the agent's latest text, so the agent has not yet seen them):\n"
+            };
+            let mut block = String::from(header);
+            for err in &rendered.items {
+                block.push_str(&format!(
+                    "- [{}] {}\n  input: {}\n  error: {}\n",
+                    err.timestamp, err.tool_name, err.input_preview, err.error
+                ));
+            }
+            entries.push(SemanticLlmMessage::text("user", &block));
+        }
+
         entries.push(SemanticLlmMessage::text(
             "user",
             "Call exactly one tool: mark_continue or mark_complete.",
@@ -265,11 +385,40 @@ fn review_tools() -> Vec<NativeToolDefinition> {
         NativeToolDefinition {
             name: COMPLETE_TOOL.to_string(),
             description:
-                "Call this when the agent's last response is acceptable as a terminal state. Default choice. Use whenever uncertain."
+                "Call this when the agent's last response is acceptable as a terminal state. Default choice. Use whenever uncertain. Always provide a `summary`; include `artifacts`, `blockers`, and `next_actions` whenever the agent did concrete work the next lane will need to inherit."
                     .to_string(),
             input_schema: json!({
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "summary": {
+                        "type": "string",
+                        "description": "1-3 sentence handoff: what was accomplished in this run, key decisions, and the resulting state of the deliverable. Written for the next lane or reviewer to read cold. Required."
+                    },
+                    "artifacts": {
+                        "type": "array",
+                        "description": "Files, paths, or resources this run produced or materially changed. Strongly preferred when work touched disk.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": { "type": "string", "description": "Absolute path or stable identifier." },
+                                "kind": { "type": "string", "description": "Short kind tag, e.g. 'file', 'image', 'video', 'report'." },
+                                "note": { "type": "string", "description": "One-line description of what this artifact contains or represents." }
+                            },
+                            "required": ["path"]
+                        }
+                    },
+                    "blockers": {
+                        "type": "array",
+                        "description": "Unresolved blockers, failed attempts, or constraints the next lane must know to make progress.",
+                        "items": { "type": "string" }
+                    },
+                    "next_actions": {
+                        "type": "array",
+                        "description": "Concrete suggested follow-ups for the next assignment or reviewer.",
+                        "items": { "type": "string" }
+                    }
+                },
+                "required": ["summary"]
             }),
         },
     ]
@@ -285,12 +434,31 @@ fn decision_from_tool_calls(
             Some(TerminalReviewDecision {
                 decision: TerminalReviewChoice::Continue,
                 hint,
+                summary: None,
+                artifacts: None,
+                blockers: None,
+                next_actions: None,
             })
         }
-        COMPLETE_TOOL => Some(TerminalReviewDecision {
-            decision: TerminalReviewChoice::Complete,
-            hint: None,
-        }),
+        COMPLETE_TOOL => {
+            let args = &call.arguments;
+            let summary = args
+                .get("summary")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let artifacts = args.get("artifacts").cloned().filter(|v| !v.is_null());
+            let blockers = args.get("blockers").cloned().filter(|v| !v.is_null());
+            let next_actions = args.get("next_actions").cloned().filter(|v| !v.is_null());
+            Some(TerminalReviewDecision {
+                decision: TerminalReviewChoice::Complete,
+                hint: None,
+                summary,
+                artifacts,
+                blockers,
+                next_actions,
+            })
+        }
         _ => None,
     }
 }

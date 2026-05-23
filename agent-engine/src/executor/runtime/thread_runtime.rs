@@ -406,7 +406,7 @@ impl AgentExecutor {
         let prior_state = self.read_prompt_cache_state(&cache_key).await;
         Some(crate::llm::PromptCacheRequest {
             cache_key,
-            ttl_secs: 300,
+            ttl_secs: 3600,
             live_tail_count,
             prior_state,
             reuse_only: false,

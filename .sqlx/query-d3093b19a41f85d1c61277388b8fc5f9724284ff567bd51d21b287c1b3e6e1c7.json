@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO ai_agents (\n                id, created_at, updated_at, name, description, deployment_id,\n                strong_model_provider, strong_model,\n                weak_model_provider, weak_model, hooks,\n                require_approval_mcp, require_approval_virtual, tool_approval_rules\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)\n            RETURNING id, created_at, updated_at, name, description, deployment_id,\n                      strong_model_provider, strong_model,\n                      weak_model_provider, weak_model,\n                      hooks as \"hooks!: Json<AgentHooksConfig>\",\n                      require_approval_mcp,\n                      require_approval_virtual,\n                      tool_approval_rules as \"tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>\"\n            ",
+  "query": "\n            INSERT INTO ai_agents (\n                id, created_at, updated_at, name, description, deployment_id,\n                strong_model_provider, strong_model, strong_model_profile_id,\n                weak_model_provider, weak_model, weak_model_profile_id, hooks,\n                require_approval_mcp, require_approval_virtual, tool_approval_rules\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)\n            RETURNING id, created_at, updated_at, name, description, deployment_id,\n                      strong_model_provider, strong_model, strong_model_profile_id,\n                      weak_model_provider, weak_model, weak_model_profile_id,\n                      hooks as \"hooks!: Json<AgentHooksConfig>\",\n                      require_approval_mcp,\n                      require_approval_virtual,\n                      tool_approval_rules as \"tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>\"\n            ",
   "describe": {
     "columns": [
       {
@@ -45,31 +45,41 @@
       },
       {
         "ordinal": 8,
+        "name": "strong_model_profile_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
         "name": "weak_model_provider",
         "type_info": "Text"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "weak_model",
         "type_info": "Text"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
+        "name": "weak_model_profile_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
         "name": "hooks!: Json<AgentHooksConfig>",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "require_approval_mcp",
         "type_info": "Bool"
       },
       {
-        "ordinal": 12,
+        "ordinal": 14,
         "name": "require_approval_virtual",
         "type_info": "Bool"
       },
       {
-        "ordinal": 13,
+        "ordinal": 15,
         "name": "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
         "type_info": "Jsonb"
       }
@@ -84,8 +94,10 @@
         "Int8",
         "Text",
         "Text",
+        "Int8",
         "Text",
         "Text",
+        "Int8",
         "Jsonb",
         "Bool",
         "Bool",
@@ -103,11 +115,13 @@
       true,
       true,
       true,
+      true,
+      true,
       false,
       false,
       false,
       false
     ]
   },
-  "hash": "52e4c66691d45dadbc6f194790af380209255ce8bbfdc9fb5bca2554a6a3cdac"
+  "hash": "d3093b19a41f85d1c61277388b8fc5f9724284ff567bd51d21b287c1b3e6e1c7"
 }

@@ -1,0 +1,119 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO task_handoff_summaries (\n                id, deployment_id, board_item_id, thread_id,\n                assignment_id, execution_run_id,\n                assignment_role, outcome, summary,\n                artifacts, blockers, next_actions, metadata,\n                created_at, updated_at\n            ) VALUES (\n                $1, $2, $3, $4,\n                $5, $6,\n                $7, $8, $9,\n                $10, $11, $12, $13,\n                $14, $14\n            )\n            RETURNING\n                id, deployment_id, board_item_id, thread_id,\n                assignment_id, execution_run_id,\n                assignment_role, outcome, summary,\n                artifacts, blockers, next_actions, metadata,\n                created_at, updated_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "board_item_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "thread_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "assignment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "execution_run_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "assignment_role",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "outcome",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "summary",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "artifacts",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "blockers",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 11,
+        "name": "next_actions",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 12,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "a02fa7ffbbe1f1595ed67f02a6a5f7adc49600ebe73b49339049219972698e64"
+}

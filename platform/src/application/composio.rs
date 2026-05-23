@@ -1,7 +1,7 @@
 use commands::composio::UpdateComposioConfigCommand;
+use common::ResultExt;
 use common::db_router::ReadConsistency;
 use common::deps;
-use common::ResultExt;
 use common::error::AppError;
 use models::{
     ComposioAuthConfigListResponse, ComposioAuthConfigSummary, ComposioConfigResponse,
@@ -128,10 +128,7 @@ pub async fn list_toolkits(
         .map_err_internal("composio request failed")?;
 
     let status = resp.status();
-    let body = resp
-        .text()
-        .await
-        .map_err_internal("composio read body")?;
+    let body = resp.text().await.map_err_internal("composio read body")?;
 
     if !status.is_success() {
         return Err(AppError::Internal(format!(
@@ -440,10 +437,7 @@ async fn create_composio_auth_config(
         .map_err_internal("composio auth_configs POST")?;
 
     let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err_internal("composio read body")?;
+    let text = resp.text().await.map_err_internal("composio read body")?;
 
     if !status.is_success() {
         return Err(AppError::Validation(format!(
@@ -488,10 +482,7 @@ pub async fn get_toolkit_auth_details(
         .map_err_internal("composio toolkit details")?;
 
     let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err_internal("composio read body")?;
+    let text = resp.text().await.map_err_internal("composio read body")?;
     if !status.is_success() {
         return Err(AppError::Internal(format!(
             "composio returned {status}: {text}"
@@ -723,10 +714,7 @@ pub async fn list_toolkit_auth_configs(
         .map_err_internal("composio list auth_configs")?;
 
     let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err_internal("composio read body")?;
+    let text = resp.text().await.map_err_internal("composio read body")?;
     if !status.is_success() {
         return Err(AppError::Internal(format!(
             "composio returned {status}: {text}"

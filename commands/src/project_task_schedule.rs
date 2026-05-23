@@ -1,5 +1,5 @@
-use common::ResultExt;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use common::ResultExt;
 use common::{HasDbRouter, HasIdProvider, HasNatsJetStreamProvider, error::AppError};
 use models::{
     ProjectTaskBoardItemMetadata, ProjectTaskSchedule, ScheduleCarryover, ScheduleTemplatePayload,
@@ -83,8 +83,8 @@ impl CreateProjectTaskScheduleCommand {
         for mount in &initial_mounts {
             validate_mount(mount).map_err(|e| AppError::BadRequest(e.to_string()))?;
         }
-        let mounts_value = serde_json::to_value(&initial_mounts)
-            .map_err_internal("Failed to serialize mounts")?;
+        let mounts_value =
+            serde_json::to_value(&initial_mounts).map_err_internal("Failed to serialize mounts")?;
 
         let now = Utc::now();
         let schedule = sqlx::query_as!(
@@ -183,10 +183,7 @@ impl UpdateProjectTaskScheduleCommand {
             for m in mounts {
                 validate_mount(m).map_err(|e| AppError::BadRequest(e.to_string()))?;
             }
-            Some(
-                serde_json::to_value(mounts)
-                    .map_err_internal("Failed to serialize mounts")?,
-            )
+            Some(serde_json::to_value(mounts).map_err_internal("Failed to serialize mounts")?)
         } else {
             None
         };

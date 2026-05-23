@@ -1,0 +1,106 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id, deployment_id, board_item_id, thread_id,\n                assignment_id, execution_run_id,\n                assignment_role, outcome, summary,\n                artifacts, blockers, next_actions, metadata,\n                created_at, updated_at\n            FROM task_handoff_summaries\n            WHERE id = ANY($1)\n            ORDER BY created_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "board_item_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "thread_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "assignment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "execution_run_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "assignment_role",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "outcome",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "summary",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "artifacts",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "blockers",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 11,
+        "name": "next_actions",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 12,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "878458db46cad0fab13a32255977c817e450071a42ce9be051f22230042f0e89"
+}

@@ -112,16 +112,25 @@ impl CreateAiAgentCommand {
         let strong_provider = self
             .strong_model
             .as_ref()
-            .map(|o| o.provider.trim().to_string());
+            .and_then(|o| o.provider.as_ref())
+            .map(|provider| provider.trim().to_string());
         let strong_model = self
             .strong_model
             .as_ref()
-            .map(|o| o.model.trim().to_string());
+            .and_then(|o| o.model.as_ref())
+            .map(|model| model.trim().to_string());
+        let strong_profile_id = self.strong_model.as_ref().and_then(|o| o.profile_id);
         let weak_provider = self
             .weak_model
             .as_ref()
-            .map(|o| o.provider.trim().to_string());
-        let weak_model = self.weak_model.as_ref().map(|o| o.model.trim().to_string());
+            .and_then(|o| o.provider.as_ref())
+            .map(|provider| provider.trim().to_string());
+        let weak_model = self
+            .weak_model
+            .as_ref()
+            .and_then(|o| o.model.as_ref())
+            .map(|model| model.trim().to_string());
+        let weak_profile_id = self.weak_model.as_ref().and_then(|o| o.profile_id);
         let hooks_value = Json(self.hooks.clone().unwrap_or_default());
         let require_approval_mcp = self.require_approval_mcp.unwrap_or(false);
         let require_approval_virtual = self.require_approval_virtual.unwrap_or(false);
@@ -134,18 +143,27 @@ impl CreateAiAgentCommand {
             .await
             .map_err(AppError::Database)?;
 
+        validate_profile_ref(
+            &mut tx,
+            self.deployment_id,
+            "strong_model",
+            strong_profile_id,
+        )
+        .await?;
+        validate_profile_ref(&mut tx, self.deployment_id, "weak_model", weak_profile_id).await?;
+
         let agent = sqlx::query!(
             r#"
             INSERT INTO ai_agents (
                 id, created_at, updated_at, name, description, deployment_id,
-                strong_model_provider, strong_model,
-                weak_model_provider, weak_model, hooks,
+                strong_model_provider, strong_model, strong_model_profile_id,
+                weak_model_provider, weak_model, weak_model_profile_id, hooks,
                 require_approval_mcp, require_approval_virtual, tool_approval_rules
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             RETURNING id, created_at, updated_at, name, description, deployment_id,
-                      strong_model_provider, strong_model,
-                      weak_model_provider, weak_model,
+                      strong_model_provider, strong_model, strong_model_profile_id,
+                      weak_model_provider, weak_model, weak_model_profile_id,
                       hooks as "hooks!: Json<AgentHooksConfig>",
                       require_approval_mcp,
                       require_approval_virtual,
@@ -159,8 +177,10 @@ impl CreateAiAgentCommand {
             self.deployment_id,
             strong_provider,
             strong_model,
+            strong_profile_id,
             weak_provider,
             weak_model,
+            weak_profile_id,
             hooks_value as _,
             require_approval_mcp,
             require_approval_virtual,
@@ -190,8 +210,16 @@ impl CreateAiAgentCommand {
             description: agent.description,
             deployment_id: agent.deployment_id,
             sub_agents: Some(sub_agent_ids),
-            strong_model: build_override(agent.strong_model_provider, agent.strong_model),
-            weak_model: build_override(agent.weak_model_provider, agent.weak_model),
+            strong_model: build_override(
+                agent.strong_model_provider,
+                agent.strong_model,
+                agent.strong_model_profile_id,
+            ),
+            weak_model: build_override(
+                agent.weak_model_provider,
+                agent.weak_model,
+                agent.weak_model_profile_id,
+            ),
             hooks: agent.hooks.0,
             require_approval_mcp: agent.require_approval_mcp,
             require_approval_virtual: agent.require_approval_virtual,
@@ -329,16 +357,25 @@ impl UpdateAiAgentCommand {
         let strong_provider = self
             .strong_model
             .as_ref()
-            .map(|o| o.provider.trim().to_string());
+            .and_then(|o| o.provider.as_ref())
+            .map(|provider| provider.trim().to_string());
         let strong_model = self
             .strong_model
             .as_ref()
-            .map(|o| o.model.trim().to_string());
+            .and_then(|o| o.model.as_ref())
+            .map(|model| model.trim().to_string());
+        let strong_profile_id = self.strong_model.as_ref().and_then(|o| o.profile_id);
         let weak_provider = self
             .weak_model
             .as_ref()
-            .map(|o| o.provider.trim().to_string());
-        let weak_model = self.weak_model.as_ref().map(|o| o.model.trim().to_string());
+            .and_then(|o| o.provider.as_ref())
+            .map(|provider| provider.trim().to_string());
+        let weak_model = self
+            .weak_model
+            .as_ref()
+            .and_then(|o| o.model.as_ref())
+            .map(|model| model.trim().to_string());
+        let weak_profile_id = self.weak_model.as_ref().and_then(|o| o.profile_id);
         let hooks_value = self.hooks.clone().map(Json);
         let require_approval_mcp = self.require_approval_mcp;
         let require_approval_virtual = self.require_approval_virtual;
@@ -351,6 +388,9 @@ impl UpdateAiAgentCommand {
             .await
             .map_err(AppError::Database)?;
 
+        validate_profile_ref(&mut tx, deployment_id, "strong_model", strong_profile_id).await?;
+        validate_profile_ref(&mut tx, deployment_id, "weak_model", weak_profile_id).await?;
+
         let agent = sqlx::query!(
             r#"
             UPDATE ai_agents
@@ -360,32 +400,48 @@ impl UpdateAiAgentCommand {
                 description = COALESCE($3, description),
                 strong_model_provider = CASE
                     WHEN $6::bool THEN NULL
+                    WHEN $9::bigint IS NOT NULL THEN NULL
                     WHEN $7::text IS NOT NULL THEN $7
                     ELSE strong_model_provider
                 END,
                 strong_model = CASE
                     WHEN $6::bool THEN NULL
+                    WHEN $9::bigint IS NOT NULL THEN $8
                     WHEN $8::text IS NOT NULL THEN $8
                     ELSE strong_model
                 END,
+                strong_model_profile_id = CASE
+                    WHEN $6::bool THEN NULL
+                    WHEN $9::bigint IS NOT NULL THEN $9
+                    WHEN $7::text IS NOT NULL THEN NULL
+                    ELSE strong_model_profile_id
+                END,
                 weak_model_provider = CASE
-                    WHEN $9::bool THEN NULL
-                    WHEN $10::text IS NOT NULL THEN $10
+                    WHEN $10::bool THEN NULL
+                    WHEN $13::bigint IS NOT NULL THEN NULL
+                    WHEN $11::text IS NOT NULL THEN $11
                     ELSE weak_model_provider
                 END,
                 weak_model = CASE
-                    WHEN $9::bool THEN NULL
-                    WHEN $11::text IS NOT NULL THEN $11
+                    WHEN $10::bool THEN NULL
+                    WHEN $13::bigint IS NOT NULL THEN $12
+                    WHEN $12::text IS NOT NULL THEN $12
                     ELSE weak_model
                 END,
-                hooks = COALESCE($12, hooks),
-                require_approval_mcp = COALESCE($13, require_approval_mcp),
-                require_approval_virtual = COALESCE($14, require_approval_virtual),
-                tool_approval_rules = COALESCE($15, tool_approval_rules)
+                weak_model_profile_id = CASE
+                    WHEN $10::bool THEN NULL
+                    WHEN $13::bigint IS NOT NULL THEN $13
+                    WHEN $11::text IS NOT NULL THEN NULL
+                    ELSE weak_model_profile_id
+                END,
+                hooks = COALESCE($14, hooks),
+                require_approval_mcp = COALESCE($15, require_approval_mcp),
+                require_approval_virtual = COALESCE($16, require_approval_virtual),
+                tool_approval_rules = COALESCE($17, tool_approval_rules)
             WHERE id = $4 AND deployment_id = $5
             RETURNING id, created_at, updated_at, name, description, deployment_id,
-                      strong_model_provider, strong_model,
-                      weak_model_provider, weak_model,
+                      strong_model_provider, strong_model, strong_model_profile_id,
+                      weak_model_provider, weak_model, weak_model_profile_id,
                       hooks as "hooks!: Json<AgentHooksConfig>",
                       require_approval_mcp,
                       require_approval_virtual,
@@ -399,9 +455,11 @@ impl UpdateAiAgentCommand {
             self.clear_strong_model,
             strong_provider,
             strong_model,
+            strong_profile_id,
             self.clear_weak_model,
             weak_provider,
             weak_model,
+            weak_profile_id,
             hooks_value as _,
             require_approval_mcp,
             require_approval_virtual,
@@ -430,8 +488,16 @@ impl UpdateAiAgentCommand {
             description: agent.description,
             deployment_id: agent.deployment_id,
             sub_agents: None,
-            strong_model: build_override(agent.strong_model_provider, agent.strong_model),
-            weak_model: build_override(agent.weak_model_provider, agent.weak_model),
+            strong_model: build_override(
+                agent.strong_model_provider,
+                agent.strong_model,
+                agent.strong_model_profile_id,
+            ),
+            weak_model: build_override(
+                agent.weak_model_provider,
+                agent.weak_model,
+                agent.weak_model_profile_id,
+            ),
             hooks: agent.hooks.0,
             require_approval_mcp: agent.require_approval_mcp,
             require_approval_virtual: agent.require_approval_virtual,
@@ -1078,14 +1144,59 @@ fn validate_model_override(
     override_: Option<&AgentModelOverride>,
 ) -> Result<(), AppError> {
     let Some(o) = override_ else { return Ok(()) };
-    if o.provider.trim().is_empty() {
+    let provider = o
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+    let model = o.model.as_deref().map(str::trim).filter(|v| !v.is_empty());
+
+    if provider.is_some() && o.profile_id.is_some() {
         return Err(AppError::BadRequest(format!(
-            "{field}.provider is required when {field} is set"
+            "{field}.provider and {field}.profile_id are mutually exclusive"
         )));
     }
-    if o.model.trim().is_empty() {
+    if provider.is_none() && o.profile_id.is_none() {
         return Err(AppError::BadRequest(format!(
-            "{field}.model is required when {field} is set"
+            "{field}.provider or {field}.profile_id is required when {field} is set"
+        )));
+    }
+    if provider.is_some() && model.is_none() {
+        return Err(AppError::BadRequest(format!(
+            "{field}.model is required when {field}.provider is set"
+        )));
+    }
+    Ok(())
+}
+
+async fn validate_profile_ref(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    deployment_id: i64,
+    field: &str,
+    profile_id: Option<i64>,
+) -> Result<(), AppError> {
+    let Some(profile_id) = profile_id else {
+        return Ok(());
+    };
+    let exists = sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1
+            FROM deployment_ai_provider_profiles
+            WHERE id = $1 AND deployment_id = $2 AND enabled = TRUE
+        )
+        "#,
+        profile_id,
+        deployment_id
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::Database)?
+    .unwrap_or(false);
+
+    if !exists {
+        return Err(AppError::BadRequest(format!(
+            "{field}.profile_id must reference an enabled profile in this deployment"
         )));
     }
     Ok(())
@@ -1112,12 +1223,18 @@ fn validate_hooks(hooks: &AgentHooksConfig) -> Result<(), AppError> {
     Ok(())
 }
 
-fn build_override(provider: Option<String>, model: Option<String>) -> Option<AgentModelOverride> {
-    match (provider, model) {
-        (Some(p), Some(m)) => Some(AgentModelOverride {
-            provider: p,
-            model: m,
-        }),
-        _ => None,
+fn build_override(
+    provider: Option<String>,
+    model: Option<String>,
+    profile_id: Option<i64>,
+) -> Option<AgentModelOverride> {
+    if provider.is_some() || model.is_some() || profile_id.is_some() {
+        Some(AgentModelOverride {
+            provider,
+            model,
+            profile_id,
+        })
+    } else {
+        None
     }
 }
