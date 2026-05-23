@@ -380,18 +380,17 @@ impl AgentHandler {
             deployment_id,
         );
 
-        let execution_result = match defer_guard.clone() {
+        let execution_result = match defer_guard {
             Some(guard) => {
-                commands::event_log::run_with_deferred_dispatch(guard, execution_future).await
+                commands::event_log::run_with_deferred_dispatch(
+                    &self.app_state.nats_client,
+                    guard,
+                    execution_future,
+                )
+                .await
             }
             None => execution_future.await,
         };
-
-        if let Some(guard) = defer_guard {
-            if guard.has_pending() {
-                commands::event_log::force_nudge_dispatcher(&self.app_state.nats_client).await;
-            }
-        }
 
         if execution_result.is_err() && thread_owns_status(&thread_state.thread_purpose) {
             let _ = commands::UpdateAgentThreadStateCommand::new(thread_state.id, deployment_id)

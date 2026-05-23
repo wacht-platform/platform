@@ -206,14 +206,12 @@ impl ThreadExecutionContext {
                 return model;
             }
         }
-        if self.agent_profile_for(role).is_none() {
-            let deployment_default = match role {
-                LlmRole::Strong => self.provider_keys.strong_model.as_deref(),
-                LlmRole::Weak => self.provider_keys.weak_model.as_deref(),
-            };
-            if let Some(value) = deployment_default.filter(|v| !v.trim().is_empty()) {
-                return value;
-            }
+        let deployment_default = match role {
+            LlmRole::Strong => self.provider_keys.strong_model.as_deref(),
+            LlmRole::Weak => self.provider_keys.weak_model.as_deref(),
+        };
+        if let Some(value) = deployment_default.filter(|v| !v.trim().is_empty()) {
+            return value;
         }
         let provider = self.llm_provider(role);
         let fallback = match (role, provider) {

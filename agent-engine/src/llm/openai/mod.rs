@@ -178,8 +178,10 @@ impl OpenAiClient {
         {
             self.chat_completions_url = if base_url.ends_with("/chat/completions") {
                 base_url
+            } else if base_url.ends_with("/v1") {
+                format!("{base_url}/chat/completions")
             } else {
-                format!("{}/chat/completions", base_url.trim_end_matches("/v1"))
+                format!("{base_url}/v1/chat/completions")
             };
         }
         self

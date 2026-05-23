@@ -71,11 +71,19 @@ tokio::task_local! {
     static DEFER_GUARD: Arc<DeferredDispatch>;
 }
 
-pub async fn run_with_deferred_dispatch<F, T>(guard: Arc<DeferredDispatch>, fut: F) -> T
+pub async fn run_with_deferred_dispatch<F, T>(
+    nats: &async_nats::Client,
+    guard: Arc<DeferredDispatch>,
+    fut: F,
+) -> T
 where
     F: std::future::Future<Output = T>,
 {
-    DEFER_GUARD.scope(guard, fut).await
+    let result = DEFER_GUARD.scope(guard.clone(), fut).await;
+    if guard.has_pending() {
+        force_nudge_dispatcher(nats).await;
+    }
+    result
 }
 
 pub async fn nudge_dispatcher(nats: &async_nats::Client) {

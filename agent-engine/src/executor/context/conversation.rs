@@ -1431,7 +1431,11 @@ impl AgentExecutor {
             ConversationMessageType::UserMessage
             | ConversationMessageType::ApprovalResponse
             | ConversationMessageType::ClarificationResponse
-            | ConversationMessageType::ToolResult => "user",
+            | ConversationMessageType::ToolResult
+            | ConversationMessageType::TaskSubscriptionNotification
+            | ConversationMessageType::TaskHandoffReceived
+            | ConversationMessageType::AssignmentExecutionTrigger
+            | ConversationMessageType::TaskRoutingTrigger => "user",
             _ => "model",
         }
     }
