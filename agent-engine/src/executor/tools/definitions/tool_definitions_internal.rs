@@ -10,19 +10,19 @@ pub(crate) fn internal_tools() -> Vec<(
     vec![
         (
             "read_image",
-            "Read an image file and return mime metadata plus base64 payload for one-time vision analysis.",
+            "Read an image file; returns mime metadata + base64 for one-time vision analysis.",
             InternalToolType::ReadImage,
             vec![SchemaField {
                 name: "path".to_string(),
                 field_type: "STRING".to_string(),
-                description: Some("Path to image file (e.g. /uploads/photo.png)".to_string()),
+                description: Some("Image file path (e.g. /uploads/photo.png).".to_string()),
                 required: true,
                 ..Default::default()
             }],
         ),
         (
             "read_file",
-            "Read a text file and return its content. Required before any `edit_file` on the same path — the runtime tracks which files you've read this turn and rejects edits to files you haven't seen. The returned content is what you copy from when constructing `old_string` for an edit.",
+            "Read a text file. Required before any edit_file on the same path — the runtime rejects edits to files not read this turn. Copy old_string from this output.",
             InternalToolType::ReadFile,
             vec![
                 SchemaField {
@@ -35,7 +35,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "start_line".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Optional starting line to read (1-indexed). Omit for the file start.".to_string()),
+                    description: Some("Optional start line (1-indexed). Omit for file start.".to_string()),
                     minimum: Some(1.0),
                     required: false,
                     ..Default::default()
@@ -43,7 +43,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "end_line".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Optional ending line to read (inclusive). Omit for the file end.".to_string()),
+                    description: Some("Optional end line (inclusive). Omit for file end.".to_string()),
                     minimum: Some(1.0),
                     required: false,
                     ..Default::default()
@@ -52,20 +52,20 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "write_file",
-            "Create a new file or fully overwrite an existing one. Always overwrites — to add to an existing file without losing its contents use append_file, and to change a specific substring use edit_file. Prefer this over execute_command heredocs or python -c for emitting multi-line text.",
+            "Create or fully overwrite a file (always overwrites). Use append_file to add, edit_file to change a substring. Prefer over shell heredocs/python -c for multi-line text.",
             InternalToolType::WriteFile,
             vec![
                 SchemaField {
                     name: "path".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Path to write. Writeable mounts are `/workspace/` (conversation threads), `/task/` (task threads), and `/scratch/` (ephemeral).".to_string()),
+                    description: Some("Write path. Writeable mounts: /workspace/ (conversation), /task/ (task), /scratch/ (ephemeral).".to_string()),
                     required: true,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "content".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Full file contents. Replaces any existing file at this path.".to_string()),
+                    description: Some("Full file contents; replaces any existing file.".to_string()),
                     required: true,
                     ..Default::default()
                 },
@@ -73,20 +73,20 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "append_file",
-            "Append text to the end of an existing file (or create it if missing). Use for journal entries, log lines, accumulating logs, or any other end-of-file additions. The runtime guarantees newline separation: a newline is inserted between the existing tail and your content if needed, and a trailing newline is added so the next append also starts fresh — you do NOT need to add leading or trailing newlines yourself. Do not use this to change existing content — use edit_file for that. Never use shell `>>` to append to tracked files (journal, artifacts) — those bypass the runtime's read-discipline and newline guarantee; use this tool.",
+            "Append to the end of a file (creates if missing). For journal/log lines and end-of-file additions. Newline separation from the tail and a trailing newline are inserted automatically — pass just your line(s). Use edit_file to change existing content; never use shell >> on tracked files (bypasses read-discipline + newline guarantee).",
             InternalToolType::AppendFile,
             vec![
                 SchemaField {
                     name: "path".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Path to append to. Writeable mounts are `/workspace/`, `/task/`, and `/scratch/`. File is created if it does not exist.".to_string()),
+                    description: Some("Path to append to (created if missing). Writeable mounts: /workspace/, /task/, /scratch/.".to_string()),
                     required: true,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "content".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Content to append at end of file. Newline separation from the existing tail and a trailing newline are inserted automatically — pass just the line(s) you want added.".to_string()),
+                    description: Some("Line(s) to append; newline separation is automatic.".to_string()),
                     required: true,
                     ..Default::default()
                 },
@@ -94,34 +94,34 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "edit_file",
-            "Replace an exact substring in an existing file with new content. Anchor-based, not line-based: you provide the exact bytes to find (`old_string`) and the exact bytes to put in their place (`new_string`). \n\nRules: (1) You must have called `read_file` on the path at least once this turn — the runtime tracks that and rejects edits to files you haven't seen. (2) `old_string` must match exactly, including whitespace and newlines — copy from `read_file` output, don't paraphrase. (3) `old_string` must be unique in the file unless `replace_all=true` — if it matches multiple times, the tool errors with the count and tells you to add surrounding context. (4) `old_string` must not be empty and must differ from `new_string`. \n\nGood pattern: include 1-3 lines of surrounding context in `old_string` so the match is naturally unique. \n\nFor pure insertion (no existing content to replace), anchor on a nearby existing line: `old_string` = the line you want to insert next to, `new_string` = that line plus your new content. \n\nTo create a file or fully overwrite one, use `write_file`. To add to the end of a file, use `append_file`. Never use `execute_command` heredocs / `>` / `>>` / `sed` to edit files — those bypass the read-discipline and routinely produce divergent state.",
+            "Replace an exact substring in a file. Anchor-based: old_string = exact bytes to find, new_string = replacement. Rules: (1) must have read_file'd the path this turn; (2) old_string must match exactly incl. whitespace/newlines — copy from read_file, don't paraphrase; (3) old_string must be unique unless replace_all=true (else the tool errors with the match count); (4) old_string non-empty and != new_string. Include 1-3 lines of surrounding context for uniqueness. For pure insertion, anchor on a nearby existing line. Use write_file to create/overwrite, append_file to add at end. Never edit files via shell (heredoc / > / >> / sed).",
             InternalToolType::EditFile,
             vec![
                 SchemaField {
                     name: "path".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Existing file path to edit. Must be on a writeable mount (`/workspace/`, `/task/`, or `/scratch/`). Must have been read with `read_file` at least once this turn.".to_string()),
+                    description: Some("Existing file to edit. Writeable mount; must have been read this turn.".to_string()),
                     required: true,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "old_string".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Exact bytes to find in the file. Whitespace, indentation, and newlines must match the file exactly — copy from the `read_file` output. Must be unique in the file unless `replace_all=true`.".to_string()),
+                    description: Some("Exact bytes to find — whitespace/indent/newlines must match (copy from read_file). Unique unless replace_all=true.".to_string()),
                     required: true,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "new_string".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Replacement bytes. Use the empty string to delete `old_string`. Must differ from `old_string`.".to_string()),
+                    description: Some("Replacement bytes. Empty string deletes old_string. Must differ from old_string.".to_string()),
                     required: true,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "replace_all".to_string(),
                     field_type: "BOOLEAN".to_string(),
-                    description: Some("Replace every occurrence instead of requiring uniqueness. Use for renames or when the same exact substring legitimately appears multiple times. Default: false.".to_string()),
+                    description: Some("Replace every occurrence instead of requiring uniqueness. Default false.".to_string()),
                     required: false,
                     ..Default::default()
                 },
@@ -129,12 +129,12 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "execute_command",
-            "Run a shell command in the sandbox. Use for inspection, filtering, discovery, image/PDF tooling, scripting. Avoid emitting long markdown/JSON/text blobs through stdout when `write_file` is available. The result returns `exit_code`, `stdout`, and `stderr` as data — non-zero exits are not platform errors, they're a normal shell signal you should read and react to.",
+            "Run a shell command in the sandbox (inspection, filtering, discovery, scripting, image/PDF tooling). Prefer write_file over piping long text through stdout. Returns exit_code/stdout/stderr — a non-zero exit is a normal shell signal to read and react to, not a platform error.",
             InternalToolType::ExecuteCommand,
             vec![SchemaField {
                 name: "command".to_string(),
                 field_type: "STRING".to_string(),
-                description: Some("Shell command to run".to_string()),
+                description: Some("Shell command to run.".to_string()),
                 required: true,
                 ..Default::default()
             }],
@@ -147,7 +147,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "duration_ms".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Sleep duration in milliseconds (max 10000).".to_string()),
+                    description: Some("Sleep duration in ms (max 10000).".to_string()),
                     minimum: Some(0.0),
                     maximum: Some(10000.0),
                     required: true,
@@ -164,13 +164,13 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "web_search",
-            "Search the public web via Parallel Search. Use this first to discover relevant URLs and excerpts before extracting full page content.",
+            "Search the public web (Parallel Search). Use first to find URLs/excerpts before extracting full pages.",
             InternalToolType::WebSearch,
             vec![
                 SchemaField {
                     name: "objective".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Natural-language web research objective. Provide this or search_queries.".to_string()),
+                    description: Some("Web research objective. Provide this or search_queries.".to_string()),
                     required: false,
                     ..Default::default()
                 },
@@ -178,7 +178,7 @@ pub(crate) fn internal_tools() -> Vec<(
                     name: "search_queries".to_string(),
                     field_type: "ARRAY".to_string(),
                     items_type: Some("STRING".to_string()),
-                    description: Some("Optional keyword queries that guide the search. Provide this or objective.".to_string()),
+                    description: Some("Keyword queries. Provide this or objective.".to_string()),
                     min_items: Some(1),
                     required: false,
                     ..Default::default()
@@ -186,7 +186,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "mode".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Search preset: `agentic` for token-efficient loops, `one-shot` for broader excerpts, `fast` for lower latency. Default: agentic.".to_string()),
+                    description: Some("agentic (token-efficient, default), one-shot (broader excerpts), fast (low latency).".to_string()),
                     enum_values: string_enum(&["agentic", "one-shot", "fast"]),
                     required: false,
                     ..Default::default()
@@ -194,7 +194,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "max_results".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Optional upper bound on returned results. Default: 10.".to_string()),
+                    description: Some("Max results. Default 10.".to_string()),
                     minimum: Some(1.0),
                     maximum: Some(50.0),
                     required: false,
@@ -204,7 +204,7 @@ pub(crate) fn internal_tools() -> Vec<(
                     name: "include_domains".to_string(),
                     field_type: "ARRAY".to_string(),
                     items_type: Some("STRING".to_string()),
-                    description: Some("Optional domains to include, such as `example.com` or `.gov`.".to_string()),
+                    description: Some("Domains to include (e.g. example.com, .gov).".to_string()),
                     min_items: Some(1),
                     required: false,
                     ..Default::default()
@@ -213,7 +213,7 @@ pub(crate) fn internal_tools() -> Vec<(
                     name: "exclude_domains".to_string(),
                     field_type: "ARRAY".to_string(),
                     items_type: Some("STRING".to_string()),
-                    description: Some("Optional domains to exclude.".to_string()),
+                    description: Some("Domains to exclude.".to_string()),
                     min_items: Some(1),
                     required: false,
                     ..Default::default()
@@ -221,7 +221,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "after_date".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Optional YYYY-MM-DD freshness filter.".to_string()),
+                    description: Some("YYYY-MM-DD freshness filter.".to_string()),
                     format: Some("date".to_string()),
                     required: false,
                     ..Default::default()
@@ -229,7 +229,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "excerpt_max_chars_per_result".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Optional cap for excerpt characters per result. Omit unless you need a smaller-than-default budget. Defaults to a tool-managed budget of about 50k tokens total across the response.".to_string()),
+                    description: Some("Per-result excerpt char cap. Omit unless you need a smaller-than-default budget (~50k tokens total).".to_string()),
                     minimum: Some(1000.0),
                     maximum: Some(100000.0),
                     required: false,
@@ -238,7 +238,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "excerpt_max_chars_total".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Optional total excerpt character cap. Omit unless you need a smaller-than-default budget. Defaults to about 200k chars (~50k tokens).".to_string()),
+                    description: Some("Total excerpt char cap. Omit unless smaller needed (default ~200k chars).".to_string()),
                     minimum: Some(1000.0),
                     maximum: Some(200000.0),
                     required: false,
@@ -248,14 +248,14 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "url_content",
-            "Fetch focused excerpts or full markdown content for one or more URLs via Parallel Extract. Use this after web_search when you need page-level evidence.",
+            "Fetch excerpts or full markdown for one or more URLs (Parallel Extract). Use after web_search for page-level evidence.",
             InternalToolType::UrlContent,
             vec![
                 SchemaField {
                     name: "urls".to_string(),
                     field_type: "ARRAY".to_string(),
                     items_type: Some("STRING".to_string()),
-                    description: Some("One or more URLs to extract content from.".to_string()),
+                    description: Some("URLs to extract content from.".to_string()),
                     min_items: Some(1),
                     required: true,
                     ..Default::default()
@@ -263,7 +263,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "objective".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Optional extraction objective to focus the returned content.".to_string()),
+                    description: Some("Optional focus objective.".to_string()),
                     required: false,
                     ..Default::default()
                 },
@@ -279,21 +279,21 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "excerpts".to_string(),
                     field_type: "BOOLEAN".to_string(),
-                    description: Some("Include focused excerpts. Default: true.".to_string()),
+                    description: Some("Include excerpts. Default true.".to_string()),
                     required: false,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "full_content".to_string(),
                     field_type: "BOOLEAN".to_string(),
-                    description: Some("Include full markdown page content. Default: false.".to_string()),
+                    description: Some("Include full markdown. Default false.".to_string()),
                     required: false,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "excerpt_max_chars_per_result".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Optional cap for excerpt characters per URL. Omit unless you need a smaller-than-default budget.".to_string()),
+                    description: Some("Per-URL excerpt char cap. Omit unless smaller needed.".to_string()),
                     minimum: Some(1000.0),
                     maximum: Some(200000.0),
                     required: false,
@@ -302,7 +302,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "excerpt_max_chars_total".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Optional total excerpt cap across all URLs. Omit unless you need a smaller-than-default budget. Defaults to about 200k chars (~50k tokens).".to_string()),
+                    description: Some("Total excerpt char cap across URLs. Omit unless smaller needed (default ~200k chars).".to_string()),
                     minimum: Some(1000.0),
                     maximum: Some(200000.0),
                     required: false,
@@ -311,7 +311,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "full_content_max_chars_per_result".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Optional per-URL cap for full content. Omit unless you need a smaller-than-default budget. Defaults to a fair share of about 200k chars across the requested URLs.".to_string()),
+                    description: Some("Per-URL full-content char cap. Omit unless smaller needed.".to_string()),
                     minimum: Some(1000.0),
                     maximum: Some(200000.0),
                     required: false,
@@ -321,20 +321,20 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "search_knowledgebase",
-            "Search linked local knowledge bases and return typed candidate documents and chunks. Use when you need evidence from linked KBs.",
+            "Search linked local knowledge bases; returns typed candidate documents and chunks. Use when you need evidence from linked KBs.",
             InternalToolType::SearchKnowledgebase,
             vec![
                 SchemaField {
                     name: "query".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Retrieval query to run against linked local knowledge bases.".to_string()),
+                    description: Some("Retrieval query against linked KBs.".to_string()),
                     required: true,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "search_type".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Retrieval strategy. Default: semantic.".to_string()),
+                    description: Some("Retrieval strategy. Default semantic.".to_string()),
                     enum_values: string_enum(&["semantic", "keyword"]),
                     required: false,
                     ..Default::default()
@@ -343,7 +343,7 @@ pub(crate) fn internal_tools() -> Vec<(
                     name: "knowledge_base_ids".to_string(),
                     field_type: "ARRAY".to_string(),
                     items_type: Some("STRING".to_string()),
-                    description: Some("Optional KB IDs to scope the search. If omitted, all linked KBs are searched.".to_string()),
+                    description: Some("Optional KB IDs to scope the search. Omit to search all linked KBs.".to_string()),
                     min_items: Some(1),
                     max_items: Some(10),
                     required: false,
@@ -352,7 +352,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "max_results".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Max retrieved matches before post-processing. Default: 12.".to_string()),
+                    description: Some("Max matches before post-processing. Default 12.".to_string()),
                     minimum: Some(1.0),
                     maximum: Some(50.0),
                     required: false,
@@ -361,14 +361,14 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "include_associated_chunks".to_string(),
                     field_type: "BOOLEAN".to_string(),
-                    description: Some("Whether to load additional related chunks for top documents. Default: true.".to_string()),
+                    description: Some("Load related chunks for top documents. Default true.".to_string()),
                     required: false,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "max_associated_chunks_per_document".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Additional chunks to load per top document when include_associated_chunks=true. Default: 3.".to_string()),
+                    description: Some("Related chunks per top document when enabled. Default 3.".to_string()),
                     minimum: Some(1.0),
                     maximum: Some(10.0),
                     required: false,
@@ -378,13 +378,13 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "search_tools",
-            "Discover external (virtual) tools across connected apps. Two modes: \"search\" (default) ranks tools by your natural-language `queries`; \"browse\" lists tools for specific `apps`. Returns matching tool names + input schemas. When you know the service (e.g. gmail) but keyword search returned an incomplete set, call browse with `apps: [\"<slug>\"]` to enumerate the full toolkit — browse + scoped apps returns up to 100 tools per service.\n\nFLOW (do not deviate): (1) call search_tools ONCE per discovery need; (2) pick the tool you need from the result — `recommended_tool_names` lists the top picks; (3) call `load_tools` with that exact name; (4) call the tool directly like any other tool. Loaded tools persist for the session.\n\nDO NOT: call search_tools again with similar/overlapping queries to \"find more\" — the second call returns the same catalog and wastes a turn. Pick a tool from the first result. DO NOT shell out (`which X`, `pip show`, `pip install`, `composio --help`, `mcp …`) to discover or install these — they are virtual tools provided by the runtime, not OS-installed binaries. They cannot be installed and have no CLI.",
+            "Discover external (virtual) tools across connected apps. Modes: search (default) ranks tools by `queries`; browse lists tools for specific `apps` (up to 100/service). FLOW: (1) call once per discovery need; (2) pick from the result (`recommended_tool_names` = top picks); (3) load_tools with that exact name; (4) call it directly. Loaded tools persist for the session. Don't re-search with similar queries to \"find more\" — the catalog is the same. Don't shell out (which / pip / composio / mcp) — these are runtime virtual tools, not installable binaries with a CLI.",
             InternalToolType::SearchTools,
             vec![
                 SchemaField {
                     name: "queries".to_string(),
                     field_type: "ARRAY".to_string(),
-                    description: Some("Natural-language descriptions of the tools you need (e.g. \"send an email\", \"create a calendar event\"). Required for mode=search; ignored for mode=browse.".to_string()),
+                    description: Some("Natural-language descriptions of tools you need (e.g. \"send an email\"). Required for mode=search; ignored for mode=browse.".to_string()),
                     required: false,
                     items_type: Some("STRING".to_string()),
                     ..Default::default()
@@ -392,7 +392,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "apps".to_string(),
                     field_type: "ARRAY".to_string(),
-                    description: Some("Optional list of app slugs to restrict the search to (e.g. [\"gmail\"], [\"google_calendar\", \"google_drive\"]). When omitted, searches across all connected apps. Strongly recommended for mode=browse — without it, the call auto-expands across every connected app with a reduced per-app cap, which dilutes results.".to_string()),
+                    description: Some("App slugs to restrict to (e.g. [\"gmail\"]). Omit to search all connected apps. Strongly recommended for mode=browse — otherwise it auto-expands across all apps with a reduced per-app cap.".to_string()),
                     required: false,
                     items_type: Some("STRING".to_string()),
                     ..Default::default()
@@ -400,7 +400,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "mode".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("\"search\" (default): keyword-rank tools by `queries`. \"browse\": list featured tools for the specified `apps` without needing keywords.".to_string()),
+                    description: Some("search (default): rank by `queries`. browse: list featured tools for `apps` without keywords.".to_string()),
                     required: false,
                     enum_values: string_enum(&["search", "browse"]),
                     ..Default::default()
@@ -408,7 +408,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "max_results_per_query".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Max matches per query. Defaults: 10 (max 25) in search mode; 10 (max 25) in unscoped browse; 100 (max 200) in browse with explicit `apps`.".to_string()),
+                    description: Some("Max matches per query. Defaults: 10 (max 25) search/unscoped browse; 100 (max 200) browse with explicit `apps`.".to_string()),
                     minimum: Some(1.0),
                     maximum: Some(200.0),
                     required: false,
@@ -418,7 +418,7 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "load_tools",
-            "Load one or more external (virtual) tools by exact tool name so they become directly callable. Pass exact names from a prior `search_tools` result. After loading, invoke the tool the same way you call any internal tool — there is no separate \"composio\" or \"mcp\" runtime to install. Up to 30 external tools stay loaded at once; when exceeded, the oldest are evicted automatically.",
+            "Load external (virtual) tools by exact name (from a prior search_tools result) so they become directly callable. Invoke like any internal tool — there is no separate composio/mcp runtime to install. Up to 30 stay loaded; oldest evicted automatically.",
             InternalToolType::LoadTools,
             vec![SchemaField {
                 name: "tool_names".to_string(),
@@ -433,20 +433,20 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "load_memory",
-            "Load long-term memory records by semantic search, full-text search, or hybrid search. Use for durable past state, facts, patterns, or prior IDs that matter now.",
+            "Load long-term memory by semantic, full-text, or hybrid search. Use for durable past state, facts, patterns, or prior IDs that matter now.",
             InternalToolType::LoadMemory,
             vec![
                 SchemaField {
                     name: "query".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Memory query text. Leave empty to fetch recent matching memories from the selected sources.".to_string()),
+                    description: Some("Query text. Empty fetches recent matches from the selected sources.".to_string()),
                     required: false,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "categories".to_string(),
                     field_type: "ARRAY".to_string(),
-                    description: Some("Memory categories to include.".to_string()),
+                    description: Some("Categories to include.".to_string()),
                     items_type: Some("STRING".to_string()),
                     required: false,
                     ..Default::default()
@@ -454,7 +454,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "sources".to_string(),
                     field_type: "ARRAY".to_string(),
-                    description: Some("Memory scopes to search: thread, project, actor, or agent.".to_string()),
+                    description: Some("Scopes to search: thread, project, actor, agent.".to_string()),
                     items_type: Some("STRING".to_string()),
                     required: false,
                     ..Default::default()
@@ -462,7 +462,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "depth".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Search depth: shallow, moderate, or deep.".to_string()),
+                    description: Some("Search depth.".to_string()),
                     enum_values: string_enum(&["shallow", "moderate", "deep"]),
                     required: false,
                     ..Default::default()
@@ -470,7 +470,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "search_approach".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Retrieval approach: semantic, full_text, or hybrid.".to_string()),
+                    description: Some("Retrieval approach.".to_string()),
                     enum_values: string_enum(&["semantic", "full_text", "hybrid"]),
                     required: false,
                     ..Default::default()
@@ -479,20 +479,20 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "save_memory",
-            "Save a durable fact or procedure. Use for things that will matter beyond the current task.",
+            "Save a durable fact or procedure that will matter beyond the current task.",
             InternalToolType::SaveMemory,
             vec![
                 SchemaField {
                     name: "content".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("The distilled rule or procedure. Three lines: the fact, `Why:` the reason, `How to apply:` the trigger.".to_string()),
+                    description: Some("The distilled rule/procedure. Three lines: the fact, `Why:` the reason, `How to apply:` the trigger.".to_string()),
                     required: true,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "category".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Category: semantic (facts, decisions, constraints) or procedural (validated how-to). Defaults to semantic.".to_string()),
+                    description: Some("semantic (facts/decisions/constraints) or procedural (validated how-to). Default semantic.".to_string()),
                     enum_values: string_enum(&["semantic", "procedural"]),
                     required: false,
                     ..Default::default()
@@ -500,7 +500,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "scope".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Who can recall this. actor (user-wide), project (this project only), thread (this task lane only). Defaults to project.".to_string()),
+                    description: Some("Who can recall it: actor (user-wide), project, thread (this lane). Default project.".to_string()),
                     enum_values: string_enum(&["actor", "project", "thread"]),
                     required: false,
                     ..Default::default()
@@ -508,14 +508,14 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "observation".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("The scenario that led to the insight. Populate for non-trivial memories so future retrievals can reconstruct context.".to_string()),
+                    description: Some("The scenario that led to the insight. Populate for non-trivial memories.".to_string()),
                     required: false,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "signals".to_string(),
                     field_type: "ARRAY".to_string(),
-                    description: Some("Short cue phrases (3-6 words each) that signal this memory is applicable.".to_string()),
+                    description: Some("Short cue phrases (3-6 words) signalling when this applies.".to_string()),
                     items_type: Some("STRING".to_string()),
                     required: false,
                     ..Default::default()
@@ -523,7 +523,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "related".to_string(),
                     field_type: "ARRAY".to_string(),
-                    description: Some("Memory IDs of related entries forming the reasoning chain.".to_string()),
+                    description: Some("Memory IDs of related entries in the reasoning chain.".to_string()),
                     items_type: Some("STRING".to_string()),
                     required: false,
                     ..Default::default()
@@ -532,7 +532,7 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "update_memory",
-            "Correct or refine an existing memory in place. Use when the prior entry was wrong (bad fact, wrong category, stale location). For a rule that legitimately changed, save a new memory and link the old via `related` instead.",
+            "Correct or refine an existing memory in place (wrong fact, wrong category, stale location). For a rule that legitimately changed, save a new memory and link the old via `related` instead.",
             InternalToolType::UpdateMemory,
             vec![
                 SchemaField {
@@ -545,7 +545,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "content".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("New content. Omit to keep the current value.".to_string()),
+                    description: Some("New content. Omit to keep current.".to_string()),
                     required: false,
                     ..Default::default()
                 },
@@ -560,7 +560,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "scope".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Scope changes are not supported here; re-save the memory in the new scope instead.".to_string()),
+                    description: Some("Scope changes not supported here; re-save in the new scope instead.".to_string()),
                     enum_values: string_enum(&["actor", "project", "thread"]),
                     required: false,
                     ..Default::default()
@@ -568,7 +568,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "observation".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Replace the observation. Pass an empty string to clear it.".to_string()),
+                    description: Some("Replace the observation. Empty string clears it.".to_string()),
                     required: false,
                     ..Default::default()
                 },
@@ -583,7 +583,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "related".to_string(),
                     field_type: "ARRAY".to_string(),
-                    description: Some("Replace the related-memory-ids list. Empty array clears it.".to_string()),
+                    description: Some("Replace the related-ids list. Empty array clears it.".to_string()),
                     items_type: Some("STRING".to_string()),
                     required: false,
                     ..Default::default()
