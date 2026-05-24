@@ -21,7 +21,9 @@ use queries::{
     ListDeploymentAiProviderProfilesQuery,
 };
 
+use crate::api::pagination::paginate_results;
 use crate::application::AppState;
+use crate::application::response::PaginatedResponse;
 use crate::application::ai_settings_admission::{
     run_embedding_admission_if_needed, validate_embedding_provider_settings,
     validate_openrouter_strong_model, validate_provider_key_consistency,
@@ -125,14 +127,19 @@ pub async fn update_ai_settings(
 pub async fn list_ai_provider_profiles(
     app_state: &AppState,
     deployment_id: i64,
-) -> Result<Vec<DeploymentAiProviderProfileResponse>, AppError> {
+    limit: i32,
+    offset: Option<i64>,
+) -> Result<PaginatedResponse<DeploymentAiProviderProfileResponse>, AppError> {
     let profiles = ListDeploymentAiProviderProfilesQuery::new(deployment_id)
+        .with_limit(Some(limit as i64 + 1))
+        .with_offset(offset)
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
-    Ok(profiles
+    let responses = profiles
         .into_iter()
         .map(DeploymentAiProviderProfileResponse::from)
-        .collect())
+        .collect();
+    Ok(paginate_results(responses, limit, offset))
 }
 
 pub async fn create_ai_provider_profile(

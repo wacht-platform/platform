@@ -3,11 +3,27 @@ use models::DeploymentAiProviderProfile;
 
 pub struct ListDeploymentAiProviderProfilesQuery {
     deployment_id: i64,
+    limit: Option<i64>,
+    offset: Option<i64>,
 }
 
 impl ListDeploymentAiProviderProfilesQuery {
     pub fn new(deployment_id: i64) -> Self {
-        Self { deployment_id }
+        Self {
+            deployment_id,
+            limit: None,
+            offset: None,
+        }
+    }
+
+    pub fn with_limit(mut self, limit: Option<i64>) -> Self {
+        self.limit = limit;
+        self
+    }
+
+    pub fn with_offset(mut self, offset: Option<i64>) -> Self {
+        self.offset = offset;
+        self
     }
 
     pub async fn execute_with_db<'e, E>(
@@ -26,8 +42,11 @@ impl ListDeploymentAiProviderProfilesQuery {
             FROM deployment_ai_provider_profiles
             WHERE deployment_id = $1
             ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
             "#,
-            self.deployment_id
+            self.deployment_id,
+            self.limit,
+            self.offset
         )
         .fetch_all(executor)
         .await

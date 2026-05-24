@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, created_at, updated_at\n            FROM deployment_ai_provider_profiles\n            WHERE deployment_id = $1\n            ORDER BY created_at DESC\n            ",
+  "query": "\n            SELECT\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, created_at, updated_at\n            FROM deployment_ai_provider_profiles\n            WHERE deployment_id = $1\n            ORDER BY created_at DESC\n            LIMIT $2 OFFSET $3\n            ",
   "describe": {
     "columns": [
       {
@@ -71,6 +71,8 @@
     ],
     "parameters": {
       "Left": [
+        "Int8",
+        "Int8",
         "Int8"
       ]
     },
@@ -90,5 +92,5 @@
       false
     ]
   },
-  "hash": "9024356b602a379f5d7e01440782f7d20cd8ce3887e0dc3874e318c3f3dca8b2"
+  "hash": "2b7f79c9d95fe5b3a5911d7d82ce3b3214bd63a512a06fb32e0ddabead87024b"
 }

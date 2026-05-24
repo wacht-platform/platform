@@ -1,5 +1,6 @@
 use crate::{
-    application::ai_settings as ai_settings_app, application::response::ApiResult,
+    application::ai_settings as ai_settings_app,
+    application::response::{ApiResult, PaginatedResponse},
     middleware::RequireDeployment,
 };
 use common::state::AppState;
@@ -13,12 +14,18 @@ use serde::Deserialize;
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
 };
 
 #[derive(Deserialize)]
 pub struct AiProviderProfileParams {
     pub profile_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct ListAiProviderProfilesQuery {
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
 }
 
 /// GET /settings/ai-settings - Fetch AI settings (keys masked)
@@ -43,8 +50,13 @@ pub async fn update_ai_settings(
 pub async fn list_ai_provider_profiles(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-) -> ApiResult<Vec<DeploymentAiProviderProfileResponse>> {
-    let profiles = ai_settings_app::list_ai_provider_profiles(&app_state, deployment_id).await?;
+    Query(query): Query<ListAiProviderProfilesQuery>,
+) -> ApiResult<PaginatedResponse<DeploymentAiProviderProfileResponse>> {
+    let limit = query.limit.unwrap_or(50) as i32;
+    let offset = query.offset.map(|o| o as i64);
+    let profiles =
+        ai_settings_app::list_ai_provider_profiles(&app_state, deployment_id, limit, offset)
+            .await?;
     Ok(profiles.into())
 }
 
