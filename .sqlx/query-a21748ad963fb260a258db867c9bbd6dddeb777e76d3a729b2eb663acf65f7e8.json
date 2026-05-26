@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO deployment_ai_provider_profiles (\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, TRUE))\n            RETURNING\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, created_at, updated_at\n            ",
+  "query": "\n            INSERT INTO deployment_ai_provider_profiles (\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, disable_prompt_caching\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, TRUE), COALESCE($12, FALSE))\n            RETURNING\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, disable_prompt_caching,\n                created_at, updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -60,11 +60,16 @@
       },
       {
         "ordinal": 11,
+        "name": "disable_prompt_caching",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -81,6 +86,7 @@
         "Text",
         "Text",
         "Text",
+        "Bool",
         "Bool"
       ]
     },
@@ -97,8 +103,9 @@
       true,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "856d5849dad0505f7c5e0a65ad451a80f12dec74e433f9c53ecbee5025f26957"
+  "hash": "a21748ad963fb260a258db867c9bbd6dddeb777e76d3a729b2eb663acf65f7e8"
 }

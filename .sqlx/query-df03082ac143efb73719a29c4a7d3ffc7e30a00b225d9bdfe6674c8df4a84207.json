@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, created_at, updated_at\n            FROM deployment_ai_provider_profiles\n            WHERE id = $1 AND deployment_id = $2\n            ",
+  "query": "\n            SELECT\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, disable_prompt_caching,\n                created_at, updated_at\n            FROM deployment_ai_provider_profiles\n            WHERE id = $1 AND deployment_id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -60,11 +60,16 @@
       },
       {
         "ordinal": 11,
+        "name": "disable_prompt_caching",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -88,8 +93,9 @@
       true,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "b1f088d56577237280073cebbe661f7a8c0190e4f3d36758fdc2f8c3aa82a90b"
+  "hash": "df03082ac143efb73719a29c4a7d3ffc7e30a00b225d9bdfe6674c8df4a84207"
 }

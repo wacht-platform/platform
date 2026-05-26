@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE deployment_ai_provider_profiles\n            SET\n                name = COALESCE($3, name),\n                slug = COALESCE($4, slug),\n                api_key = COALESCE($5, api_key),\n                base_url = COALESCE($6, base_url),\n                organization = COALESCE($7, organization),\n                project = COALESCE($8, project),\n                default_model = COALESCE($9, default_model),\n                enabled = COALESCE($10, enabled),\n                updated_at = NOW()\n            WHERE id = $1 AND deployment_id = $2\n            RETURNING\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, created_at, updated_at\n            ",
+  "query": "\n            UPDATE deployment_ai_provider_profiles\n            SET\n                name = COALESCE($3, name),\n                slug = COALESCE($4, slug),\n                api_key = COALESCE($5, api_key),\n                base_url = COALESCE($6, base_url),\n                organization = COALESCE($7, organization),\n                project = COALESCE($8, project),\n                default_model = COALESCE($9, default_model),\n                enabled = COALESCE($10, enabled),\n                disable_prompt_caching = COALESCE($11, disable_prompt_caching),\n                updated_at = NOW()\n            WHERE id = $1 AND deployment_id = $2\n            RETURNING\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, disable_prompt_caching,\n                created_at, updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -60,11 +60,16 @@
       },
       {
         "ordinal": 11,
+        "name": "disable_prompt_caching",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -80,6 +85,7 @@
         "Text",
         "Text",
         "Text",
+        "Bool",
         "Bool"
       ]
     },
@@ -96,8 +102,9 @@
       true,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "f7ecfce2cd107c596854fd4049be2512de79442aa5d19f60b34face929009cda"
+  "hash": "7b28da225261484ed4a6ed8da780d4fdc420f923487abe7453a6cb9ba3f2538a"
 }

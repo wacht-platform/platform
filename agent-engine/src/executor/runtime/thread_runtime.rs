@@ -389,6 +389,11 @@ impl AgentExecutor {
             return None;
         }
 
+        // Per-profile opt-out: the strong-role profile drives this call's LLM.
+        if self.ctx.prompt_caching_disabled(LlmRole::Strong) {
+            return None;
+        }
+
         let cache_key = if let Some(event) = self.active_thread_event.as_ref() {
             if let Some(payload) = event.assignment_execution_payload() {
                 format!("executor_assignment_{}", payload.assignment_id)
