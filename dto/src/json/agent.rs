@@ -22,8 +22,8 @@ impl AgentStreamMessageType {
 
     pub fn webhook_event_name(self) -> &'static str {
         match self {
-            Self::ConversationMessage => "execution_thread.message",
-            Self::PlatformEvent => "execution_thread.platform_event",
+            Self::ConversationMessage => "agent.thread.message",
+            Self::PlatformEvent => "agent.thread.platform_event",
         }
     }
 }
