@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::{
-    json_schema::{normalize_json_schema, normalize_openai_tool_schema},
+    json_schema::{normalize_json_schema, normalize_openai_tool_schema, schema_has_free_form_object},
     llm::{
         GeneratedToolCall, NativeToolDefinition, PromptCacheRequest, SemanticLlmContentBlock,
         SemanticLlmMessage, SemanticLlmRequest, StructuredGenerationOutput,
@@ -447,13 +447,15 @@ impl OpenRouterClient {
         let tool_values = tools
             .into_iter()
             .map(|tool| {
+                let strict = !schema_has_free_form_object(&tool.input_schema);
+                let parameters = normalize_openai_tool_schema(tool.input_schema, strict);
                 json!({
                     "type": "function",
                     "function": {
                         "name": tool.name,
                         "description": tool.description,
-                        "strict": true,
-                        "parameters": normalize_openai_tool_schema(tool.input_schema),
+                        "strict": strict,
+                        "parameters": parameters,
                     }
                 })
             })

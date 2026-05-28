@@ -25,9 +25,9 @@ pub struct ToolExecutor {
     sandbox_handle: Option<std::sync::Arc<dyn crate::sandbox::SandboxHandle>>,
 }
 
-const INLINE_OUTPUT_THRESHOLD_CHARS: usize = 40_000;
+const INLINE_OUTPUT_THRESHOLD_CHARS: usize = 60_000;
 const COMPLEXITY_GATE_MIN_CHARS: usize = 2_000;
-const COMPLEXITY_MAX_DEPTH: usize = 4;
+const COMPLEXITY_MAX_DEPTH: usize = 5;
 const COMPLEXITY_MAX_LEAVES: usize = 150;
 const COMPLEXITY_MAX_OBJECT_ARRAY_LEN: usize = 20;
 

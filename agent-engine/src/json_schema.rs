@@ -56,15 +56,39 @@ pub(crate) fn normalize_json_schema(value: Value) -> Value {
     }
 }
 
-pub(crate) fn normalize_openai_tool_schema(value: Value) -> Value {
-    normalize_openai_tool_schema_node(value)
+pub(crate) fn normalize_openai_tool_schema(value: Value, strict: bool) -> Value {
+    normalize_openai_tool_schema_node(value, strict)
 }
 
 pub(crate) fn normalize_openai_response_schema(value: Value) -> Value {
-    normalize_openai_tool_schema_node(value)
+    normalize_openai_tool_schema_node(value, true)
 }
 
-fn normalize_openai_tool_schema_node(value: Value) -> Value {
+pub(crate) fn schema_has_free_form_object(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => {
+            let is_object = map
+                .get("type")
+                .map(|v| schema_type_matches(v, "object"))
+                .unwrap_or(false);
+            if is_object {
+                let has_props = map
+                    .get("properties")
+                    .and_then(|v| v.as_object())
+                    .map(|p| !p.is_empty())
+                    .unwrap_or(false);
+                if !has_props {
+                    return true;
+                }
+            }
+            map.values().any(schema_has_free_form_object)
+        }
+        Value::Array(items) => items.iter().any(schema_has_free_form_object),
+        _ => false,
+    }
+}
+
+fn normalize_openai_tool_schema_node(value: Value, strict: bool) -> Value {
     match value {
         Value::Object(map) => {
             let mut normalized = serde_json::Map::new();
@@ -85,21 +109,24 @@ fn normalize_openai_tool_schema_node(value: Value) -> Value {
                             let mut normalized_properties = serde_json::Map::new();
                             for (property_name, property_schema) in properties {
                                 let mut property_schema =
-                                    normalize_openai_tool_schema_node(property_schema);
-                                if !original_required.contains(&property_name) {
+                                    normalize_openai_tool_schema_node(property_schema, strict);
+                                if strict && !original_required.contains(&property_name) {
                                     property_schema = make_openai_optional_schema(property_schema);
                                 }
                                 normalized_properties.insert(property_name, property_schema);
                             }
                             Value::Object(normalized_properties)
                         }
-                        other => normalize_openai_tool_schema_node(other),
+                        other => normalize_openai_tool_schema_node(other, strict),
                     };
                     normalized.insert(key, properties);
                     continue;
                 }
 
                 if key == "required" {
+                    if !strict {
+                        normalized.insert(key, value);
+                    }
                     continue;
                 }
 
@@ -146,30 +173,32 @@ fn normalize_openai_tool_schema_node(value: Value) -> Value {
                             }
                             .to_string(),
                         ),
-                        other => normalize_openai_tool_schema_node(other),
+                        other => normalize_openai_tool_schema_node(other, strict),
                     }
                 } else {
-                    normalize_openai_tool_schema_node(value)
+                    normalize_openai_tool_schema_node(value, strict)
                 };
 
                 normalized.insert(key, value);
             }
 
-            let is_object = normalized
-                .get("type")
-                .map(|value| schema_type_matches(value, "object"))
-                .unwrap_or(false);
+            if strict {
+                let is_object = normalized
+                    .get("type")
+                    .map(|value| schema_type_matches(value, "object"))
+                    .unwrap_or(false);
 
-            if is_object {
-                normalized.insert("additionalProperties".to_string(), Value::Bool(false));
+                if is_object {
+                    normalized.insert("additionalProperties".to_string(), Value::Bool(false));
 
-                if let Some(Value::Object(properties)) = normalized.get("properties") {
-                    let required = properties.keys().cloned().collect::<Vec<_>>();
-                    if !required.is_empty() {
-                        normalized.insert(
-                            "required".to_string(),
-                            Value::Array(required.into_iter().map(Value::String).collect()),
-                        );
+                    if let Some(Value::Object(properties)) = normalized.get("properties") {
+                        let required = properties.keys().cloned().collect::<Vec<_>>();
+                        if !required.is_empty() {
+                            normalized.insert(
+                                "required".to_string(),
+                                Value::Array(required.into_iter().map(Value::String).collect()),
+                            );
+                        }
                     }
                 }
             }
@@ -179,7 +208,7 @@ fn normalize_openai_tool_schema_node(value: Value) -> Value {
         Value::Array(items) => Value::Array(
             items
                 .into_iter()
-                .map(normalize_openai_tool_schema_node)
+                .map(|item| normalize_openai_tool_schema_node(item, strict))
                 .collect(),
         ),
         other => other,

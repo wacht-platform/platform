@@ -467,15 +467,15 @@ pub async fn create_project_task_board_item_comment(
         .execute_with_db(app_state.db_router.writer())
         .await?;
 
-    let active_executor_threads: Vec<i64> = queries::ListProjectTaskBoardItemAssignmentsQuery::new(
-        item_id,
-    )
-    .execute_with_db(app_state.db_router.writer())
-    .await?
-    .into_iter()
-    .filter(|a| matches!(a.status.as_str(), "claimed" | "in_progress"))
-    .map(|a| a.thread_id)
-    .collect();
+    let active_executor_threads: Vec<i64> = {
+        let mut seen = std::collections::HashSet::new();
+        queries::ListProjectTaskBoardItemAssignmentsQuery::new(item_id)
+            .execute_with_db(app_state.db_router.writer())
+            .await?
+            .into_iter()
+            .filter_map(|a| seen.insert(a.thread_id).then_some(a.thread_id))
+            .collect()
+    };
 
     let comment_id = app_state.sf.next_id()? as i64;
     let comment_body_for_message = body.clone();

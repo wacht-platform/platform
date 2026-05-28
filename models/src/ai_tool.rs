@@ -278,9 +278,11 @@ impl SchemaField {
         let mut schema = serde_json::Map::new();
         schema.insert("type".to_string(), json!("object"));
         schema.insert("properties".to_string(), Value::Object(properties));
-        schema.insert("additionalProperties".to_string(), Value::Bool(false));
-        if !required.is_empty() {
-            schema.insert("required".to_string(), json!(required));
+        if !fields.is_empty() {
+            schema.insert("additionalProperties".to_string(), Value::Bool(false));
+            if !required.is_empty() {
+                schema.insert("required".to_string(), json!(required));
+            }
         }
         Value::Object(schema)
     }
