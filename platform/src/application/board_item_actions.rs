@@ -1,8 +1,8 @@
 use commands::event_log::{self, EVENT_LOG_WORK_SUBJECT, EventLogPayload, InsertEventLogCommand};
 use commands::{
     CreateProjectTaskBoardItemAssignmentCommand, CreateProjectTaskBoardItemCommand,
-    EnsureProjectTaskBoardCommand, SetBoardItemPendingApprovalCommand,
-    SetBoardItemPendingQuestionCommand,
+    EnsureProjectTaskBoardCommand, InsertTaskRoutingEvent, SetBoardItemPendingApprovalCommand,
+    SetBoardItemPendingQuestionCommand, build_task_routing_summary,
 };
 use common::HasDbRouter;
 use common::ResultExt;
@@ -87,13 +87,25 @@ pub async fn cancel_project_task_board_item(
     Ok(updated)
 }
 
+enum AnswerResumeContext {
+    Assignment {
+        assignment_id: i64,
+        thread_id: i64,
+        board_item_id: i64,
+    },
+    Coordinator {
+        coord_thread_id: i64,
+    },
+}
+
 pub async fn answer_project_task_board_item_question(
     app_state: &AppState,
+    deployment_id: i64,
     project_id: i64,
     item_id: i64,
     submission: AnswerSubmission,
 ) -> Result<ProjectTaskBoardItem, AppError> {
-    let item = fetch_item(app_state, project_id, item_id).await?;
+    let mut item = fetch_item(app_state, project_id, item_id).await?;
     let pending_value = item
         .pending_question
         .as_ref()
@@ -102,16 +114,33 @@ pub async fn answer_project_task_board_item_question(
         .map_err(|e| AppError::BadRequest(format!("malformed pending_question: {e}")))?;
     validate_answers(&pending, &submission).map_err(AppError::BadRequest)?;
 
-    let assignment_id = pending.asked_by_assignment_id.ok_or_else(|| {
-        AppError::BadRequest(
-            "pending question has no assignment context; cannot resume".to_string(),
-        )
-    })?;
-
-    let assignment = queries::GetAssignmentResumeContextQuery::new(assignment_id)
+    let project = queries::GetActorProjectByIdQuery::new(project_id, deployment_id)
         .execute_with_db(app_state.db_router.writer())
         .await?
-        .ok_or_else(|| AppError::NotFound("assignment not found".to_string()))?;
+        .ok_or_else(|| AppError::NotFound("project not found".to_string()))?;
+
+    let resume_context = match pending.asked_by_assignment_id {
+        Some(assignment_id) => {
+            let assignment = queries::GetAssignmentResumeContextQuery::new(assignment_id)
+                .execute_with_db(app_state.db_router.writer())
+                .await?
+                .ok_or_else(|| AppError::NotFound("assignment not found".to_string()))?;
+            AnswerResumeContext::Assignment {
+                assignment_id,
+                thread_id: assignment.thread_id,
+                board_item_id: assignment.board_item_id,
+            }
+        }
+        None => {
+            let coord_thread_id = project.coordinator_thread_id.ok_or_else(|| {
+                AppError::BadRequest(
+                    "pending question has no resume context (no assignment, no coordinator)"
+                        .to_string(),
+                )
+            })?;
+            AnswerResumeContext::Coordinator { coord_thread_id }
+        }
+    };
 
     let freeform_text = submission.freeform_trimmed();
     let answers_json =
@@ -141,53 +170,89 @@ pub async fn answer_project_task_board_item_question(
     commands::CreateConversationCommand::new(
         conv_id,
         pending.asked_by_thread_id,
-        response_content.clone(),
+        response_content,
         models::ConversationMessageType::ClarificationResponse,
     )
     .with_board_item_id(item_id)
     .execute_with_db(&mut *tx)
     .await?;
 
-    let event_log_id = app_state.sf.next_id()? as i64;
-    let mut builder = EventLogPayload::new(
-        event_log_id,
-        0,
-        assignment.thread_id,
-        "assignment_execution",
-    )
-    .with_id("assignment_id", assignment_id)
-    .with_id("board_item_id", assignment.board_item_id)
-    .with(
-        "summary",
-        "User answered the pending clarification; resume the assignment.",
-    )
-    .with("answers", answers_json);
-    if let Some(text) = freeform_text.as_ref() {
-        builder = builder.with("freeform_text", text.clone());
+    // Mirror what SetBoardItemPendingQuestionCommand just wrote so the
+    // routing summary (and the returned view) see the post-update fields.
+    item.pending_question = None;
+    if item.status == "needs_clarification" {
+        item.status = "in_progress".to_string();
     }
-    let payload = builder.build();
-    InsertEventLogCommand::new(
-        event_log_id,
-        item.board_id,
-        "assignment",
-        assignment_id,
-        "assignment_execution",
-        format!("assignment_execution_{assignment_id}_resume_{event_log_id}"),
-    )
-    .with_payload(payload)
-    .with_priority(20)
-    .with_publish_subject(EVENT_LOG_WORK_SUBJECT)
-    .execute(&mut *tx)
-    .await?;
+    item.updated_at = chrono::Utc::now();
+
+    match resume_context {
+        AnswerResumeContext::Assignment {
+            assignment_id,
+            thread_id,
+            board_item_id,
+        } => {
+            let event_log_id = app_state.sf.next_id()? as i64;
+            let mut builder = EventLogPayload::new(
+                event_log_id,
+                deployment_id,
+                thread_id,
+                "assignment_execution",
+            )
+            .with_id("assignment_id", assignment_id)
+            .with_id("board_item_id", board_item_id)
+            .with(
+                "summary",
+                "User answered the pending clarification; resume the assignment.",
+            )
+            .with("answers", answers_json);
+            if let Some(text) = freeform_text.as_ref() {
+                builder = builder.with("freeform_text", text.clone());
+            }
+            let payload = builder.build();
+            InsertEventLogCommand::new(
+                event_log_id,
+                deployment_id,
+                "assignment",
+                assignment_id,
+                "assignment_execution",
+                format!("assignment_execution_{assignment_id}_resume_{event_log_id}"),
+            )
+            .with_payload(payload)
+            .with_priority(20)
+            .with_publish_subject(EVENT_LOG_WORK_SUBJECT)
+            .execute(&mut *tx)
+            .await?;
+        }
+        AnswerResumeContext::Coordinator { coord_thread_id } => {
+            let event_log_id = app_state.sf.next_id()? as i64;
+            let summary = build_task_routing_summary(&item, 0);
+            InsertTaskRoutingEvent {
+                event_log_id,
+                deployment_id,
+                coordinator_thread_id: coord_thread_id,
+                board_item: &item,
+                idempotency_key: format!("task_routing_{coord_thread_id}_{item_id}_{event_log_id}"),
+                summary,
+                note: Some(
+                    "User answered the pending clarification; route the task back to the coordinator."
+                        .to_string(),
+                ),
+                caused_by_event_id: None,
+                routing_reason: models::thread_event::routing_reason::USER_RESPONDED,
+                previous_status: None,
+                changed_fields: Vec::new(),
+                last_assignment_result_status: None,
+            }
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
 
     tx.commit().await?;
 
     event_log::nudge_dispatcher(&app_state.nats_client).await;
 
-    GetProjectTaskBoardItemByIdQuery::new(item_id)
-        .execute_with_db(app_state.db_router.writer())
-        .await?
-        .ok_or_else(|| AppError::NotFound("board item not found".to_string()))
+    Ok(item)
 }
 
 pub async fn approve_project_task_board_item_tool(

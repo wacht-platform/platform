@@ -1,20 +1,22 @@
 use commands::agent_execution::UploadFilesToS3Command;
 use commands::{
-    AdvanceThreadExecutionTokenCommand, CreateConversationCommand,
-    EnsurePulseUsageAllowedForDeploymentCommand, UpdateAgentThreadStateCommand,
+    AdvanceThreadExecutionTokenCommand, ClearThreadPendingQuestionCommand,
+    CreateConversationCommand, EnsurePulseUsageAllowedForDeploymentCommand,
+    UpdateAgentThreadStateCommand,
     event_log::{self, EnqueueThreadWorkEvent},
 };
 use common::ReadConsistency;
 use common::ResultExt;
 use common::error::AppError;
+use dto::json::ask_user::{AnswerSubmission, validate_answers};
 use dto::json::deployment::{ExecuteAgentRequest, ExecuteAgentResponse};
 use models::{
-    AgentThreadStatus, ConversationContent, RequestedToolApprovalState, ToolApprovalDecision,
-    ToolApprovalRequestState,
+    AgentThreadStatus, ConversationContent, ConversationMessageType, RequestedToolApprovalState,
+    ToolApprovalDecision, ToolApprovalRequestState,
 };
 use queries::{
     GetAgentThreadStateQuery, GetConversationByIdQuery, GetDeploymentAiSettingsQuery,
-    GetRecentConversationsQuery,
+    GetLatestPendingClarificationOnThreadQuery, GetRecentConversationsQuery,
 };
 use std::collections::{HashMap, HashSet};
 use tracing::{error, info};
@@ -157,7 +159,6 @@ pub async fn execute_agent_async(
     request: ExecuteAgentRequest,
 ) -> Result<ExecuteAgentResponse, AppError> {
     use dto::json::deployment::ExecuteAgentRequestType;
-    use models::{ConversationContent, ConversationMessageType};
 
     let thread_state = GetAgentThreadStateQuery::new(thread_id, deployment_id)
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
@@ -439,4 +440,103 @@ pub async fn execute_agent_async(
             EXECUTION_VARIANT_VALIDATION_ERROR.to_string(),
         )),
     }
+}
+
+pub async fn answer_thread_question(
+    app_state: &AppState,
+    deployment_id: i64,
+    thread_id: i64,
+    submission: AnswerSubmission,
+) -> Result<ExecuteAgentResponse, AppError> {
+    GetAgentThreadStateQuery::new(thread_id, deployment_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
+        .await?;
+
+    let pending_row = GetLatestPendingClarificationOnThreadQuery::new(thread_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
+        .await?
+        .ok_or_else(|| {
+            AppError::BadRequest("no pending clarification on this thread".to_string())
+        })?;
+
+    let request_message_id = pending_row.id;
+
+    let content: ConversationContent = serde_json::from_value(pending_row.content)
+        .map_err(|e| AppError::Internal(format!("malformed clarification_request content: {e}")))?;
+    let (questions_value, context) = match content {
+        ConversationContent::ClarificationRequest { questions, context } => (questions, context),
+        _ => {
+            return Err(AppError::Internal(
+                "latest clarification_request row had non-clarification content".to_string(),
+            ));
+        }
+    };
+    let questions: Vec<models::Question> = serde_json::from_value(questions_value)
+        .map_err(|e| AppError::BadRequest(format!("malformed questions in pending row: {e}")))?;
+
+    let pending = models::PendingQuestion {
+        questions,
+        context,
+        asked_at: chrono::Utc::now(),
+        asked_by_thread_id: thread_id,
+        asked_by_assignment_id: None,
+    };
+    validate_answers(&pending, &submission).map_err(AppError::BadRequest)?;
+
+    let freeform_text = submission.freeform_trimmed();
+    let answers_json =
+        serde_json::to_value(&submission.answers).map_err_internal("serialize answers")?;
+    let conv_id = next_conversation_id(app_state)?;
+    let response_content = ConversationContent::ClarificationResponse {
+        request_message_id: Some(request_message_id),
+        answers: answers_json,
+        freeform_text,
+    };
+
+    let mut tx = app_state.db_router.writer().begin().await?;
+
+    CreateConversationCommand::new(
+        conv_id,
+        thread_id,
+        response_content,
+        ConversationMessageType::ClarificationResponse,
+    )
+    .execute_with_db(&mut *tx)
+    .await?;
+
+    ClearThreadPendingQuestionCommand { thread_id }
+        .execute_with_db(&mut *tx)
+        .await?;
+
+    let event_log_id = app_state.sf.next_id()? as i64;
+    let execution_type = dto::json::AgentExecutionType::NewMessage {
+        conversation_id: conv_id.to_string(),
+    };
+    let execution_payload = serde_json::to_value(&dto::json::AgentExecutionRequest {
+        deployment_id: deployment_id.to_string(),
+        thread_id: thread_id.to_string(),
+        agent_id: None,
+        execution_type,
+    })
+    .map_err_internal("serialize agent execution request")?;
+
+    EnqueueThreadWorkEvent {
+        event_log_id,
+        deployment_id,
+        thread_id,
+        event_type: models::thread_event::event_type::USER_MESSAGE_RECEIVED.to_string(),
+        priority: 70,
+        agent_id: None,
+        conversation_id: Some(conv_id),
+        idempotency_key: format!("user_message_received_{thread_id}_{conv_id}"),
+        execution_payload,
+    }
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    event_log::nudge_dispatcher(&app_state.nats_client).await;
+
+    Ok(queued_execution_response(Some(conv_id)))
 }

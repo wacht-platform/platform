@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, content\n            FROM conversations\n            WHERE thread_id = $1\n              AND message_type = 'clarification_request'\n              AND id > COALESCE(\n                  (SELECT MAX(id) FROM conversations\n                   WHERE thread_id = $1 AND message_type = 'clarification_response'),\n                  0)\n            ORDER BY id DESC\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "content",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "91632aae52045de9c382973d6f70096a1a3987f19bfe3221e4aeea9759bdc383"
+}

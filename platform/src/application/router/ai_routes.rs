@@ -254,6 +254,10 @@ pub(super) fn ai_routes() -> Router<AppState> {
             post(api::agent_threads::cancel_project_task_board_item),
         )
         .route(
+            "/ai/threads/{thread_id}/messages/answer",
+            post(api::agent_threads::answer_thread_question),
+        )
+        .route(
             "/ai/actor-projects/{project_id}/board/items/{item_id}/answer",
             post(api::agent_threads::answer_project_task_board_item_question),
         )

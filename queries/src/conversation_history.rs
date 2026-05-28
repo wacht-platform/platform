@@ -636,6 +636,51 @@ impl GetBoardItemRoutingEventsQuery {
     }
 }
 
+pub struct PendingClarificationRow {
+    pub id: i64,
+    pub content: serde_json::Value,
+}
+
+pub struct GetLatestPendingClarificationOnThreadQuery {
+    pub thread_id: i64,
+}
+
+impl GetLatestPendingClarificationOnThreadQuery {
+    pub fn new(thread_id: i64) -> Self {
+        Self { thread_id }
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<Option<PendingClarificationRow>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let row = sqlx::query!(
+            r#"
+            SELECT id, content
+            FROM conversations
+            WHERE thread_id = $1
+              AND message_type = 'clarification_request'
+              AND id > COALESCE(
+                  (SELECT MAX(id) FROM conversations
+                   WHERE thread_id = $1 AND message_type = 'clarification_response'),
+                  0)
+            ORDER BY id DESC
+            LIMIT 1
+            "#,
+            self.thread_id,
+        )
+        .fetch_optional(executor)
+        .await?;
+        Ok(row.map(|r| PendingClarificationRow {
+            id: r.id,
+            content: r.content,
+        }))
+    }
+}
+
 pub struct GetApprovalRequestThreadIdQuery {
     pub conversation_id: i64,
 }

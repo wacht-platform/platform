@@ -1,7 +1,7 @@
 use crate::api::multipart::MultipartPayload;
 use crate::application::{
-    agent_threads as agent_threads_app, board_item_actions as board_actions_app,
-    response::{ApiResult, PaginatedResponse},
+    agent_thread_execution as agent_thread_execution_app, agent_threads as agent_threads_app,
+    board_item_actions as board_actions_app, response::{ApiResult, PaginatedResponse},
 };
 use crate::middleware::RequireDeployment;
 use axum::extract::{FromRequest, Json, Multipart, Path, Query, Request, State};
@@ -951,14 +951,34 @@ pub async fn delegate_project_task(
     Ok(response.into())
 }
 
+pub async fn answer_thread_question(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(thread_id): Path<i64>,
+    Json(submission): Json<dto::json::ask_user::AnswerSubmission>,
+) -> ApiResult<ExecuteAgentResponse> {
+    let response = agent_thread_execution_app::answer_thread_question(
+        &app_state,
+        deployment_id,
+        thread_id,
+        submission,
+    )
+    .await?;
+    Ok(response.into())
+}
+
 pub async fn answer_project_task_board_item_question(
     State(app_state): State<AppState>,
-    RequireDeployment(_deployment_id): RequireDeployment,
+    RequireDeployment(deployment_id): RequireDeployment,
     Path((project_id, item_id)): Path<(i64, i64)>,
     Json(submission): Json<dto::json::ask_user::AnswerSubmission>,
 ) -> ApiResult<ProjectTaskBoardItem> {
     let item = board_actions_app::answer_project_task_board_item_question(
-        &app_state, project_id, item_id, submission,
+        &app_state,
+        deployment_id,
+        project_id,
+        item_id,
+        submission,
     )
     .await?;
     Ok(item.into())
