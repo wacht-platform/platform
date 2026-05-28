@@ -4,7 +4,7 @@ use common::ResultExt;
 use dto::json::{ApiToolResult, PlatformEventResult, StreamEvent};
 use models::{AiTool, ApiToolConfiguration, HttpMethod, PlatformEventToolConfiguration};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl ToolExecutor {
     pub(super) async fn execute_api_tool(
@@ -13,25 +13,37 @@ impl ToolExecutor {
         config: &ApiToolConfiguration,
         execution_params: &Value,
     ) -> Result<ApiToolResult, AppError> {
-        let url_params = execution_params
-            .get("url_params")
-            .and_then(|v| v.as_object())
-            .map(|obj| {
-                obj.iter()
-                    .map(|(k, v)| {
-                        let value_str = match v {
-                            Value::String(s) => s.clone(),
-                            Value::Number(n) => n.to_string(),
-                            Value::Bool(b) => b.to_string(),
-                            _ => v.to_string(),
-                        };
-                        (k.clone(), value_str)
-                    })
-                    .collect::<HashMap<String, String>>()
-            })
+        let url_param_names: HashSet<&str> = config
+            .url_params_schema
+            .as_ref()
+            .map(|fields| fields.iter().map(|f| f.name.as_str()).collect())
             .unwrap_or_default();
 
-        let body = execution_params.get("body").cloned();
+        let mut url_params: HashMap<String, String> = HashMap::new();
+        let mut body_map = serde_json::Map::new();
+        if let Value::Object(map) = execution_params {
+            for (key, value) in map {
+                if key == "headers" {
+                    continue;
+                }
+                if url_param_names.contains(key.as_str()) {
+                    let value_str = match value {
+                        Value::String(s) => s.clone(),
+                        Value::Number(n) => n.to_string(),
+                        Value::Bool(b) => b.to_string(),
+                        _ => value.to_string(),
+                    };
+                    url_params.insert(key.clone(), value_str);
+                } else {
+                    body_map.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        let body = if body_map.is_empty() {
+            None
+        } else {
+            Some(Value::Object(body_map))
+        };
 
         let mut url = config.endpoint.clone();
         let mut query_params = HashMap::new();

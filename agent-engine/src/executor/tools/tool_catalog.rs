@@ -166,7 +166,11 @@ impl AgentExecutor {
                 config.input_schema.clone().unwrap_or_default()
             }
             AiToolConfiguration::Api(config) => {
-                config.request_body_schema.clone().unwrap_or_default()
+                let mut fields = config.request_body_schema.clone().unwrap_or_default();
+                if let Some(url_params_fields) = &config.url_params_schema {
+                    fields.extend(url_params_fields.iter().cloned());
+                }
+                fields
             }
             AiToolConfiguration::PlatformEvent(_) => Vec::new(),
             AiToolConfiguration::Virtual(config) => config
