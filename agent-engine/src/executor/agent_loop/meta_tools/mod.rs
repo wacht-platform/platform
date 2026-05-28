@@ -32,7 +32,16 @@ pub fn note_tool() -> NativeToolDefinition {
 pub fn ask_user_tool() -> NativeToolDefinition {
     NativeToolDefinition {
         name: "ask_user".to_string(),
-        description: "Only channel for asking the user anything (clarification, choice, confirmation, missing fact). Never end a turn with a question in plain text — use this tool. Last resort: prefer resolving via other tools, context, or a sensible default. Ends the turn; pauses until answered; one pending set at a time. Each question: `id`, `text`, `answer_kind`. `answer_kind.kind` discriminates: free_text (placeholder?, max_length?) | single_choice (choices REQUIRED, allow_other?) | multi_choice (choices REQUIRED, min_selected?, max_selected?) | yes_no | number (min?, max?, unit?) | date (yyyy-mm-dd, min_date?, max_date?) | confirm (confirm_label, cancel_label REQUIRED). Optional top-level `context` explains why."
+        description: "Only channel for asking the user anything (clarification, choice, confirmation, missing fact). Never end a turn with a question in plain text — use this tool. Last resort: prefer resolving via other tools, context, or a sensible default. Ends the turn; pauses until answered; one pending set at a time. Each question: `id`, `text`, `answer_kind`. \
+            \n\nPick `answer_kind.kind` by the SHAPE of the answer, not by how many words it is:\
+            \n- single_choice — exactly one selection from a known finite set (choices REQUIRED, allow_other? when the set might be incomplete). DEFAULT for 'which/pick/select one' phrasing. Use even for 2-option questions that aren't literal yes/no (e.g. 'staging or production?').\
+            \n- multi_choice — zero-or-more selections (choices REQUIRED, min_selected? max_selected?). Use ONLY when 'select all that apply' is the natural framing: feature toggles, integrations to enable, tags, days of week. Never set `max_selected: 1` — that's single_choice. If at least one must be picked, set `min_selected: 1` rather than reframing.\
+            \n- yes_no — literal yes/no. Prefer over single_choice for binary boolean questions.\
+            \n- confirm — irreversible/destructive action gate ('Delete', 'Send'); REQUIRES confirm_label + cancel_label. Not for general questions.\
+            \n- free_text — open-ended; use when the option space is unknown, unbounded, or freeform (a name, a description, a URL). If you can enumerate 3-7 plausible options, prefer single_choice with allow_other.\
+            \n- number (min?, max?, unit?) — numeric input.\
+            \n- date (yyyy-mm-dd, min_date?, max_date?).\
+            \n\nFor choice kinds: order options by likelihood (most common first), keep `label` short, use `description` only for one-line disambiguation. Optional top-level `context` explains why you're asking."
             .to_string(),
         input_schema: json!({
             "type": "object",
@@ -72,7 +81,7 @@ pub fn ask_user_tool() -> NativeToolDefinition {
                                     },
                                     "choices": {
                                         "type": "array",
-                                        "description": "single_choice / multi_choice: REQUIRED list of options. Each option has a stable `value`, a display `label`, and optional `description`.",
+                                        "description": "single_choice / multi_choice: REQUIRED list of options. Ordered by likelihood (most common first). Each option has a stable `value`, a display `label`, and optional `description`. If exactly one answer makes sense, use single_choice; if multiple toggles can be picked together, use multi_choice.",
                                         "items": {
                                             "type": "object",
                                             "properties": {
@@ -103,8 +112,8 @@ pub fn ask_user_tool() -> NativeToolDefinition {
                                     },
                                     "max_selected": {
                                         "type": "integer",
-                                        "minimum": 1,
-                                        "description": "multi_choice: maximum number of selections."
+                                        "minimum": 2,
+                                        "description": "multi_choice: maximum number of selections. Must be >= 2 — if only one selection is allowed, use single_choice instead."
                                     },
                                     "min": {
                                         "type": "number",

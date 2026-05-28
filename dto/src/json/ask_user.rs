@@ -73,6 +73,13 @@ fn validate_answer_kind(qid: &str, kind: &AnswerKind) -> Result<(), String> {
                 ));
             }
             ensure_unique_choice_values(qid, choices)?;
+            if let Some(max) = max_selected
+                && *max < 2
+            {
+                return Err(format!(
+                    "question {qid}: multi_choice max_selected must be >= 2 (use single_choice for one selection)"
+                ));
+            }
             if let (Some(min), Some(max)) = (min_selected, max_selected) {
                 if min > max {
                     return Err(format!(
