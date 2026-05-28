@@ -121,6 +121,12 @@ pub async fn update_ai_settings(
         .execute_with_deps(&deps)
         .await?;
 
+    common::cache::invalidate_cache(
+        &app_state.redis_client,
+        &[commands::cache_keys::ai_settings(deployment_id)],
+    )
+    .await;
+
     Ok(DeploymentAiSettingsResponse::from(settings))
 }
 

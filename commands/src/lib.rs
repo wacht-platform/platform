@@ -12,6 +12,7 @@ pub mod assignment_event;
 pub mod b2b_member_role;
 pub mod billing;
 pub mod board_reconciler;
+pub mod cache_keys;
 pub mod conversation;
 pub mod create_organization;
 pub mod create_workspace;

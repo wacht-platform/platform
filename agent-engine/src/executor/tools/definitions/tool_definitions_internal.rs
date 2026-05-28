@@ -164,7 +164,7 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "web_search",
-            "Search the public web (Parallel Search). Use first to find URLs/excerpts before extracting full pages.",
+            "Find pages on the public web by topic. Returns ranked URLs + short excerpts. Use FIRST when you need to research a topic and don't already have URLs. Don't use for URLs you already have — use `url_content` instead.",
             InternalToolType::WebSearch,
             vec![
                 SchemaField {
@@ -248,7 +248,7 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "url_content",
-            "Fetch excerpts or full markdown for one or more URLs (Parallel Extract). Use after web_search for page-level evidence.",
+            "Read full content of URLs you already have. Returns long excerpts or markdown for each URL. Use after `web_search` to deep-read the top 1-5 results, or directly when the user/task gave you URLs. Don't use for discovery (guessed URLs, topic strings).",
             InternalToolType::UrlContent,
             vec![
                 SchemaField {

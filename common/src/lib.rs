@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod capabilities;
 pub mod clickhouse;
 pub mod cloudflare;

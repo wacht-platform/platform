@@ -125,6 +125,9 @@ pub struct ExecutionRequest {
     pub watch_key: String,
     pub approval_response: Option<Vec<dto::json::deployment::ToolApprovalSelection>>,
     pub thread_event: Option<ThreadEvent>,
+    /// Pre-loaded thread state from the caller (worker). When set, the handler
+    /// skips its own GetAgentThreadStateQuery, saving one DB roundtrip.
+    pub thread_state: Option<models::AgentThreadState>,
 }
 
 impl AgentHandler {
@@ -290,13 +293,34 @@ impl AgentHandler {
         let deployment_id = request.agent.deployment_id;
 
         let db = self.app_state.db_router.writer();
-        let settings_query = queries::GetDeploymentAiSettingsQuery::new(deployment_id);
-        let thread_query = queries::GetAgentThreadStateQuery::new(request.thread_id, deployment_id);
+        let redis = &self.app_state.redis_client;
+        let settings_fut = async move {
+            let key = commands::cache_keys::ai_settings(deployment_id);
+            if let Some(cached) =
+                common::cache::read_cache::<Option<models::DeploymentAiSettings>>(redis, &key).await
+            {
+                return Ok::<_, AppError>(cached);
+            }
+            let fresh = queries::GetDeploymentAiSettingsQuery::new(deployment_id)
+                .execute_with_db(db)
+                .await?;
+            common::cache::write_cache(redis, &key, &fresh, 300).await;
+            Ok(fresh)
+        };
         let profiles_query = queries::ListDeploymentAiProviderProfilesQuery::new(deployment_id);
-        let settings_fut = settings_query.execute_with_db(db);
-        let thread_fut = thread_query.execute_with_db(db);
         let profiles_fut = profiles_query.execute_with_db(db);
         let task_ref_fut = self.resolve_task_sandbox_ref(&request);
+        let preloaded_thread_state = request.thread_state.clone();
+        let thread_id_for_load = request.thread_id;
+        let thread_fut = async move {
+            if let Some(state) = preloaded_thread_state {
+                Ok::<_, AppError>(state)
+            } else {
+                queries::GetAgentThreadStateQuery::new(thread_id_for_load, deployment_id)
+                    .execute_with_db(db)
+                    .await
+            }
+        };
         let (settings_result, thread_result, profiles_result, task_ref_result) =
             tokio::join!(settings_fut, thread_fut, profiles_fut, task_ref_fut);
         let deployment_ai_settings = settings_result.ok().flatten();

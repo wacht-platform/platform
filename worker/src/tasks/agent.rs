@@ -500,7 +500,7 @@ async fn coalesce_task_routing_or_yield(
     app_state: &AppState,
     event_log_id: i64,
     kind: &str,
-    thread: &models::AgentThread,
+    thread: &models::AgentThreadState,
     payload: &serde_json::Value,
 ) -> Result<Option<String>, AgentExecutionError> {
     if kind != "task_routing" {
@@ -559,15 +559,10 @@ async fn run_event_log_work(
     kind: &str,
     payload: serde_json::Value,
 ) -> Result<String, AgentExecutionError> {
-    let thread = queries::GetAgentThreadByIdQuery::new(thread_id, deployment_id)
+    let thread = queries::GetAgentThreadStateQuery::new(thread_id, deployment_id)
         .execute_with_db(app_state.db_router.writer())
         .await
-        .map_err(|e| AgentExecutionError::Other(anyhow::anyhow!("load thread: {e}")))?
-        .ok_or_else(|| {
-            AgentExecutionError::unrecoverable(anyhow::anyhow!(
-                "thread {thread_id} not found in deployment {deployment_id}"
-            ))
-        })?;
+        .map_err(|e| AgentExecutionError::Other(anyhow::anyhow!("load thread: {e}")))?;
 
     if let Some(message) =
         coalesce_task_routing_or_yield(&app_state, event_log_id, kind, &thread, &payload).await?
@@ -672,6 +667,7 @@ async fn run_event_log_work(
                 watch_key: watch_key.clone(),
                 approval_response: None,
                 thread_event: Some(synthetic_event),
+                thread_state: Some(thread.clone()),
             }
         }
         "user_message_received" => {
@@ -686,6 +682,7 @@ async fn run_event_log_work(
                 watch_key: watch_key.clone(),
                 approval_response: None,
                 thread_event: None,
+                thread_state: Some(thread.clone()),
             }
         }
         "thread_subscription_delivery" => {
@@ -711,6 +708,7 @@ async fn run_event_log_work(
                 watch_key: watch_key.clone(),
                 approval_response: None,
                 thread_event: Some(synthetic_event),
+                thread_state: Some(thread.clone()),
             }
         }
         "approval_response_received" => {
@@ -758,6 +756,7 @@ async fn run_event_log_work(
                 watch_key: watch_key.clone(),
                 approval_response: Some(approvals),
                 thread_event: None,
+                thread_state: Some(thread.clone()),
             }
         }
         other => {

@@ -55,13 +55,12 @@ pub(crate) async fn load_project_task_board_state(
     ctx: &ThreadExecutionContext,
 ) -> Result<(i64, Vec<ProjectTaskBoardPromptItem>), AppError> {
     let board_id = lookup_or_create_project_task_board_id(ctx).await?;
-    let rows = ListProjectTaskBoardItemsQuery::new(board_id)
-        .include_agent_owned()
-        .execute_with_schedules(ctx.app_state.db_router.writer())
-        .await?;
-    let relations = ListProjectTaskBoardRelationsQuery::new(board_id)
-        .execute_with_db(ctx.app_state.db_router.writer())
-        .await?;
+    let items_query = ListProjectTaskBoardItemsQuery::new(board_id).include_agent_owned();
+    let relations_query = ListProjectTaskBoardRelationsQuery::new(board_id);
+    let (rows, relations) = tokio::try_join!(
+        items_query.execute_with_schedules(ctx.app_state.db_router.writer()),
+        relations_query.execute_with_db(ctx.app_state.db_router.writer()),
+    )?;
 
     let task_key_by_item_id: HashMap<i64, String> = rows
         .iter()

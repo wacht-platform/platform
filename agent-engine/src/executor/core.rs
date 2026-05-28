@@ -176,7 +176,15 @@ impl AgentExecutorBuilder {
         };
         let immediate_ctx_fut =
             super::context::memory_context::load_immediate_context(&ctx, board_item_id);
+        let agent_has_mcp_tools = ctx
+            .agent
+            .tools
+            .iter()
+            .any(|t| t.tool_type == AiToolType::Mcp);
         let mcp_pipeline_fut = async {
+            if !agent_has_mcp_tools {
+                return Vec::new();
+            }
             let mut mcp_connections =
                 queries::GetActorMcpConnectionsQuery::new(deployment_id, actor_id)
                     .execute_with_db(db)
@@ -408,6 +416,15 @@ impl AgentExecutorBuilder {
         is_service_thread: bool,
         tool_name: &str,
     ) -> bool {
+        // Drop Parallel-backed tools from the catalog when PARALLEL_API_KEY is
+        // missing — otherwise the LLM sees them, calls them, and trips an
+        // internal-error every turn.
+        if matches!(tool_name, "web_search" | "url_content")
+            && !parallel_extract_available()
+        {
+            return false;
+        }
+
         if is_coordinator_thread {
             return matches!(
                 tool_name,
@@ -426,6 +443,8 @@ impl AgentExecutorBuilder {
                     | "sleep"
                     | "search_tools"
                     | "load_tools"
+                    | "web_search"
+                    | "url_content"
             );
         }
 
@@ -444,6 +463,12 @@ impl AgentExecutorBuilder {
 
         true
     }
+}
+
+fn parallel_extract_available() -> bool {
+    use std::sync::OnceLock;
+    static AVAILABLE: OnceLock<bool> = OnceLock::new();
+    *AVAILABLE.get_or_init(|| std::env::var("PARALLEL_API_KEY").is_ok())
 }
 
 impl AgentExecutor {

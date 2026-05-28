@@ -142,11 +142,21 @@ pub async fn answer_project_task_board_item_question(
         }
     };
 
+    // The renderer (conversation.rs) pairs ClarificationResponse → ClarificationRequest
+    // by request_message_id. Without it the answer is dropped and the agent
+    // keeps seeing "Pending".
+    let request_message_id = queries::GetLatestPendingClarificationOnThreadQuery::new(
+        pending.asked_by_thread_id,
+    )
+    .execute_with_db(app_state.db_router.writer())
+    .await?
+    .map(|row| row.id);
+
     let freeform_text = submission.freeform_trimmed();
     let answers_json =
         serde_json::to_value(&submission.answers).map_err_internal("serialize answers")?;
     let response_content = ConversationContent::ClarificationResponse {
-        request_message_id: None,
+        request_message_id,
         answers: answers_json.clone(),
         freeform_text: freeform_text.clone(),
     };
@@ -177,8 +187,6 @@ pub async fn answer_project_task_board_item_question(
     .execute_with_db(&mut *tx)
     .await?;
 
-    // Mirror what SetBoardItemPendingQuestionCommand just wrote so the
-    // routing summary (and the returned view) see the post-update fields.
     item.pending_question = None;
     if item.status == "needs_clarification" {
         item.status = "in_progress".to_string();
@@ -459,7 +467,18 @@ pub async fn create_project_task_board_item_comment(
         .execute_with_db(app_state.db_router.writer())
         .await?;
 
+    let active_executor_threads: Vec<i64> = queries::ListProjectTaskBoardItemAssignmentsQuery::new(
+        item_id,
+    )
+    .execute_with_db(app_state.db_router.writer())
+    .await?
+    .into_iter()
+    .filter(|a| matches!(a.status.as_str(), "claimed" | "in_progress"))
+    .map(|a| a.thread_id)
+    .collect();
+
     let comment_id = app_state.sf.next_id()? as i64;
+    let comment_body_for_message = body.clone();
 
     let mut tx = app_state.db_router.writer_pool().begin().await?;
 
@@ -474,6 +493,64 @@ pub async fn create_project_task_board_item_comment(
     .execute_with_db(&mut *tx)
     .await?;
 
+    if !active_executor_threads.is_empty() {
+        // Delegated task with an active executor: deliver the feedback directly
+        // to each executor's thread as a UserMessage and queue a
+        // user_message_received event. The fresh event waits for the in-flight
+        // execution slot, so the executor finishes its current LLM call, then
+        // wakes up and sees the comment in its conversation history.
+        let message = format!(
+            "[New feedback from user on task {}]\n{}",
+            item.task_key, comment_body_for_message
+        );
+        for thread_id in &active_executor_threads {
+            let conv_id = app_state.sf.next_id()? as i64;
+            commands::CreateConversationCommand::new(
+                conv_id,
+                *thread_id,
+                ConversationContent::UserMessage {
+                    message: message.clone(),
+                    sender_name: None,
+                    files: None,
+                },
+                models::ConversationMessageType::UserMessage,
+            )
+            .with_board_item_id(item_id)
+            .execute_with_db(&mut *tx)
+            .await?;
+
+            let event_log_id = app_state.sf.next_id()? as i64;
+            let execution_payload = serde_json::to_value(&dto::json::AgentExecutionRequest {
+                deployment_id: deployment_id.to_string(),
+                thread_id: thread_id.to_string(),
+                agent_id: None,
+                execution_type: dto::json::AgentExecutionType::NewMessage {
+                    conversation_id: conv_id.to_string(),
+                },
+            })
+            .map_err_internal("serialize agent execution request")?;
+
+            commands::event_log::EnqueueThreadWorkEvent {
+                event_log_id,
+                deployment_id,
+                thread_id: *thread_id,
+                event_type: models::thread_event::event_type::USER_MESSAGE_RECEIVED.to_string(),
+                priority: 70,
+                agent_id: None,
+                conversation_id: Some(conv_id),
+                idempotency_key: format!("user_message_received_{thread_id}_{conv_id}"),
+                execution_payload,
+            }
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+        event_log::nudge_dispatcher(&app_state.nats_client).await;
+        return Ok(comment);
+    }
+
+    // No active executor: keep the previous coordinator-routing flow.
     let preempted_event_log_ids = commands::preempt_active_board_item_assignments(
         &mut *tx,
         item_id,
