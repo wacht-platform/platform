@@ -760,7 +760,7 @@ async fn publish_stream_event(
         .await
         .map_err_internal("Failed to publish to NATS")?;
 
-    use commands::webhook_trigger::TriggerWebhookEventCommand;
+    use commands::webhook_trigger::{TriggerWebhookEventCommand, console_webhook_app_slug};
 
     let webhook_payload = serde_json::json!({
         "thread_id": thread_key,
@@ -773,14 +773,22 @@ async fn publish_stream_event(
 
     let trigger_command = TriggerWebhookEventCommand::new(
         console_id,
-        deployment_id.to_string(),
+        console_webhook_app_slug(deployment_id),
         message_type.webhook_event_name().to_string(),
         webhook_payload,
     );
 
-    let _ = trigger_command
+    if let Err(err) = trigger_command
         .execute_with_deps(&common::deps::from_app(app_state).db().redis().nats().id())
-        .await;
+        .await
+    {
+        tracing::warn!(
+            error = %err,
+            thread_id = thread_key,
+            deployment_id,
+            "agent stream webhook trigger failed"
+        );
+    }
 
     Ok(())
 }

@@ -772,3 +772,41 @@ pub(crate) fn append_oauth_redirect_params(
     }
     uri.to_string()
 }
+
+/// Match an incoming `redirect_uri` against a registered one.
+///
+/// Exact-string equal? Match. Otherwise, parse both and require scheme,
+/// host, path, query, and fragment to be equal. The port is ignored when
+/// the host is loopback (per RFC 8252 §7.3 — native apps obtain ephemeral
+/// ports from the OS at request time and the AS MUST allow any port).
+pub(crate) fn redirect_uri_matches(registered: &str, incoming: &str) -> bool {
+    if registered == incoming {
+        return true;
+    }
+    let Ok(reg) = url::Url::parse(registered) else {
+        return false;
+    };
+    let Ok(inc) = url::Url::parse(incoming) else {
+        return false;
+    };
+
+    if reg.scheme() != inc.scheme()
+        || reg.path() != inc.path()
+        || reg.query() != inc.query()
+        || reg.fragment() != inc.fragment()
+        || reg.host() != inc.host()
+    {
+        return false;
+    }
+
+    if reg.port() == inc.port() {
+        return true;
+    }
+
+    match reg.host() {
+        Some(url::Host::Domain(d)) => d.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    }
+}

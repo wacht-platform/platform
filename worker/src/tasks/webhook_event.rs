@@ -1,5 +1,5 @@
 use chrono::{Datelike, Utc};
-use commands::webhook_trigger::TriggerWebhookEventCommand;
+use commands::webhook_trigger::{TriggerWebhookEventCommand, console_webhook_app_slug};
 use common::{db_router::ReadConsistency, state::AppState};
 use queries::{
     b2b::{GetOrganizationDetailsQuery, GetWorkspaceDetailsQuery},
@@ -33,7 +33,7 @@ pub async fn trigger_webhook_event(
 
     let trigger_command = TriggerWebhookEventCommand::new(
         console_deployment_id,
-        format!("wh_{}", task.deployment_id),
+        console_webhook_app_slug(task.deployment_id),
         task.event_type.clone(),
         enriched_payload,
     );

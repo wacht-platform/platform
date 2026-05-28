@@ -20,6 +20,7 @@ use sha2::{Digest, Sha256};
 use crate::application::response::ApiErrorResponse;
 
 use super::resolve_oauth_app_and_issuer;
+use crate::api::oauth_runtime::helpers::redirect_uri_matches;
 
 use commands::oauth_runtime::{
     CompromiseOAuthAppSigningKey, InsertOAuthAppSigningKey, RotateOAuthAppSigningKey,
@@ -600,7 +601,7 @@ fn client_allows_post_logout_redirect(client: &queries::RuntimeOAuthClientData, 
     client
         .post_logout_redirect_uris
         .iter()
-        .any(|registered| registered == uri)
+        .any(|registered| redirect_uri_matches(registered, uri))
 }
 
 pub struct AccessJwtBuildContext {

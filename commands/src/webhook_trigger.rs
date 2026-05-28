@@ -19,6 +19,15 @@ use super::{
 const ERR_WEBHOOK_APP_NOT_FOUND: &str = "Webhook app not found";
 const ERR_WEBHOOK_ENDPOINT_NOT_FOUND: &str = "Webhook endpoint not found";
 
+/// `app_slug` of the per-deployment webhook app the console provisions for
+/// every customer deployment. Use ONLY when triggering platform-emitted
+/// webhooks (agent events, user/org lifecycle, usage). Self-service webhook
+/// apps created by customers carry their own slugs — do not call this for
+/// those.
+pub fn console_webhook_app_slug(customer_deployment_id: i64) -> String {
+    format!("wh_{customer_deployment_id}")
+}
+
 #[derive(Debug, Deserialize)]
 pub struct TriggerWebhookEventCommand {
     pub deployment_id: i64,

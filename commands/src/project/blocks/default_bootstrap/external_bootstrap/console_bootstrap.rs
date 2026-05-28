@@ -57,7 +57,7 @@ impl ConsoleAppBootstrapInsert {
             &self.event_catalog_slug,
             now,
             now,
-            format!("wh_{}", self.target_deployment_id)
+            crate::webhook_trigger::console_webhook_app_slug(self.target_deployment_id)
         )
         .execute(tx.as_mut())
         .await?;

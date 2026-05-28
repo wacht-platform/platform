@@ -250,7 +250,11 @@ async fn authorize_impl(
         )
             .into());
     }
-    if !client.redirect_uris.iter().any(|u| u == &redirect_uri) {
+    if !client
+        .redirect_uris
+        .iter()
+        .any(|u| redirect_uri_matches(u, &redirect_uri))
+    {
         return Err((
             StatusCode::BAD_REQUEST,
             "redirect_uri is not registered for this client",
@@ -426,7 +430,10 @@ async fn try_build_authorize_error_redirect(
     let client = get_runtime_oauth_client(app_state, oauth_app.id, client_id)
         .await
         .ok()?;
-    let redirect_registered = client.redirect_uris.iter().any(|u| u == redirect_uri);
+    let redirect_registered = client
+        .redirect_uris
+        .iter()
+        .any(|u| redirect_uri_matches(u, redirect_uri));
     if !redirect_registered {
         return None;
     }

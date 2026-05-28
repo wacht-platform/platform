@@ -38,7 +38,7 @@ use crate::{
             generate_prefixed_token, generate_registration_access_token, hash_value,
             is_valid_granted_resource_indicator, is_valid_resource_indicator,
             oauth_consent_backend_base_url, oauth_consent_handoff_redis_key, parse_scope_string,
-            resolve_issuer_from_oauth_app, resolve_oauth_app_from_host,
+            redirect_uri_matches, resolve_issuer_from_oauth_app, resolve_oauth_app_from_host,
             sign_oauth_consent_request_token, validate_grant_and_entitlement,
             verify_oauth_consent_request_token, verify_pkce,
         },
