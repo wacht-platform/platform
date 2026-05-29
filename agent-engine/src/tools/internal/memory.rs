@@ -91,10 +91,13 @@ impl ToolExecutor {
     ) -> Result<Value, AppError> {
         let thread = self.ctx.get_thread().await?;
         let memory_id = params.memory_id.parse::<i64>().map_err(|_| {
-            AppError::BadRequest(format!("Invalid memory_id: {}", params.memory_id))
+            AppError::BadRequest(format!(
+                "No memory exists with id '{}'. Did you mean to create a new memory entry? If so, call `save_memory` — `update_memory` only edits an existing memory by its numeric id.",
+                params.memory_id
+            ))
         })?;
 
-        let memory = commands::UpdateAgentMemoryCommand {
+        let memory = match (commands::UpdateAgentMemoryCommand {
             deployment_id: self.agent().deployment_id,
             memory_id,
             actor_id: thread.actor_id,
@@ -108,7 +111,17 @@ impl ToolExecutor {
             related: params.related,
         }
         .execute_with_deps(self.app_state())
-        .await?;
+        .await)
+        {
+            Ok(memory) => memory,
+            Err(AppError::NotFound(_)) => {
+                return Err(AppError::NotFound(format!(
+                    "No memory exists with id '{}'. Did you mean to create a new memory entry? If so, call `save_memory` — `update_memory` only edits an existing memory.",
+                    memory_id
+                )));
+            }
+            Err(other) => return Err(other),
+        };
 
         crate::executor::context::memory_context::invalidate_startup_memory_cache(
             self.app_state(),
