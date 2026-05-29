@@ -527,11 +527,12 @@ impl AgentExecutor {
                         "Next-step decision live context message missing".to_string(),
                     )
                 })?;
-        let reasoning_effort = if self.repeated_tool_call_count >= 2 {
-            "medium"
-        } else {
-            "low"
-        };
+        let reasoning_effort =
+            if self.repeated_tool_call_count >= 2 || self.consecutive_tool_failure_count >= 3 {
+                "medium"
+            } else {
+                "low"
+            };
         let config = SemanticLlmPromptConfig {
             response_json_schema: serde_json::json!({}),
             temperature: None,

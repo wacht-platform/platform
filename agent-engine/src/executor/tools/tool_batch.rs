@@ -63,6 +63,9 @@ impl AgentExecutor {
 
         let batch_was_empty = planned_calls.is_empty();
         let mut iteration_errors: Vec<LastIterationToolError> = Vec::new();
+        let mut failed_tools: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut succeeded_tools: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
 
         for call in planned_calls {
             let tool_name = call.tool_name().to_string();
@@ -83,6 +86,7 @@ impl AgentExecutor {
                             error: truncate_chars(&error.to_string(), MAX_TOOL_ERROR_MESSAGE_CHARS),
                         });
                     }
+                    failed_tools.insert(tool_name.clone());
                     self.record_tool_execution_result(&call, Err(error), &mut any_pending)
                         .await?;
                     continue;
@@ -99,15 +103,24 @@ impl AgentExecutor {
                 self.invalidate_task_graph_snapshot();
             }
 
-            if let Err(error) = &result {
-                if iteration_errors.len() < MAX_TOOL_ERROR_SNAPSHOTS {
-                    iteration_errors.push(LastIterationToolError {
-                        timestamp: Utc::now().to_rfc3339(),
-                        tool_name: tool_name.clone(),
-                        input_preview: preview,
-                        error: truncate_chars(&error.to_string(), MAX_TOOL_ERROR_MESSAGE_CHARS),
-                    });
+            let call_failed = match &result {
+                Err(error) => {
+                    if iteration_errors.len() < MAX_TOOL_ERROR_SNAPSHOTS {
+                        iteration_errors.push(LastIterationToolError {
+                            timestamp: Utc::now().to_rfc3339(),
+                            tool_name: tool_name.clone(),
+                            input_preview: preview,
+                            error: truncate_chars(&error.to_string(), MAX_TOOL_ERROR_MESSAGE_CHARS),
+                        });
+                    }
+                    true
                 }
+                Ok(value) => value.get("success").and_then(|s| s.as_bool()) == Some(false),
+            };
+            if call_failed {
+                failed_tools.insert(tool_name.clone());
+            } else {
+                succeeded_tools.insert(tool_name.clone());
             }
 
             self.record_tool_execution_result(&resolved.request, result, &mut any_pending)
@@ -120,6 +133,7 @@ impl AgentExecutor {
 
         if !batch_was_empty {
             self.tool_error_window.replace_for_new_batch(iteration_errors);
+            self.update_consecutive_tool_failures(&failed_tools, &succeeded_tools);
         }
 
         Ok(ToolExecutionLoopOutcome { any_pending })

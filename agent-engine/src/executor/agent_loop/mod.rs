@@ -1199,6 +1199,7 @@ impl AgentExecutor {
             serde_json::Value::Null,
         )
         .await;
+        self.apply_tool_failure_guard().await?;
         self.finalize_action_execution_outcome(outcome).await
     }
 
