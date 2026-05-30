@@ -1,7 +1,8 @@
 use commands::{
     CreateActorCommand, CreateActorProjectCommand, CreateAgentThreadCommand,
     CreateProjectTaskBoardItemCommand, CreateProjectTaskScheduleCommand,
-    DeleteProjectTaskScheduleByTaskKeyCommand, UpdateProjectTaskBoardItemMountsCommand,
+    DeleteProjectTaskScheduleByTaskKeyCommand, EnsureProjectTaskBoardCommand,
+    SetActorProjectDefaultThreadsCommand, UpdateProjectTaskBoardItemMountsCommand,
     UpdateProjectTaskScheduleCommand, UpsertThreadAgentAssignmentCommand,
 };
 use common::ReadConsistency;
@@ -664,24 +665,85 @@ pub async fn create_actor_project(
         command = command.with_metadata(metadata);
     }
 
-    let project = command
-        .execute_with_db(app_state.db_router.writer())
-        .await?;
+    let mut tx = app_state.db_router.writer().begin().await?;
+
+    let project = command.execute_with_db(&mut *tx).await?;
+
+    let thread_instructions = templatekit::render_project_instructions(
+        &project.name,
+        project.description.as_deref(),
+        None,
+    )?;
+
+    let coordinator_thread_id = app_state.sf.next_id()? as i64;
+    CreateAgentThreadCommand::new(
+        coordinator_thread_id,
+        deployment_id,
+        actor_id,
+        project.id,
+        "Coordinator".to_string(),
+        models::agent_thread::purpose::COORDINATOR.to_string(),
+        "idle".to_string(),
+    )
+    .with_thread_purpose(models::agent_thread::purpose::COORDINATOR.to_string())
+    .with_responsibility("Project coordinator".to_string())
+    .mark_reusable()
+    .with_system_instructions(thread_instructions.clone())
+    .execute_with_db(&mut *tx)
+    .await?;
+
+    let review_thread_id = app_state.sf.next_id()? as i64;
+    CreateAgentThreadCommand::new(
+        review_thread_id,
+        deployment_id,
+        actor_id,
+        project.id,
+        "Review".to_string(),
+        models::agent_thread::purpose::REVIEW.to_string(),
+        "idle".to_string(),
+    )
+    .with_thread_purpose(models::agent_thread::purpose::REVIEW.to_string())
+    .with_responsibility("Project reviewer".to_string())
+    .mark_reusable()
+    .allow_assignments()
+    .with_system_instructions(thread_instructions)
+    .execute_with_db(&mut *tx)
+    .await?;
+
+    SetActorProjectDefaultThreadsCommand::new(
+        project.id,
+        deployment_id,
+        coordinator_thread_id,
+        review_thread_id,
+    )
+    .execute_with_db(&mut *tx)
+    .await?;
 
     if let Some(agent_id) = selected_agent_id {
-        if let Some(coordinator_thread_id) = project.coordinator_thread_id {
-            UpsertThreadAgentAssignmentCommand::new(coordinator_thread_id, agent_id)
-                .execute_with_db(app_state.db_router.writer())
-                .await?;
-        }
-        if let Some(review_thread_id) = project.review_thread_id {
-            UpsertThreadAgentAssignmentCommand::new(review_thread_id, agent_id)
-                .execute_with_db(app_state.db_router.writer())
-                .await?;
-        }
+        UpsertThreadAgentAssignmentCommand::new(coordinator_thread_id, agent_id)
+            .execute_with_db(&mut *tx)
+            .await?;
+        UpsertThreadAgentAssignmentCommand::new(review_thread_id, agent_id)
+            .execute_with_db(&mut *tx)
+            .await?;
     }
 
-    Ok(project)
+    // Every project gets its task board at creation time, so createProjectTaskBoardItem
+    // and delegateProjectTask never have to bootstrap one.
+    EnsureProjectTaskBoardCommand::new(
+        app_state.sf.next_id()? as i64,
+        deployment_id,
+        actor_id,
+        project.id,
+        format!("Project {} Task Board", project.id),
+        "active".to_string(),
+    )
+    .execute_with_db(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    get_actor_project_by_id(app_state, deployment_id, project.id).await
 }
 
 pub async fn get_actor_project_by_id(

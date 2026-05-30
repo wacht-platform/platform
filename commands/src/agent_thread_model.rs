@@ -549,6 +549,54 @@ impl UpdateActorProjectCommand {
     }
 }
 
+pub struct SetActorProjectDefaultThreadsCommand {
+    pub project_id: i64,
+    pub deployment_id: i64,
+    pub coordinator_thread_id: i64,
+    pub review_thread_id: i64,
+}
+
+impl SetActorProjectDefaultThreadsCommand {
+    pub fn new(
+        project_id: i64,
+        deployment_id: i64,
+        coordinator_thread_id: i64,
+        review_thread_id: i64,
+    ) -> Self {
+        Self {
+            project_id,
+            deployment_id,
+            coordinator_thread_id,
+            review_thread_id,
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<models::ActorProject, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        sqlx::query_as!(
+            models::ActorProject,
+            r#"
+            UPDATE actor_projects
+            SET coordinator_thread_id = $3,
+                review_thread_id = $4,
+                updated_at = NOW()
+            WHERE id = $1 AND deployment_id = $2
+            RETURNING id, deployment_id, actor_id, name, description, status, coordinator_thread_id,
+                      review_thread_id, metadata, created_at, updated_at, archived_at
+            "#,
+            self.project_id,
+            self.deployment_id,
+            self.coordinator_thread_id,
+            self.review_thread_id,
+        )
+        .fetch_one(executor)
+        .await
+        .map_err(AppError::from)
+    }
+}
+
 pub struct SetActorProjectArchivedCommand {
     pub project_id: i64,
     pub deployment_id: i64,

@@ -1,7 +1,7 @@
 use commands::event_log::{self, EVENT_LOG_WORK_SUBJECT, EventLogPayload, InsertEventLogCommand};
 use commands::{
     CreateProjectTaskBoardItemAssignmentCommand, CreateProjectTaskBoardItemCommand,
-    EnsureProjectTaskBoardCommand, InsertTaskRoutingEvent, SetBoardItemPendingApprovalCommand,
+    InsertTaskRoutingEvent, SetBoardItemPendingApprovalCommand,
     SetBoardItemPendingQuestionCommand, build_task_routing_summary,
 };
 use common::HasDbRouter;
@@ -667,33 +667,11 @@ pub async fn delegate_task(
                 ))
             })?;
 
-    let project_thread = GetAgentThreadStateQuery::new(lane.id, deployment_id)
-        .execute_with_db(
-            app_state
-                .db_router
-                .reader(common::db_router::ReadConsistency::Strong),
-        )
-        .await?;
-    let actor_id = project_thread.actor_id;
-
+    // Boards are created with the project (see create_actor_project), so this is a plain lookup.
     let board = GetProjectTaskBoardByProjectIdQuery::new(project_id, deployment_id)
         .execute_with_db(app_state.db_router.writer())
-        .await?;
-    let board = match board {
-        Some(board) => board,
-        None => {
-            EnsureProjectTaskBoardCommand::new(
-                app_state.sf.next_id()? as i64,
-                deployment_id,
-                actor_id,
-                project_id,
-                format!("Project {} Task Board", project_id),
-                "active".to_string(),
-            )
-            .execute_with_db(app_state.db_router.writer())
-            .await?
-        }
-    };
+        .await?
+        .ok_or_else(|| AppError::NotFound("Project task board not found".to_string()))?;
 
     let board_item_id = app_state.sf.next_id()? as i64;
     let task_key = format!("DELEGATE-{board_item_id}");
