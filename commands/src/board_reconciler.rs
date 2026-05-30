@@ -2,11 +2,9 @@ use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use common::{
     HasDbRouter, HasIdProvider, HasNatsJetStreamProvider, HasNatsProvider, error::AppError,
 };
-use models::{ProjectTaskBoardItem, ProjectTaskBoardItemAssignment};
+use models::ProjectTaskBoardItem;
 
-use crate::project_task_board::{
-    enqueue_assignment_execution_event_with_deps, enqueue_board_item_to_coordinator_with_deps,
-};
+use crate::project_task_board::ReconcileProjectTaskBoardItemCommand;
 
 pub struct ReconcileStaleBoardItemsCommand {
     pub stale_threshold: ChronoDuration,
@@ -15,15 +13,8 @@ pub struct ReconcileStaleBoardItemsCommand {
 
 #[derive(Debug, Default, Clone)]
 pub struct ReconcileStaleBoardItemsSummary {
-    pub rerouted_to_assignment: u64,
-    pub rerouted_to_coordinator: u64,
+    pub reconciled: u64,
     pub skipped: u64,
-}
-
-impl ReconcileStaleBoardItemsSummary {
-    pub fn total_rerouted(&self) -> u64 {
-        self.rerouted_to_assignment + self.rerouted_to_coordinator
-    }
 }
 
 impl ReconcileStaleBoardItemsCommand {
@@ -45,46 +36,30 @@ impl ReconcileStaleBoardItemsCommand {
         let mut summary = ReconcileStaleBoardItemsSummary::default();
 
         for _ in 0..self.max_items_per_tick {
-            let picked = pick_and_touch_stale_board_item(deps, stale_before).await?;
-            let Some(picked) = picked else {
+            let Some(board_item) = pick_and_touch_stale_board_item(deps, stale_before).await?
+            else {
                 break;
             };
 
-            match picked {
-                PickedItem::WithAssignment(item, assignment) => {
-                    match enqueue_assignment_execution_event_with_deps(deps, &assignment).await {
-                        Ok(()) => summary.rerouted_to_assignment += 1,
-                        Err(err) => {
-                            tracing::warn!(
-                                board_item_id = item.id,
-                                assignment_id = assignment.id,
-                                %err,
-                                "Reconciler failed to enqueue assignment_execution; will retry next tick",
-                            );
-                            summary.skipped += 1;
-                        }
-                    }
-                }
-                PickedItem::NoAssignment(item) => {
-                    match enqueue_board_item_to_coordinator_with_deps(
-                        deps,
-                        &item,
-                        Some("Reconciler: board item has not progressed".to_string()),
-                        None,
-                        models::thread_event::routing_reason::ASSIGNMENT_COMPLETED,
-                    )
-                    .await
-                    {
-                        Ok(()) => summary.rerouted_to_coordinator += 1,
-                        Err(err) => {
-                            tracing::warn!(
-                                board_item_id = item.id,
-                                %err,
-                                "Reconciler failed to enqueue task_routing; will retry next tick",
-                            );
-                            summary.skipped += 1;
-                        }
-                    }
+            // Re-run the one canonical reconcile — the single source of truth. It dispatches
+            // available/pending assignments to their assigned threads, auto-completes agent-owned
+            // (delegated) items, and routes ONLY coordinator-owned items to the coordinator (a
+            // delegated item always has exclusive_owner_agent_id set, so it can never reach the
+            // coordinator branch). Execution liveness/crash recovery is owned by the lease layer
+            // (work_lease_recovery), so we never re-dispatch in-flight work here.
+            match ReconcileProjectTaskBoardItemCommand::new(board_item.id)
+                .with_note("Reconciler: stale board item re-reconciled".to_string())
+                .execute_with_deps(deps)
+                .await
+            {
+                Ok(()) => summary.reconciled += 1,
+                Err(err) => {
+                    tracing::warn!(
+                        board_item_id = board_item.id,
+                        %err,
+                        "Reconciler failed to reconcile stale board item; will retry next tick",
+                    );
+                    summary.skipped += 1;
                 }
             }
         }
@@ -93,15 +68,10 @@ impl ReconcileStaleBoardItemsCommand {
     }
 }
 
-enum PickedItem {
-    WithAssignment(ProjectTaskBoardItem, ProjectTaskBoardItemAssignment),
-    NoAssignment(ProjectTaskBoardItem),
-}
-
 async fn pick_and_touch_stale_board_item<D>(
     deps: &D,
     stale_before: DateTime<Utc>,
-) -> Result<Option<PickedItem>, AppError>
+) -> Result<Option<ProjectTaskBoardItem>, AppError>
 where
     D: HasDbRouter + ?Sized,
 {
@@ -134,39 +104,7 @@ where
     .fetch_optional(&mut *tx)
     .await?;
 
-    let Some(board_item) = board_item else {
-        tx.commit().await?;
-        return Ok(None);
-    };
-
-    // Coord-role rows are bookkeeping markers, not execution work — the
-    // reconciler must not surface them as the assignment to re-dispatch,
-    // or it would emit ASSIGNMENT_EXECUTION events at the coordinator
-    // thread (which doesn't run executor work).
-    let assignment = sqlx::query_as!(
-        ProjectTaskBoardItemAssignment,
-        r#"
-        SELECT
-            id, board_item_id, thread_id, assignment_role, status,
-            instructions, metadata, result_status, result_summary,
-            result_payload, claimed_at, started_at, completed_at, rejected_at, created_at,
-            updated_at, state_version
-        FROM project_task_board_item_assignments
-        WHERE board_item_id = $1
-          AND status IN ('pending', 'available', 'claimed', 'in_progress')
-          AND assignment_role <> 'coordinator'
-        ORDER BY id ASC
-        LIMIT 1
-        "#,
-        board_item.id,
-    )
-    .fetch_optional(&mut *tx)
-    .await?;
-
     tx.commit().await?;
 
-    Ok(Some(match assignment {
-        Some(assignment) => PickedItem::WithAssignment(board_item, assignment),
-        None => PickedItem::NoAssignment(board_item),
-    }))
+    Ok(board_item)
 }

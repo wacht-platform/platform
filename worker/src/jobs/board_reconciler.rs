@@ -53,10 +53,7 @@ pub async fn reconcile_stale_board_items(app_state: &AppState) -> Result<String>
     let summary = command.execute_with_deps(&deps).await?;
 
     Ok(format!(
-        "Board reconciler: rerouted {} (assignment={}, coordinator={}), skipped {}",
-        summary.total_rerouted(),
-        summary.rerouted_to_assignment,
-        summary.rerouted_to_coordinator,
-        summary.skipped
+        "Board reconciler: reconciled {}, skipped {}",
+        summary.reconciled, summary.skipped
     ))
 }
