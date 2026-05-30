@@ -1064,7 +1064,7 @@ impl AgentExecutor {
             "error" => {
                 let detail = error.unwrap_or("(no detail)");
                 format!(
-                    "You ran the tool: {action}\n\nIt failed with: {detail}\n\nIf this result matters for the task, retry with different inputs or take a different approach. Do not pretend it succeeded or invent the output you wished it returned.",
+                    "You ran the tool: {action}\n\nIt failed with: {detail}\n\nUse that error to decide what to do next — retry only if it names something you can actually change, otherwise work around it or report the task blocked. Do not pretend it succeeded or invent the output you wished it returned.",
                 )
             }
             "pending" => {

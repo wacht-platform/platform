@@ -1285,11 +1285,14 @@ impl AgentExecutor {
                         board_item_id = ?self.current_board_item_id(),
                         execution_run_id = self.ctx.execution_run_id,
                         ?error,
-                        "terminal review failed; defaulting to complete"
+                        "terminal review failed; treating as continue so unfinished work isn't silently dropped"
                     );
                     terminal_review::TerminalReviewDecision {
-                        decision: terminal_review::TerminalReviewChoice::Complete,
-                        hint: None,
+                        decision: terminal_review::TerminalReviewChoice::Continue,
+                        hint: Some(
+                            "terminal review unavailable — confirm nothing you said you'd do this turn is still pending before stopping"
+                                .to_string(),
+                        ),
                         summary: None,
                         artifacts: None,
                         blockers: None,

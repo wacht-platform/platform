@@ -14,9 +14,12 @@ fn default_true() -> bool {
 #[derive(Clone, Copy, Serialize, Deserialize, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchToolsMode {
-    #[default]
-    Search,
     Browse,
+    // Unknown/missing mode degrades to Search instead of failing the whole call — an LLM may
+    // borrow a `mode` value from a sibling tool's enum (e.g. web_search's "one-shot").
+    #[default]
+    #[serde(other)]
+    Search,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

@@ -47,7 +47,7 @@ output = "exactly one tool call: mark_continue OR mark_complete"
 require_visible_history_justification = true
 triggers_any = [
   "recoverable tool error (bad input, malformed parameter, transient retryable status) that the agent has not yet retried with corrected input — corrected input must be obvious from the error",
-  "agent's own text explicitly promised a tool call ('I'll save this to memory', 'I'll log the worklog') and did not make the call — must be the agent's stated intent, not your inference",
+  "agent's own text says it is about to act THIS turn ('I'll save this to memory', 'let me now search...', 'next I'll build...', 'then I'll...') and the corresponding tool call is absent from this turn — the agent's stated intent to act now, not your inference, and not a handoff list of next steps for another lane",
   "LAST ITERATION TOOL ERRORS block present and errors reference paths/files/IDs/resources that other tool calls in this run created, modified, renamed, or deleted (agent lost track of its own state)",
   "LAST ITERATION TOOL ERRORS block present and the agent's terminal text claims completion or success without acknowledging the errors (errors arrived AFTER the agent composed text)",
 ]
@@ -55,7 +55,7 @@ triggers_any = [
 [mark_complete.triggers]
 default = true
 triggers_any = [
-  "final answers, clarifying questions, status updates, standby messages, acknowledgements",
+  "final answers, clarifying questions, standby messages, acknowledgements, and status updates that report finished work or hand off to another lane — but NOT text that announces further actions the agent itself is about to take this run (that is mark_continue)",
   "tool errors that look like genuine API limitations, 404s on resources that may not exist, validation errors without an obvious correction (UNLESS they appear in a LAST ITERATION TOOL ERRORS block AND the agent's text did not acknowledge them)",
   "anything ambiguous — when uncertain, complete",
 ]
@@ -159,7 +159,7 @@ complete_when_any = [
   "slice deliverable was produced and journaled",
   "agent called abort_task (already escalating)",
 ]
-continue_only_when = "agent explicitly promised a tool call it didn't emit ('writing journal entry', 'saving the artifact') AND that call is missing"
+continue_only_when = "agent's text said it would act THIS turn ('writing journal entry', 'saving the artifact', 'let me now search...', 'next I'll...') AND that tool call is missing from the turn"
 forbidden_continue_reasons = [
   "journal could be richer",
   "slice could be more thorough",
