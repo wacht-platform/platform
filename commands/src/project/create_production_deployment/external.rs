@@ -121,7 +121,7 @@ where
 {
     match deps
         .cloudflare_provider()
-        .create_custom_hostname(hostname, target, None)
+        .create_custom_hostname(hostname, target)
         .await
     {
         Ok(custom_hostname) => {

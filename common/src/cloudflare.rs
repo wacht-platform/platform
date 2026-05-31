@@ -47,31 +47,25 @@ impl CloudflareService {
         &self,
         hostname: &str,
         origin_server: &str,
-        metadata: Option<serde_json::Value>,
     ) -> Result<CustomHostname, AppError> {
         let url = format!(
             "https://api.cloudflare.com/client/v4/zones/{}/custom_hostnames",
             self.zone_id
         );
 
-        let mut body = json!({
-            "hostname": hostname,
-            "custom_origin_server": origin_server,
-            "ssl": json!({
-                "type": "dv",
-                "method": "http"
-            })
-        });
-        if let Some(meta) = metadata {
-            body["custom_metadata"] = meta;
-        }
-
         let response = self
             .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
-            .json(&body)
+            .json(&json!({
+                "hostname": hostname,
+                "custom_origin_server": origin_server,
+                "ssl": json!({
+                    "type": "dv",
+                    "method": "http"
+                })
+            }))
             .send()
             .await
             .map_err(|e| AppError::External(format!("Cloudflare API request failed: {}", e)))?;

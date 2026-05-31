@@ -47,11 +47,7 @@ impl CreateOAuthAppCommand {
             if deployment.mode.eq_ignore_ascii_case("production") {
                 Some(
                     cloudflare_service
-                        .create_custom_hostname(
-                            &fqdn,
-                            "oauth.wacht.services",
-                            Some(serde_json::json!({ "app": "oauth" })),
-                        )
+                        .create_custom_hostname(&fqdn, "oauth.wacht.services")
                         .await?
                         .id,
                 )
