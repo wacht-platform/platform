@@ -117,21 +117,9 @@ pub struct ThreadExecutionContext {
 
 impl ThreadExecutionContext {
     fn agent_override_for(&self, role: LlmRole) -> Option<&models::AgentModelOverride> {
-        // Either role falls back to the OTHER agent override before deployment
-        // defaults. Most callers set only one of strong/weak on the agent and
-        // expect it to apply everywhere on that agent; only when BOTH are set
-        // do the roles diverge.
         let candidate = match role {
-            LlmRole::Strong => self
-                .agent
-                .strong_model
-                .as_ref()
-                .or(self.agent.weak_model.as_ref()),
-            LlmRole::Weak => self
-                .agent
-                .weak_model
-                .as_ref()
-                .or(self.agent.strong_model.as_ref()),
+            LlmRole::Strong => self.agent.strong_model.as_ref(),
+            LlmRole::Weak => self.agent.weak_model.as_ref(),
         }?;
         let has_provider_override = candidate
             .provider

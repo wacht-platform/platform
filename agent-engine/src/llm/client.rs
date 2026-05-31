@@ -174,14 +174,43 @@ impl ResolvedLlm {
     where
         T: for<'de> Deserialize<'de> + Serialize,
     {
-        let raw = self.client.generate_structured(prompt, cache).await?;
-        let value: T = serde_json::from_value(raw.value).map_err(|e| {
+        const STRUCTURED_TOOL: &str = "submit_structured_output";
+        let tool = NativeToolDefinition {
+            name: STRUCTURED_TOOL.to_string(),
+            description: "Return the result by calling this tool with arguments that match the \
+                          schema. Do not reply with free-form text."
+                .to_string(),
+            input_schema: prompt.response_json_schema.clone(),
+        };
+        let mut prompt = prompt;
+        prompt.forced_tool_names = Some(vec![STRUCTURED_TOOL.to_string()]);
+
+        let output = self
+            .client
+            .generate_tool_calls(prompt, vec![tool], cache)
+            .await?;
+        let usage_metadata = output.usage_metadata;
+        let cache_state = output.cache_state;
+        let mut calls = output.calls;
+
+        let idx = calls
+            .iter()
+            .position(|c| c.tool_name == STRUCTURED_TOOL || c.tool_name.ends_with(STRUCTURED_TOOL))
+            .or_else(|| (calls.len() == 1).then_some(0));
+        let Some(idx) = idx else {
+            return Err(AppError::Internal(
+                "structured generation: model returned no usable tool call".to_string(),
+            ));
+        };
+        let arguments = calls.swap_remove(idx).arguments;
+
+        let value: T = serde_json::from_value(arguments).map_err(|e| {
             AppError::Internal(format!("Failed to deserialize structured output: {e}"))
         })?;
         Ok(StructuredGenerationOutput {
             value,
-            usage_metadata: raw.usage_metadata,
-            cache_state: raw.cache_state,
+            usage_metadata,
+            cache_state,
         })
     }
 
