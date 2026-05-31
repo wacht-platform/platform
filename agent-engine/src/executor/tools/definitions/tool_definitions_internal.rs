@@ -129,12 +129,12 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "execute_command",
-            "Run a shell command in the sandbox (inspection, filtering, discovery, scripting, image/PDF tooling). Prefer write_file over piping long text through stdout. Returns exit_code/stdout/stderr — a non-zero exit is a normal shell signal to read and react to, not a platform error.",
+            "Run a bash command in the sandbox shell (inspection, filtering, discovery, scripting, image/PDF tooling). Prefer write_file over piping long text through stdout. Returns exit_code/stdout/stderr — a non-zero exit is a normal shell signal to read and react to, not a platform error.",
             InternalToolType::ExecuteCommand,
             vec![SchemaField {
                 name: "command".to_string(),
                 field_type: "STRING".to_string(),
-                description: Some("Shell command to run.".to_string()),
+                description: Some("Bash command to run.".to_string()),
                 required: true,
                 ..Default::default()
             }],
@@ -418,7 +418,7 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "load_tools",
-            "Load external (virtual) tools by exact name (from a prior search_tools result) so they become directly callable. Invoke like any internal tool — there is no separate composio/mcp runtime to install. Up to 30 stay loaded; oldest evicted automatically.",
+            "Load external (virtual) tools by exact name (from a prior search_tools result) so they become directly callable. Invoke like any internal tool — there is no separate composio/mcp runtime to install. Up to 15 stay loaded; oldest evicted automatically.",
             InternalToolType::LoadTools,
             vec![SchemaField {
                 name: "tool_names".to_string(),

@@ -503,6 +503,37 @@ pub struct UnsubscribeFromTaskParams {
     pub task_key: String,
 }
 
+/// Presentation-only tool-name aliases: `(canonical, agent_facing)`. The agent
+/// sees and calls the `agent_facing` name; everything internal/stored keeps the
+/// `canonical` name. Translate outbound names the agent reads with
+/// [`agent_facing_tool_name`] and normalise inbound calls back with
+/// [`canonical_tool_name`].
+///   - `execute_command` → `bash`: the conventional shell-tool name.
+///   - `update_memory` → `revise_memory`: breaks the `update_*` collision with
+///     `update_project_task` / `update_thread`.
+const TOOL_NAME_ALIASES: &[(&str, &str)] = &[
+    ("execute_command", "bash"),
+    ("update_memory", "revise_memory"),
+];
+
+pub const EXECUTE_COMMAND_AGENT_FACING: &str = "bash";
+
+pub fn agent_facing_tool_name(canonical: &str) -> &str {
+    TOOL_NAME_ALIASES
+        .iter()
+        .find(|(c, _)| *c == canonical)
+        .map(|(_, agent_facing)| *agent_facing)
+        .unwrap_or(canonical)
+}
+
+pub fn canonical_tool_name(agent_facing: &str) -> &str {
+    TOOL_NAME_ALIASES
+        .iter()
+        .find(|(_, a)| *a == agent_facing)
+        .map(|(canonical, _)| *canonical)
+        .unwrap_or(agent_facing)
+}
+
 impl ToolCallRequest {
     pub fn tool_name(&self) -> &str {
         match self {

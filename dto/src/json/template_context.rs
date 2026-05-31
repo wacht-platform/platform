@@ -314,7 +314,7 @@ impl ToolPromptItem {
         };
 
         Self {
-            name: tool.name.clone(),
+            name: crate::json::tool_calls::agent_facing_tool_name(&tool.name).to_string(),
             description: tool.description.clone(),
             tool_type: String::from(tool.tool_type.clone()),
             approval_action: tool.approval_action,

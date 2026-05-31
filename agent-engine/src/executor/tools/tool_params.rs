@@ -5,7 +5,7 @@ use models::AiTool;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub(crate) const MAX_LOADED_EXTERNAL_TOOLS: usize = 30;
+pub(crate) const MAX_LOADED_EXTERNAL_TOOLS: usize = 15;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct PlannedToolCall {

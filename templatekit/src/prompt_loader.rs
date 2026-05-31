@@ -45,6 +45,20 @@ static PROMPTS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
         ),
     );
     m.insert(
+        "delegated_execution_system",
+        concat!(
+            include_str!("prompts/shared_operating_style.md"),
+            "\n\n",
+            include_str!("prompts/sandbox_environment.md"),
+            "\n\n",
+            include_str!("prompts/memory_discipline.md"),
+            "\n\n",
+            include_str!("prompts/artifact_discipline.md"),
+            "\n\n",
+            include_str!("prompts/delegated_execution_system.md"),
+        ),
+    );
+    m.insert(
         "reviewer_system",
         concat!(
             include_str!("prompts/shared_operating_style.md"),

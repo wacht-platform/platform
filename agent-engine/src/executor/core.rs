@@ -100,6 +100,7 @@ pub struct AgentExecutor {
     pub(crate) is_conversation_thread: bool,
     pub(crate) is_coordinator_thread: bool,
     pub(crate) is_review_thread: bool,
+    pub(crate) is_delegated_task: bool,
     pub(crate) task_journal_start_hash: Option<String>,
     pub(crate) conversation_compaction_state: models::ConversationCompactionState,
     pub(crate) pending_question: Option<models::PendingQuestion>,
@@ -401,6 +402,7 @@ impl AgentExecutorBuilder {
             is_conversation_thread,
             is_coordinator_thread,
             is_review_thread,
+            is_delegated_task: false,
             task_journal_start_hash,
             conversation_compaction_state,
             pending_question,
@@ -542,6 +544,8 @@ impl AgentExecutor {
             "coordinator_system"
         } else if self.is_review_thread {
             "reviewer_system"
+        } else if self.is_delegated_task {
+            "delegated_execution_system"
         } else if self
             .active_thread_event
             .as_ref()
@@ -571,7 +575,21 @@ impl AgentExecutor {
             "subscribe_to_task" | "unsubscribe_from_task" | "delegate_task" => {
                 self.is_conversation_thread
             }
+            "update_memory" => self.has_loaded_memory_this_session(),
             _ => true,
         }
+    }
+
+    /// True once a `load_memory` call has succeeded this session — gates
+    /// `revise_memory` (canonical `update_memory`) so it only surfaces when the
+    /// agent actually holds a memory id to revise.
+    pub(super) fn has_loaded_memory_this_session(&self) -> bool {
+        self.conversations.iter().any(|conv| {
+            matches!(
+                &conv.content,
+                models::ConversationContent::ToolResult { tool_name, status, .. }
+                    if tool_name == "load_memory" && status == "success"
+            )
+        })
     }
 }

@@ -212,10 +212,12 @@ impl AgentExecutor {
             .description
             .clone()
             .unwrap_or_else(|| format!("Call the {} tool.", tool.name));
+        let agent_facing_name =
+            dto::json::tool_calls::agent_facing_tool_name(&tool.name).to_string();
 
         if let AiToolConfiguration::Mcp(config) = &tool.configuration {
             return NativeToolDefinition {
-                name: tool.name.clone(),
+                name: agent_facing_name,
                 description,
                 input_schema: config
                     .input_schema
@@ -225,7 +227,7 @@ impl AgentExecutor {
         }
         if let AiToolConfiguration::Virtual(config) = &tool.configuration {
             return NativeToolDefinition {
-                name: tool.name.clone(),
+                name: agent_facing_name,
                 description,
                 input_schema: config
                     .input_schema
@@ -235,7 +237,7 @@ impl AgentExecutor {
         }
 
         NativeToolDefinition {
-            name: tool.name.clone(),
+            name: agent_facing_name,
             description,
             input_schema: SchemaField::object_json_schema(
                 &self.tool_schema_for_execution(tool, active_board_item),
@@ -291,7 +293,10 @@ impl AgentExecutor {
                     params: Self::parse_tool_params("edit_file", normalized_input)?,
                 }),
                 models::InternalToolType::ExecuteCommand => Ok(ToolCallRequest::ExecuteCommand {
-                    params: Self::parse_tool_params("execute_command", normalized_input)?,
+                    params: Self::parse_tool_params(
+                        dto::json::tool_calls::EXECUTE_COMMAND_AGENT_FACING,
+                        normalized_input,
+                    )?,
                 }),
                 models::InternalToolType::Sleep => Ok(ToolCallRequest::Sleep {
                     params: Self::parse_tool_params("sleep", normalized_input)?,
@@ -314,7 +319,10 @@ impl AgentExecutor {
                     params: Self::parse_tool_params("save_memory", normalized_input)?,
                 }),
                 models::InternalToolType::UpdateMemory => Ok(ToolCallRequest::UpdateMemory {
-                    params: Self::parse_tool_params("update_memory", normalized_input)?,
+                    params: Self::parse_tool_params(
+                        dto::json::tool_calls::agent_facing_tool_name("update_memory"),
+                        normalized_input,
+                    )?,
                 }),
                 models::InternalToolType::CreateProjectTask => {
                     Ok(ToolCallRequest::CreateProjectTask {

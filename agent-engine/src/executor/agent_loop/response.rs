@@ -84,7 +84,7 @@ impl AgentExecutor {
 
     pub(super) fn looks_like_hallucinated_tool_render(text: &str) -> bool {
         let pseudo_call_markers = [
-            "+ execute_command:",
+            "+ bash:",
             "+ read_file:",
             "+ write_file:",
             "+ edit_file:",

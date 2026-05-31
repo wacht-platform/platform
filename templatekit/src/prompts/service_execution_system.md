@@ -107,11 +107,12 @@ coordinator_only_outcomes = ["completed", "cancelled", "waiting_for_children", "
 
 [tools.external]
 discovery = "search_tools"
-load = "load_tools with exact names"
+need_a_capability_not_loaded = "search for it before assuming it's unavailable — do not give up or hand-roll a workaround until you have searched"
+load = "load_tools with exact names; load the whole relevant set at once to fill your slots (up to 15), not one tool at a time"
 invocation = "call loaded tool names directly"
 forbidden = ["looking for them on disk", "installing packages"]
-discovery_budget = "search_tools once per discovery need"
-missing_integration = "abort_task(blocked) naming the missing app"
+discovery_budget = "search_tools once per need, twice at most"
+missing_integration = "only after searching turns up nothing, abort_task(blocked) naming the missing app"
 
 [workspace_hygiene]
 goal = "keep /task/ tidy"

@@ -943,7 +943,7 @@ impl AgentExecutor {
             serde_json::Value::Null,
         )
         .await;
-        let output = llm
+        let mut output = llm
             .generate_tool_calls(request, native_tools, cache_request)
             .await?;
         self.run_hooks(
@@ -951,6 +951,12 @@ impl AgentExecutor {
             serde_json::Value::Null,
         )
         .await;
+        for call in output.calls.iter_mut() {
+            let canonical = dto::json::tool_calls::canonical_tool_name(&call.tool_name);
+            if canonical != call.tool_name {
+                call.tool_name = canonical.to_string();
+            }
+        }
         let raw_output_snapshot = serde_json::to_string(&output).unwrap_or_default();
         self.budget.tick_llm();
         self.budget.tick_tools(output.calls.len());
@@ -1132,7 +1138,7 @@ impl AgentExecutor {
                 None => {
                     let available_names = available_tools
                         .iter()
-                        .map(|t| t.name.as_str())
+                        .map(|t| dto::json::tool_calls::agent_facing_tool_name(&t.name))
                         .collect::<Vec<_>>()
                         .join(", ");
                     self.record_invalid_tool_call(
@@ -1153,7 +1159,10 @@ impl AgentExecutor {
                     self.record_invalid_tool_call(
                         &call.tool_name,
                         &call.arguments,
-                        &format!("Tool '{}' arguments must be a JSON object", call.tool_name),
+                        &format!(
+                            "Tool '{}' arguments must be a JSON object",
+                            dto::json::tool_calls::agent_facing_tool_name(&call.tool_name)
+                        ),
                     )
                     .await?;
                     continue;

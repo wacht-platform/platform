@@ -365,6 +365,11 @@ impl AgentExecutor {
                 self.load_tool_prompt_context(is_coordinator),
             )?,
         };
+        self.is_delegated_task = board_context
+            .active_board_item
+            .as_ref()
+            .map(|item| item.metadata.kind.as_deref() == Some("delegated_task"))
+            .unwrap_or(false);
         let context = AgentLoopContext {
             runtime: AgentLoopRuntimeContext {
                 current_datetime_utc: chrono::Utc::now()

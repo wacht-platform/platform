@@ -92,7 +92,7 @@ impl ToolExecutor {
         let thread = self.ctx.get_thread().await?;
         let memory_id = params.memory_id.parse::<i64>().map_err(|_| {
             AppError::BadRequest(format!(
-                "No memory exists with id '{}'. Did you mean to create a new memory entry? If so, call `save_memory` — `update_memory` only edits an existing memory by its numeric id.",
+                "No memory exists with id '{}'. Did you mean to create a new memory entry? If so, call `save_memory` — `revise_memory` only edits an existing memory by its numeric id.",
                 params.memory_id
             ))
         })?;
@@ -116,7 +116,7 @@ impl ToolExecutor {
             Ok(memory) => memory,
             Err(AppError::NotFound(_)) => {
                 return Err(AppError::NotFound(format!(
-                    "No memory exists with id '{}'. Did you mean to create a new memory entry? If so, call `save_memory` — `update_memory` only edits an existing memory.",
+                    "No memory exists with id '{}'. Did you mean to create a new memory entry? If so, call `save_memory` — `revise_memory` only edits an existing memory.",
                     memory_id
                 )));
             }

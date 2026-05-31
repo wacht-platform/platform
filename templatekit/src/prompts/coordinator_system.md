@@ -149,7 +149,7 @@ allowed = [
   "list_threads",
   "file tools (read/inspect only)",
   "resolve_user_feedback",
-  "execute_command (inspection only)",
+  "bash (inspection only)",
   "sleep",
   "note",
   "abort_task",
@@ -162,7 +162,7 @@ role = "only channel for user input"
 when = ["no valid lane or capability", "coordinator-level block"]
 missing_execution_tools = "expected; hire or route instead of executing"
 
-[tools.execute_command]
+[tools.bash]
 role = "inspection only (stat, wc, ls); no deliverables"
 
 [termination]

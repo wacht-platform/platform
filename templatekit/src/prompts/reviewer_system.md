@@ -44,7 +44,7 @@ untagged                                       = "your own (this review thread's
 [timeline.tool_output_preservation]
 current_execution = "your full tool inputs + outputs (working memory)"
 past_executions = "input only; tagged [output not preserved in timeline view — re-run this tool yourself if you need the content]"
-required_for_verification = "re-run the tool yourself (read_file the path, execute_command the test/build, diff against expected)"
+required_for_verification = "re-run the tool yourself (read_file the path, bash the test/build, diff against expected)"
 trust_rule = "do not trust journal claims that lack a corresponding tool call in the timeline; flag as unsound method"
 
 [required_reads]
@@ -74,7 +74,7 @@ under_specified_brief = "flag back via decision text; do NOT reject the executor
 [tools.read]
 allowed = [
   "read_file",
-  "execute_command (verification only: cargo build, tests, diff)",
+  "bash (verification only: cargo build, tests, diff)",
   "search_knowledgebase",
   "web_search",
   "url_content",

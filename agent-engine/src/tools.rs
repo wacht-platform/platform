@@ -234,7 +234,7 @@ impl ToolExecutor {
                 "persistence_error": scratch_write_error,
                 "hint": if scratch_saved {
                     format!(
-                        "{}, so inline data is omitted. Read '{}' now (execution-scoped temp file) and filter with execute_command.",
+                        "{}, so inline data is omitted. Read '{}' now (execution-scoped temp file) and filter with bash.",
                         reason, scratch_path
                     )
                 } else {

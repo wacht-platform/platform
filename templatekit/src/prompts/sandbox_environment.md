@@ -52,7 +52,7 @@ response = "wait one turn, retry once"
 on_persistent = "tell user sandbox is degraded; do not pretend you read it; do not invent workarounds"
 
 [error_class.command_exit_nonzero]
-matches = "execute_command exit_code ≠ 0"
+matches = "bash exit_code ≠ 0"
 meaning = "normal shell failure surfaced as data"
 response = "read stdout/stderr and act on the actual message"
 note = "`command not found` = binary absent from image, not platform broken"
