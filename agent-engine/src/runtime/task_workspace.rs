@@ -127,6 +127,7 @@ pub struct TaskWorkspaceBriefInput<'a> {
     pub task_key: &'a str,
     pub title: &'a str,
     pub is_recurring: bool,
+    pub brief: Option<&'a str>,
 }
 
 pub struct PreparedTaskWorkspace {
@@ -177,6 +178,18 @@ pub async fn prepare_task_workspace(
         filesystem
             .write_file(TASK_WORKSPACE_RUNBOOK_FILE, &contents, false)
             .await?;
+    }
+
+    if let Some(brief) = input.brief {
+        if read_sandbox_optional(filesystem, TASK_WORKSPACE_TASK_FILE)
+            .await?
+            .is_none()
+        {
+            let contents = format!("# {}\n\n{}\n", input.title, brief);
+            filesystem
+                .write_file(TASK_WORKSPACE_TASK_FILE, &contents, false)
+                .await?;
+        }
     }
 
     Ok(PreparedTaskWorkspace {

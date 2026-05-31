@@ -450,14 +450,21 @@ impl AgentExecutor {
         task_key: &str,
         title: &str,
         is_recurring: bool,
+        board_item: Option<&models::ProjectTaskBoardItem>,
     ) -> Result<(TaskWorkspaceContext, String), AppError> {
         let safe_task_key = Self::sanitize_task_path_segment(task_key);
+        let brief = board_item
+            .filter(|item| item.exclusive_owner_agent_id.is_some())
+            .and_then(|item| item.description.as_deref())
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
         let prepared = prepare_task_workspace(
             &self.filesystem,
             &TaskWorkspaceBriefInput {
                 task_key: &safe_task_key,
                 title,
                 is_recurring,
+                brief,
             },
         )
         .await?;

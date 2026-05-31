@@ -225,7 +225,12 @@ impl AgentExecutor {
                     .as_ref()
                     .and_then(|item| item.typed_metadata().schedule_carryover);
                 let ((workspace, journal_hash), task_journal_tail) = tokio::try_join!(
-                    self.prepare_task_workspace_for_key(&task_key, &workspace_title, is_recurring),
+                    self.prepare_task_workspace_for_key(
+                        &task_key,
+                        &workspace_title,
+                        is_recurring,
+                        board_item.as_ref(),
+                    ),
                     self.task_journal_tail_snippet(),
                 )?;
                 self.initialize_task_journal_start_hash(journal_hash)
@@ -470,7 +475,12 @@ impl AgentExecutor {
                     .as_ref()
                     .and_then(|item| item.typed_metadata().schedule_carryover);
                 let ((workspace, journal_hash), task_journal_tail) = tokio::try_join!(
-                    self.prepare_task_workspace_for_key(&task_key, &title, is_recurring),
+                    self.prepare_task_workspace_for_key(
+                        &task_key,
+                        &title,
+                        is_recurring,
+                        board_item.as_ref(),
+                    ),
                     self.task_journal_tail_snippet(),
                 )?;
                 self.initialize_task_journal_start_hash(journal_hash)
