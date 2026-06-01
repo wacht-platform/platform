@@ -44,6 +44,14 @@ pub struct UserEvent {
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub timestamp: DateTime<Utc>,
     pub ip_address: Option<String>,
+    pub country: String,
+    pub device: String,
+}
+
+#[derive(Serialize, Deserialize, Row)]
+pub struct BreakdownRow {
+    pub label: String,
+    pub count: u64,
 }
 
 #[derive(Serialize, Deserialize, Row)]
@@ -618,6 +626,35 @@ impl ClickHouseService {
         insert.write(event).await?;
         insert.end().await?;
         Ok(())
+    }
+
+    /// Aggregate signin events by a single column (e.g. auth_method, country, device).
+    /// `column` is an internal, hardcoded identifier — never user input.
+    pub async fn get_breakdown(
+        &self,
+        deployment_id: i64,
+        column: &str,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Result<Vec<BreakdownRow>, AppError> {
+        let from_str = Self::format_query_timestamp(from);
+        let to_str = Self::format_query_timestamp(to);
+        let query = format!(
+            "SELECT ifNull({col}, '') AS label, count(*) AS count FROM user_events \
+             WHERE deployment_id = ? AND event_type = 'signin' AND ifNull({col}, '') != '' \
+             AND timestamp >= ? AND timestamp <= ? \
+             GROUP BY label ORDER BY count DESC LIMIT 8",
+            col = column
+        );
+        let rows = self
+            .client
+            .query(&query)
+            .bind(deployment_id)
+            .bind(&from_str)
+            .bind(&to_str)
+            .fetch_all::<BreakdownRow>()
+            .await?;
+        Ok(rows)
     }
 
     pub async fn insert_api_audit_log(

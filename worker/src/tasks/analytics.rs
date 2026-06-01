@@ -14,6 +14,8 @@ pub struct AnalyticsEventTask {
     pub auth_method: Option<String>,
     pub timestamp: DateTime<Utc>,
     pub ip_address: Option<String>,
+    pub country: Option<String>,
+    pub device: Option<String>,
 }
 
 pub async fn store_analytics_event_impl(
@@ -29,6 +31,8 @@ pub async fn store_analytics_event_impl(
         auth_method: task.auth_method,
         timestamp: task.timestamp,
         ip_address: task.ip_address,
+        country: task.country.unwrap_or_default(),
+        device: task.device.unwrap_or_default(),
     };
 
     app_state

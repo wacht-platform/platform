@@ -1,6 +1,6 @@
 use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
-use common::clickhouse::RecentSignup;
+use common::clickhouse::{ClickHouseService, RecentSignup};
 use tracing::error;
 
 use crate::application::AppState;
@@ -10,6 +10,12 @@ pub struct DailyAuthMetric {
     pub day: String,
     pub signins: i64,
     pub signups: i64,
+}
+
+#[derive(serde::Serialize)]
+pub struct BreakdownItem {
+    pub label: String,
+    pub count: i64,
 }
 
 #[derive(serde::Serialize)]
@@ -26,6 +32,9 @@ pub struct AnalyticsStatsResponse {
     pub daily_metrics: Vec<DailyAuthMetric>,
     pub recent_signups: Vec<RecentSignup>,
     pub recent_signins: Vec<RecentSignup>,
+    pub methods: Vec<BreakdownItem>,
+    pub top_countries: Vec<BreakdownItem>,
+    pub devices: Vec<BreakdownItem>,
 }
 
 fn previous_window(from: DateTime<Utc>, to: DateTime<Utc>) -> (DateTime<Utc>, DateTime<Utc>) {
@@ -38,6 +47,28 @@ fn calculate_change(current: i64, previous: i64) -> Option<f64> {
         if current > 0 { Some(100.0) } else { None }
     } else {
         Some(((current - previous) as f64 / previous as f64) * 100.0)
+    }
+}
+
+async fn breakdown(
+    clickhouse: &ClickHouseService,
+    deployment_id: i64,
+    column: &'static str,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+) -> Vec<BreakdownItem> {
+    match clickhouse.get_breakdown(deployment_id, column, from, to).await {
+        Ok(rows) => rows
+            .into_iter()
+            .map(|r| BreakdownItem {
+                label: r.label,
+                count: r.count as i64,
+            })
+            .collect(),
+        Err(e) => {
+            error!(error = ?e, column, "Failed to get analytics breakdown");
+            Vec::new()
+        }
     }
 }
 
@@ -68,6 +99,10 @@ pub async fn get_analytics_stats(
         })
         .collect();
 
+    let methods = breakdown(clickhouse, deployment_id, "auth_method", from, to).await;
+    let top_countries = breakdown(clickhouse, deployment_id, "country", from, to).await;
+    let devices = breakdown(clickhouse, deployment_id, "device", from, to).await;
+
     Ok(AnalyticsStatsResponse {
         unique_signins: stats.unique_signins as i64,
         signups: stats.signups as i64,
@@ -90,5 +125,8 @@ pub async fn get_analytics_stats(
         daily_metrics,
         recent_signups: stats.get_recent_signups(),
         recent_signins: stats.get_recent_signins(),
+        methods,
+        top_countries,
+        devices,
     })
 }
