@@ -1,7 +1,7 @@
 use axum::{
     Router,
     extract::DefaultBodyLimit,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
 };
 
 use crate::api;
@@ -54,6 +54,10 @@ pub(super) fn ai_routes() -> Router<AppState> {
             "/ai/agents/{agent_id}/sub-agents/{sub_agent_id}",
             post(api::ai_agents::attach_sub_agent_to_agent)
                 .delete(api::ai_agents::detach_sub_agent_from_agent),
+        )
+        .route(
+            "/ai/agents/{agent_id}/role-agent",
+            put(api::ai_agents::set_agent_role_agent),
         )
         .route(
             "/ai/tools",

@@ -21,7 +21,8 @@ use models::{
 };
 use queries::{
     GetActorByIdQuery, GetActorProjectByIdQuery, GetAgentThreadByIdQuery, GetAgentThreadStateQuery,
-    GetLatestThreadTaskGraphQuery, GetMcpServerByIdQuery, GetProjectTaskBoardByIdQuery,
+    GetAiAgentByIdQuery, GetLatestThreadTaskGraphQuery, GetMcpServerByIdQuery,
+    GetProjectTaskBoardByIdQuery,
     GetProjectTaskBoardByProjectIdQuery, GetProjectTaskBoardItemByIdQuery,
     GetProjectTaskScheduleByTaskKeyQuery, GetThreadTaskGraphByIdQuery,
     GetThreadTaskGraphSummaryQuery, ListActorProjectsQuery, ListActorsQuery, ListAgentThreadsQuery,
@@ -720,10 +721,17 @@ pub async fn create_actor_project(
     .await?;
 
     if let Some(agent_id) = selected_agent_id {
+        // The coordinator is always the selected agent; the reviewer defaults to
+        // self unless the agent designates one of its sub-agents as reviewer.
+        let reviewer_agent_id = GetAiAgentByIdQuery::new(deployment_id, agent_id)
+            .execute_with_db(&mut *tx)
+            .await?
+            .reviewer_agent_id
+            .unwrap_or(agent_id);
         UpsertThreadAgentAssignmentCommand::new(coordinator_thread_id, agent_id)
             .execute_with_db(&mut *tx)
             .await?;
-        UpsertThreadAgentAssignmentCommand::new(review_thread_id, agent_id)
+        UpsertThreadAgentAssignmentCommand::new(review_thread_id, reviewer_agent_id)
             .execute_with_db(&mut *tx)
             .await?;
     }
@@ -805,6 +813,8 @@ pub async fn create_agent_thread(
     ) {
         return Err(AppError::Validation("invalid thread_purpose".to_string()));
     }
+    let is_conversation =
+        resolved_thread_purpose.as_str() == models::agent_thread::purpose::CONVERSATION;
     let resolved_responsibility = responsibility.filter(|value| !value.trim().is_empty());
     let resolved_capability_tags = capability_tags.unwrap_or_default();
     let resolved_reusable = reusable.unwrap_or(false);
@@ -846,7 +856,18 @@ pub async fn create_agent_thread(
         .await?;
 
     if let Some(agent_id) = agent_id {
-        UpsertThreadAgentAssignmentCommand::new(thread.id, agent_id)
+        // A user-facing conversation defaults to the agent itself unless the agent
+        // designates one of its sub-agents as its conversation agent.
+        let bound_agent_id = if is_conversation {
+            GetAiAgentByIdQuery::new(deployment_id, agent_id)
+                .execute_with_db(app_state.db_router.writer())
+                .await?
+                .conversation_agent_id
+                .unwrap_or(agent_id)
+        } else {
+            agent_id
+        };
+        UpsertThreadAgentAssignmentCommand::new(thread.id, bound_agent_id)
             .execute_with_db(app_state.db_router.writer())
             .await?;
     }

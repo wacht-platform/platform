@@ -1,6 +1,6 @@
 use commands::{
-    AttachSubAgentToAgentCommand, CreateAiAgentCommand, DeleteAiAgentCommand,
-    DetachSubAgentFromAgentCommand, UpdateAiAgentCommand,
+    AgentRoleAgentKind, AttachSubAgentToAgentCommand, CreateAiAgentCommand, DeleteAiAgentCommand,
+    DetachSubAgentFromAgentCommand, SetAgentRoleAgentCommand, UpdateAiAgentCommand,
 };
 use common::ReadConsistency;
 use common::error::AppError;
@@ -32,6 +32,10 @@ pub struct AgentDetailsResponse {
     pub tools: Vec<serde_json::Value>,
     pub knowledge_bases: Vec<serde_json::Value>,
     pub sub_agents: Option<Vec<i64>>,
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
+    pub reviewer_agent_id: Option<i64>,
+    #[serde(default, with = "models::utils::serde::i64_as_string_option")]
+    pub conversation_agent_id: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strong_model: Option<models::AgentModelOverride>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -137,6 +141,8 @@ pub async fn get_ai_agent_details(
         tools: vec![],
         knowledge_bases: vec![],
         sub_agents: agent.sub_agents,
+        reviewer_agent_id: agent.reviewer_agent_id,
+        conversation_agent_id: agent.conversation_agent_id,
         strong_model: agent.strong_model,
         weak_model: agent.weak_model,
         require_approval_mcp: agent.require_approval_mcp,
@@ -246,4 +252,27 @@ pub async fn detach_sub_agent_from_agent(
         .execute_with_deps(&db_deps)
         .await?;
     Ok(())
+}
+
+pub async fn set_agent_role_agent(
+    app_state: &AppState,
+    deployment_id: i64,
+    agent_id: i64,
+    role: &str,
+    target_agent_id: Option<i64>,
+) -> Result<AiAgentWithDetails, AppError> {
+    let role = match role {
+        "reviewer" => AgentRoleAgentKind::Reviewer,
+        "conversation" => AgentRoleAgentKind::Conversation,
+        other => {
+            return Err(AppError::BadRequest(format!(
+                "unknown role agent kind: {other}"
+            )));
+        }
+    };
+    let db_deps = deps::from_app(app_state).db();
+    SetAgentRoleAgentCommand::new(deployment_id, agent_id, role, target_agent_id)
+        .execute_with_deps(&db_deps)
+        .await?;
+    get_ai_agent_by_id(app_state, deployment_id, agent_id).await
 }

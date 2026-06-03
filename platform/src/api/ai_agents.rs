@@ -9,7 +9,7 @@ use crate::application::{
 use common::state::AppState;
 
 use dto::{
-    json::deployment::{CreateAgentRequest, UpdateAgentRequest},
+    json::deployment::{CreateAgentRequest, SetAgentRoleAgentRequest, UpdateAgentRequest},
     query::deployment::GetAgentsQuery,
 };
 use models::{AiAgent, AiAgentWithDetails};
@@ -123,4 +123,22 @@ pub async fn detach_sub_agent_from_agent(
     )
     .await?;
     Ok(().into())
+}
+
+pub async fn set_agent_role_agent(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentParams>,
+    Json(request): Json<SetAgentRoleAgentRequest>,
+) -> ApiResult<AiAgentWithDetails> {
+    let target_agent_id = request.agent_id.map(i64::from);
+    let agent = ai_agents_app::set_agent_role_agent(
+        &app_state,
+        deployment_id,
+        params.agent_id,
+        &request.role,
+        target_agent_id,
+    )
+    .await?;
+    Ok(agent.into())
 }

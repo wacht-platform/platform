@@ -843,6 +843,114 @@ impl DetachSubAgentFromAgentCommand {
         .await
         .map_err(AppError::Database)?;
 
+        // A detached sub-agent can no longer be this agent's reviewer or conversation agent.
+        sqlx::query!(
+            "UPDATE ai_agents
+             SET reviewer_agent_id = NULLIF(reviewer_agent_id, $3),
+                 conversation_agent_id = NULLIF(conversation_agent_id, $3)
+             WHERE deployment_id = $1 AND id = $2
+               AND (reviewer_agent_id = $3 OR conversation_agent_id = $3)",
+            self.deployment_id,
+            self.agent_id,
+            self.sub_agent_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        tx.commit().await.map_err(AppError::Database)?;
+
+        Ok(())
+    }
+}
+
+/// A per-agent "role agent" pointer: which agent fills a role (review or
+/// user-facing conversation), defaulting to the agent itself.
+#[derive(Clone, Copy)]
+pub enum AgentRoleAgentKind {
+    Reviewer,
+    Conversation,
+}
+
+impl AgentRoleAgentKind {
+    fn label(self) -> &'static str {
+        match self {
+            AgentRoleAgentKind::Reviewer => "Reviewer",
+            AgentRoleAgentKind::Conversation => "Conversation agent",
+        }
+    }
+}
+
+pub struct SetAgentRoleAgentCommand {
+    pub deployment_id: i64,
+    pub agent_id: i64,
+    pub role: AgentRoleAgentKind,
+    pub target_agent_id: Option<i64>,
+}
+
+impl SetAgentRoleAgentCommand {
+    pub fn new(
+        deployment_id: i64,
+        agent_id: i64,
+        role: AgentRoleAgentKind,
+        target_agent_id: Option<i64>,
+    ) -> Self {
+        Self {
+            deployment_id,
+            agent_id,
+            role,
+            target_agent_id,
+        }
+    }
+
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasDbRouter,
+    {
+        let mut tx = deps
+            .db_router()
+            .writer()
+            .begin()
+            .await
+            .map_err(AppError::Database)?;
+
+        let target = validate_role_agent(
+            &mut tx,
+            self.deployment_id,
+            self.agent_id,
+            self.target_agent_id,
+            self.role.label(),
+        )
+        .await?;
+
+        let now = Utc::now();
+        match self.role {
+            AgentRoleAgentKind::Reviewer => {
+                sqlx::query!(
+                    "UPDATE ai_agents SET reviewer_agent_id = $3::bigint, updated_at = $4 WHERE id = $1 AND deployment_id = $2",
+                    self.agent_id,
+                    self.deployment_id,
+                    target,
+                    now,
+                )
+                .execute(&mut *tx)
+                .await
+                .map_err(AppError::Database)?;
+            }
+            AgentRoleAgentKind::Conversation => {
+                sqlx::query!(
+                    "UPDATE ai_agents SET conversation_agent_id = $3::bigint, updated_at = $4 WHERE id = $1 AND deployment_id = $2",
+                    self.agent_id,
+                    self.deployment_id,
+                    target,
+                    now,
+                )
+                .execute(&mut *tx)
+                .await
+                .map_err(AppError::Database)?;
+            }
+        }
+
         tx.commit().await.map_err(AppError::Database)?;
 
         Ok(())
@@ -896,6 +1004,20 @@ impl DeleteAiAgentCommand {
 
         sqlx::query!(
             "DELETE FROM ai_agent_sub_agents WHERE deployment_id = $1 AND (agent_id = $2 OR sub_agent_id = $2)",
+            self.deployment_id,
+            self.agent_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        // Any agent that named this one as its reviewer or conversation agent falls back to self.
+        sqlx::query!(
+            "UPDATE ai_agents
+             SET reviewer_agent_id = NULLIF(reviewer_agent_id, $2),
+                 conversation_agent_id = NULLIF(conversation_agent_id, $2)
+             WHERE deployment_id = $1
+               AND (reviewer_agent_id = $2 OR conversation_agent_id = $2)",
             self.deployment_id,
             self.agent_id
         )
@@ -1129,6 +1251,53 @@ async fn validate_sub_agent_ids(
     }
 
     Ok(())
+}
+
+/// Validates a per-agent role-agent pointer (reviewer / conversation): the target
+/// must be the agent itself or one of its attached sub-agents. Returns the value to
+/// store — `None` when the target is the agent itself (self is the default).
+async fn validate_role_agent(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    deployment_id: i64,
+    agent_id: i64,
+    candidate: Option<i64>,
+    role_label: &str,
+) -> Result<Option<i64>, AppError> {
+    // "self" is the default, stored as NULL so it never strands a stale pointer.
+    let normalized = candidate.filter(|id| *id != agent_id);
+
+    let parent_exists: Option<i64> = sqlx::query_scalar!(
+        "SELECT id FROM ai_agents WHERE id = $1 AND deployment_id = $2",
+        agent_id,
+        deployment_id
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(AppError::Database)?;
+
+    if parent_exists.is_none() {
+        return Err(AppError::NotFound(AGENT_NOT_FOUND.to_string()));
+    }
+
+    if let Some(candidate_id) = normalized {
+        let attached: Option<i64> = sqlx::query_scalar!(
+            "SELECT sub_agent_id FROM ai_agent_sub_agents WHERE deployment_id = $1 AND agent_id = $2 AND sub_agent_id = $3",
+            deployment_id,
+            agent_id,
+            candidate_id
+        )
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        if attached.is_none() {
+            return Err(AppError::BadRequest(format!(
+                "{role_label} must be the agent itself or one of its attached sub-agents"
+            )));
+        }
+    }
+
+    Ok(normalized)
 }
 
 fn dedupe_ids(ids: &[i64]) -> Vec<i64> {

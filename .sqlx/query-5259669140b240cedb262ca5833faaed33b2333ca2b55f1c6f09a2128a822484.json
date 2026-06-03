@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ai_agents SET reviewer_agent_id = $3::bigint, updated_at = $4 WHERE id = $1 AND deployment_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5259669140b240cedb262ca5833faaed33b2333ca2b55f1c6f09a2128a822484"
+}

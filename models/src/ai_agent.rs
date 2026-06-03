@@ -88,6 +88,12 @@ pub struct AiAgentWithDetails {
     /// Agents this agent can spawn as sub-agents
     #[serde(default, with = "crate::utils::serde::option_vec_i64_as_string")]
     pub sub_agents: Option<Vec<i64>>,
+    /// Designated reviewer agent (None = the agent reviews its own work)
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
+    pub reviewer_agent_id: Option<i64>,
+    /// Designated conversation agent (None = the agent handles its own user-facing chats)
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
+    pub conversation_agent_id: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strong_model: Option<AgentModelOverride>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,6 +123,12 @@ pub struct AiAgentWithFeatures {
     /// Agents this agent can spawn as sub-agents
     #[serde(default, with = "crate::utils::serde::option_vec_i64_as_string")]
     pub sub_agents: Option<Vec<i64>>,
+    /// Designated reviewer agent (None = the agent reviews its own work)
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
+    pub reviewer_agent_id: Option<i64>,
+    /// Designated conversation agent (None = the agent handles its own user-facing chats)
+    #[serde(default, with = "crate::utils::serde::i64_as_string_option")]
+    pub conversation_agent_id: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strong_model: Option<AgentModelOverride>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

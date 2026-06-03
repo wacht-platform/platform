@@ -52,6 +52,15 @@ pub struct UpdateAgentToolApprovalActionRequest {
 }
 
 #[derive(Deserialize)]
+pub struct SetAgentRoleAgentRequest {
+    /// Which role to set: "reviewer" or "conversation".
+    pub role: String,
+    /// Target agent id; null or omitted resets to the agent itself (the default).
+    #[serde(default)]
+    pub agent_id: Option<FlexibleI64>,
+}
+
+#[derive(Deserialize)]
 pub struct CreateToolRequest {
     pub name: String,
     pub description: Option<String>,

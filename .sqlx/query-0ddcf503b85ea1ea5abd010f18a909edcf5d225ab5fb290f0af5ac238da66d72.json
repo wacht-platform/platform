@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ai_agents\n             SET reviewer_agent_id = NULLIF(reviewer_agent_id, $3),\n                 conversation_agent_id = NULLIF(conversation_agent_id, $3)\n             WHERE deployment_id = $1 AND id = $2\n               AND (reviewer_agent_id = $3 OR conversation_agent_id = $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0ddcf503b85ea1ea5abd010f18a909edcf5d225ab5fb290f0af5ac238da66d72"
+}
