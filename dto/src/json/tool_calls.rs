@@ -51,6 +51,10 @@ pub struct ReadFileParams {
     pub start_line: Option<usize>,
     #[serde(default)]
     pub end_line: Option<usize>,
+    #[serde(default)]
+    pub start_char: Option<usize>,
+    #[serde(default)]
+    pub end_char: Option<usize>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

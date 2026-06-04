@@ -30,6 +30,13 @@ const COMPLEXITY_GATE_MIN_CHARS: usize = 2_000;
 const COMPLEXITY_MAX_DEPTH: usize = 5;
 const COMPLEXITY_MAX_LEAVES: usize = 150;
 const COMPLEXITY_MAX_OBJECT_ARRAY_LEN: usize = 20;
+const OMITTED_PREVIEW_CHARS: usize = 6_000;
+
+fn looks_like_json(s: &str) -> bool {
+    let trimmed = s.trim();
+    (trimmed.starts_with('{') || trimmed.starts_with('['))
+        && serde_json::from_str::<Value>(trimmed).is_ok()
+}
 
 fn compute_shape_hint(value: &Value) -> String {
     if let Some(obj) = value.as_object() {
@@ -173,11 +180,9 @@ impl ToolExecutor {
 
     async fn apply_output_postprocess(
         &self,
-        mut final_result: Value,
+        final_result: Value,
         filesystem: &AgentFilesystem,
     ) -> Result<Value, AppError> {
-        let hint = compute_shape_hint(&final_result);
-
         let result_str = serde_json::to_string_pretty(&final_result)?;
         let char_count = result_str.chars().count();
         let threshold = INLINE_OUTPUT_THRESHOLD_CHARS;
@@ -188,6 +193,28 @@ impl ToolExecutor {
                 || complexity.leaf_count > COMPLEXITY_MAX_LEAVES
                 || complexity.max_object_array_len > COMPLEXITY_MAX_OBJECT_ARRAY_LEN);
 
+        if char_count <= threshold && !too_complex_for_inline {
+            return Ok(final_result);
+        }
+
+        let hint = compute_shape_hint(&final_result);
+        let primary_payload: Option<String> = final_result.as_object().and_then(|obj| {
+            ["stdout", "content", "result", "data"]
+                .into_iter()
+                .find_map(|k| {
+                    obj.get(k)
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                })
+        });
+        let scratch_is_json = primary_payload
+            .as_deref()
+            .map(looks_like_json)
+            .unwrap_or(false);
+        let scratch_body: &str = primary_payload.as_deref().unwrap_or(&result_str);
+        let extension = if scratch_is_json { "json" } else { "txt" };
+
         let timestamp = chrono::Utc::now().timestamp_millis();
         let random_suffix: String = (0..4)
             .map(|_| {
@@ -197,84 +224,54 @@ impl ToolExecutor {
             })
             .collect();
 
-        let scratch_filename = format!("tool_output_{}_{}.txt", timestamp, random_suffix);
+        let scratch_filename = format!("tool_output_{}_{}.{}", timestamp, random_suffix, extension);
         let scratch_path = format!("/scratch/{}", scratch_filename);
-        let scratch_write_result = filesystem
-            .write_file(&scratch_path, &result_str, false)
-            .await;
+        let scratch_write_result = filesystem.write_file(&scratch_path, scratch_body, false).await;
         let scratch_saved = scratch_write_result.is_ok();
         let scratch_write_error = scratch_write_result.err().map(|e| e.to_string());
 
-        let lines = result_str.lines().count();
-        let size_bytes = result_str.len();
+        let payload_chars = scratch_body.chars().count();
+        let preview: String = scratch_body.chars().take(OMITTED_PREVIEW_CHARS).collect();
+        let preview_truncated = payload_chars > OMITTED_PREVIEW_CHARS;
+        let size_bytes = scratch_body.len();
 
-        if char_count > threshold || too_complex_for_inline {
-            let reason = if char_count > threshold {
-                format!("Output is larger than {} chars", threshold)
-            } else {
-                format!(
-                    "Output is structurally complex (depth={}, leaves={}, max_object_array_len={})",
-                    complexity.max_depth, complexity.leaf_count, complexity.max_object_array_len
-                )
-            };
-
-            return Ok(serde_json::json!({
-                "truncated": true,
-                "data_omitted": true,
-                "saved_output_shape": hint,
-                "original_stats": {
-                    "size_bytes": size_bytes,
-                    "lines": lines,
-                    "char_count": char_count,
-                    "max_depth": complexity.max_depth,
-                    "leaf_count": complexity.leaf_count,
-                    "max_object_array_len": complexity.max_object_array_len,
-                    "saved_to_path": if scratch_saved { serde_json::json!(scratch_path) } else { serde_json::Value::Null }
-                },
-                "persistence_error": scratch_write_error,
-                "hint": if scratch_saved {
-                    format!(
-                        "{}, so inline data is omitted. Read '{}' now (execution-scoped temp file) and filter with bash.",
-                        reason, scratch_path
-                    )
-                } else {
-                    format!(
-                        "{}, so inline data is omitted. Could not persist a scratch copy due to a write error.",
-                        reason
-                    )
-                },
-            }));
-        }
-
-        if let Some(obj) = final_result.as_object_mut() {
-            if scratch_saved {
-                obj.insert(
-                    "saved_output_path".to_string(),
-                    serde_json::json!(scratch_path),
-                );
-                obj.insert("saved_output_shape".to_string(), serde_json::json!(hint));
-            } else if let Some(error) = scratch_write_error.as_ref() {
-                obj.insert("persistence_error".to_string(), serde_json::json!(error));
-            }
+        let reason = if char_count > threshold {
+            format!("Output is {} chars (inline limit {})", char_count, threshold)
         } else {
-            let mut payload = serde_json::json!({
-                "result": final_result,
-            });
-            if let Some(obj) = payload.as_object_mut() {
-                if scratch_saved {
-                    obj.insert(
-                        "saved_output_path".to_string(),
-                        serde_json::json!(scratch_path),
-                    );
-                    obj.insert("saved_output_shape".to_string(), serde_json::json!(hint));
-                } else if let Some(error) = scratch_write_error.as_ref() {
-                    obj.insert("persistence_error".to_string(), serde_json::json!(error));
-                }
-            }
-            final_result = payload;
-        }
+            format!(
+                "Output is structurally complex (depth={}, leaves={}, max_object_array_len={})",
+                complexity.max_depth, complexity.leaf_count, complexity.max_object_array_len
+            )
+        };
 
-        Ok(final_result)
+        let hint_text = if scratch_saved {
+            format!(
+                "{reason}, so inline data is omitted. 'preview' has the first {OMITTED_PREVIEW_CHARS} chars; the full raw output ({payload_chars} chars / {size_bytes} bytes) is saved at '{scratch_path}' (execution-scoped temp file). Page it with read_file using start_char/end_char (e.g. start_char=1 end_char={OMITTED_PREVIEW_CHARS}, then advance the window), or `tail -c +OFFSET {scratch_path} | head -c {OMITTED_PREVIEW_CHARS}`. Next time keep output under {threshold} chars: filter narrowly or cap with `| head -c {OMITTED_PREVIEW_CHARS}`."
+            )
+        } else {
+            format!(
+                "{reason}, so inline data is omitted. Could not persist a scratch copy due to a write error."
+            )
+        };
+
+        Ok(serde_json::json!({
+            "truncated": true,
+            "data_omitted": true,
+            "saved_output_shape": hint,
+            "preview": preview,
+            "preview_truncated": preview_truncated,
+            "original_stats": {
+                "size_bytes": size_bytes,
+                "char_count": char_count,
+                "payload_chars": payload_chars,
+                "max_depth": complexity.max_depth,
+                "leaf_count": complexity.leaf_count,
+                "max_object_array_len": complexity.max_object_array_len,
+                "saved_to_path": if scratch_saved { serde_json::json!(scratch_path) } else { serde_json::Value::Null }
+            },
+            "persistence_error": scratch_write_error,
+            "hint": hint_text,
+        }))
     }
 
     #[tracing::instrument(

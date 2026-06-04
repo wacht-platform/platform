@@ -70,23 +70,38 @@ impl AgentFilesystem {
         path: &str,
         start_line: Option<usize>,
         end_line: Option<usize>,
+        start_char: Option<usize>,
+        end_char: Option<usize>,
     ) -> Result<ReadFileResult, AppError> {
         let bytes = self.read_file_bytes(path).await?;
         let content = String::from_utf8(bytes)
             .map_err(|e| AppError::Internal(format!("file {} is not valid utf-8: {}", path, e)))?;
 
-        let lines: Vec<&str> = content.lines().collect();
-        let total_lines = lines.len();
+        let total_lines = content.lines().count();
+        let total_chars = content.chars().count();
 
+        if start_char.is_some() || end_char.is_some() {
+            let start = start_char.unwrap_or(1).saturating_sub(1).min(total_chars);
+            let end = end_char.unwrap_or(total_chars).min(total_chars).max(start);
+            let slice: String = content.chars().skip(start).take(end - start).collect();
+            let slice_hash = Self::slice_hash(&slice);
+            self.mark_read(path);
+            return Ok(ReadFileResult {
+                content: slice,
+                total_lines,
+                total_chars,
+                start_line: 0,
+                end_line: 0,
+                start_char: Some(start + 1),
+                end_char: Some(end),
+                slice_hash,
+            });
+        }
+
+        let lines: Vec<&str> = content.lines().collect();
         let start = start_line.unwrap_or(1).saturating_sub(1);
         let end = end_line.unwrap_or(total_lines).min(total_lines);
 
-        let selected_lines: Vec<String> = lines
-            .iter()
-            .skip(start)
-            .take(end.saturating_sub(start))
-            .map(|s| s.to_string())
-            .collect();
         let raw_slice = lines
             .iter()
             .skip(start)
@@ -99,10 +114,13 @@ impl AgentFilesystem {
         self.mark_read(path);
 
         Ok(ReadFileResult {
-            content: selected_lines.join("\n"),
+            content: raw_slice,
             total_lines,
+            total_chars,
             start_line: start + 1,
             end_line: end,
+            start_char: None,
+            end_char: None,
             slice_hash,
         })
     }

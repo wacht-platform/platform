@@ -108,19 +108,36 @@ impl ToolExecutor {
         params: ReadFileParams,
     ) -> Result<Value, AppError> {
         let result = filesystem
-            .read_file(&params.path, params.start_line, params.end_line)
+            .read_file(
+                &params.path,
+                params.start_line,
+                params.end_line,
+                params.start_char,
+                params.end_char,
+            )
             .await?;
 
-        Ok(serde_json::json!({
+        let mut out = serde_json::json!({
             "success": true,
             "tool": tool.name,
             "path": params.path,
             "content": result.content,
             "total_lines": result.total_lines,
-            "start_line": result.start_line,
-            "end_line": result.end_line,
-            "slice_hash": result.slice_hash
-        }))
+            "total_chars": result.total_chars,
+            "slice_hash": result.slice_hash,
+        });
+        let obj = out.as_object_mut().expect("json object");
+        match (result.start_char, result.end_char) {
+            (Some(start_char), Some(end_char)) => {
+                obj.insert("start_char".into(), serde_json::json!(start_char));
+                obj.insert("end_char".into(), serde_json::json!(end_char));
+            }
+            _ => {
+                obj.insert("start_line".into(), serde_json::json!(result.start_line));
+                obj.insert("end_line".into(), serde_json::json!(result.end_line));
+            }
+        }
+        Ok(out)
     }
 
     pub(super) async fn execute_edit_file(

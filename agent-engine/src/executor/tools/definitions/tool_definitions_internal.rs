@@ -22,7 +22,7 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "read_file",
-            "Read a text file. Required before any edit_file on the same path — the runtime rejects edits to files not read this turn. Copy old_string from this output.",
+            "Read a text file. Required before any edit_file on the same path — the runtime rejects edits to files not read this turn. Copy old_string from this output. For big or minified/single-line files, page with start_char/end_char (character offsets) instead of dumping the whole thing; use start_line/end_line for normal line ranges. The result reports total_chars and total_lines so you know how far to keep paging.",
             InternalToolType::ReadFile,
             vec![
                 SchemaField {
@@ -44,6 +44,22 @@ pub(crate) fn internal_tools() -> Vec<(
                     name: "end_line".to_string(),
                     field_type: "INTEGER".to_string(),
                     description: Some("Optional end line (inclusive). Omit for file end.".to_string()),
+                    minimum: Some(1.0),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "start_char".to_string(),
+                    field_type: "INTEGER".to_string(),
+                    description: Some("Optional start character (1-indexed). Set this to page minified/single-line files; takes precedence over start_line/end_line. Omit for file start.".to_string()),
+                    minimum: Some(1.0),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "end_char".to_string(),
+                    field_type: "INTEGER".to_string(),
+                    description: Some("Optional end character (inclusive). Pair with start_char to read a fixed-size window, then advance start_char/end_char for the next batch. Omit for file end.".to_string()),
                     minimum: Some(1.0),
                     required: false,
                     ..Default::default()
@@ -129,7 +145,7 @@ pub(crate) fn internal_tools() -> Vec<(
         ),
         (
             "execute_command",
-            "Run a bash command in the sandbox shell (inspection, filtering, discovery, scripting, image/PDF tooling). Prefer write_file over piping long text through stdout. Returns exit_code/stdout/stderr — a non-zero exit is a normal shell signal to read and react to, not a platform error.",
+            "Run a bash command in the sandbox shell (inspection, filtering, discovery, scripting, image/PDF tooling). Prefer write_file over piping long text through stdout. Returns exit_code/stdout/stderr — a non-zero exit is a normal shell signal to read and react to, not a platform error. Keep stdout small: output over 60,000 chars is omitted and dumped to a /scratch file, costing you a round-trip. Gauge size first (wc -c, jq 'length'), filter narrowly, and cap exploratory output (e.g. `| head -c 8000`). To read a lot, page it in windows (`tail -c +OFFSET | head -c WINDOW`) rather than dumping it all at once.",
             InternalToolType::ExecuteCommand,
             vec![SchemaField {
                 name: "command".to_string(),

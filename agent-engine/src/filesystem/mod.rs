@@ -23,8 +23,11 @@ pub struct AgentFilesystem {
 pub struct ReadFileResult {
     pub content: String,
     pub total_lines: usize,
+    pub total_chars: usize,
     pub start_line: usize,
     pub end_line: usize,
+    pub start_char: Option<usize>,
+    pub end_char: Option<usize>,
     pub slice_hash: String,
 }
 
