@@ -36,6 +36,7 @@ pub mod oauth_shared;
 pub mod project;
 pub mod response;
 mod router;
+pub mod search_index;
 pub mod segments;
 pub mod session_tickets;
 pub mod settings;

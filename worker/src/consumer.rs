@@ -9,8 +9,8 @@ use std::time::Duration;
 use tracing::{error, warn};
 
 use crate::tasks::{
-    agent, analytics, api_audit, api_key_role_permissions_sync, billing, document, email, token,
-    vector_store, webhook, webhook_event, webhook_replay_batch,
+    agent, analytics, api_audit, api_key_role_permissions_sync, billing, document, email,
+    search_user_sync, token, vector_store, webhook, webhook_event, webhook_replay_batch,
 };
 
 const AGENT_EXECUTION_BUSY_RETRY_DELAY_SECONDS: u64 = 30;
@@ -91,6 +91,8 @@ enum WorkerTask {
     ApiKeySyncOrgRolePermissions(dto::json::nats::ApiKeyOrgRoleSyncPayload),
     #[serde(rename = "api_key.sync_workspace_role_permissions")]
     ApiKeySyncWorkspaceRolePermissions(dto::json::nats::ApiKeyWorkspaceRoleSyncPayload),
+    #[serde(rename = "search.sync_user")]
+    SearchSyncUser(dto::json::nats::SearchUserSyncPayload),
 }
 
 pub struct NatsConsumer {
@@ -360,6 +362,9 @@ impl NatsConsumer {
             }
             WorkerTask::ApiKeySyncWorkspaceRolePermissions(task) => {
                 api_key_role_permissions_sync::sync_workspace_role(task, &self.app_state).await?;
+            }
+            WorkerTask::SearchSyncUser(task) => {
+                search_user_sync::sync_user(task, &self.app_state).await?;
             }
         }
 

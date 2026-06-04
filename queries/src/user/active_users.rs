@@ -78,36 +78,9 @@ impl DeploymentActiveUserListQuery {
                           AND su.deployment_id = "#,
                 );
                 query_builder.push_bind(self.deployment_id);
-                query_builder.push(
-                    r#" AND (
-                        su.search_vector @@ websearch_to_tsquery('english', "#,
-                );
+                query_builder.push(" AND su.search_text ILIKE '%' || ");
                 query_builder.push_bind(trimmed_search);
-                query_builder.push(
-                    r#")
-                        OR su.first_name % "#,
-                );
-                query_builder.push_bind(trimmed_search);
-                query_builder.push(
-                    r#"
-                        OR su.last_name % "#,
-                );
-                query_builder.push_bind(trimmed_search);
-                query_builder.push(
-                    r#"
-                        OR su.username % "#,
-                );
-                query_builder.push_bind(trimmed_search);
-                query_builder.push(
-                    r#"
-                        OR su.primary_email % "#,
-                );
-                query_builder.push_bind(trimmed_search);
-                query_builder.push(
-                    r#"
-                    )
-                )"#,
-                );
+                query_builder.push(" || '%')");
             }
         }
 

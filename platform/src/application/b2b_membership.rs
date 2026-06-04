@@ -27,7 +27,29 @@ use queries::api_key::{
 use serde::Serialize;
 use tracing::error;
 
+use crate::application::search_index::publish_search_user_sync;
 use crate::application::{AppState, response::ApiErrorResponse};
+use queries::{GetOrgMembershipUserIdQuery, GetWorkspaceMembershipUserIdQuery};
+
+/// Re-index the user behind an org membership after their membership/roles change.
+/// Best-effort: a stale search row must never fail the membership write.
+async fn reindex_org_member(app_state: &AppState, membership_id: i64) {
+    if let Ok(Some(user_id)) = GetOrgMembershipUserIdQuery::new(membership_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
+        .await
+    {
+        publish_search_user_sync(app_state, user_id).await;
+    }
+}
+
+async fn reindex_ws_member(app_state: &AppState, membership_id: i64) {
+    if let Ok(Some(user_id)) = GetWorkspaceMembershipUserIdQuery::new(membership_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
+        .await
+    {
+        publish_search_user_sync(app_state, user_id).await;
+    }
+}
 
 pub async fn add_organization_member(
     app_state: &AppState,
@@ -61,6 +83,7 @@ pub async fn add_organization_member(
     )
     .await?;
 
+    reindex_org_member(app_state, member.id).await;
     Ok(member)
 }
 
@@ -90,6 +113,7 @@ pub async fn update_organization_member(
     )
     .await?;
 
+    reindex_org_member(app_state, membership_id).await;
     Ok(())
 }
 
@@ -99,6 +123,13 @@ pub async fn remove_organization_member(
     organization_id: i64,
     membership_id: i64,
 ) -> Result<(), ApiErrorResponse> {
+    // Resolve the user before the membership row may be removed.
+    let user_id = GetOrgMembershipUserIdQuery::new(membership_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
+        .await
+        .ok()
+        .flatten();
+
     RemoveOrganizationMemberCommand {
         deployment_id,
         organization_id,
@@ -106,6 +137,10 @@ pub async fn remove_organization_member(
     }
     .execute_with_db(app_state.db_router.writer())
     .await?;
+
+    if let Some(user_id) = user_id {
+        publish_search_user_sync(app_state, user_id).await;
+    }
     Ok(())
 }
 
@@ -185,6 +220,7 @@ pub async fn delete_organization_role(
             ApiKeyOrgMembershipSyncPayload { membership_id },
         )
         .await?;
+        reindex_org_member(app_state, membership_id).await;
     }
 
     Ok(())
@@ -266,6 +302,7 @@ pub async fn delete_workspace_role(
             ApiKeyWorkspaceMembershipSyncPayload { membership_id },
         )
         .await?;
+        reindex_ws_member(app_state, membership_id).await;
     }
 
     Ok(())
@@ -309,6 +346,7 @@ pub async fn add_workspace_member(
     )
     .await?;
 
+    reindex_ws_member(app_state, member.id).await;
     Ok(member)
 }
 
@@ -338,6 +376,7 @@ pub async fn update_workspace_member(
     )
     .await?;
 
+    reindex_ws_member(app_state, membership_id).await;
     Ok(())
 }
 
@@ -347,6 +386,13 @@ pub async fn remove_workspace_member(
     workspace_id: i64,
     membership_id: i64,
 ) -> Result<(), ApiErrorResponse> {
+    // Resolve the user before the membership row may be removed.
+    let user_id = GetWorkspaceMembershipUserIdQuery::new(membership_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
+        .await
+        .ok()
+        .flatten();
+
     RemoveWorkspaceMemberCommand {
         deployment_id,
         workspace_id,
@@ -354,6 +400,10 @@ pub async fn remove_workspace_member(
     }
     .execute_with_db(app_state.db_router.writer())
     .await?;
+
+    if let Some(user_id) = user_id {
+        publish_search_user_sync(app_state, user_id).await;
+    }
     Ok(())
 }
 
@@ -381,6 +431,7 @@ pub async fn add_organization_member_role(
         ApiKeyOrgMembershipSyncPayload { membership_id },
     )
     .await?;
+    reindex_org_member(app_state, membership_id).await;
     Ok(())
 }
 
@@ -408,6 +459,7 @@ pub async fn remove_organization_member_role(
         ApiKeyOrgMembershipSyncPayload { membership_id },
     )
     .await?;
+    reindex_org_member(app_state, membership_id).await;
     Ok(())
 }
 
@@ -435,6 +487,7 @@ pub async fn add_workspace_member_role(
         ApiKeyWorkspaceMembershipSyncPayload { membership_id },
     )
     .await?;
+    reindex_ws_member(app_state, membership_id).await;
     Ok(())
 }
 
@@ -462,6 +515,7 @@ pub async fn remove_workspace_member_role(
         ApiKeyWorkspaceMembershipSyncPayload { membership_id },
     )
     .await?;
+    reindex_ws_member(app_state, membership_id).await;
     Ok(())
 }
 

@@ -156,6 +156,7 @@ pub async fn create_user(
             .await?;
     }
 
+    crate::application::search_index::publish_search_user_sync(app_state, user.id).await;
     publish_user_webhook_event(app_state, deployment_id, "user.created", user.id, "user");
 
     Ok(user)
@@ -174,6 +175,7 @@ pub async fn update_user(
         .execute_with_deps(&deps)
         .await?;
 
+    crate::application::search_index::publish_search_user_sync(app_state, user_id).await;
     // Fire once after the row mutation succeeds; profile-image side-effects
     // below are surfacing the same updated user and shouldn't double-emit.
     publish_user_webhook_event(app_state, deployment_id, "user.updated", user_id, "user");

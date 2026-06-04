@@ -615,35 +615,10 @@ impl GetOrganizationMembersQuery {
                 qb.push_bind(self.organization_id);
                 qb.push(
                     r#")
-                          AND (
-                              su.search_vector @@ websearch_to_tsquery('english', "#,
+                          AND su.search_text ILIKE '%' || "#,
                 );
                 qb.push_bind(trimmed_search);
-                qb.push(
-                    r#")
-                              OR su.first_name % "#,
-                );
-                qb.push_bind(trimmed_search);
-                qb.push(
-                    r#"
-                              OR su.last_name % "#,
-                );
-                qb.push_bind(trimmed_search);
-                qb.push(
-                    r#"
-                              OR su.username % "#,
-                );
-                qb.push_bind(trimmed_search);
-                qb.push(
-                    r#"
-                              OR su.primary_email % "#,
-                );
-                qb.push_bind(trimmed_search);
-                qb.push(
-                    r#"
-                          )
-                    ))"#,
-                );
+                qb.push(" || '%')");
             }
         }
 
@@ -804,35 +779,10 @@ impl GetWorkspaceMembersQuery {
                 qb.push_bind(self.workspace_id);
                 qb.push(
                     r#")
-                          AND (
-                              su.search_vector @@ websearch_to_tsquery('english', "#,
+                          AND su.search_text ILIKE '%' || "#,
                 );
                 qb.push_bind(trimmed_search);
-                qb.push(
-                    r#")
-                              OR su.first_name % "#,
-                );
-                qb.push_bind(trimmed_search);
-                qb.push(
-                    r#"
-                              OR su.last_name % "#,
-                );
-                qb.push_bind(trimmed_search);
-                qb.push(
-                    r#"
-                              OR su.username % "#,
-                );
-                qb.push_bind(trimmed_search);
-                qb.push(
-                    r#"
-                              OR su.primary_email % "#,
-                );
-                qb.push_bind(trimmed_search);
-                qb.push(
-                    r#"
-                          )
-                    ))"#,
-                );
+                qb.push(" || '%')");
             }
         }
 

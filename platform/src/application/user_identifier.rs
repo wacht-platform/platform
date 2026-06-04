@@ -7,16 +7,20 @@ use common::state::AppState;
 use dto::json::{AddEmailRequest, AddPhoneRequest, UpdateEmailRequest, UpdatePhoneRequest};
 use models::{UserEmailAddress, UserPhoneNumber};
 
+use crate::application::search_index::publish_search_user_sync;
+
 pub async fn add_user_email(
     app_state: &AppState,
     deployment_id: i64,
     user_id: i64,
     request: AddEmailRequest,
 ) -> Result<UserEmailAddress, AppError> {
-    AddUserEmailCommand::new(deployment_id, user_id, request)
+    let email = AddUserEmailCommand::new(deployment_id, user_id, request)
         .with_email_id(app_state.sf.next_id()? as i64)
         .execute_with_db(app_state.db_router.writer())
-        .await
+        .await?;
+    publish_search_user_sync(app_state, user_id).await;
+    Ok(email)
 }
 
 pub async fn update_user_email(
@@ -26,9 +30,11 @@ pub async fn update_user_email(
     email_id: i64,
     request: UpdateEmailRequest,
 ) -> Result<UserEmailAddress, AppError> {
-    UpdateUserEmailCommand::new(deployment_id, user_id, email_id, request)
+    let email = UpdateUserEmailCommand::new(deployment_id, user_id, email_id, request)
         .execute_with_db(app_state.db_router.writer())
-        .await
+        .await?;
+    publish_search_user_sync(app_state, user_id).await;
+    Ok(email)
 }
 
 pub async fn delete_user_email(
@@ -39,6 +45,7 @@ pub async fn delete_user_email(
     DeleteUserEmailCommand::new(user_id, email_id)
         .execute_with_db(app_state.db_router.writer())
         .await?;
+    publish_search_user_sync(app_state, user_id).await;
     Ok(())
 }
 
@@ -48,10 +55,12 @@ pub async fn add_user_phone(
     user_id: i64,
     request: AddPhoneRequest,
 ) -> Result<UserPhoneNumber, AppError> {
-    AddUserPhoneCommand::new(deployment_id, user_id, request)
+    let phone = AddUserPhoneCommand::new(deployment_id, user_id, request)
         .with_phone_id(app_state.sf.next_id()? as i64)
         .execute_with_db(app_state.db_router.writer())
-        .await
+        .await?;
+    publish_search_user_sync(app_state, user_id).await;
+    Ok(phone)
 }
 
 pub async fn update_user_phone(
@@ -60,9 +69,11 @@ pub async fn update_user_phone(
     phone_id: i64,
     request: UpdatePhoneRequest,
 ) -> Result<UserPhoneNumber, AppError> {
-    UpdateUserPhoneCommand::new(user_id, phone_id, request)
+    let phone = UpdateUserPhoneCommand::new(user_id, phone_id, request)
         .execute_with_db(app_state.db_router.writer())
-        .await
+        .await?;
+    publish_search_user_sync(app_state, user_id).await;
+    Ok(phone)
 }
 
 pub async fn delete_user_phone(
@@ -73,6 +84,7 @@ pub async fn delete_user_phone(
     DeleteUserPhoneCommand::new(user_id, phone_id)
         .execute_with_db(app_state.db_router.writer())
         .await?;
+    publish_search_user_sync(app_state, user_id).await;
     Ok(())
 }
 

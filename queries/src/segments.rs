@@ -179,10 +179,9 @@ impl GetSegmentDataQuery {
                                 );
                                 has_any_user_filter = true;
                             }
-                            query_builder
-                                .push(" AND su.search_vector @@ websearch_to_tsquery('english', ");
+                            query_builder.push(" AND su.search_text ILIKE '%' || ");
                             query_builder.push_bind(name_val.trim());
-                            query_builder.push(")");
+                            query_builder.push(" || '%'");
                         }
                     }
                     if let Some(email_val) = &user_filters.email {
@@ -193,10 +192,9 @@ impl GetSegmentDataQuery {
                                 );
                                 has_any_user_filter = true;
                             }
-                            query_builder
-                                .push(" AND su.search_vector @@ websearch_to_tsquery('english', ");
+                            query_builder.push(" AND su.search_text ILIKE '%' || ");
                             query_builder.push_bind(email_val.trim());
-                            query_builder.push(")");
+                            query_builder.push(" || '%'");
                         }
                     }
                     if let Some(phone_val) = &user_filters.phone {
@@ -207,10 +205,9 @@ impl GetSegmentDataQuery {
                                 );
                                 has_any_user_filter = true;
                             }
-                            query_builder
-                                .push(" AND su.search_vector @@ websearch_to_tsquery('english', ");
+                            query_builder.push(" AND su.search_text ILIKE '%' || ");
                             query_builder.push_bind(phone_val.trim());
-                            query_builder.push(")");
+                            query_builder.push(" || '%'");
                         }
                     }
 

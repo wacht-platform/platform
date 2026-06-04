@@ -28,6 +28,11 @@ pub struct ApiKeyWorkspaceRoleSyncPayload {
     pub role_id: i64,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct SearchUserSyncPayload {
+    pub user_id: i64,
+}
+
 // Webhook replay batch task payloads
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]

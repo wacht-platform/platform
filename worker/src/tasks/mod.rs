@@ -5,6 +5,7 @@ pub mod api_key_role_permissions_sync;
 pub mod billing;
 pub mod document;
 pub mod email;
+pub mod search_user_sync;
 pub mod token;
 pub mod vector_store;
 pub mod webhook;
