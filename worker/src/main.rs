@@ -9,8 +9,15 @@ mod scheduler;
 mod tasks;
 mod throttler;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(16 * 1024 * 1024)
+        .build()?;
+    runtime.block_on(run())
+}
+
+async fn run() -> Result<()> {
     dotenv().ok();
     common::init_telemetry("platform-worker")
         .map_err(|e| anyhow::anyhow!("failed to initialize telemetry: {e}"))?;

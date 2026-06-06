@@ -44,8 +44,8 @@ pub struct UserEvent {
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub timestamp: DateTime<Utc>,
     pub ip_address: Option<String>,
-    pub country: String,
-    pub device: String,
+    pub country: Option<String>,
+    pub device: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Row)]

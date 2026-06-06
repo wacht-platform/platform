@@ -31,8 +31,8 @@ pub async fn store_analytics_event_impl(
         auth_method: task.auth_method,
         timestamp: task.timestamp,
         ip_address: task.ip_address,
-        country: task.country.unwrap_or_default(),
-        device: task.device.unwrap_or_default(),
+        country: task.country,
+        device: task.device,
     };
 
     app_state
