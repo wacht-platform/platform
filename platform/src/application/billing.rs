@@ -96,6 +96,52 @@ async fn get_billing_account_or_404(
         .ok_or_else(|| AppError::NotFound("Billing account not found".to_string()))
 }
 
+/// Seeds a local Starter subscription for a billing account that has none, so every
+/// tenant has a plan by default. Local = no payment provider involved. No-op if a
+/// subscription already exists.
+async fn ensure_local_starter_subscription(
+    state: &AppState,
+    account: &BillingAccountWithSubscription,
+    owner_id: &str,
+) -> Result<(), AppError> {
+    if account.subscription.is_some() {
+        return Ok(());
+    }
+
+    let mut tx = state.db_router.writer().begin().await?;
+
+    let starter_product_id = GetDodoProductQuery::new("starter")
+        .execute_with_db(&mut *tx)
+        .await?
+        .map(|p| p.product_id)
+        .unwrap_or_else(|| STARTER_PRODUCT_ID_FALLBACK.to_string());
+
+    let provider_customer_id = account
+        .billing_account
+        .provider_customer_id
+        .clone()
+        .unwrap_or_else(|| format!("local_{}", owner_id));
+
+    UpsertSubscriptionCommand::new(
+        state.sf.next_id()? as i64,
+        owner_id.to_string(),
+        provider_customer_id,
+        format!("local_starter_{}", owner_id),
+        "active".to_string(),
+    )
+    .with_product_id(Some(starter_product_id))
+    .with_previous_billing_date(Some(Utc::now()))
+    .execute_with_db(&mut *tx)
+    .await?;
+
+    UpdateBillingAccountStatusCommand::new(owner_id.to_string(), "active".to_string())
+        .execute_with_db(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
 async fn get_plan_product_or_404(
     state: &AppState,
     plan_name: &str,
@@ -292,6 +338,20 @@ pub async fn get_billing_account(
     state: &AppState,
     owner_id: &str,
 ) -> Result<Option<models::billing::BillingAccountWithSubscription>, AppError> {
+    let account = GetBillingAccountQuery::new(owner_id.to_string())
+        .execute_with_db(state.db_router.writer())
+        .await?;
+
+    let Some(account) = account else {
+        return Ok(None);
+    };
+
+    if account.subscription.is_some() {
+        return Ok(Some(account));
+    }
+
+    ensure_local_starter_subscription(state, &account, owner_id).await?;
+
     GetBillingAccountQuery::new(owner_id.to_string())
         .execute_with_db(state.db_router.writer())
         .await
