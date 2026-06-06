@@ -738,7 +738,7 @@ impl ClickHouseService {
         let query = format!(
             r#"
                 SELECT
-                    CAST(count() AS Int64) as total_deliveries,
+                    CAST(uniqExactIf(delivery_id, status != 'pending') AS Int64) as total_deliveries,
                     CAST(countIf(status = 'success') AS Int64) as successful_deliveries,
                     CAST(countIf(status IN ('failed', 'permanently_failed')) AS Int64) as failed_deliveries,
                     CAST(countIf(status = 'filtered') AS Int64) as filtered_deliveries,
@@ -839,7 +839,7 @@ impl ClickHouseService {
         let query = r#"
             SELECT
                 toString(endpoint_id) as endpoint_url,
-                CAST(count() AS Int64) as total_attempts,
+                CAST(countIf(status != 'pending') AS Int64) as total_attempts,
                 CAST(countIf(status = 'success') AS Int64) as successful_attempts,
                 avg(response_time_ms) as avg_response_time,
                 quantile(0.5)(response_time_ms) as p50_response_time,
@@ -938,7 +938,7 @@ impl ClickHouseService {
             SELECT
                 endpoint_id,
                 toString(endpoint_id) as endpoint_url,
-                CAST(count() AS Int64) as total_attempts,
+                CAST(countIf(status != 'pending') AS Int64) as total_attempts,
                 CAST(countIf(status = 'success') AS Int64) as successful_attempts,
                 CAST(countIf(status IN ('failed', 'permanently_failed')) AS Int64) as failed_attempts,
                 avg(response_time_ms) as avg_response_time_ms
@@ -1010,7 +1010,7 @@ impl ClickHouseService {
             r#"
                 SELECT
                     toDateTime64({}(timestamp), 6) as bucket,
-                    toInt64(count()) as total_deliveries,
+                    toInt64(uniqExactIf(delivery_id, status != 'pending')) as total_deliveries,
                     toInt64(countIf(status = 'success')) as successful_deliveries,
                     toInt64(countIf(status IN ('failed', 'permanently_failed'))) as failed_deliveries,
                     toInt64(countIf(status = 'filtered')) as filtered_deliveries,
@@ -1102,7 +1102,7 @@ impl ClickHouseService {
         }
 
         query.push_str(&format!(
-            " ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"
+            " ORDER BY timestamp DESC LIMIT 1 BY delivery_id LIMIT {limit} OFFSET {offset}"
         ));
 
         tracing::info!("Executing ClickHouse query for deliveries");
