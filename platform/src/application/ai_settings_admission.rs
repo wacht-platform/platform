@@ -88,19 +88,6 @@ pub(super) fn validate_provider_key_consistency(
     Ok(())
 }
 
-pub(super) fn validate_openrouter_strong_model(
-    existing: Option<&DeploymentAiSettings>,
-    updates: &UpdateDeploymentAiSettingsRequest,
-) -> Result<(), AppError> {
-    let effective_strong_provider = updates
-        .strong_llm_provider
-        .as_ref()
-        .cloned()
-        .or_else(|| existing.map(|e| parse_llm_provider(&e.strong_llm_provider)));
-
-    Ok(())
-}
-
 pub(super) fn validate_embedding_provider_settings(
     existing: Option<&DeploymentAiSettings>,
     updates: &UpdateDeploymentAiSettingsRequest,

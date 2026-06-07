@@ -23,11 +23,11 @@ use queries::{
 
 use crate::api::pagination::paginate_results;
 use crate::application::AppState;
-use crate::application::response::PaginatedResponse;
 use crate::application::ai_settings_admission::{
     run_embedding_admission_if_needed, validate_embedding_provider_settings,
-    validate_openrouter_strong_model, validate_provider_key_consistency,
+    validate_provider_key_consistency,
 };
+use crate::application::response::PaginatedResponse;
 use common::deps;
 
 pub async fn get_ai_settings(
@@ -82,7 +82,6 @@ pub async fn update_ai_settings(
 
     let normalized_updates = normalize_ai_settings_updates(updates);
     validate_provider_key_consistency(existing_settings.as_ref(), &normalized_updates)?;
-    validate_openrouter_strong_model(existing_settings.as_ref(), &normalized_updates)?;
     validate_embedding_provider_settings(existing_settings.as_ref(), &normalized_updates)?;
     validate_embedding_dimension(existing_settings.as_ref(), &normalized_updates)?;
 
