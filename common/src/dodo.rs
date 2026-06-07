@@ -396,8 +396,8 @@ pub struct UpdateSubscriptionParams {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChangePlanParams {
     pub product_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proration_mode: Option<String>,
+    pub quantity: i32,
+    pub proration_billing_mode: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

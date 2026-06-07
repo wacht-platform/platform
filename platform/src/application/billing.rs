@@ -142,6 +142,58 @@ async fn ensure_local_starter_subscription(
     Ok(())
 }
 
+/// Returns the tenant's billing account, creating a bare one if none exists yet
+/// so every tenant always has an account (the caller then seeds a local Starter
+/// subscription). Billing identity (legal name, email) is left blank until the
+/// user completes checkout. Tolerates a concurrent create by re-reading on insert
+/// failure.
+async fn ensure_billing_account(
+    state: &AppState,
+    owner_id: &str,
+) -> Result<BillingAccountWithSubscription, AppError> {
+    if let Some(account) = GetBillingAccountQuery::new(owner_id.to_string())
+        .execute_with_db(state.db_router.writer())
+        .await?
+    {
+        return Ok(account);
+    }
+
+    let owner_type = owner_type_from_owner_id(owner_id);
+    let mut tx = state.db_router.writer().begin().await?;
+    let created = CreateBillingAccountCommand::new(
+        state.sf.next_id()? as i64,
+        owner_id.to_string(),
+        owner_type.to_string(),
+        String::new(),
+        String::new(),
+    )
+    .execute_with_db(&mut *tx)
+    .await;
+
+    match created {
+        Ok(_) => {
+            tx.commit().await?;
+        }
+        Err(err) => {
+            let _ = tx.rollback().await;
+            // A concurrent request may have inserted it first; only surface the
+            // error if the account is still missing on re-read.
+            if GetBillingAccountQuery::new(owner_id.to_string())
+                .execute_with_db(state.db_router.writer())
+                .await?
+                .is_none()
+            {
+                return Err(err);
+            }
+        }
+    }
+
+    GetBillingAccountQuery::new(owner_id.to_string())
+        .execute_with_db(state.db_router.writer())
+        .await?
+        .ok_or_else(|| AppError::Internal("Billing account creation failed".to_string()))
+}
+
 async fn get_plan_product_or_404(
     state: &AppState,
     plan_name: &str,
@@ -338,13 +390,7 @@ pub async fn get_billing_account(
     state: &AppState,
     owner_id: &str,
 ) -> Result<Option<models::billing::BillingAccountWithSubscription>, AppError> {
-    let account = GetBillingAccountQuery::new(owner_id.to_string())
-        .execute_with_db(state.db_router.writer())
-        .await?;
-
-    let Some(account) = account else {
-        return Ok(None);
-    };
+    let account = ensure_billing_account(state, owner_id).await?;
 
     if account.subscription.is_some() {
         return Ok(Some(account));
@@ -437,7 +483,11 @@ pub async fn create_checkout(
 
     if let Some(account) = existing.clone() {
         if let Some(ref subscription) = account.subscription {
-            if subscription.status == "active" {
+            // A seeded local Starter is the default plan, not a real paid
+            // subscription — let it proceed to checkout so tenants can upgrade.
+            if subscription.status == "active"
+                && !is_local_starter_subscription(subscription)
+            {
                 return Err(AppError::Validation(
                     "Subscription already exists".to_string(),
                 ));
@@ -621,7 +671,10 @@ pub async fn change_plan(
         &subscription.provider_subscription_id,
         ChangePlanParams {
             product_id: product.product_id,
-            proration_mode: req.proration_mode,
+            quantity: 1,
+            proration_billing_mode: req
+                .proration_mode
+                .unwrap_or_else(|| "prorated_immediately".to_string()),
         },
     )
     .await
