@@ -410,12 +410,10 @@ impl AgentExecutor {
     // Explicit caches bill storage per token-hour. delete-on-supersede caps us at
     // one live cache per key; TTL is the idle reaper. Tasks stay active turn-by-turn
     // across events, so keep them warm longer; conversation is bursty with long gaps.
-    fn prompt_cache_ttl_secs(cache_key: &str) -> i64 {
-        if cache_key == "conversation" {
-            180
-        } else {
-            600
-        }
+    fn prompt_cache_ttl_secs(_cache_key: &str) -> i64 {
+        // One live cache per key (delete-on-supersede), so TTL is just the idle
+        // reaper — 20 min across the board.
+        1200
     }
 
     fn prompt_cache_key(&self) -> Option<String> {
