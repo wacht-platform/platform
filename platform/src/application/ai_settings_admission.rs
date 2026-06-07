@@ -98,22 +98,6 @@ pub(super) fn validate_openrouter_strong_model(
         .cloned()
         .or_else(|| existing.map(|e| parse_llm_provider(&e.strong_llm_provider)));
 
-    if !matches!(
-        effective_strong_provider.as_ref(),
-        Some(DeploymentLlmProvider::Openrouter)
-    ) {
-        return Ok(());
-    }
-
-    let effective_require_parameters = effective_openrouter_require_parameters(existing, updates);
-
-    if !effective_require_parameters {
-        return Err(AppError::Validation(
-            "OpenRouter is selected as the strong model provider but 'require parameters' is disabled. The strong model drives tool/function calling — enable 'require parameters' so OpenRouter only routes to endpoints that support the `tools` field."
-                .to_string(),
-        ));
-    }
-
     Ok(())
 }
 
