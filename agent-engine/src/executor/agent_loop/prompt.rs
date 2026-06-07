@@ -532,11 +532,16 @@ impl AgentExecutor {
                         "Next-step decision live context message missing".to_string(),
                     )
                 })?;
+        // Conversation stays snappy at low and escalates when looping; task /
+        // coordinator / reviewer work runs at a medium floor so it plans instead
+        // of firing scattershot tool calls.
         let reasoning_effort =
             if self.repeated_tool_call_count >= 2 || self.consecutive_tool_failure_count >= 3 {
                 "medium"
-            } else {
+            } else if self.is_conversation_thread {
                 "low"
+            } else {
+                "medium"
             };
         let config = SemanticLlmPromptConfig {
             response_json_schema: serde_json::json!({}),

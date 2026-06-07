@@ -253,6 +253,10 @@ impl ResolvedLlm {
     ) -> Result<TextGenerationOutput, AppError> {
         self.client.generate_text(prompt).await
     }
+
+    pub async fn delete_prompt_cache(&self, cache_name: &str) {
+        self.client.delete_prompt_cache(cache_name).await;
+    }
 }
 
 impl From<PromptCacheRequest> for ExplicitCacheRequest {

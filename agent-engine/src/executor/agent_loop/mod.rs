@@ -1,6 +1,7 @@
 mod meta_tools;
 pub(crate) mod prompt;
 mod response;
+mod shell_guard;
 mod terminal_review;
 mod tool_schema;
 pub(crate) use super::core;
@@ -21,6 +22,9 @@ use serde_json::json;
 use std::collections::HashSet;
 
 const MAX_LOOP_ITERATIONS: usize = 50;
+const MAX_UNPRODUCTIVE_TURNS: usize = 8;
+const LARGE_TOOL_BATCH: usize = 10;
+const SHELL_NUDGE_ESCALATE_AT: usize = 2;
 
 impl AgentExecutor {
     fn require_worker_task_identity(
@@ -778,6 +782,8 @@ impl AgentExecutor {
         // the next interval tick will be cancelled cleanly.
         keepalive.abort();
 
+        self.cleanup_prompt_cache_on_finish().await;
+
         if result.is_err() {
             if let Err(e) = self.force_thread_idle_on_error_exit().await {
                 tracing::error!(
@@ -901,6 +907,26 @@ impl AgentExecutor {
             return Ok(false);
         }
 
+        if self.consecutive_unproductive_turns >= MAX_UNPRODUCTIVE_TURNS {
+            tracing::warn!(
+                thread_id = self.ctx.thread_id,
+                board_item_id = ?self.current_board_item_id(),
+                execution_run_id = self.ctx.execution_run_id,
+                turns = self.consecutive_unproductive_turns,
+                "unproductive_turn_backstop: no forward progress, stopping"
+            );
+            if self.can_abort_current_assignment_execution() {
+                self.abort_current_assignment_execution(&AbortDirective {
+                    reason: "Run stopped: repeated turns with no forward progress (note-spam, empty replies, or rejected calls). Coordinator should retry with a tighter brief or mark the task blocked.".to_string(),
+                    outcome: AbortOutcome::Blocked,
+                })
+                .await?;
+            } else {
+                self.finish_without_summary().await?;
+            }
+            return Ok(false);
+        }
+
         let context_json = self.build_agent_loop_context_json().await?;
         let prompt_context: dto::json::AgentLoopPromptEnvelope =
             serde_json::from_value(context_json.clone()).map_err(|e| {
@@ -1008,12 +1034,17 @@ impl AgentExecutor {
         for call in &resolve_calls {
             self.handle_resolve_user_feedback_call(call).await?;
         }
+        if !resolve_calls.is_empty() {
+            self.reset_unproductive_turns();
+        }
 
         if let Some(call) = ask_user_calls.first() {
+            self.reset_unproductive_turns();
             return self.handle_ask_user_call(call).await;
         }
 
         if let Some(call) = notify_calls.first() {
+            self.reset_unproductive_turns();
             return self.handle_notify_user_call(call).await;
         }
 
@@ -1060,6 +1091,7 @@ impl AgentExecutor {
                     ),
                 );
             }
+            self.note_unproductive_turn();
             return Ok(true);
         } else {
             self.consecutive_note_count = 0;
@@ -1104,6 +1136,7 @@ impl AgentExecutor {
                 "empty_response_guard",
                 "Last turn: nothing — no tool, no text. User left hanging. Converge now: done → final text reply; step left → pick tool and call it. No more empty turns.".to_string(),
             );
+            self.note_unproductive_turn();
             return Ok(true);
         }
 
@@ -1129,10 +1162,23 @@ impl AgentExecutor {
         }
 
         let mut tool_requests: Vec<ToolCallRequest> = Vec::new();
+        let mut pending_shell_nudge: Option<String> = None;
         for call in non_note_calls
             .into_iter()
             .filter(|c| c.tool_name != "abort_task")
         {
+            if call.tool_name == "execute_command" {
+                let command = call
+                    .arguments
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if let shell_guard::ShellVerdict::Nudge(message) =
+                    shell_guard::classify_shell_command(command)
+                {
+                    pending_shell_nudge.get_or_insert(message);
+                }
+            }
             let tool = match available_tools.iter().find(|t| t.name == call.tool_name) {
                 Some(t) => t,
                 None => {
@@ -1178,7 +1224,26 @@ impl AgentExecutor {
         }
 
         if tool_requests.is_empty() {
+            self.note_unproductive_turn();
             return Ok(true);
+        }
+
+        if let Some(message) = pending_shell_nudge {
+            self.consecutive_shell_nudge_count =
+                self.consecutive_shell_nudge_count.saturating_add(1);
+            if self.consecutive_shell_nudge_count >= SHELL_NUDGE_ESCALATE_AT {
+                let count = self.consecutive_shell_nudge_count;
+                self.store_transient_steer(
+                    "shell_discipline_escalate",
+                    format!(
+                        "{count} turns in a row routing file work through the shell when a dedicated tool fits. Before the next shell call, emit 2-3 `note`s reasoning through which tool replaces it (write_file / append_file / edit_file / read_file) and why, then switch to it. Shell remains fine for inspection (`rg`, pipes, `find`)."
+                    ),
+                );
+            } else {
+                self.store_transient_steer("shell_discipline_nudge", message);
+            }
+        } else {
+            self.consecutive_shell_nudge_count = 0;
         }
 
         let signature = Self::tool_call_signature(&tool_requests);
@@ -1203,16 +1268,27 @@ impl AgentExecutor {
                 ),
             );
             if self.repeated_tool_call_count >= 4 {
+                self.note_unproductive_turn();
                 return Ok(true);
             }
         }
 
+        let batch_size = tool_requests.len();
         self.run_hooks(
             super::hooks::LifecyclePhase::BeforeTool,
             serde_json::Value::Null,
         )
         .await;
         let outcome = self.execute_requested_actions(tool_requests).await?;
+        self.reset_unproductive_turns();
+        if batch_size >= LARGE_TOOL_BATCH {
+            self.store_transient_steer(
+                "tool_batch_backpressure",
+                format!(
+                    "{batch_size} tool calls in one turn. Work the result before fanning out further: read each output, let it choose the next probe, and call only what the current evidence makes necessary. Narrow beats broad."
+                ),
+            );
+        }
         self.run_hooks(
             super::hooks::LifecyclePhase::AfterTool,
             serde_json::Value::Null,
@@ -1220,6 +1296,14 @@ impl AgentExecutor {
         .await;
         self.apply_tool_failure_guard().await?;
         self.finalize_action_execution_outcome(outcome).await
+    }
+
+    fn note_unproductive_turn(&mut self) {
+        self.consecutive_unproductive_turns = self.consecutive_unproductive_turns.saturating_add(1);
+    }
+
+    fn reset_unproductive_turns(&mut self) {
+        self.consecutive_unproductive_turns = 0;
     }
 
     fn tool_call_signature(requests: &[ToolCallRequest]) -> String {

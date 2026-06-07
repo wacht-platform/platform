@@ -28,4 +28,8 @@ pub trait LlmProvider: Send + Sync + std::fmt::Debug {
         &self,
         prompt: SemanticLlmRequest,
     ) -> Result<TextGenerationOutput, AppError>;
+
+    /// Best-effort delete of an explicit prompt cache. No-op for providers
+    /// without managed cache storage (only Gemini explicit caching).
+    async fn delete_prompt_cache(&self, _cache_name: &str) {}
 }

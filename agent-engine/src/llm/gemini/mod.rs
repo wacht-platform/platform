@@ -627,6 +627,10 @@ impl crate::llm::LlmProvider for GeminiClient {
         "gemini"
     }
 
+    async fn delete_prompt_cache(&self, cache_name: &str) {
+        self.delete_explicit_cache(cache_name).await;
+    }
+
     async fn generate_structured(
         &self,
         prompt: SemanticLlmRequest,

@@ -394,28 +394,72 @@ impl AgentExecutor {
             return None;
         }
 
-        let cache_key = if let Some(event) = self.active_thread_event.as_ref() {
-            if let Some(payload) = event.assignment_execution_payload() {
-                format!("executor_assignment_{}", payload.assignment_id)
-            } else if let Some(board_item_id) = event.board_item_id {
-                format!("coordinator_board_{board_item_id}")
-            } else {
-                "thread_default".to_string()
-            }
-        } else if self.is_conversation_thread {
-            "conversation".to_string()
-        } else {
-            return None;
-        };
+        let cache_key = self.prompt_cache_key()?;
+        let ttl_secs = Self::prompt_cache_ttl_secs(&cache_key);
 
         let prior_state = self.read_prompt_cache_state(&cache_key).await;
         Some(crate::llm::PromptCacheRequest {
             cache_key,
-            ttl_secs: 3600,
+            ttl_secs,
             live_tail_count,
             prior_state,
             reuse_only: false,
         })
+    }
+
+    // Explicit caches bill storage per token-hour. delete-on-supersede caps us at
+    // one live cache per key; TTL is the idle reaper. Tasks stay active turn-by-turn
+    // across events, so keep them warm longer; conversation is bursty with long gaps.
+    fn prompt_cache_ttl_secs(cache_key: &str) -> i64 {
+        if cache_key == "conversation" {
+            300
+        } else {
+            1200
+        }
+    }
+
+    fn prompt_cache_key(&self) -> Option<String> {
+        if let Some(event) = self.active_thread_event.as_ref() {
+            if let Some(payload) = event.assignment_execution_payload() {
+                Some(format!("executor_assignment_{}", payload.assignment_id))
+            } else if let Some(board_item_id) = event.board_item_id {
+                Some(format!("coordinator_board_{board_item_id}"))
+            } else {
+                Some("thread_default".to_string())
+            }
+        } else if self.is_conversation_thread {
+            Some("conversation".to_string())
+        } else {
+            None
+        }
+    }
+
+    /// End-of-run cleanup. Only reclaim single-use executor-assignment caches
+    /// (their key never recurs, so nothing will reuse them). Coordinator and
+    /// conversation keys recur across events — leave them warm; supersede-delete
+    /// plus the idle TTL keep their cost bounded. Best-effort.
+    pub(crate) async fn cleanup_prompt_cache_on_finish(&self) {
+        let Some(cache_key) = self.prompt_cache_key() else {
+            return;
+        };
+        if !cache_key.starts_with("executor_assignment_") {
+            return;
+        }
+        let Some(state) = self.read_prompt_cache_state(&cache_key).await else {
+            return;
+        };
+        if let Ok(llm) = self.create_strong_llm().await {
+            llm.delete_prompt_cache(&state.cache_name).await;
+        }
+        if let Ok(mut conn) = self
+            .ctx
+            .app_state
+            .redis_client
+            .get_multiplexed_async_connection()
+            .await
+        {
+            let _: Result<(), _> = conn.del(self.prompt_cache_redis_key(&cache_key)).await;
+        }
     }
 
     async fn read_prompt_cache_state(&self, cache_key: &str) -> Option<PromptCacheState> {

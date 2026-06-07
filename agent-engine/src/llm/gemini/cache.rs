@@ -11,7 +11,7 @@ use super::{ExplicitCacheRequest, GeminiClient};
 
 const GEMINI_API_ROOT_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 const REQUEST_TIMEOUT_SECS: u64 = 240;
-const EXPLICIT_CACHE_MIN_TOKENS_FLASH: usize = 1_024;
+const EXPLICIT_CACHE_MIN_TOKENS_FLASH: usize = 4_096;
 const EXPLICIT_CACHE_MIN_TOKENS_PRO: usize = 4_096;
 const EXPLICIT_CACHE_ESTIMATED_CHARS_PER_TOKEN: usize = 4;
 
@@ -295,7 +295,38 @@ impl GeminiClient {
             expire_at,
         };
 
+        // Supersede: the prior cache for this key is now dead weight. Delete it so
+        // we never pay storage for more than one live cache per key.
+        if let Some(prior) = cache_request.prior_state.as_ref() {
+            if prior.cache_name != handle.cache_name {
+                self.delete_explicit_cache(&prior.cache_name).await;
+            }
+        }
+
         Ok(Some(handle))
+    }
+
+    pub(crate) async fn delete_explicit_cache(&self, cache_name: &str) {
+        if cache_name.is_empty() {
+            return;
+        }
+        let url = format!("{GEMINI_API_ROOT_URL}/{cache_name}");
+        match self
+            .client
+            .delete(&url)
+            .header("x-goog-api-key", &self.api_key)
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 404 => {}
+            Ok(resp) => {
+                tracing::warn!(cache_name, status = %resp.status(), "Gemini cache delete failed")
+            }
+            Err(error) => {
+                tracing::warn!(cache_name, %error, "Gemini cache delete request errored")
+            }
+        }
     }
 
     fn explicit_cache_min_tokens_for_model(model: &str) -> usize {
