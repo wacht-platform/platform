@@ -412,9 +412,9 @@ impl AgentExecutor {
     // across events, so keep them warm longer; conversation is bursty with long gaps.
     fn prompt_cache_ttl_secs(cache_key: &str) -> i64 {
         if cache_key == "conversation" {
-            300
+            180
         } else {
-            1200
+            600
         }
     }
 
