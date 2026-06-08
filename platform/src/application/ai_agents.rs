@@ -48,6 +48,7 @@ pub struct AgentDetailsResponse {
     pub tool_approval_rules: Vec<models::AgentToolApprovalRule>,
     #[serde(default)]
     pub hooks: models::AgentHooksConfig,
+    pub limits: models::AgentLimits,
 }
 
 pub async fn get_ai_agents(
@@ -97,6 +98,9 @@ pub async fn create_ai_agent(
     }
     if let Some(hooks) = request.hooks {
         command = command.with_hooks(hooks);
+    }
+    if let Some(limits) = request.limits {
+        command = command.with_limits(limits);
     }
     if let Some(value) = request.require_approval_mcp {
         command = command.with_require_approval_mcp(value);
@@ -149,6 +153,7 @@ pub async fn get_ai_agent_details(
         require_approval_virtual: agent.require_approval_virtual,
         tool_approval_rules: agent.tool_approval_rules,
         hooks: agent.hooks,
+        limits: agent.limits,
     })
 }
 
@@ -186,6 +191,9 @@ pub async fn update_ai_agent(
     }
     if let Some(hooks) = request.hooks {
         command = command.with_hooks(hooks);
+    }
+    if let Some(limits) = request.limits {
+        command = command.with_limits(limits);
     }
     if let Some(value) = request.require_approval_mcp {
         command = command.with_require_approval_mcp(value);

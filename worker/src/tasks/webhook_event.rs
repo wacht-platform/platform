@@ -6,6 +6,7 @@ use queries::{
     signin::GetSessionWithSignInsQuery,
     user::{GetUserAuthenticatorQuery, GetUserDetailsQuery},
 };
+use dto::clickhouse::ModelTokenUsageEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -44,7 +45,12 @@ pub async fn trigger_webhook_event(
         .await
         .map_err(|e| TaskError::Permanent(format!("Failed to trigger webhook event: {}", e)))?;
 
-    track_webhook_billing(task.deployment_id, &app_state.redis_client).await;
+    if task.event_type == "agent.model.usage" {
+        // Internal metering only — record to ClickHouse, never the billable webhook counter.
+        record_model_token_usage(&task, app_state).await;
+    } else {
+        track_webhook_billing(task.deployment_id, &app_state.redis_client).await;
+    }
 
     Ok(format!(
         "Webhook event '{}' triggered for deployment {}",
@@ -206,6 +212,41 @@ async fn enrich_authenticator_payload(
     }
 
     Ok(payload)
+}
+
+async fn record_model_token_usage(task: &WebhookEventTask, app_state: &AppState) {
+    let p = &task.event_payload;
+    let num = |k: &str| p.get(k).and_then(|v| v.as_i64()).unwrap_or(0);
+    let id = |k: &str| {
+        p.get(k)
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0)
+    };
+    let event = ModelTokenUsageEvent {
+        deployment_id: task.deployment_id,
+        model: p.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        thread_id: id("thread_id"),
+        actor_id: id("actor_id"),
+        is_byok: u8::from(p.get("is_byok").and_then(|v| v.as_bool()).unwrap_or(false)),
+        input_tokens: num("input_tokens"),
+        cached_tokens: num("cached_tokens"),
+        output_tokens: num("output_tokens"),
+        thoughts_tokens: num("thoughts_token_count"),
+        total_tokens: num("total_token_count"),
+        timestamp: task.triggered_at,
+    };
+    if let Err(e) = app_state
+        .clickhouse_service
+        .insert_model_token_usage(&event)
+        .await
+    {
+        tracing::warn!(
+            deployment_id = task.deployment_id,
+            error = %e,
+            "failed to record model token usage to clickhouse"
+        );
+    }
 }
 
 async fn track_webhook_billing(deployment_id: i64, redis_client: &redis::Client) {

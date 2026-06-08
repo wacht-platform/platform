@@ -293,5 +293,18 @@ fn segments_routes() -> Router<AppState> {
 }
 
 fn analytics_routes() -> Router<AppState> {
-    Router::new().route("/analytics", get(api::analytics::get_analytics_stats))
+    Router::new()
+        .route("/analytics", get(api::analytics::get_analytics_stats))
+        .route(
+            "/analytics/token-usage",
+            get(api::analytics::get_token_usage_stats),
+        )
+        .route(
+            "/analytics/webhook-usage",
+            get(api::analytics::get_webhook_usage_stats),
+        )
+        .route(
+            "/analytics/gateway-usage",
+            get(api::analytics::get_gateway_usage_stats),
+        )
 }

@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use common::ResultExt;
 use common::error::AppError;
 use models::{
-    AgentHooksConfig, AgentModelOverride, AgentToolApprovalRule, AiAgentWithDetails,
+    AgentHooksConfig, AgentLimits, AgentModelOverride, AgentToolApprovalRule, AiAgentWithDetails,
     AiAgentWithFeatures,
 };
 use sqlx::types::Json;
@@ -24,6 +24,7 @@ struct AiAgentDetailsRow {
     weak_model: Option<String>,
     weak_model_profile_id: Option<i64>,
     hooks: Json<AgentHooksConfig>,
+    limits: Json<AgentLimits>,
     require_approval_mcp: bool,
     require_approval_virtual: bool,
     tool_approval_rules: Json<Vec<AgentToolApprovalRule>>,
@@ -49,6 +50,7 @@ struct AiAgentFeaturesRow {
     weak_model: Option<String>,
     weak_model_profile_id: Option<i64>,
     hooks: Json<AgentHooksConfig>,
+    limits: Json<AgentLimits>,
     require_approval_mcp: bool,
     require_approval_virtual: bool,
     tool_approval_rules: Json<Vec<AgentToolApprovalRule>>,
@@ -86,6 +88,7 @@ fn map_details_row(row: AiAgentDetailsRow) -> Result<AiAgentWithDetails, AppErro
         require_approval_mcp: row.require_approval_mcp,
         require_approval_virtual: row.require_approval_virtual,
         tool_approval_rules: row.tool_approval_rules.0,
+        limits: row.limits.0,
     })
 }
 
@@ -167,6 +170,7 @@ impl GetAiAgentsQuery {
                     a.strong_model_provider, a.strong_model, a.strong_model_profile_id,
                     a.weak_model_provider, a.weak_model, a.weak_model_profile_id,
                     a.hooks as "hooks!: Json<AgentHooksConfig>",
+                    a.limits as "limits!: Json<AgentLimits>",
                     a.require_approval_mcp,
                     a.require_approval_virtual,
                     a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
@@ -209,6 +213,7 @@ impl GetAiAgentsQuery {
                     a.strong_model_provider, a.strong_model, a.strong_model_profile_id,
                     a.weak_model_provider, a.weak_model, a.weak_model_profile_id,
                     a.hooks as "hooks!: Json<AgentHooksConfig>",
+                    a.limits as "limits!: Json<AgentLimits>",
                     a.require_approval_mcp,
                     a.require_approval_virtual,
                     a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
@@ -269,6 +274,7 @@ impl GetAiAgentByIdQuery {
                 a.strong_model_provider, a.strong_model, a.strong_model_profile_id,
                 a.weak_model_provider, a.weak_model, a.weak_model_profile_id,
                 a.hooks as "hooks!: Json<AgentHooksConfig>",
+                    a.limits as "limits!: Json<AgentLimits>",
                 a.require_approval_mcp,
                 a.require_approval_virtual,
                 a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
@@ -329,6 +335,7 @@ impl GetAiAgentsByIdsQuery {
                 a.strong_model_provider, a.strong_model, a.strong_model_profile_id,
                 a.weak_model_provider, a.weak_model, a.weak_model_profile_id,
                 a.hooks as "hooks!: Json<AgentHooksConfig>",
+                    a.limits as "limits!: Json<AgentLimits>",
                 a.require_approval_mcp,
                 a.require_approval_virtual,
                 a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
@@ -384,6 +391,7 @@ impl GetAiAgentByIdWithFeatures {
                 a.strong_model_provider, a.strong_model, a.strong_model_profile_id,
                 a.weak_model_provider, a.weak_model, a.weak_model_profile_id,
                 a.hooks as "hooks!: Json<AgentHooksConfig>",
+                    a.limits as "limits!: Json<AgentLimits>",
                 a.require_approval_mcp,
                 a.require_approval_virtual,
                 a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
@@ -475,6 +483,7 @@ impl GetAiAgentByIdWithFeatures {
             require_approval_mcp: row.require_approval_mcp,
             require_approval_virtual: row.require_approval_virtual,
             tool_approval_rules: row.tool_approval_rules.0,
+            limits: row.limits.0,
         })
     }
 }

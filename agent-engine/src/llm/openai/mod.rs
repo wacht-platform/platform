@@ -466,7 +466,15 @@ impl OpenAiClient {
         body.insert("model".to_string(), json!(self.model));
         body.insert("messages".to_string(), Value::Array(messages));
         body.insert("tools".to_string(), Value::Array(tool_values));
-        body.insert("tool_choice".to_string(), json!("auto"));
+        // Honor forced tool selection: a single forced name pins that function,
+        // multiple forces "required" (must call one of the provided tools),
+        // otherwise the model is free to choose.
+        let tool_choice = match prompt.forced_tool_names.as_deref() {
+            Some([name]) => json!({"type": "function", "function": {"name": name}}),
+            Some(names) if !names.is_empty() => json!("required"),
+            _ => json!("auto"),
+        };
+        body.insert("tool_choice".to_string(), tool_choice);
         body.insert("stream".to_string(), json!(false));
         if let Some(cache_request) = cache.as_ref() {
             body.insert(

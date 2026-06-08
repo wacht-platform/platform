@@ -1,7 +1,8 @@
 use chrono::Utc;
 use common::{HasDbRouter, error::AppError};
 use models::{
-    AgentHooksConfig, AgentModelOverride, AgentToolApprovalRule, AiAgent, ApprovalAction,
+    AgentHooksConfig, AgentLimits, AgentModelOverride, AgentToolApprovalRule, AiAgent,
+    ApprovalAction,
 };
 use sqlx::types::Json;
 use std::collections::BTreeSet;
@@ -22,6 +23,7 @@ pub struct CreateAiAgentCommand {
     pub strong_model: Option<AgentModelOverride>,
     pub weak_model: Option<AgentModelOverride>,
     pub hooks: Option<AgentHooksConfig>,
+    pub limits: Option<AgentLimits>,
     pub require_approval_mcp: Option<bool>,
     pub require_approval_virtual: Option<bool>,
     pub tool_approval_rules: Option<Vec<AgentToolApprovalRule>>,
@@ -40,6 +42,7 @@ impl CreateAiAgentCommand {
             strong_model: None,
             weak_model: None,
             hooks: None,
+            limits: None,
             require_approval_mcp: None,
             require_approval_virtual: None,
             tool_approval_rules: None,
@@ -73,6 +76,11 @@ impl CreateAiAgentCommand {
 
     pub fn with_hooks(mut self, hooks: AgentHooksConfig) -> Self {
         self.hooks = Some(hooks);
+        self
+    }
+
+    pub fn with_limits(mut self, limits: AgentLimits) -> Self {
+        self.limits = Some(limits);
         self
     }
 
@@ -132,6 +140,7 @@ impl CreateAiAgentCommand {
             .map(|model| model.trim().to_string());
         let weak_profile_id = self.weak_model.as_ref().and_then(|o| o.profile_id);
         let hooks_value = Json(self.hooks.clone().unwrap_or_default());
+        let limits_value = Json(self.limits.clone().unwrap_or_default());
         let require_approval_mcp = self.require_approval_mcp.unwrap_or(false);
         let require_approval_virtual = self.require_approval_virtual.unwrap_or(false);
         let approval_rules_value = Json(self.tool_approval_rules.clone().unwrap_or_default());
@@ -158,16 +167,17 @@ impl CreateAiAgentCommand {
                 id, created_at, updated_at, name, description, deployment_id,
                 strong_model_provider, strong_model, strong_model_profile_id,
                 weak_model_provider, weak_model, weak_model_profile_id, hooks,
-                require_approval_mcp, require_approval_virtual, tool_approval_rules
+                require_approval_mcp, require_approval_virtual, tool_approval_rules, limits
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
             RETURNING id, created_at, updated_at, name, description, deployment_id,
                       strong_model_provider, strong_model, strong_model_profile_id,
                       weak_model_provider, weak_model, weak_model_profile_id,
                       hooks as "hooks!: Json<AgentHooksConfig>",
                       require_approval_mcp,
                       require_approval_virtual,
-                      tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>"
+                      tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+                      limits as "limits!: Json<AgentLimits>"
             "#,
             agent_id,
             now,
@@ -185,6 +195,7 @@ impl CreateAiAgentCommand {
             require_approval_mcp,
             require_approval_virtual,
             approval_rules_value as _,
+            limits_value as _,
         )
         .fetch_one(&mut *tx)
         .await
@@ -224,6 +235,7 @@ impl CreateAiAgentCommand {
             require_approval_mcp: agent.require_approval_mcp,
             require_approval_virtual: agent.require_approval_virtual,
             tool_approval_rules: agent.tool_approval_rules.0,
+            limits: agent.limits.0,
         })
     }
 }
@@ -240,6 +252,7 @@ pub struct UpdateAiAgentCommand {
     pub weak_model: Option<AgentModelOverride>,
     pub clear_weak_model: bool,
     pub hooks: Option<AgentHooksConfig>,
+    pub limits: Option<AgentLimits>,
     pub require_approval_mcp: Option<bool>,
     pub require_approval_virtual: Option<bool>,
     pub tool_approval_rules: Option<Vec<AgentToolApprovalRule>>,
@@ -259,6 +272,7 @@ impl UpdateAiAgentCommand {
             weak_model: None,
             clear_weak_model: false,
             hooks: None,
+            limits: None,
             require_approval_mcp: None,
             require_approval_virtual: None,
             tool_approval_rules: None,
@@ -311,6 +325,11 @@ impl UpdateAiAgentCommand {
 
     pub fn with_hooks(mut self, hooks: AgentHooksConfig) -> Self {
         self.hooks = Some(hooks);
+        self
+    }
+
+    pub fn with_limits(mut self, limits: AgentLimits) -> Self {
+        self.limits = Some(limits);
         self
     }
 
@@ -377,6 +396,7 @@ impl UpdateAiAgentCommand {
             .map(|model| model.trim().to_string());
         let weak_profile_id = self.weak_model.as_ref().and_then(|o| o.profile_id);
         let hooks_value = self.hooks.clone().map(Json);
+        let limits_value = self.limits.clone().map(Json);
         let require_approval_mcp = self.require_approval_mcp;
         let require_approval_virtual = self.require_approval_virtual;
         let approval_rules_value = self.tool_approval_rules.clone().map(Json);
@@ -437,7 +457,8 @@ impl UpdateAiAgentCommand {
                 hooks = COALESCE($14, hooks),
                 require_approval_mcp = COALESCE($15, require_approval_mcp),
                 require_approval_virtual = COALESCE($16, require_approval_virtual),
-                tool_approval_rules = COALESCE($17, tool_approval_rules)
+                tool_approval_rules = COALESCE($17, tool_approval_rules),
+                limits = COALESCE($18, limits)
             WHERE id = $4 AND deployment_id = $5
             RETURNING id, created_at, updated_at, name, description, deployment_id,
                       strong_model_provider, strong_model, strong_model_profile_id,
@@ -445,7 +466,8 @@ impl UpdateAiAgentCommand {
                       hooks as "hooks!: Json<AgentHooksConfig>",
                       require_approval_mcp,
                       require_approval_virtual,
-                      tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>"
+                      tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+                      limits as "limits!: Json<AgentLimits>"
             "#,
             now,
             self.name,
@@ -464,6 +486,7 @@ impl UpdateAiAgentCommand {
             require_approval_mcp,
             require_approval_virtual,
             approval_rules_value as _,
+            limits_value as _,
         )
         .fetch_one(&mut *tx)
         .await
@@ -502,6 +525,7 @@ impl UpdateAiAgentCommand {
             require_approval_mcp: agent.require_approval_mcp,
             require_approval_virtual: agent.require_approval_virtual,
             tool_approval_rules: agent.tool_approval_rules.0,
+            limits: agent.limits.0,
         })
     }
 }

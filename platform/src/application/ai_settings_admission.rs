@@ -228,16 +228,6 @@ fn effective_embedding_dimension(
     Ok(dimension)
 }
 
-fn effective_openrouter_require_parameters(
-    existing: Option<&DeploymentAiSettings>,
-    updates: &UpdateDeploymentAiSettingsRequest,
-) -> bool {
-    updates
-        .openrouter_require_parameters
-        .or_else(|| existing.map(|e| e.openrouter_require_parameters))
-        .unwrap_or(true)
-}
-
 fn embedding_api_key_changed_for_provider(
     provider: &DeploymentEmbeddingProvider,
     updates: &UpdateDeploymentAiSettingsRequest,
@@ -318,14 +308,6 @@ fn embedding_provider_name(provider: &DeploymentEmbeddingProvider) -> &'static s
         DeploymentEmbeddingProvider::Gemini => "Gemini",
         DeploymentEmbeddingProvider::Openai => "OpenAI",
         DeploymentEmbeddingProvider::Openrouter => "OpenRouter",
-    }
-}
-
-fn parse_llm_provider(s: &str) -> DeploymentLlmProvider {
-    match s {
-        "openai" => DeploymentLlmProvider::Openai,
-        "openrouter" => DeploymentLlmProvider::Openrouter,
-        _ => DeploymentLlmProvider::Gemini,
     }
 }
 

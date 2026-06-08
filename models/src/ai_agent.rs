@@ -28,6 +28,17 @@ fn default_hook_args() -> serde_json::Value {
     serde_json::Value::Object(serde_json::Map::new())
 }
 
+/// Per-agent runtime limits. Stored as the JSONB `limits` column on ai_agents.
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+pub struct AgentLimits {
+    /// Prompt-token count at which conversation history compacts. None = engine default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window_tokens: Option<u32>,
+    /// Cumulative token cap per execution run; exceeding it preempts the run. None = uncapped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_token_budget: Option<u64>,
+}
+
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
 pub struct AgentHooksConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -71,6 +82,8 @@ pub struct AiAgent {
     pub require_approval_virtual: bool,
     #[serde(default)]
     pub tool_approval_rules: Vec<AgentToolApprovalRule>,
+    #[serde(default)]
+    pub limits: AgentLimits,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -106,6 +119,8 @@ pub struct AiAgentWithDetails {
     pub require_approval_virtual: bool,
     #[serde(default)]
     pub tool_approval_rules: Vec<AgentToolApprovalRule>,
+    #[serde(default)]
+    pub limits: AgentLimits,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -141,4 +156,6 @@ pub struct AiAgentWithFeatures {
     pub require_approval_virtual: bool,
     #[serde(default)]
     pub tool_approval_rules: Vec<AgentToolApprovalRule>,
+    #[serde(default)]
+    pub limits: AgentLimits,
 }

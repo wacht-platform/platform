@@ -2,6 +2,9 @@ use crate::error::AppError;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use clickhouse::{Client, Row};
 use dto::clickhouse::ApiKeyVerificationEvent;
+use dto::clickhouse::{
+    GatewayUsageBucket, ModelTokenUsageEvent, TokenUsageBucket, WebhookUsageBucket,
+};
 use dto::clickhouse::webhook::*;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -626,6 +629,111 @@ impl ClickHouseService {
         insert.write(event).await?;
         insert.end().await?;
         Ok(())
+    }
+
+    pub async fn insert_model_token_usage(
+        &self,
+        event: &ModelTokenUsageEvent,
+    ) -> Result<(), AppError> {
+        let mut insert = self
+            .client
+            .insert::<ModelTokenUsageEvent>("model_token_usage")
+            .await?;
+        insert.write(event).await?;
+        insert.end().await?;
+        Ok(())
+    }
+
+    /// Token usage rollup for a deployment over a time range, bucketed by
+    /// `granularity` (minute | hour | day; defaults to minute). Storage stays
+    /// per-event; this aggregates on read.
+    pub async fn get_deployment_token_usage(
+        &self,
+        deployment_id: i64,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+        granularity: &str,
+    ) -> Result<Vec<TokenUsageBucket>, AppError> {
+        // Hardcoded mapping — never interpolate user input into the query.
+        let bucket_fn = match granularity {
+            "hour" => "toStartOfHour",
+            "day" => "toStartOfDay",
+            _ => "toStartOfMinute",
+        };
+        let from_str = Self::format_query_timestamp(from);
+        let to_str = Self::format_query_timestamp(to);
+        let query = format!(
+            "SELECT {bucket_fn}(timestamp) AS bucket, sum(input_tokens) AS input_tokens, sum(cached_tokens) AS cached_tokens, sum(output_tokens) AS output_tokens, sum(total_tokens) AS total_tokens, count() AS request_count FROM model_token_usage WHERE deployment_id = ? AND timestamp >= ? AND timestamp <= ? GROUP BY bucket ORDER BY bucket"
+        );
+        let rows = self
+            .client
+            .query(&query)
+            .bind(deployment_id)
+            .bind(&from_str)
+            .bind(&to_str)
+            .fetch_all::<TokenUsageBucket>()
+            .await?;
+        Ok(rows)
+    }
+
+    /// Deployment-wide API gateway usage bucketed by granularity. Mirrors the
+    /// per-app audit timeseries outcome classification, without the app filter.
+    pub async fn get_deployment_gateway_usage(
+        &self,
+        deployment_id: i64,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+        granularity: &str,
+    ) -> Result<Vec<GatewayUsageBucket>, AppError> {
+        let bucket_fn = match granularity {
+            "hour" => "toStartOfHour",
+            "day" => "toStartOfDay",
+            _ => "toStartOfMinute",
+        };
+        let from_str = Self::format_query_timestamp(from);
+        let to_str = Self::format_query_timestamp(to);
+        let query = format!(
+            "SELECT {bucket_fn}(timestamp) AS bucket, toInt64(count()) AS total_requests, toInt64(countIf(outcome IN ('allowed','ALLOWED','VALID'))) AS allowed_requests, toInt64(countIf(outcome IN ('blocked','BLOCKED','RATE_LIMITED'))) AS blocked_requests FROM api_audit_logs WHERE deployment_id = ? AND timestamp >= ? AND timestamp <= ? GROUP BY bucket ORDER BY bucket ASC"
+        );
+        let rows = self
+            .client
+            .query(&query)
+            .bind(deployment_id)
+            .bind(&from_str)
+            .bind(&to_str)
+            .fetch_all::<GatewayUsageBucket>()
+            .await?;
+        Ok(rows)
+    }
+
+    /// Deployment-wide webhook delivery usage bucketed by granularity, from the
+    /// lightweight long-term table (cheaper, longer retention than _full).
+    pub async fn get_deployment_webhook_usage(
+        &self,
+        deployment_id: i64,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+        granularity: &str,
+    ) -> Result<Vec<WebhookUsageBucket>, AppError> {
+        let bucket_fn = match granularity {
+            "hour" => "toStartOfHour",
+            "day" => "toStartOfDay",
+            _ => "toStartOfMinute",
+        };
+        let from_str = Self::format_query_timestamp(from);
+        let to_str = Self::format_query_timestamp(to);
+        let query = format!(
+            "SELECT {bucket_fn}(timestamp) AS bucket, toInt64(uniqExactIf(delivery_id, status != 'pending')) AS total_deliveries, toInt64(countIf(status = 'success')) AS successful_deliveries, toInt64(countIf(status IN ('failed','permanently_failed'))) AS failed_deliveries, toInt64(countIf(status = 'filtered')) AS filtered_deliveries FROM webhook_logs_light WHERE deployment_id = ? AND timestamp >= ? AND timestamp <= ? GROUP BY bucket ORDER BY bucket ASC"
+        );
+        let rows = self
+            .client
+            .query(&query)
+            .bind(deployment_id)
+            .bind(&from_str)
+            .bind(&to_str)
+            .fetch_all::<WebhookUsageBucket>()
+            .await?;
+        Ok(rows)
     }
 
     /// Aggregate signin events by a single column (e.g. auth_method, country, device).

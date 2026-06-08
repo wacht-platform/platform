@@ -24,6 +24,8 @@ pub const WALL_TIME_LIMIT_SECS: u64 = 45 * 60;
 pub struct BudgetCounter {
     pub llm_calls: u32,
     pub tool_calls: u32,
+    pub tokens_used: u64,
+    pub token_limit: Option<u64>,
     pub started_at: Instant,
 }
 
@@ -32,7 +34,19 @@ impl Default for BudgetCounter {
         Self {
             llm_calls: 0,
             tool_calls: 0,
+            tokens_used: 0,
+            token_limit: None,
             started_at: Instant::now(),
+        }
+    }
+}
+
+impl BudgetCounter {
+    /// Seed a counter with a per-run token cap (None = uncapped).
+    pub fn new(token_limit: Option<u64>) -> Self {
+        Self {
+            token_limit,
+            ..Default::default()
         }
     }
 }
@@ -42,6 +56,7 @@ pub enum BudgetExhausted {
     LlmCalls { used: u32, limit: u32 },
     ToolCalls { used: u32, limit: u32 },
     WallTime { used_secs: u64, limit_secs: u64 },
+    Tokens { used: u64, limit: u64 },
 }
 
 impl BudgetExhausted {
@@ -59,6 +74,9 @@ impl BudgetExhausted {
             } => format!(
                 "wall time budget exhausted: {used_secs}s elapsed, {limit_secs}s allowed per run"
             ),
+            Self::Tokens { used, limit } => {
+                format!("token budget exhausted: {used}/{limit} tokens used in this run")
+            }
         }
     }
 }
@@ -68,6 +86,14 @@ impl BudgetCounter {
     /// Callers should preempt the run; the reason string lands in the abort
     /// directive so the coordinator sees what went wrong.
     pub fn check(&self) -> Result<(), BudgetExhausted> {
+        if let Some(limit) = self.token_limit {
+            if self.tokens_used >= limit {
+                return Err(BudgetExhausted::Tokens {
+                    used: self.tokens_used,
+                    limit,
+                });
+            }
+        }
         if self.llm_calls >= LLM_CALL_LIMIT {
             return Err(BudgetExhausted::LlmCalls {
                 used: self.llm_calls,
@@ -96,5 +122,9 @@ impl BudgetCounter {
 
     pub fn tick_tools(&mut self, n: usize) {
         self.tool_calls = self.tool_calls.saturating_add(n as u32);
+    }
+
+    pub fn tick_tokens(&mut self, n: u64) {
+        self.tokens_used = self.tokens_used.saturating_add(n);
     }
 }

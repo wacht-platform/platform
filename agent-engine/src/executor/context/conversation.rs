@@ -1438,7 +1438,13 @@ impl AgentExecutor {
         &mut self,
         trigger_conversation: &ConversationRecord,
     ) -> Result<bool, AppError> {
-        const PROMPT_TOKEN_THRESHOLD: u32 = 150_000;
+        // Per-agent override; falls back to the engine default.
+        let prompt_token_threshold: u32 = self
+            .ctx
+            .agent
+            .limits
+            .context_window_tokens
+            .unwrap_or(150_000);
         // Last N messages from the compaction window stay in the DB
         // verbatim. The agent's next iteration loads them alongside the
         // summary so it has detailed context for what to do immediately
@@ -1448,7 +1454,7 @@ impl AgentExecutor {
         if self
             .conversation_compaction_state
             .max_prompt_token_count_seen
-            < PROMPT_TOKEN_THRESHOLD
+            < prompt_token_threshold
         {
             return Ok(false);
         }

@@ -986,6 +986,9 @@ impl AgentExecutor {
         let raw_output_snapshot = serde_json::to_string(&output).unwrap_or_default();
         self.budget.tick_llm();
         self.budget.tick_tools(output.calls.len());
+        if let Some(usage) = output.usage_metadata.as_ref() {
+            self.budget.tick_tokens(usage.total_token_count as u64);
+        }
         self.record_llm_usage_for_compaction(output.usage_metadata.as_ref());
         if let Some(cache_state) = output.cache_state.as_ref() {
             self.write_prompt_cache_state(cache_state).await;

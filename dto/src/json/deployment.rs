@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use models::{
-    AgentHooksConfig, AgentModelOverride, AgentToolApprovalRule, AiToolConfiguration,
+    AgentHooksConfig, AgentLimits, AgentModelOverride, AgentToolApprovalRule, AiToolConfiguration,
     ApprovalAction, FlexibleI64,
 };
 
@@ -16,6 +16,7 @@ pub struct CreateAgentRequest {
     pub strong_model: Option<AgentModelOverride>,
     pub weak_model: Option<AgentModelOverride>,
     pub hooks: Option<AgentHooksConfig>,
+    pub limits: Option<AgentLimits>,
     pub require_approval_mcp: Option<bool>,
     pub require_approval_virtual: Option<bool>,
     pub tool_approval_rules: Option<Vec<AgentToolApprovalRule>>,
@@ -35,6 +36,7 @@ pub struct UpdateAgentRequest {
     #[serde(default)]
     pub clear_weak_model: bool,
     pub hooks: Option<AgentHooksConfig>,
+    pub limits: Option<AgentLimits>,
     pub require_approval_mcp: Option<bool>,
     pub require_approval_virtual: Option<bool>,
     pub tool_approval_rules: Option<Vec<AgentToolApprovalRule>>,

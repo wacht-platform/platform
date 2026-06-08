@@ -467,7 +467,12 @@ impl OpenRouterClient {
         body.insert("tools".to_string(), Value::Array(tool_values));
         // AUTO mode: model may emit tool calls, text, or both. Text-only response is
         // the terminal signal in the unified ReAct loop.
-        body.insert("tool_choice".to_string(), json!("auto"));
+        let tool_choice = match prompt.forced_tool_names.as_deref() {
+            Some([name]) => json!({"type": "function", "function": {"name": name}}),
+            Some(names) if !names.is_empty() => json!("required"),
+            _ => json!("auto"),
+        };
+        body.insert("tool_choice".to_string(), tool_choice);
         if self.require_parameters {
             body.insert(
                 "provider".to_string(),

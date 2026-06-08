@@ -361,6 +361,8 @@ impl AgentExecutorBuilder {
             immediate_context,
         } = prepared;
 
+        let run_token_budget = ctx.agent.limits.run_token_budget;
+
         let tool_executor = ToolExecutor::new(ctx.clone())
             .with_channel(channel.clone())
             .with_sandbox_handle(sandbox_handle.clone());
@@ -419,7 +421,7 @@ impl AgentExecutorBuilder {
             terminal_review_continue_count: 0,
             preloaded_immediate_context: Some(immediate_context),
             tool_error_window: ToolErrorWindow::default(),
-            budget: super::budget::BudgetCounter::default(),
+            budget: super::budget::BudgetCounter::new(run_token_budget),
         })
     }
 
