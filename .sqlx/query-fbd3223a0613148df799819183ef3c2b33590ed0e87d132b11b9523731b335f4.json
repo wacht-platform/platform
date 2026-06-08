@@ -1,0 +1,149 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                a.id, a.created_at, a.updated_at, a.name, a.description,\n                a.deployment_id,\n                a.reviewer_agent_id,\n                a.conversation_agent_id,\n                a.strong_model_provider, a.strong_model, a.strong_model_profile_id,\n                a.weak_model_provider, a.weak_model, a.weak_model_profile_id,\n                a.hooks as \"hooks!: Json<AgentHooksConfig>\",\n                    a.limits as \"limits!: Json<AgentLimits>\",\n                a.require_approval_mcp,\n                a.require_approval_virtual,\n                a.tool_approval_rules as \"tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>\",\n                COALESCE((\n                    SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)\n                    FROM ai_agent_sub_agents rel\n                    WHERE rel.deployment_id = a.deployment_id\n                        AND rel.agent_id = a.id\n                ), '[]'::jsonb) as \"sub_agents!: serde_json::Value\",\n                COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as \"tools_count!\",\n                COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as \"knowledge_bases_count!\"\n            FROM ai_agents a\n            WHERE a.id = $1 AND a.deployment_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "reviewer_agent_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "conversation_agent_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "strong_model_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "strong_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "strong_model_profile_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "weak_model_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "weak_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "weak_model_profile_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
+        "name": "hooks!: Json<AgentHooksConfig>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 15,
+        "name": "limits!: Json<AgentLimits>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 16,
+        "name": "require_approval_mcp",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 17,
+        "name": "require_approval_virtual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 18,
+        "name": "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 19,
+        "name": "sub_agents!: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 20,
+        "name": "tools_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 21,
+        "name": "knowledge_bases_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "fbd3223a0613148df799819183ef3c2b33590ed0e87d132b11b9523731b335f4"
+}
