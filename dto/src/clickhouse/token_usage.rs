@@ -53,3 +53,14 @@ pub struct WebhookUsageBucket {
     pub failed_deliveries: i64,
     pub filtered_deliveries: i64,
 }
+
+/// Token totals per model over a range (no time bucket).
+#[derive(Debug, Clone, Serialize, Deserialize, Row)]
+pub struct TokenUsageByModel {
+    pub model: String,
+    pub input_tokens: i64,
+    pub cached_tokens: i64,
+    pub output_tokens: i64,
+    pub total_tokens: i64,
+    pub request_count: u64,
+}

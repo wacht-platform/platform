@@ -50,6 +50,8 @@ pub struct TokenUsageQuery {
     pub to: DateTime<Utc>,
     #[serde(default)]
     pub granularity: Option<String>,
+    #[serde(default)]
+    pub tz: Option<String>,
 }
 
 #[instrument(skip(app_state))]
@@ -59,9 +61,10 @@ pub async fn get_token_usage_stats(
     Query(query): Query<TokenUsageQuery>,
 ) -> ApiResult<TokenUsageResponse> {
     let granularity = query.granularity.as_deref().unwrap_or("minute");
+    let tz = query.tz.as_deref().unwrap_or("UTC");
     let buckets = app_state
         .clickhouse_service
-        .get_deployment_token_usage(deployment_id, query.from, query.to, granularity)
+        .get_deployment_token_usage(deployment_id, query.from, query.to, granularity, tz)
         .await
         .map_err(|_| {
             ApiErrorResponse::from((
@@ -104,9 +107,10 @@ pub async fn get_webhook_usage_stats(
     Query(query): Query<TokenUsageQuery>,
 ) -> ApiResult<WebhookUsageResponse> {
     let granularity = query.granularity.as_deref().unwrap_or("minute");
+    let tz = query.tz.as_deref().unwrap_or("UTC");
     let buckets = app_state
         .clickhouse_service
-        .get_deployment_webhook_usage(deployment_id, query.from, query.to, granularity)
+        .get_deployment_webhook_usage(deployment_id, query.from, query.to, granularity, tz)
         .await
         .map_err(|_| {
             ApiErrorResponse::from((
@@ -154,9 +158,10 @@ pub async fn get_gateway_usage_stats(
     Query(query): Query<TokenUsageQuery>,
 ) -> ApiResult<GatewayUsageResponse> {
     let granularity = query.granularity.as_deref().unwrap_or("minute");
+    let tz = query.tz.as_deref().unwrap_or("UTC");
     let buckets = app_state
         .clickhouse_service
-        .get_deployment_gateway_usage(deployment_id, query.from, query.to, granularity)
+        .get_deployment_gateway_usage(deployment_id, query.from, query.to, granularity, tz)
         .await
         .map_err(|_| {
             ApiErrorResponse::from((
@@ -173,4 +178,48 @@ pub async fn get_gateway_usage_stats(
         })
         .collect();
     Ok(GatewayUsageResponse { buckets }.into())
+}
+
+#[derive(Debug, Serialize)]
+pub struct TokenUsageByModelJson {
+    pub model: String,
+    pub input_tokens: i64,
+    pub cached_tokens: i64,
+    pub output_tokens: i64,
+    pub total_tokens: i64,
+    pub request_count: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TokenUsageByModelResponse {
+    pub models: Vec<TokenUsageByModelJson>,
+}
+
+#[instrument(skip(app_state))]
+pub async fn get_token_usage_by_model(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Query(query): Query<TokenUsageQuery>,
+) -> ApiResult<TokenUsageByModelResponse> {
+    let models = app_state
+        .clickhouse_service
+        .get_deployment_token_usage_by_model(deployment_id, query.from, query.to)
+        .await
+        .map_err(|_| {
+            ApiErrorResponse::from((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to get token usage by model",
+            ))
+        })?
+        .into_iter()
+        .map(|m| TokenUsageByModelJson {
+            model: m.model,
+            input_tokens: m.input_tokens,
+            cached_tokens: m.cached_tokens,
+            output_tokens: m.output_tokens,
+            total_tokens: m.total_tokens,
+            request_count: m.request_count,
+        })
+        .collect();
+    Ok(TokenUsageByModelResponse { models }.into())
 }

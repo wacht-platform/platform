@@ -300,6 +300,10 @@ fn analytics_routes() -> Router<AppState> {
             get(api::analytics::get_token_usage_stats),
         )
         .route(
+            "/analytics/token-usage-by-model",
+            get(api::analytics::get_token_usage_by_model),
+        )
+        .route(
             "/analytics/webhook-usage",
             get(api::analytics::get_webhook_usage_stats),
         )

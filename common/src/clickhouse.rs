@@ -3,7 +3,8 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use clickhouse::{Client, Row};
 use dto::clickhouse::ApiKeyVerificationEvent;
 use dto::clickhouse::{
-    GatewayUsageBucket, ModelTokenUsageEvent, TokenUsageBucket, WebhookUsageBucket,
+    GatewayUsageBucket, ModelTokenUsageEvent, TokenUsageBucket, TokenUsageByModel,
+    WebhookUsageBucket,
 };
 use dto::clickhouse::webhook::*;
 use serde::{Deserialize, Serialize};
@@ -161,6 +162,27 @@ struct RecentSignupRow {
 }
 
 impl ClickHouseService {
+    /// Bucket expression for time-series rollups. `granularity` is mapped to a
+    /// fixed function; `tz` is sanitized (IANA charset only) before interpolation
+    /// so day/hour boundaries align to the viewer's local calendar.
+    fn bucket_expr(granularity: &str, tz: &str) -> String {
+        let bucket_fn = match granularity {
+            "hour" => "toStartOfHour",
+            "day" => "toStartOfDay",
+            _ => "toStartOfMinute",
+        };
+        let tz_ok = !tz.is_empty()
+            && tz.len() <= 64
+            && tz
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '_' | '+' | '-'));
+        if tz_ok {
+            format!("{bucket_fn}(timestamp, '{tz}')")
+        } else {
+            format!("{bucket_fn}(timestamp)")
+        }
+    }
+
     fn format_query_timestamp(timestamp: DateTime<Utc>) -> String {
         timestamp.format("%Y-%m-%d %H:%M:%S").to_string()
     }
@@ -653,17 +675,14 @@ impl ClickHouseService {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
         granularity: &str,
+        tz: &str,
     ) -> Result<Vec<TokenUsageBucket>, AppError> {
         // Hardcoded mapping — never interpolate user input into the query.
-        let bucket_fn = match granularity {
-            "hour" => "toStartOfHour",
-            "day" => "toStartOfDay",
-            _ => "toStartOfMinute",
-        };
+        let bucket = Self::bucket_expr(granularity, tz);
         let from_str = Self::format_query_timestamp(from);
         let to_str = Self::format_query_timestamp(to);
         let query = format!(
-            "SELECT {bucket_fn}(timestamp) AS bucket, sum(input_tokens) AS input_tokens, sum(cached_tokens) AS cached_tokens, sum(output_tokens) AS output_tokens, sum(total_tokens) AS total_tokens, count() AS request_count FROM model_token_usage WHERE deployment_id = ? AND timestamp >= ? AND timestamp <= ? GROUP BY bucket ORDER BY bucket"
+            "SELECT {bucket} AS bucket, sum(input_tokens) AS input_tokens, sum(cached_tokens) AS cached_tokens, sum(output_tokens) AS output_tokens, sum(total_tokens) AS total_tokens, count() AS request_count FROM model_token_usage WHERE deployment_id = ? AND timestamp >= ? AND timestamp <= ? GROUP BY bucket ORDER BY bucket"
         );
         let rows = self
             .client
@@ -676,6 +695,28 @@ impl ClickHouseService {
         Ok(rows)
     }
 
+    /// Token totals grouped by model over a range (for a per-model breakdown).
+    pub async fn get_deployment_token_usage_by_model(
+        &self,
+        deployment_id: i64,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Result<Vec<TokenUsageByModel>, AppError> {
+        let from_str = Self::format_query_timestamp(from);
+        let to_str = Self::format_query_timestamp(to);
+        let rows = self
+            .client
+            .query(
+                "SELECT model AS model, sum(input_tokens) AS input_tokens, sum(cached_tokens) AS cached_tokens, sum(output_tokens) AS output_tokens, sum(total_tokens) AS total_tokens, count() AS request_count FROM model_token_usage WHERE deployment_id = ? AND timestamp >= ? AND timestamp <= ? GROUP BY model ORDER BY total_tokens DESC",
+            )
+            .bind(deployment_id)
+            .bind(&from_str)
+            .bind(&to_str)
+            .fetch_all::<TokenUsageByModel>()
+            .await?;
+        Ok(rows)
+    }
+
     /// Deployment-wide API gateway usage bucketed by granularity. Mirrors the
     /// per-app audit timeseries outcome classification, without the app filter.
     pub async fn get_deployment_gateway_usage(
@@ -684,16 +725,13 @@ impl ClickHouseService {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
         granularity: &str,
+        tz: &str,
     ) -> Result<Vec<GatewayUsageBucket>, AppError> {
-        let bucket_fn = match granularity {
-            "hour" => "toStartOfHour",
-            "day" => "toStartOfDay",
-            _ => "toStartOfMinute",
-        };
+        let bucket = Self::bucket_expr(granularity, tz);
         let from_str = Self::format_query_timestamp(from);
         let to_str = Self::format_query_timestamp(to);
         let query = format!(
-            "SELECT {bucket_fn}(timestamp) AS bucket, toInt64(count()) AS total_requests, toInt64(countIf(outcome IN ('allowed','ALLOWED','VALID'))) AS allowed_requests, toInt64(countIf(outcome IN ('blocked','BLOCKED','RATE_LIMITED'))) AS blocked_requests FROM api_audit_logs WHERE deployment_id = ? AND timestamp >= ? AND timestamp <= ? GROUP BY bucket ORDER BY bucket ASC"
+            "SELECT {bucket} AS bucket, toInt64(count()) AS total_requests, toInt64(countIf(outcome IN ('allowed','ALLOWED','VALID'))) AS allowed_requests, toInt64(countIf(outcome IN ('blocked','BLOCKED','RATE_LIMITED'))) AS blocked_requests FROM api_audit_logs WHERE deployment_id = ? AND timestamp >= ? AND timestamp <= ? GROUP BY bucket ORDER BY bucket ASC"
         );
         let rows = self
             .client
@@ -714,16 +752,13 @@ impl ClickHouseService {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
         granularity: &str,
+        tz: &str,
     ) -> Result<Vec<WebhookUsageBucket>, AppError> {
-        let bucket_fn = match granularity {
-            "hour" => "toStartOfHour",
-            "day" => "toStartOfDay",
-            _ => "toStartOfMinute",
-        };
+        let bucket = Self::bucket_expr(granularity, tz);
         let from_str = Self::format_query_timestamp(from);
         let to_str = Self::format_query_timestamp(to);
         let query = format!(
-            "SELECT {bucket_fn}(timestamp) AS bucket, toInt64(uniqExactIf(delivery_id, status != 'pending')) AS total_deliveries, toInt64(countIf(status = 'success')) AS successful_deliveries, toInt64(countIf(status IN ('failed','permanently_failed'))) AS failed_deliveries, toInt64(countIf(status = 'filtered')) AS filtered_deliveries FROM webhook_logs_light WHERE deployment_id = ? AND timestamp >= ? AND timestamp <= ? GROUP BY bucket ORDER BY bucket ASC"
+            "SELECT {bucket} AS bucket, toInt64(uniqExactIf(delivery_id, status != 'pending')) AS total_deliveries, toInt64(countIf(status = 'success')) AS successful_deliveries, toInt64(countIf(status IN ('failed','permanently_failed'))) AS failed_deliveries, toInt64(countIf(status = 'filtered')) AS filtered_deliveries FROM webhook_logs_light WHERE deployment_id = ? AND timestamp >= ? AND timestamp <= ? GROUP BY bucket ORDER BY bucket ASC"
         );
         let rows = self
             .client
