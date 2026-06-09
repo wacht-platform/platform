@@ -8,7 +8,7 @@ use dto::json::{
     ToolPromptItem,
 };
 
-use crate::llm::{SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest};
+use crate::llm::{LlmRole, SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest};
 use queries::GetProjectTaskBoardItemAssignmentByIdQuery;
 use templatekit::{render_prompt_text, render_template_only, AgentTemplates};
 const STEER_VISIBILITY_NUDGE_WINDOW: usize = 4;
@@ -543,11 +543,17 @@ impl AgentExecutor {
             } else {
                 "medium"
             };
+        // Profiles can opt out for models that don't support a reasoning level.
+        let reasoning_effort = if self.ctx.reasoning_effort_disabled(LlmRole::Strong) {
+            None
+        } else {
+            Some(reasoning_effort.to_string())
+        };
         let config = SemanticLlmPromptConfig {
             response_json_schema: serde_json::json!({}),
             temperature: None,
             max_output_tokens: Some(4096),
-            reasoning_effort: Some(reasoning_effort.to_string()),
+            reasoning_effort,
         };
         let system_prompt = render_prompt_text(self.system_prompt_name(), prompt_context_value)?;
         let stable_context_message = Self::build_stable_context_message(prompt_context);

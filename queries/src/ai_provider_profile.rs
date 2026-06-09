@@ -39,7 +39,7 @@ impl ListDeploymentAiProviderProfilesQuery {
             SELECT
                 id, deployment_id, provider, name, slug, api_key, base_url,
                 organization, project, default_model, enabled, disable_prompt_caching,
-                created_at, updated_at
+                disable_reasoning_effort, created_at, updated_at
             FROM deployment_ai_provider_profiles
             WHERE deployment_id = $1
             ORDER BY created_at DESC
@@ -81,7 +81,7 @@ impl GetDeploymentAiProviderProfileQuery {
             SELECT
                 id, deployment_id, provider, name, slug, api_key, base_url,
                 organization, project, default_model, enabled, disable_prompt_caching,
-                created_at, updated_at
+                disable_reasoning_effort, created_at, updated_at
             FROM deployment_ai_provider_profiles
             WHERE id = $1 AND deployment_id = $2
             "#,

@@ -37,6 +37,7 @@ pub struct ResolvedProviderProfile {
     pub project: Option<String>,
     pub default_model: Option<String>,
     pub disable_prompt_caching: bool,
+    pub disable_reasoning_effort: bool,
 }
 
 impl DeploymentProviderKeys {
@@ -97,6 +98,7 @@ impl DeploymentProviderKeys {
                         project: profile.project.clone(),
                         default_model: profile.default_model.clone(),
                         disable_prompt_caching: profile.disable_prompt_caching,
+                        disable_reasoning_effort: profile.disable_reasoning_effort,
                     })
                 })
                 .collect::<Result<Vec<_>, AppError>>()?,
@@ -152,6 +154,15 @@ impl ThreadExecutionContext {
     pub(crate) fn prompt_caching_disabled(&self, role: LlmRole) -> bool {
         self.agent_profile_for(role)
             .map(|profile| profile.disable_prompt_caching)
+            .unwrap_or(false)
+    }
+
+    /// True when the provider profile resolved for `role` opted out of sending a
+    /// `reasoning_effort`. Set this for models that don't support reasoning /
+    /// thinking levels (the param errors otherwise). No profile means it stays on.
+    pub(crate) fn reasoning_effort_disabled(&self, role: LlmRole) -> bool {
+        self.agent_profile_for(role)
+            .map(|profile| profile.disable_reasoning_effort)
             .unwrap_or(false)
     }
 
