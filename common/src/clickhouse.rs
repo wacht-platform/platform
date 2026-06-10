@@ -489,7 +489,7 @@ impl ClickHouseService {
                     )
                 ) as recent_signup_methods,
                 (
-                    SELECT groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S.%f'))
+                    SELECT groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S'))
                     FROM (
                         SELECT timestamp
                         FROM user_events
@@ -529,7 +529,7 @@ impl ClickHouseService {
                     )
                 ) as recent_signin_methods,
                 (
-                    SELECT groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S.%f'))
+                    SELECT groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S'))
                     FROM (
                         SELECT timestamp
                         FROM user_events
