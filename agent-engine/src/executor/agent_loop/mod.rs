@@ -1096,13 +1096,9 @@ impl AgentExecutor {
         if note_only {
             self.consecutive_note_count = self.consecutive_note_count.saturating_add(1);
             if self.consecutive_note_count >= 3 {
-                let count = self.consecutive_note_count;
-                self.store_transient_steer(
-                    "note_loop_guard",
-                    format!(
-                        "{count} notes in a row, no progress. Stalling. Notes anchor decisions, not substitute action. Next turn: pick tool that executes next concrete step, or call `complete` if done. No more notes until work moves."
-                    ),
-                );
+                self.signal(core::RuntimeSignal::NoteLoop {
+                    count: self.consecutive_note_count,
+                });
             }
             self.note_unproductive_turn();
             return Ok(true);
@@ -1159,10 +1155,7 @@ impl AgentExecutor {
                 raw_output_preview = %truncated_raw,
                 "empty_response_guard: LLM returned no tool calls and no text",
             );
-            self.store_transient_steer(
-                "empty_response_guard",
-                "Last turn: nothing — no tool, no text. User left hanging. Converge now: done → reply and call `complete`; step left → pick tool and call it. No more empty turns.".to_string(),
-            );
+            self.signal(core::RuntimeSignal::EmptyResponse);
             self.note_unproductive_turn();
             return Ok(true);
         }
@@ -1259,15 +1252,11 @@ impl AgentExecutor {
             self.consecutive_shell_nudge_count =
                 self.consecutive_shell_nudge_count.saturating_add(1);
             if self.consecutive_shell_nudge_count >= SHELL_NUDGE_ESCALATE_AT {
-                let count = self.consecutive_shell_nudge_count;
-                self.store_transient_steer(
-                    "shell_discipline_escalate",
-                    format!(
-                        "{count} turns in a row routing file work through the shell when a dedicated tool fits. Before the next shell call, emit 2-3 `note`s reasoning through which tool replaces it (write_file / append_file / edit_file / read_file) and why, then switch to it. Shell remains fine for inspection (`rg`, pipes, `find`)."
-                    ),
-                );
+                self.signal(core::RuntimeSignal::ShellDisciplineEscalated {
+                    count: self.consecutive_shell_nudge_count,
+                });
             } else {
-                self.store_transient_steer("shell_discipline_nudge", message);
+                self.signal(core::RuntimeSignal::ShellDiscipline { message });
             }
         } else {
             self.consecutive_shell_nudge_count = 0;
@@ -1287,13 +1276,9 @@ impl AgentExecutor {
         self.last_tool_call_signature = Some(signature);
 
         if self.repeated_tool_call_count >= 2 {
-            let count = self.repeated_tool_call_count + 1;
-            self.store_transient_steer(
-                "tool_call_loop_guard",
-                format!(
-                    "Same tool(s), same args, {count} turns in a row. Loop. Repeat won't change outcome. Prior result has the answer or says approach won't work — re-read it. Then: change inputs, pick different tool, different angle. Stuck → reply to user with what was tried and what's needed. Identical call again is the one thing forbidden."
-                ),
-            );
+            self.signal(core::RuntimeSignal::ToolCallLoop {
+                count: self.repeated_tool_call_count + 1,
+            });
             if self.repeated_tool_call_count >= 4 {
                 self.note_unproductive_turn();
                 return Ok(true);
@@ -1309,12 +1294,7 @@ impl AgentExecutor {
         let outcome = self.execute_requested_actions(tool_requests).await?;
         self.reset_unproductive_turns();
         if batch_size >= LARGE_TOOL_BATCH {
-            self.store_transient_steer(
-                "tool_batch_backpressure",
-                format!(
-                    "{batch_size} tool calls in one turn. Work the result before fanning out further: read each output, let it choose the next probe, and call only what the current evidence makes necessary. Narrow beats broad."
-                ),
-            );
+            self.signal(core::RuntimeSignal::BatchBackpressure { batch_size });
         }
         self.run_hooks(
             super::hooks::LifecyclePhase::AfterTool,
@@ -1393,15 +1373,12 @@ impl AgentExecutor {
                 ConversationMessageType::Steer,
             )
             .await?;
-            self.store_transient_steer(
-                "complete_required",
-                "Pure text never ends a task run. Decide: is there a concrete next step left? If yes, emit that tool call now. If the slice is done, call `complete` with a cold-readable summary (plus artifacts/blockers/next_actions where real). Those are the only two moves.".to_string(),
-            );
+            self.signal(core::RuntimeSignal::CompleteRequired);
             return Ok(true);
         }
 
-        if let Some(error) = self.completion_guard_error().await? {
-            self.store_transient_steer("complete_blocked", error);
+        if let Some(reason) = self.completion_guard_error().await? {
+            self.signal(core::RuntimeSignal::CompleteBlocked { reason });
             return Ok(true);
         }
 

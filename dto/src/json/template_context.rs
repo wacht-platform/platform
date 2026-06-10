@@ -107,8 +107,9 @@ pub struct AgentLoopContext {
 pub struct AgentLoopRuntimeContext {
     pub current_datetime_utc: String,
     pub iteration_info: IterationInfo,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub steer_visibility_nudge: Option<String>,
+    /// One-turn harness signals; drained each iteration, never accumulated.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runtime_signals: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

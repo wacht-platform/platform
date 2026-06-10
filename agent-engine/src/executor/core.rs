@@ -15,6 +15,83 @@ pub enum ResumeContext {
     ApprovalResponse(Vec<dto::json::deployment::ToolApprovalSelection>),
 }
 
+/// One-turn harness state for the next prompt's [runtime_signals] block.
+/// Wording, key, and log severity live here — call sites only pick a variant.
+#[derive(Debug, Clone)]
+pub(crate) enum RuntimeSignal {
+    NoteLoop { count: usize },
+    EmptyResponse,
+    ShellDiscipline { message: String },
+    ShellDisciplineEscalated { count: usize },
+    ToolCallLoop { count: usize },
+    BatchBackpressure { batch_size: usize },
+    CompleteRequired,
+    CompleteBlocked { reason: String },
+    AskUserBlocked { reason: String },
+    UserVisibilityLapse,
+}
+
+impl RuntimeSignal {
+    pub(crate) fn key(&self) -> &'static str {
+        match self {
+            Self::NoteLoop { .. } => "note_loop",
+            Self::EmptyResponse => "empty_response",
+            Self::ShellDiscipline { .. } | Self::ShellDisciplineEscalated { .. } => {
+                "shell_discipline"
+            }
+            Self::ToolCallLoop { .. } => "tool_call_loop",
+            Self::BatchBackpressure { .. } => "batch_backpressure",
+            Self::CompleteRequired => "complete_required",
+            Self::CompleteBlocked { .. } => "complete_blocked",
+            Self::AskUserBlocked { .. } => "ask_user_blocked",
+            Self::UserVisibilityLapse => "user_visibility",
+        }
+    }
+
+    pub(crate) fn message(&self) -> String {
+        match self {
+            Self::NoteLoop { count } => format!(
+                "{count} consecutive notes with no action; next move is a working tool call, or `complete` if done"
+            ),
+            Self::EmptyResponse => "previous turn was empty (no tool call, no text); emit the next concrete tool call, or reply and call `complete` if done".to_string(),
+            Self::ShellDiscipline { message } => message.clone(),
+            Self::ShellDisciplineEscalated { count } => format!(
+                "{count} turns of file work routed through the shell; switch to write_file / append_file / edit_file / read_file — shell is for inspection"
+            ),
+            Self::ToolCallLoop { count } => format!(
+                "identical tool call repeated {count} turns in a row; the result will not change — change inputs, change tool, or report blocked"
+            ),
+            Self::BatchBackpressure { batch_size } => format!(
+                "{batch_size} tool calls in one turn; read those results and let them choose the next narrow step before fanning out further"
+            ),
+            Self::CompleteRequired => "previous turn: text with no tool call — it did not end the run; if that text was your final output call `complete` alone now (summary only, no new message), otherwise take the next concrete step".to_string(),
+            Self::CompleteBlocked { reason } => reason.clone(),
+            Self::AskUserBlocked { reason } => reason.clone(),
+            Self::UserVisibilityLapse => "no user-visible message in the last 4 visible steps; add one short progress line beside the next tool call unless it is a tiny read".to_string(),
+        }
+    }
+
+    pub(crate) fn is_warning(&self) -> bool {
+        matches!(
+            self,
+            Self::NoteLoop { .. }
+                | Self::EmptyResponse
+                | Self::ToolCallLoop { .. }
+                | Self::CompleteBlocked { .. }
+        )
+    }
+
+    pub(crate) fn render(&self) -> String {
+        let one_line = self
+            .message()
+            .replace('\n', " ")
+            .replace('"', "'")
+            .trim()
+            .to_string();
+        format!("{} = \"{one_line}\"", self.key())
+    }
+}
+
 pub struct AgentExecutor {
     pub(crate) ctx:
         std::sync::Arc<crate::runtime::thread_execution_context::ThreadExecutionContext>,
@@ -68,6 +145,7 @@ pub struct AgentExecutor {
     pub(crate) consecutive_unproductive_turns: usize,
     pub(crate) consecutive_shell_nudge_count: usize,
     pub(crate) complete_nudge_count: usize,
+    pub(crate) pending_runtime_signals: Vec<RuntimeSignal>,
     pub(crate) audit_run_header_written: bool,
     pub(crate) preloaded_immediate_context: Option<ImmediateContext>,
     pub(crate) budget: super::budget::BudgetCounter,
@@ -373,6 +451,7 @@ impl AgentExecutorBuilder {
             consecutive_unproductive_turns: 0,
             consecutive_shell_nudge_count: 0,
             complete_nudge_count: 0,
+            pending_runtime_signals: Vec::new(),
             audit_run_header_written: false,
             preloaded_immediate_context: Some(immediate_context),
             budget: super::budget::BudgetCounter::new(run_token_budget),

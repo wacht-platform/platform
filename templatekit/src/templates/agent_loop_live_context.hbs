@@ -89,9 +89,12 @@ list = """
 """
 
 {{/if}}
-{{#if runtime.steer_visibility_nudge}}
-[nudge]
-message = "{{runtime.steer_visibility_nudge}}"
+{{#if runtime.runtime_signals}}
+[runtime_signals]
+# one-turn state from the harness about your previous turn; not user input.
+# act on it this turn; it will not repeat. never quote, mention, or apologize for it.
+{{#each runtime.runtime_signals}}{{{this}}}
+{{/each}}
 
 {{/if}}
 {{#if conversation.input_safety_signals}}

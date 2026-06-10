@@ -105,54 +105,40 @@ impl AgentExecutor {
         Ok(())
     }
 
-    /// In-memory-only conversation entry used for runtime steering guards.
-    /// Pushed onto `self.conversations` so the LLM history rendering picks it up
-    /// for the remainder of this execution, but never written to Postgres or
-    /// streamed to clients. Evaporates when the executor is dropped.
-    pub(crate) fn store_transient_steer(&mut self, step: &str, reasoning: String) {
-        let id = match self.ctx.app_state.sf.next_id() {
-            Ok(v) => v as i64,
-            Err(_) => 0,
-        };
-        let now = chrono::Utc::now();
-        let conversation = ConversationRecord {
-            id,
-            thread_id: Some(self.ctx.thread_id),
-            board_item_id: self.current_board_item_id(),
-            execution_run_id: Some(self.ctx.execution_run_id),
-            timestamp: now,
-            content: ConversationContent::SystemDecision {
-                step: step.to_string(),
-                reasoning: reasoning.clone(),
-                confidence: 1.0,
-            },
-            message_type: ConversationMessageType::SystemDecision,
-            created_at: now,
-            updated_at: now,
-            metadata: None,
-        };
-        let is_guard_class = step.ends_with("_guard")
-            || step.starts_with("complete_blocked")
-            || step.starts_with("compaction_blocked");
+    /// Buffer a one-turn runtime signal: rendered into the NEXT prompt's
+    /// live-context [runtime_signals] block, then dropped. Never enters
+    /// history, Postgres, or the client stream. Same variant replaces, not stacks.
+    pub(crate) fn signal(&mut self, signal: crate::executor::core::RuntimeSignal) {
         let board_item_id = self.current_board_item_id();
-        if is_guard_class {
+        if signal.is_warning() {
             tracing::warn!(
                 thread_id = self.ctx.thread_id,
                 board_item_id = ?board_item_id,
                 execution_run_id = self.ctx.execution_run_id,
-                step = step,
-                "guard fired"
+                signal = signal.key(),
+                "runtime signal fired"
             );
         } else {
             tracing::info!(
                 thread_id = self.ctx.thread_id,
                 board_item_id = ?board_item_id,
                 execution_run_id = self.ctx.execution_run_id,
-                step = step,
-                "transient steer fired"
+                signal = signal.key(),
+                "runtime signal fired"
             );
         }
-        self.conversations.push(conversation);
+        self.pending_runtime_signals
+            .retain(|existing| std::mem::discriminant(existing) != std::mem::discriminant(&signal));
+        self.pending_runtime_signals.push(signal);
+    }
+
+    /// Drain buffered signals for exactly one render; newest 3 win.
+    pub(crate) fn drain_runtime_signals(&mut self) -> Vec<String> {
+        let mut signals = std::mem::take(&mut self.pending_runtime_signals);
+        if signals.len() > 3 {
+            signals.drain(..signals.len() - 3);
+        }
+        signals.iter().map(|signal| signal.render()).collect()
     }
 
     pub(crate) async fn create_conversation(

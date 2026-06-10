@@ -370,6 +370,12 @@ impl AgentExecutor {
             .as_ref()
             .map(|item| item.metadata.kind.as_deref() == Some("delegated_task"))
             .unwrap_or(false);
+        if self
+            .steer_visibility_nudge(thread_mode.allows_user_interaction)
+            .is_some()
+        {
+            self.signal(crate::executor::core::RuntimeSignal::UserVisibilityLapse);
+        }
         let context = AgentLoopContext {
             runtime: AgentLoopRuntimeContext {
                 current_datetime_utc: chrono::Utc::now()
@@ -379,8 +385,7 @@ impl AgentExecutor {
                     current_iteration: self.current_iteration.max(1),
                     max_iterations: 50,
                 },
-                steer_visibility_nudge: self
-                    .steer_visibility_nudge(thread_mode.allows_user_interaction),
+                runtime_signals: self.drain_runtime_signals(),
             },
             conversation: AgentLoopConversationContext {
                 user_request: self.user_request.clone(),

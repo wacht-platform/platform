@@ -20,10 +20,9 @@ impl AgentExecutor {
 
         self.invalidate_stale_pending_question();
         if self.pending_question.is_some() || self.board_item_has_pending_question().await? {
-            self.store_transient_steer(
-                "ask_user_blocked_by_pending_question",
-                "ask_user blocked: active pending question already on this thread/task. Wait for user answer before asking new.".to_string(),
-            );
+            self.signal(crate::executor::core::RuntimeSignal::AskUserBlocked {
+                reason: "ask_user blocked: an active pending question already exists on this thread/task; wait for the answer before asking again".to_string(),
+            });
             return Ok(true);
         }
 
@@ -54,10 +53,9 @@ impl AgentExecutor {
 
         if let Some(board_item_id) = self.current_board_item_id() {
             if self.board_item_has_pending_question().await? {
-                self.store_transient_steer(
-                    "ask_user_blocked_by_pending_question",
-                    "ask_user blocked: a concurrent execution already set a pending question on this board item.".to_string(),
-                );
+                self.signal(crate::executor::core::RuntimeSignal::AskUserBlocked {
+                    reason: "ask_user blocked: a concurrent execution already set a pending question on this board item".to_string(),
+                });
                 return Ok(true);
             }
             commands::SetBoardItemPendingQuestionCommand {
