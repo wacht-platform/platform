@@ -44,6 +44,11 @@ WORKDIR /app
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --locked --recipe-path recipe.json
 
+# Temporary cache bypass: pass a fresh value to force a clean source rebuild
+# (deps above stay cached): docker build --build-arg CACHEBUST=$(date +%s) …
+ARG CACHEBUST=0
+RUN echo "cachebust=${CACHEBUST}"
+
 COPY Cargo.toml Cargo.lock ./
 COPY .sqlx/ ./.sqlx/
 COPY models/ ./models/
