@@ -184,6 +184,22 @@ impl AgentExecutor {
         }
     }
 
+    pub(in crate::executor) async fn audit_rejected_call(
+        &mut self,
+        tool_name: &str,
+        arguments: &Value,
+        error: &str,
+    ) {
+        let line = audit_line(
+            self.current_iteration,
+            tool_name,
+            "rejected",
+            &input_preview(arguments),
+            Some(error),
+        );
+        self.append_task_audit(&[line]).await;
+    }
+
     async fn append_task_audit(&mut self, lines: &[String]) {
         if lines.is_empty() || !(self.is_service_mode_execution() || self.is_delegated_task) {
             return;

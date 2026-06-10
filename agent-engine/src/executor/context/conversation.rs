@@ -1701,6 +1701,34 @@ impl AgentExecutor {
         user_request: String,
         execution_messages: Vec<serde_json::Value>,
     ) -> Result<(usize, ConversationRecord), AppError> {
+        let window_text = execution_messages
+            .iter()
+            .filter_map(|m| {
+                let role = m.get("role")?.as_str().unwrap_or("");
+                let mtype = m.get("message_type").and_then(|v| v.as_str()).unwrap_or("");
+                let ts = m.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
+                let content = m.get("content")?.as_str().unwrap_or("");
+                Some(format!("[{ts}] {role}/{mtype}\n{content}"))
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n");
+
+        match self.run_agentic_summary(&user_request, &window_text).await {
+            Ok(agent_execution) => {
+                return self
+                    .store_execution_summary(user_request, agent_execution)
+                    .await;
+            }
+            Err(error) => {
+                tracing::warn!(
+                    thread_id = self.ctx.thread_id,
+                    execution_run_id = self.ctx.execution_run_id,
+                    ?error,
+                    "agentic summary failed; falling back to one-shot summarization"
+                );
+            }
+        }
+
         let template_context = json!({
             "user_request": user_request,
             "execution_messages": execution_messages,
@@ -1744,6 +1772,15 @@ Output plain text only — no JSON, no code fences, no surrounding prose."#,
             .map(|output| output.text)
             .map_err_internal("Summary generation failed")?;
 
+        self.store_execution_summary(user_request, agent_execution)
+            .await
+    }
+
+    async fn store_execution_summary(
+        &mut self,
+        user_request: String,
+        agent_execution: String,
+    ) -> Result<(usize, ConversationRecord), AppError> {
         let summary_record = self
             .create_conversation(
                 ConversationContent::ExecutionSummary {

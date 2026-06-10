@@ -1338,6 +1338,7 @@ impl AgentExecutor {
         arguments: &serde_json::Value,
         error: &str,
     ) -> Result<(), AppError> {
+        self.audit_rejected_call(tool_name, arguments, error).await;
         self.store_conversation(
             ConversationContent::ToolResult {
                 tool_name: tool_name.to_string(),

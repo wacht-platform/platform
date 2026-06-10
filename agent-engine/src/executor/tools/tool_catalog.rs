@@ -117,39 +117,120 @@ impl AgentExecutor {
                 continue;
             }
 
-            let normalized_value = match current_value {
-                Value::Object(nested) if field.field_type == "OBJECT" => {
-                    let nested_schema = field.properties.as_deref().unwrap_or(&[]);
-                    Value::Object(Self::normalize_tool_input_object(nested, nested_schema))
-                }
-                Value::Array(items) if field.field_type == "ARRAY" => {
-                    let normalized_items = if field.items_type.as_deref() == Some("OBJECT") {
-                        let nested_schema = field
-                            .items_schema
-                            .as_deref()
-                            .and_then(|item| item.properties.as_deref())
-                            .unwrap_or(&[]);
-                        items
-                            .into_iter()
-                            .map(|item| match item {
-                                Value::Object(nested) => Value::Object(
-                                    Self::normalize_tool_input_object(nested, nested_schema),
-                                ),
-                                other => other,
-                            })
-                            .collect()
-                    } else {
-                        items
-                    };
-                    Value::Array(normalized_items)
-                }
-                other => other,
-            };
-
-            input.insert(field.name.clone(), normalized_value);
+            input.insert(field.name.clone(), Self::coerce_to_field(current_value, field));
         }
 
         input
+    }
+
+    /// Lossless, schema-driven coercion. Anything ambiguous passes through
+    /// unchanged and fails parsing with the expected-parameter hint instead.
+    fn coerce_to_field(value: Value, field: &SchemaField) -> Value {
+        match field.field_type.as_str() {
+            "OBJECT" => {
+                let value = Self::parse_json_string(value, |v| v.is_object());
+                match value {
+                    Value::Object(nested) => Value::Object(Self::normalize_tool_input_object(
+                        nested,
+                        field.properties.as_deref().unwrap_or(&[]),
+                    )),
+                    other => other,
+                }
+            }
+            "ARRAY" => {
+                let value = Self::parse_json_string(value, |v| v.is_array());
+                // None = unknown item type (e.g. MCP schemas): wrap shape, never coerce items.
+                let items_type = field.items_type.as_deref();
+                let items = match value {
+                    Value::Array(items) => items,
+                    Value::Object(o) if items_type == Some("OBJECT") => vec![Value::Object(o)],
+                    scalar @ (Value::String(_) | Value::Bool(_) | Value::Number(_))
+                        if items_type != Some("OBJECT") =>
+                    {
+                        vec![scalar]
+                    }
+                    other => return other,
+                };
+                let nested_schema = field
+                    .items_schema
+                    .as_deref()
+                    .and_then(|item| item.properties.as_deref())
+                    .unwrap_or(&[]);
+                Value::Array(
+                    items
+                        .into_iter()
+                        .map(|item| match (items_type, item) {
+                            (Some("OBJECT"), Value::Object(nested)) => Value::Object(
+                                Self::normalize_tool_input_object(nested, nested_schema),
+                            ),
+                            (Some(scalar_type), item) if scalar_type != "OBJECT" => {
+                                Self::coerce_scalar(item, scalar_type)
+                            }
+                            (_, item) => item,
+                        })
+                        .collect(),
+                )
+            }
+            scalar_type => Self::coerce_scalar(value, scalar_type),
+        }
+    }
+
+    fn coerce_scalar(value: Value, field_type: &str) -> Value {
+        match (field_type, value) {
+            ("BOOLEAN", Value::String(s)) => match s.trim().to_ascii_lowercase().as_str() {
+                "true" => Value::Bool(true),
+                "false" => Value::Bool(false),
+                _ => Value::String(s),
+            },
+            ("INTEGER", Value::String(s)) => match s.trim().parse::<i64>() {
+                Ok(n) => Value::Number(n.into()),
+                Err(_) => Value::String(s),
+            },
+            ("INTEGER", Value::Number(n)) => {
+                // Float with zero fraction → integer (serde rejects 5.0 for u64/i64).
+                match n.as_f64() {
+                    Some(f)
+                        if n.as_i64().is_none()
+                            && n.as_u64().is_none()
+                            && f.fract() == 0.0
+                            && f >= i64::MIN as f64
+                            && f < i64::MAX as f64 =>
+                    {
+                        Value::Number((f as i64).into())
+                    }
+                    _ => Value::Number(n),
+                }
+            }
+            ("NUMBER", Value::String(s)) => {
+                if let Ok(n) = s.trim().parse::<i64>() {
+                    Value::Number(n.into())
+                } else if let Some(n) = s
+                    .trim()
+                    .parse::<f64>()
+                    .ok()
+                    .and_then(serde_json::Number::from_f64)
+                {
+                    Value::Number(n)
+                } else {
+                    Value::String(s)
+                }
+            }
+            ("STRING", Value::Bool(b)) => Value::String(b.to_string()),
+            ("STRING", Value::Number(n)) => Value::String(n.to_string()),
+            (_, other) => other,
+        }
+    }
+
+    /// LLMs often emit JSON-encoded-as-string for structured params; parse it
+    /// when the result matches the expected shape, otherwise leave untouched.
+    fn parse_json_string(value: Value, matches_shape: impl Fn(&Value) -> bool) -> Value {
+        match value {
+            Value::String(s) => match serde_json::from_str::<Value>(&s) {
+                Ok(parsed) if matches_shape(&parsed) => parsed,
+                _ => Value::String(s),
+            },
+            other => other,
+        }
     }
 
     pub(crate) fn tool_input_schema_for_search(tool: &AiTool) -> Vec<SchemaField> {
@@ -251,7 +332,28 @@ impl AgentExecutor {
         input_object: serde_json::Map<String, Value>,
     ) -> Result<ToolCallRequest, AppError> {
         Self::validate_selected_tool_input(tool, &input_object)?;
-        Self::build_tool_call_request(tool, Value::Object(input_object))
+        Self::build_tool_call_request(tool, Value::Object(input_object)).map_err(|err| match err {
+            AppError::BadRequest(msg) => {
+                let fields = Self::tool_input_schema_for_search(tool);
+                if fields.is_empty() {
+                    return AppError::BadRequest(msg);
+                }
+                let expected = fields
+                    .iter()
+                    .map(|f| {
+                        format!(
+                            "{}: {}{}",
+                            f.name,
+                            f.field_type.to_lowercase(),
+                            if f.required { " (required)" } else { "" }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                AppError::BadRequest(format!("{msg}. Expected parameters — {expected}"))
+            }
+            other => other,
+        })
     }
 
     pub(crate) fn parse_tool_params<T: DeserializeOwned>(
@@ -879,3 +981,4 @@ External tool catalog with descriptions and input schemas:
         }
     }
 }
+
