@@ -1,3 +1,5 @@
+[execution_start · assignment #{{assignment_id}} · {{task_key}}]
+
 # Assignment #{{assignment_id}}
 
 {{#if is_recurring}}> **Recurring task.** This is one fire of a schedule that runs repeatedly. The `/shared/` mount (and any other listed mount) persists across every fire — read prior state from it at the start, write any state you need to remember before you finish. `/task/` is per-fire and resets next run; durable state belongs in the mount.{{#if task_schedule}} Schedule: `{{task_schedule.kind}}`{{#if task_schedule.interval}}, every `{{task_schedule.interval}}`{{/if}}, next run `{{task_schedule.next_run_at}}`{{#if task_schedule.last_fired_at}}, last fired `{{task_schedule.last_fired_at}}`{{/if}}, overlap `{{task_schedule.overlap_policy}}`.{{/if}}

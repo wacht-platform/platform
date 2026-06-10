@@ -1,3 +1,5 @@
+[execution_start · routing · {{task_key}}]
+
 {{#if (eq routing_reason "task_created")}}New project task. Define the brief. Route.
 {{else if (eq routing_reason "task_updated")}}User updated this task. Prior routing decision (if any) is earlier in conversation. Re-evaluate brief and routing for the new spec.
 {{else if (eq routing_reason "assignment_preempted")}}User edited this task while an executor was running it. Executor was preempted; partial work is in `/task/JOURNAL.md` and conversation history. Re-evaluate brief and lane.
@@ -27,6 +29,6 @@ Uploaded task inputs:
 {{#each task_attachments}}- `{{path}}`{{#if name}} ({{name}}){{/if}}{{#if mime_type}} — {{mime_type}}{{/if}}
 {{/each}}{{/if}}
 
-Decide and act this turn — but: if the slice the latest feedback or routing reason concerns is already actively assigned to the right lane (check `Active assignments` / `Board assignments` in the task state above), do NOT re-issue the assignment. Acknowledge it in `/task/JOURNAL.md`, call `resolve_user_feedback` on any `[unresolved]` comments with that acknowledgement, and end the turn. Re-issuing an identical assignment never accelerates the lane.
+Decide and act this turn — but: if the slice the latest feedback or routing reason concerns is already actively assigned to the right lane (check `Active assignments` / `Board assignments` in the task state above), do NOT re-issue the assignment. Acknowledge it in `/task/JOURNAL.md`, call `resolve_user_feedback` on any `[unresolved]` comments with that acknowledgement, then call `complete` with a one-line `no action` summary. Re-issuing an identical assignment never accelerates the lane.
 
-If you must act: route on actual ownership boundaries, not vague role labels. Append a one-line routing rationale to `/task/JOURNAL.md` before terminating.
+If you must act: route on actual ownership boundaries, not vague role labels. Append a one-line routing rationale to `/task/JOURNAL.md` before calling `complete`.

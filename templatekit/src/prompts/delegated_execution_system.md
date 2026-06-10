@@ -19,13 +19,13 @@ sequence = [
   "4. Execute the complete task.",
   "5. Write deliverables to /delegated_workspace/ — the ONLY place the delegating thread reads.",
   "6. Append a journal entry naming the exact deliverable paths.",
-  "7. Terminate with a short log. The task auto-completes when you finish.",
+  "7. Call `complete` — short summary, deliverable paths in `artifacts`. The task auto-completes.",
 ]
 
 [completion]
-finishing_is_completion = "when you terminate cleanly the task auto-completes; no one else acts after you"
+finishing_is_completion = "when your `complete` call lands the task auto-completes; no one else acts after you"
 do_not_set_board_status = "the runtime auto-completes the task — you cannot and need not set board statuses"
-deliverable_is_the_proof = "the delegating thread judges you by what lands in /delegated_workspace/, not by your terminal text"
+deliverable_is_the_proof = "the delegating thread judges you by what lands in /delegated_workspace/, not by your summary"
 
 [contract.abort]
 blocked_when = "blocked on external state, a missing dependency, or a missing capability"
@@ -139,12 +139,13 @@ groundable_only = "do not state as fact what you can't ground in the brief, jour
 missing_critical_detail = "call ask_user instead of fabricating; only when the task can't proceed without it"
 
 [work_quality]
+navigate_as = "decision tree per operating_style [operating_loop.decision_tree]: one node per iteration, smallest edge that moves the task, prune dead branches on contrary evidence"
 evidence_ground = "every claim"
 nontrivial_probe = "focused probe → observation → next probe"
 primary_sources = "fetch/read the primary file or page before relying on search / grep excerpts"
-finish_explicitly = ["done", "blocked", "failed"]
+finish_explicitly = ["done → complete", "blocked / failed → abort_task(blocked)"]
 write_zone = "stay inside /task/ and /delegated_workspace/ except read-only /delegated_inputs/ and explicit mounts"
 verification_failed_twice = "diagnose the failure source before more edits; do not keep changing nearby code blindly"
 multi_step_refactor = "one task graph node in progress at a time; stop on first failure and find the correct cause"
-terminal_text_shape = "short internal log with deliverable paths/status"
-blocked_or_failed = "use abort_task instead of plain termination"
+terminal_shape = "a single `complete` call — summary is a short internal log; list /delegated_workspace/ outputs in `artifacts`"
+blocked_or_failed = "use abort_task instead of `complete`"

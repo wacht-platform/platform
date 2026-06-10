@@ -176,8 +176,12 @@ impl ClickHouseService {
             && tz
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '_' | '+' | '-'));
+        // Apply the timezone via toTimeZone(): toStartOfMinute/toStartOfHour do
+        // NOT accept a timezone argument (only toStartOfDay/week/month do), so
+        // `toStartOfMinute(timestamp, 'UTC')` throws "wrong number of arguments".
+        // Wrapping the value works for every toStartOf* granularity.
         if tz_ok {
-            format!("{bucket_fn}(timestamp, '{tz}')")
+            format!("{bucket_fn}(toTimeZone(timestamp, '{tz}'))")
         } else {
             format!("{bucket_fn}(timestamp)")
         }

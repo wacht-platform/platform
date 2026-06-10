@@ -1,6 +1,9 @@
 mod ask_user;
+mod complete;
 mod notify_user;
 mod resolve_user_feedback;
+
+pub(in crate::executor) use complete::CompletionHandoff;
 
 use crate::llm::NativeToolDefinition;
 use serde_json::json;
@@ -197,6 +200,53 @@ pub fn resolve_user_feedback_tool() -> NativeToolDefinition {
                 }
             },
             "required": ["comment_ids", "resolution"]
+        }),
+    }
+}
+
+pub fn complete_tool() -> NativeToolDefinition {
+    NativeToolDefinition {
+        name: "complete".to_string(),
+        description: "Finish this run. The ONLY clean exit from the loop — pure text never ends a run. \
+            Before calling, self-review the turn: every action you said you'd take must already be done \
+            (tool call visible in history), journal updated for service work, user feedback resolved. \
+            If anything is still pending, do it first and call `complete` on a later turn. \
+            Must be the only tool call in its response; text alongside it is delivered as your final reply/log. \
+            `summary` is the durable handoff — the next lane or reviewer reads it cold, so ground it in what \
+            actually happened this run. Pull `artifacts` from real tool results, never from intention."
+            .to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "1-3 sentence handoff: what was accomplished this run, key decisions, and the resulting state of the deliverable. Written for the next lane or reviewer to read cold."
+                },
+                "artifacts": {
+                    "type": "array",
+                    "description": "Files, paths, or resources this run produced or materially changed. Strongly preferred when work touched disk.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "path": { "type": "string", "description": "Absolute path or stable identifier." },
+                            "kind": { "type": "string", "description": "Short kind tag, e.g. 'file', 'image', 'video', 'report'." },
+                            "note": { "type": "string", "description": "One-line description of what this artifact contains or represents." }
+                        },
+                        "required": ["path"]
+                    }
+                },
+                "blockers": {
+                    "type": "array",
+                    "description": "Unresolved blockers, failed attempts, or constraints the next lane must know to make progress.",
+                    "items": { "type": "string" }
+                },
+                "next_actions": {
+                    "type": "array",
+                    "description": "Concrete suggested follow-ups for the next assignment or reviewer.",
+                    "items": { "type": "string" }
+                }
+            },
+            "required": ["summary"]
         }),
     }
 }

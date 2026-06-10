@@ -727,7 +727,7 @@ impl AgentExecutor {
                 ..
             } => {
                 let mut out = format!(
-                    "[earlier assignment trigger · #{} · {} · {}{}]",
+                    "[execution_start · assignment #{} · {} · {}{}]",
                     assignment_id,
                     task_key,
                     triggered_at.format("%Y-%m-%dT%H:%M:%SZ"),
@@ -752,7 +752,7 @@ impl AgentExecutor {
                 ..
             } => {
                 let mut out = format!(
-                    "[earlier task routing · item #{} · {} · {}{}]",
+                    "[execution_start · routing · item #{} · {} · {}{}]",
                     board_item_id,
                     task_key,
                     triggered_at.format("%Y-%m-%dT%H:%M:%SZ"),
@@ -1064,7 +1064,7 @@ impl AgentExecutor {
             "error" => {
                 let detail = error.unwrap_or("(no detail)");
                 format!(
-                    "You ran the tool: {action}\n\nIt failed with: {detail}\n\nUse that error to decide what to do next — retry only if it names something you can actually change, otherwise work around it or report the task blocked. Do not pretend it succeeded or invent the output you wished it returned.",
+                    "[tool_failure]\ntool = \"{tool_name}\"\nattempted = \"{action}\"\nerror = \"\"\"\n{detail}\n\"\"\""
                 )
             }
             "pending" => {

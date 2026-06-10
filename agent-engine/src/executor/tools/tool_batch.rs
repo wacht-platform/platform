@@ -6,14 +6,11 @@ use chrono::Utc;
 use commands::ConsumeOnceApprovalGrantForThreadCommand;
 use common::error::AppError;
 use dto::json::agent_executor::{ApprovalRequestData, ToolCallRequest};
-use dto::json::template_context::LastIterationToolError;
 use models::{AiTool, ApprovalAction, ConversationContent, ConversationMessageType};
 use serde_json::Value;
 use std::collections::HashSet;
 
-const MAX_TOOL_ERROR_SNAPSHOTS: usize = 10;
 const MAX_TOOL_ERROR_INPUT_CHARS: usize = 300;
-const MAX_TOOL_ERROR_MESSAGE_CHARS: usize = 500;
 
 fn truncate_chars(s: &str, max: usize) -> String {
     let count = s.chars().count();
@@ -28,6 +25,16 @@ fn truncate_chars(s: &str, max: usize) -> String {
 fn input_preview(input: &Value) -> String {
     let serialized = serde_json::to_string(input).unwrap_or_else(|_| "<unrenderable>".into());
     truncate_chars(&serialized, MAX_TOOL_ERROR_INPUT_CHARS)
+}
+
+fn audit_line(iteration: usize, tool: &str, status: &str, input: &str, error: Option<&str>) -> String {
+    let error_part = error
+        .map(|e| format!(" error=\"{}\"", truncate_chars(&e.replace('\n', " "), 400)))
+        .unwrap_or_default();
+    format!(
+        "[{}] iter={iteration} tool={tool} status={status} input={input}{error_part}",
+        Utc::now().to_rfc3339()
+    )
 }
 impl AgentExecutor {
     #[tracing::instrument(
@@ -62,7 +69,7 @@ impl AgentExecutor {
         }
 
         let batch_was_empty = planned_calls.is_empty();
-        let mut iteration_errors: Vec<LastIterationToolError> = Vec::new();
+        let mut audit_lines: Vec<String> = Vec::new();
         let mut failed_tools: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         let mut succeeded_tools: std::collections::BTreeSet<String> =
             std::collections::BTreeSet::new();
@@ -78,14 +85,13 @@ impl AgentExecutor {
             let tool = match self.authorize_tool_call(&tool_name).await {
                 Ok(tool) => tool,
                 Err(error) => {
-                    if iteration_errors.len() < MAX_TOOL_ERROR_SNAPSHOTS {
-                        iteration_errors.push(LastIterationToolError {
-                            timestamp: Utc::now().to_rfc3339(),
-                            tool_name: tool_name.clone(),
-                            input_preview: preview.clone(),
-                            error: truncate_chars(&error.to_string(), MAX_TOOL_ERROR_MESSAGE_CHARS),
-                        });
-                    }
+                    audit_lines.push(audit_line(
+                        self.current_iteration,
+                        &tool_name,
+                        "error",
+                        &preview,
+                        Some(&error.to_string()),
+                    ));
                     failed_tools.insert(tool_name.clone());
                     self.record_tool_execution_result(&call, Err(error), &mut any_pending)
                         .await?;
@@ -104,19 +110,27 @@ impl AgentExecutor {
             }
 
             let call_failed = match &result {
-                Err(error) => {
-                    if iteration_errors.len() < MAX_TOOL_ERROR_SNAPSHOTS {
-                        iteration_errors.push(LastIterationToolError {
-                            timestamp: Utc::now().to_rfc3339(),
-                            tool_name: tool_name.clone(),
-                            input_preview: preview,
-                            error: truncate_chars(&error.to_string(), MAX_TOOL_ERROR_MESSAGE_CHARS),
-                        });
-                    }
-                    true
-                }
+                Err(_) => true,
                 Ok(value) => value.get("success").and_then(|s| s.as_bool()) == Some(false),
             };
+            let (audit_status, audit_error) = match &result {
+                Err(error) => ("error", Some(error.to_string())),
+                Ok(value) if call_failed => (
+                    "failed",
+                    value
+                        .get("error")
+                        .map(|e| e.to_string())
+                        .filter(|e| e != "null"),
+                ),
+                Ok(_) => ("success", None),
+            };
+            audit_lines.push(audit_line(
+                self.current_iteration,
+                &tool_name,
+                audit_status,
+                &preview,
+                audit_error.as_deref(),
+            ));
             if call_failed {
                 failed_tools.insert(tool_name.clone());
             } else {
@@ -132,11 +146,79 @@ impl AgentExecutor {
         }
 
         if !batch_was_empty {
-            self.tool_error_window.replace_for_new_batch(iteration_errors);
             self.update_consecutive_tool_failures(&failed_tools, &succeeded_tools);
         }
+        self.append_task_audit(&audit_lines).await;
 
         Ok(ToolExecutionLoopOutcome { any_pending })
+    }
+
+    // Same-tool failure streak; consumed only by reasoning-effort escalation.
+    fn update_consecutive_tool_failures(
+        &mut self,
+        failed: &std::collections::BTreeSet<String>,
+        succeeded: &std::collections::BTreeSet<String>,
+    ) {
+        if let Some(tracked) = self.last_failed_tool_label.clone() {
+            if succeeded.contains(&tracked) {
+                self.last_failed_tool_label = None;
+                self.consecutive_tool_failure_count = 0;
+                return;
+            }
+            if failed.contains(&tracked) {
+                self.consecutive_tool_failure_count =
+                    self.consecutive_tool_failure_count.saturating_add(1);
+                return;
+            }
+        }
+
+        match failed.iter().next() {
+            Some(first_failed) => {
+                self.last_failed_tool_label = Some(first_failed.clone());
+                self.consecutive_tool_failure_count = 1;
+            }
+            None => {
+                self.last_failed_tool_label = None;
+                self.consecutive_tool_failure_count = 0;
+            }
+        }
+    }
+
+    async fn append_task_audit(&mut self, lines: &[String]) {
+        if lines.is_empty() || !(self.is_service_mode_execution() || self.is_delegated_task) {
+            return;
+        }
+        let mut content = String::new();
+        if !self.audit_run_header_written {
+            self.audit_run_header_written = true;
+            content.push_str(&format!(
+                "[execution run={} thread={} role={} assignment={} started={}]\n",
+                self.ctx.execution_run_id,
+                self.ctx.thread_id,
+                if self.is_delegated_task { "delegated" } else { "executor" },
+                self.current_assignment_id()
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+                Utc::now().to_rfc3339(),
+            ));
+        }
+        content.push_str(&lines.join("\n"));
+        if let Err(error) = self
+            .filesystem
+            .write_file(
+                crate::runtime::task_workspace::TASK_WORKSPACE_AUDIT_FILE,
+                &content,
+                true,
+            )
+            .await
+        {
+            tracing::warn!(
+                thread_id = self.ctx.thread_id,
+                execution_run_id = self.ctx.execution_run_id,
+                ?error,
+                "task audit append failed"
+            );
+        }
     }
 
     async fn execute_tool_call_direct(

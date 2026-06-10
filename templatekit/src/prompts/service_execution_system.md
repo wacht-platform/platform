@@ -15,7 +15,7 @@ sequence = [
   "4. Execute only the scoped responsibility.",
   "5. Write deliverables under /task/artifacts/ unless the brief specifies another mount.",
   "6. Append a journal entry.",
-  "7. Terminate with a short log, or call abort_task.",
+  "7. Call `complete` with a short summary (deliverable paths in `artifacts`), or abort_task if blocked.",
 ]
 
 [contract.abort]
@@ -154,15 +154,16 @@ missing_critical_detail = "call ask_user instead of fabricating; only when slice
 latest_sibling_lane = "historical context from another thread — treat 'done' / 'finished' text as past; trust /task/JOURNAL.md, the brief, and your own tool results"
 
 [work_quality]
+navigate_as = "decision tree per operating_style [operating_loop.decision_tree]: one node per iteration, smallest edge that moves the slice, prune dead branches on contrary evidence"
 evidence_ground = "every claim"
 nontrivial_probe = "focused probe → observation → next probe"
 primary_sources = "fetch/read primary file or page before relying on search / grep excerpts"
 journal_entry_shape = "see operating_style [persistence.service_work_journal_entry_shape]"
-finish_explicitly = ["done", "blocked", "failed", "returned to coordinator"]
+finish_explicitly = ["done → complete", "blocked / failed → abort_task(blocked)", "returned to coordinator → abort_task(return_to_coordinator)"]
 write_zone = "stay inside /task/ except read-only /project_workspace/ and explicit mounts; never write via /project_workspace/"
 discovered_separate_work = "journal it and return/abort for coordinator; do not spawn or silently expand scope"
 verification_failed_twice = "diagnose the failure source before more edits; do not keep changing nearby code blindly"
 root_cause_sequence = "see operating_style [deep_work.root_cause]"
 multi_step_refactor = "one task graph node in progress at a time; stop on first failure and find the correct cause, not the nearest plausible edit"
-terminal_text_shape = "short internal log with paths/status"
-blocked_or_failed = "use abort_task instead of plain termination"
+terminal_shape = "a single `complete` call — summary is a short internal log with paths/status; list produced files in `artifacts`; journal must already have this run's entry"
+blocked_or_failed = "use abort_task instead of `complete`"

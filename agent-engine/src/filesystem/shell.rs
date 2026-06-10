@@ -27,6 +27,7 @@ const MAX_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 pub struct ShellExecutor {
     sandbox_handle: Arc<dyn SandboxHandle>,
     timeout: Duration,
+    cwd: String,
 }
 
 impl ShellExecutor {
@@ -34,11 +35,17 @@ impl ShellExecutor {
         Self {
             sandbox_handle,
             timeout: DEFAULT_TIMEOUT,
+            cwd: "/workspace".to_string(),
         }
     }
 
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    pub fn with_cwd(mut self, cwd: impl Into<String>) -> Self {
+        self.cwd = cwd.into();
         self
     }
 

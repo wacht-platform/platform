@@ -2,7 +2,6 @@ mod meta_tools;
 pub(crate) mod prompt;
 mod response;
 mod shell_guard;
-mod terminal_review;
 mod tool_schema;
 pub(crate) use super::core;
 
@@ -738,6 +737,7 @@ impl AgentExecutor {
     )]
     pub(super) async fn repl(&mut self) -> Result<(), AppError> {
         use super::hooks::LifecyclePhase;
+        self.shell = self.shell.clone().with_cwd(self.default_shell_cwd());
         self.reconcile_agent_skills().await;
         self.run_hooks(LifecyclePhase::ExecutionStart, serde_json::Value::Null)
             .await;
@@ -875,7 +875,8 @@ impl AgentExecutor {
         use crate::llm::NativeToolDefinition;
         use dto::json::agent_executor::{AbortDirective, AbortOutcome};
         use meta_tools::{
-            abort_tool, ask_user_tool, note_tool, notify_user_tool, resolve_user_feedback_tool,
+            abort_tool, ask_user_tool, complete_tool, note_tool, notify_user_tool,
+            resolve_user_feedback_tool,
         };
 
         if let Err(exhausted) = self.budget.check() {
@@ -942,6 +943,7 @@ impl AgentExecutor {
             .collect();
         native_tools.push(note_tool());
         native_tools.push(ask_user_tool());
+        native_tools.push(complete_tool());
         if self.is_conversation_thread {
             native_tools.push(notify_user_tool());
         }
@@ -1018,6 +1020,12 @@ impl AgentExecutor {
             .filter(|c| c.tool_name == "notify_user")
             .cloned()
             .collect();
+        let complete_calls: Vec<_> = output
+            .calls
+            .iter()
+            .filter(|c| c.tool_name == "complete")
+            .cloned()
+            .collect();
         let non_note_calls: Vec<_> = output
             .calls
             .iter()
@@ -1026,12 +1034,13 @@ impl AgentExecutor {
                     && c.tool_name != "ask_user"
                     && c.tool_name != "resolve_user_feedback"
                     && c.tool_name != "notify_user"
+                    && c.tool_name != "complete"
             })
             .cloned()
             .collect();
 
         if output.calls.iter().any(|c| c.tool_name != "note") {
-            self.terminal_review_continue_count = 0;
+            self.complete_nudge_count = 0;
         }
 
         for call in &resolve_calls {
@@ -1077,6 +1086,7 @@ impl AgentExecutor {
 
         let note_only = !note_calls.is_empty()
             && non_note_calls.is_empty()
+            && complete_calls.is_empty()
             && output
                 .content_text
                 .as_ref()
@@ -1090,7 +1100,7 @@ impl AgentExecutor {
                 self.store_transient_steer(
                     "note_loop_guard",
                     format!(
-                        "{count} notes in a row, no progress. Stalling. Notes anchor decisions, not substitute action. Next turn: pick tool that executes next concrete step, or send final text reply if done. No more notes until work moves."
+                        "{count} notes in a row, no progress. Stalling. Notes anchor decisions, not substitute action. Next turn: pick tool that executes next concrete step, or call `complete` if done. No more notes until work moves."
                     ),
                 );
             }
@@ -1116,6 +1126,20 @@ impl AgentExecutor {
             return Ok(false);
         }
 
+        if let Some(complete_call) = complete_calls.first() {
+            if non_note_calls.is_empty() {
+                return self
+                    .handle_complete_call(complete_call, output.content_text.as_deref())
+                    .await;
+            }
+            self.record_invalid_tool_call(
+                "complete",
+                &complete_call.arguments,
+                "`complete` must be the only tool call in its response. The other tool calls in this turn ran; review their results, then call `complete` alone once the run is actually finished.",
+            )
+            .await?;
+        }
+
         if non_note_calls.is_empty() {
             if !resolve_calls.is_empty() {
                 return Ok(true);
@@ -1137,7 +1161,7 @@ impl AgentExecutor {
             );
             self.store_transient_steer(
                 "empty_response_guard",
-                "Last turn: nothing — no tool, no text. User left hanging. Converge now: done → final text reply; step left → pick tool and call it. No more empty turns.".to_string(),
+                "Last turn: nothing — no tool, no text. User left hanging. Converge now: done → reply and call `complete`; step left → pick tool and call it. No more empty turns.".to_string(),
             );
             self.note_unproductive_turn();
             return Ok(true);
@@ -1297,7 +1321,6 @@ impl AgentExecutor {
             serde_json::Value::Null,
         )
         .await;
-        self.apply_tool_failure_guard().await?;
         self.finalize_action_execution_outcome(outcome).await
     }
 
@@ -1349,142 +1372,51 @@ impl AgentExecutor {
     }
 
     async fn handle_terminal_text_response(&mut self, text: String) -> Result<bool, AppError> {
-        if self.is_service_mode_execution() && !self.service_mode_journal_was_updated().await? {
-            self.store_transient_steer(
-                "complete_blocked_by_journal_guard",
-                "Tried to wrap up text-only but `/task/JOURNAL.md` still empty this run. Runtime re-runs me until progress recorded; coordinator reads journal. Next turn: append short concrete entry (did/found/left), then finish.".to_string(),
-            );
-            return Ok(true);
-        }
-
-        let unresolved_ids = self.unresolved_feedback_ids().await?;
-        if !unresolved_ids.is_empty() {
-            let ids_csv = unresolved_ids
-                .iter()
-                .map(|id| id.to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            self.store_transient_steer(
-                "complete_blocked_by_unresolved_feedback",
-                format!(
-                    "Tried to wrap up text-only but feedback comment(s) {ids_csv} still [unresolved]. Each must be closed via `resolve_user_feedback` (one call per id, with a one-line summary). If you already acted on it, call the tool now. If no action is needed, call it with the explanation. No more text until every id is resolved."
-                ),
-            );
-            return Ok(true);
-        }
-
-        if !self.allow_complete_for_current_task_owner().await? {
-            return Ok(true);
-        }
-
         let safe_message =
             Self::sanitize_user_facing_message(&text, "Completed the requested work.");
 
-        const MAX_REVIEW_CONTINUES: usize = 2;
-        let mut completion_decision: Option<terminal_review::TerminalReviewDecision> = None;
-        if self.terminal_review_continue_count < MAX_REVIEW_CONTINUES {
-            let decision = match self.review_terminal_state(&safe_message).await {
-                Ok(d) => d,
-                Err(error) => {
-                    tracing::warn!(
-                        thread_id = self.ctx.thread_id,
-                        board_item_id = ?self.current_board_item_id(),
-                        execution_run_id = self.ctx.execution_run_id,
-                        ?error,
-                        "terminal review failed; treating as continue so unfinished work isn't silently dropped"
-                    );
-                    terminal_review::TerminalReviewDecision {
-                        decision: terminal_review::TerminalReviewChoice::Continue,
-                        hint: Some(
-                            "terminal review unavailable — confirm nothing you said you'd do this turn is still pending before stopping"
-                                .to_string(),
-                        ),
-                        summary: None,
-                        artifacts: None,
-                        blockers: None,
-                        next_actions: None,
-                    }
-                }
-            };
-            tracing::info!(
-                thread_id = self.ctx.thread_id,
-                board_item_id = ?self.current_board_item_id(),
-                execution_run_id = self.ctx.execution_run_id,
-                decision = ?decision.decision,
-                hint = decision.hint.as_deref().unwrap_or(""),
-                "terminal review decision"
-            );
+        let is_conversation = matches!(
+            self.current_thread_role(),
+            super::project::status_machine::ThreadRole::Conversation
+        );
 
-            if matches!(
-                decision.decision,
-                terminal_review::TerminalReviewChoice::Continue
-            ) {
-                self.terminal_review_continue_count += 1;
-                self.store_conversation(
-                    ConversationContent::Steer {
-                        message: safe_message,
-                        further_actions_required: true,
-                        reasoning: "Text-only turn — reviewer chose continue.".to_string(),
-                        attachments: None,
-                    },
-                    ConversationMessageType::Steer,
-                )
-                .await?;
-                let hint = decision
-                    .hint
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or("concrete unaddressed signal in recent history");
-                self.store_transient_steer(
-                    "terminal_review_continue",
-                    format!(
-                        "Internal context for next turn only: {hint}.\n\
-                         \n\
-                         Decide: can you name a concrete tool call that closes a concrete gap this hint points at? If yes, emit it. If the hint is vague, already addressed, or you can't translate it into one specific action, terminate cleanly — a forced extra turn produces filler, not progress.\n\
-                         \n\
-                         Forbidden in your output:\n\
-                         - Restating, quoting, or referring to this hint or any \"reviewer\".\n\
-                         - Saying things like \"I noticed…\", \"there's an unaddressed…\", \"let me address…\".\n\
-                         - Apologizing or acknowledging.\n\
-                         \n\
-                         The user never sees this message. Either do one concrete thing or stop."
-                    ),
-                );
-                return Ok(true);
-            }
-            completion_decision = Some(decision);
+        const MAX_COMPLETE_NUDGES: usize = 2;
+        if !is_conversation && self.complete_nudge_count < MAX_COMPLETE_NUDGES {
+            self.complete_nudge_count += 1;
+            self.store_conversation(
+                ConversationContent::Steer {
+                    message: safe_message,
+                    further_actions_required: true,
+                    reasoning: "Text-only turn — run not completed yet.".to_string(),
+                    attachments: None,
+                },
+                ConversationMessageType::Steer,
+            )
+            .await?;
+            self.store_transient_steer(
+                "complete_required",
+                "Pure text never ends a task run. Decide: is there a concrete next step left? If yes, emit that tool call now. If the slice is done, call `complete` with a cold-readable summary (plus artifacts/blockers/next_actions where real). Those are the only two moves.".to_string(),
+            );
+            return Ok(true);
         }
 
-        self.terminal_review_continue_count = 0;
+        if let Some(error) = self.completion_guard_error().await? {
+            self.store_transient_steer("complete_blocked", error);
+            return Ok(true);
+        }
 
-        self.persist_task_handoff_summary(&safe_message, completion_decision.as_ref())
-            .await;
-
-        self.store_conversation(
-            ConversationContent::Steer {
-                message: safe_message,
-                further_actions_required: false,
-                reasoning: "Terminal text response — no further tool calls emitted.".to_string(),
-                attachments: None,
-            },
-            ConversationMessageType::Steer,
+        // Conversation replies auto-complete; task lanes only land here after
+        // exhausting the nudges, with the text as fallback summary.
+        self.finalize_completion(
+            meta_tools::CompletionHandoff::from_summary(safe_message.clone()),
+            safe_message,
         )
-        .await?;
-
-        UpdateAgentThreadStateCommand::new(self.ctx.thread_id, self.ctx.agent.deployment_id)
-            .with_execution_state(self.build_execution_state_snapshot(None))
-            .with_status(AgentThreadStatus::Idle)
-            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
-            .await?;
-
-        Ok(false)
+        .await
     }
 
-    async fn persist_task_handoff_summary(
+    pub(in crate::executor::agent_loop) async fn persist_task_handoff_summary(
         &self,
-        fallback_summary: &str,
-        decision: Option<&terminal_review::TerminalReviewDecision>,
+        handoff: &meta_tools::CompletionHandoff,
     ) {
         if self.is_conversation_thread {
             return;
@@ -1501,12 +1433,10 @@ impl AgentExecutor {
             "executor"
         };
 
-        let summary = decision
-            .and_then(|d| d.summary.clone())
-            .unwrap_or_else(|| fallback_summary.to_string());
-        let artifacts = decision.and_then(|d| d.artifacts.clone());
-        let blockers = decision.and_then(|d| d.blockers.clone());
-        let next_actions = decision.and_then(|d| d.next_actions.clone());
+        let summary = handoff.summary.clone();
+        let artifacts = handoff.artifacts.clone();
+        let blockers = handoff.blockers.clone();
+        let next_actions = handoff.next_actions.clone();
 
         let handoff_id = match self.ctx.app_state.sf.next_id() {
             Ok(id) => id as i64,

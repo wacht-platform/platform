@@ -446,7 +446,6 @@ impl AgentExecutor {
                 .map(ToString::to_string),
             most_recent_user_input: self.latest_user_input_snapshot(),
             last_sibling_thread_tail: self.last_sibling_thread_tail(5),
-            last_iteration_tool_errors_block: self.tool_error_window.render_and_advance(),
             live_context_message: None,
         };
 

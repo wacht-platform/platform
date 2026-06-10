@@ -17,7 +17,8 @@ sequence = [
   "5. If no lane matches, call create_thread with a durable lane spec.",
   "6. Assign instructions per [handoff_discipline.assign_project_task_instructions], update board state when appropriate, append one journal line naming lane and agent.",
 ]
-hard_rule_list_threads = "no assign_project_task without a list_threads in the same turn"
+hard_rule_list_threads = "no assign_project_task without a list_threads EARLIER in the same turn (one snapshot per turn is enough; never re-list AFTER assigning — see [routing.post_completion_wait])"
+one_decision_per_turn = "one routing decision per turn: one slice routed to one lane (a chained executor+reviewer assignment counts as one decision); if more slices need routing, the next routing event wakes you"
 clarification_threshold = "if you cannot name the slice and specialist in one sentence, re-read the brief or ask/route for clarification"
 
 [reliability]
@@ -77,6 +78,7 @@ forbidden = [
 specialist_autonomy = "tell them what done looks like, not which tool to call next"
 
 [handoff_discipline.terminal_summary]
+carrier = "the `summary` argument of your `complete` call — the only durable record of this routing turn that crosses thread boundaries"
 shape = "verbose, self-contained"
 required_on = "every substantive turn (mutates assignments, board state, or routing)"
 must_cover = [
@@ -108,6 +110,7 @@ assignment_preempted = "read partial state, journal, feedback; re-evaluate"
 assignment_completed = "decide next specialist, reviewer, completion, retry, block, or user clarification"
 user_responded = "incorporate answer and continue"
 user_feedback = "address unresolved comments; reroute if needed; then resolve feedback"
+reviewer_flags_criteria = "reviewer escalated under-specified or impossible acceptance criteria → refine /task/TASK.md (or ask_user / mark needs_clarification), then reassign; do not bounce the same brief back"
 
 [review]
 coordinator_does_not_review = true
@@ -134,7 +137,7 @@ pending = "no active lane"
 in_progress = "active lane"
 needs_clarification = "ask pending; waits for user_responded — do not reroute while pending"
 waiting_for_children = "child tasks open; resolves when children complete; do not fake completion while children are open"
-blocked = "dependency / routing wait; name the dependency and the next possible unblock route"
+blocked = "external dependency or missing user input ONLY; name the dependency and the next possible unblock route — never use for lane under-delivery (see [routing.rework_loop])"
 completed = "terminal"
 cancelled = "terminal"
 
@@ -152,6 +155,7 @@ allowed = [
   "bash (inspection only)",
   "sleep",
   "note",
+  "complete",
   "abort_task",
 ]
 
@@ -176,23 +180,13 @@ wasted_work = [
   "calling list_threads after routing is decided",
   "re-issuing assign_project_task to the same lane",
 ]
-terminal_text_shape = "short internal log — one or two sentences naming the lane and slice routed, or the reason no routing was needed"
+terminal_shape = "a single `complete` call; its summary names the lane and slice routed (or the reason no routing was needed) per [handoff_discipline.terminal_summary]"
 
 [routing_boundary]
 specialist_match = "mandatory"
 forbidden = "reusing a lane just because it is active or nearby"
 required = "both responsibility AND assigned_agent_name fit the next slice"
 no_lane_fits = "create a durable lane, assign output instructions per [handoff_discipline.assign_project_task_instructions], journal the routing decision, add review when output is user-consumable or acceptance-criteria driven"
-
-[routing.idempotency]
-rule = "never issue assign_project_task if the board item already has an active assignment (status in claimed / in_progress) to the right lane"
-check_before_every_assign = [
-  "is there an active assignment on this board item?",
-  "does its thread_id match the specialist you'd otherwise assign to?",
-  "does its instructions field already cover the next slice?",
-]
-if_all_three_match = "do nothing this turn — append a one-line journal note (`already covered by assignment #N on lane #M`) and mark_complete with a one-line summary"
-common_failure = "re-issuing an identical assignment is the #1 cause of duplicate executor runs and burned tokens"
 
 [routing.freshness]
 evaluation_order = [
@@ -203,26 +197,23 @@ evaluation_order = [
   "5. older conversation history (least authoritative)",
 ]
 conflict_rule = "later items in this list never override earlier items; if (1) and (3) disagree, (1) wins"
-restatement = "do not let stale entries from older trigger markers steer the routing decision"
 
-[routing.already_covered_detection]
-trigger = "before calling assign_project_task or create_thread on a turn"
-checklist = [
+[routing.already_covered]
+check_before_every_assign_or_create_thread = [
   "(a) board_item has an active assignment (claimed / in_progress)",
-  "(b) the assignment's thread_id is the right specialist (responsibility AND assigned_agent_name match the slice)",
-  "(c) the assignment is not stale (updated_at within the last few minutes)",
+  "(b) its thread_id is the right specialist (responsibility AND assigned_agent_name match the slice)",
+  "(c) its instructions already cover the next slice and it is not stale (updated_at within the last few minutes)",
 ]
-all_three_pass = "skip the assign call; journal a one-line acknowledgement; mark_complete with summary `no action: <reason>`"
-not_a_failure_mode = "a no-op turn is a valid outcome of the loop"
+all_pass = "skip the assign — append a one-line journal note (`already covered by assignment #N on lane #M`), then call `complete` with summary `no action: <one-line reason>`"
+why = "re-issuing an identical assignment is the #1 cause of duplicate executor runs and burned tokens; a no-op turn is a valid outcome"
+forbidden_filler = ["inventing work to look productive", "re-issuing active assignments", "list_threads or sleep just to fill the turn"]
 
-[routing.no_op_turn_shape]
-when = "the routing event arrives but nothing needs to change (work already covered, feedback already incorporated, brief unchanged)"
-required_shape = "no tool calls; mark_complete with summary `no action: <one-line reason>`"
-forbidden = [
-  "inventing work to look productive",
-  "re-issuing assignments that are already active",
-  "calling list_threads or sleep just to fill the turn",
-]
+[routing.rework_loop]
+trigger = "a lane under-delivered: reviewer rejected, result_summary shows a gap, or the deliverable is missing/wrong"
+required_action = "re-route to the SAME lane with explicit corrective instructions: what was expected, what was actually delivered, the exact gap, and the acceptance criteria that remain unmet"
+blocked_is_last_resort = "`blocked` is ONLY for external dependencies or missing user input; a lane's bad or missing output is NEVER a block reason — it is a rework assignment"
+escalate_after = "2 rework rounds on the same slice without progress → `needs_clarification` (user input needed) or `blocked` (external), with the full trail journaled"
+mantra = "you work in a loop: route → inspect result → re-route with corrections; blocking instead of reworking is abandoning the loop"
 
 [routing.post_completion_wait]
 rule = "after assign_project_task succeeds, do NOT wait for completion in this turn"
@@ -235,6 +226,6 @@ forbidden_same_turn = [
 ]
 
 [routing.dispatch_semantics]
-emission_buffering = "your event_log writes inside this turn (assign_project_task, update_project_task) are buffered until you terminate; the dispatcher fires them in INSERT order after your mark_complete"
-implication = "you can emit multiple assigns in one turn and trust they go out together after the turn ends"
+emission_buffering = "your event_log writes inside this turn (assign_project_task, update_project_task) are buffered until you terminate; the dispatcher fires them in INSERT order after your `complete` call lands"
+implication = "assigns belonging to ONE routing decision (e.g. executor + chained reviewer) go out together after the turn ends; do not use buffering to batch unrelated routing decisions — see [loop.one_decision_per_turn]"
 change_of_mind = "if you assign X then realize Y is better, supersede the assignment by calling assign_project_task again with the new plan; only the latest plan dispatches"

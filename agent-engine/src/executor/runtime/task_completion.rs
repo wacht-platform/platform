@@ -20,6 +20,44 @@ pub(crate) struct TaskWorkspaceContext {
     pub(crate) runbook_file_path: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum CompletionBlock {
+    MissingTaskBrief {
+        task_key: String,
+    },
+    IncompleteChildren {
+        task_key: String,
+        child_task_keys: Vec<String>,
+    },
+    CoordinatorOwnsTask {
+        task_key: String,
+        status: String,
+    },
+    ExecutorOwnsTask {
+        task_key: String,
+    },
+}
+
+impl CompletionBlock {
+    pub(crate) fn tool_error(&self) -> String {
+        match self {
+            Self::MissingTaskBrief { task_key } => format!(
+                "Completion rejected: `/task/TASK.md` for task {task_key} is missing or too thin. Write a concrete brief (title, context, numbered acceptance criteria, scope boundaries) with `write_file`, then call `complete`."
+            ),
+            Self::IncompleteChildren { task_key, child_task_keys } => format!(
+                "Completion rejected: parent task {task_key} is `completed` but these child tasks are still open: {}. Call `update_project_task` to move the parent to `waiting_for_children`, then call `complete`.",
+                child_task_keys.join(", ")
+            ),
+            Self::CoordinatorOwnsTask { task_key, status } => format!(
+                "Completion rejected: task {task_key} is in status `{status}` and no active assignment is routed away from you — completing now would stall the task with the coordinator still owning it. Either `assign_project_task` to route the next stage, or `update_project_task` to a holding state (`needs_clarification`, `blocked`, `waiting_for_children`, or `completed`), then call `complete`."
+            ),
+            Self::ExecutorOwnsTask { task_key } => format!(
+                "Completion rejected: task {task_key} still belongs to this thread and the assignment is not finished. Continue the work, or call `abort_task` if it cannot proceed."
+            ),
+        }
+    }
+}
+
 impl AgentExecutor {
     pub(crate) async fn task_journal_tail_snippet(&self) -> Result<Option<String>, AppError> {
         let Some(bytes) = read_task_journal_tail(&self.filesystem).await? else {
@@ -159,26 +197,15 @@ impl AgentExecutor {
         Ok(&current_hash != start_hash)
     }
 
-    pub(crate) async fn allow_complete_for_current_task_owner(&mut self) -> Result<bool, AppError> {
+    pub(crate) async fn completion_block(&mut self) -> Result<Option<CompletionBlock>, AppError> {
         let Some(board_item) = self.active_board_item_for_completion_guard().await? else {
-            return Ok(true);
+            return Ok(None);
         };
 
         if self.effective_is_coordinator_thread() && !self.task_brief_is_ready().await? {
-            self.store_conversation(
-                ConversationContent::SystemDecision {
-                    step: "terminal_stop_blocked_by_missing_task_brief".to_string(),
-                    reasoning: format!(
-                        "I tried to terminate this turn, but the runtime stopped me. `/task/TASK.md` for task {} is missing or too thin — there's no real operative brief on disk yet, so any executor I route to would be working blind. I should not end the turn here. I'll write a concrete brief to `/task/TASK.md` (title, context, numbered acceptance criteria, scope boundaries) using `write_file`, then continue routing or conclude.",
-                        board_item.task_key
-                    ),
-                    confidence: 1.0,
-                },
-                ConversationMessageType::SystemDecision,
-            )
-            .await?;
-
-            return Ok(false);
+            return Ok(Some(CompletionBlock::MissingTaskBrief {
+                task_key: board_item.task_key,
+            }));
         }
 
         let incomplete_children = if self.effective_is_coordinator_thread() {
@@ -188,26 +215,13 @@ impl AgentExecutor {
             Vec::new()
         };
         if board_item.status == "completed" && !incomplete_children.is_empty() {
-            let child_task_keys = incomplete_children
-                .iter()
-                .map(|child| child.task_key.clone())
-                .collect::<Vec<_>>();
-
-            self.store_conversation(
-                ConversationContent::SystemDecision {
-                    step: "complete_blocked_by_incomplete_child_tasks".to_string(),
-                    reasoning: format!(
-                        "I tried to mark parent task {} `completed`, but the runtime stopped me. These child tasks are still open: {}. Marking the parent done now would orphan unfinished work. I should not complete the parent yet. I'll call `update_project_task` to move the parent to `waiting_for_children` and let orchestration finish the children first; once they're all `completed` the parent will be ready to close.",
-                        board_item.task_key,
-                        child_task_keys.join(", ")
-                    ),
-                    confidence: 1.0,
-                },
-                ConversationMessageType::SystemDecision,
-            )
-            .await?;
-
-            return Ok(false);
+            return Ok(Some(CompletionBlock::IncompleteChildren {
+                task_key: board_item.task_key,
+                child_task_keys: incomplete_children
+                    .iter()
+                    .map(|child| child.task_key.clone())
+                    .collect(),
+            }));
         }
 
         let assigned_thread_id = board_item.assigned_thread_id;
@@ -241,32 +255,19 @@ impl AgentExecutor {
         };
 
         if completion_allowed {
-            return Ok(true);
+            return Ok(None);
         }
 
-        let reasoning = if is_coordinator {
-            format!(
-                "I tried to terminate this turn, but the runtime stopped me. Task {} is in status `{}` and no active assignment is currently routed away from me — so terminating now would leave the task stalled with the coordinator (me) still owning it. I should not just stop. My options: (a) call `assign_project_task` to route the next stage to an executor/reviewer thread, or (b) call `update_project_task` to move the task to a holding state I'm allowed to terminate at — `needs_clarification`, `blocked`, `waiting_for_children`, or `completed`. I'll pick the one that matches what just happened in this conversation, then end the turn.",
-                board_item.task_key, board_item.status
-            )
+        Ok(Some(if is_coordinator {
+            CompletionBlock::CoordinatorOwnsTask {
+                task_key: board_item.task_key,
+                status: board_item.status,
+            }
         } else {
-            format!(
-                "I tried to terminate this turn, but the runtime stopped me. I'm not the coordinator and task {} still belongs to me — terminating without finishing the assignment would leave the task hanging. I should not just stop. If I'm in an assignment-execution run, I need to let it finish through the normal completion path (it will produce a `result_summary` and the coordinator will pick it up). Otherwise I should continue the work or hand control back instead of ending here.",
-                board_item.task_key
-            )
-        };
-
-        self.store_conversation(
-            ConversationContent::SystemDecision {
-                step: "complete_blocked_by_task_ownership".to_string(),
-                reasoning,
-                confidence: 1.0,
-            },
-            ConversationMessageType::SystemDecision,
-        )
-        .await?;
-
-        Ok(false)
+            CompletionBlock::ExecutorOwnsTask {
+                task_key: board_item.task_key,
+            }
+        }))
     }
 
     pub(crate) async fn task_brief_is_ready(&self) -> Result<bool, AppError> {

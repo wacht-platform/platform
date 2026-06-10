@@ -15,50 +15,6 @@ pub enum ResumeContext {
     ApprovalResponse(Vec<dto::json::deployment::ToolApprovalSelection>),
 }
 
-#[derive(Default)]
-pub(crate) struct ToolErrorWindow {
-    pub(crate) errors: Vec<dto::json::template_context::LastIterationToolError>,
-    pub(crate) view_count: u32,
-    pub(crate) last_render: Option<dto::json::template_context::LastIterationToolErrorsBlock>,
-}
-
-impl ToolErrorWindow {
-    pub(crate) fn replace_for_new_batch(
-        &mut self,
-        errors: Vec<dto::json::template_context::LastIterationToolError>,
-    ) {
-        self.errors = errors;
-        self.view_count = 0;
-        self.last_render = None;
-    }
-
-    pub(crate) fn render_and_advance(
-        &mut self,
-    ) -> Option<dto::json::template_context::LastIterationToolErrorsBlock> {
-        if self.errors.is_empty() {
-            self.last_render = None;
-            return None;
-        }
-        let block = match self.view_count {
-            0 => Some(dto::json::template_context::LastIterationToolErrorsBlock {
-                kind: "full".to_string(),
-                items: self.errors.clone(),
-            }),
-            1 => Some(dto::json::template_context::LastIterationToolErrorsBlock {
-                kind: "brief".to_string(),
-                items: self.errors.clone(),
-            }),
-            _ => {
-                self.errors.clear();
-                None
-            }
-        };
-        self.view_count = self.view_count.saturating_add(1);
-        self.last_render = block.clone();
-        block
-    }
-}
-
 pub struct AgentExecutor {
     pub(crate) ctx:
         std::sync::Arc<crate::runtime::thread_execution_context::ThreadExecutionContext>,
@@ -109,12 +65,11 @@ pub struct AgentExecutor {
     pub(crate) repeated_tool_call_count: usize,
     pub(crate) last_failed_tool_label: Option<String>,
     pub(crate) consecutive_tool_failure_count: usize,
-    pub(crate) consecutive_failed_batches: usize,
     pub(crate) consecutive_unproductive_turns: usize,
     pub(crate) consecutive_shell_nudge_count: usize,
-    pub(crate) terminal_review_continue_count: usize,
+    pub(crate) complete_nudge_count: usize,
+    pub(crate) audit_run_header_written: bool,
     pub(crate) preloaded_immediate_context: Option<ImmediateContext>,
-    pub(crate) tool_error_window: ToolErrorWindow,
     pub(crate) budget: super::budget::BudgetCounter,
 }
 
@@ -415,12 +370,11 @@ impl AgentExecutorBuilder {
             repeated_tool_call_count: 0,
             last_failed_tool_label: None,
             consecutive_tool_failure_count: 0,
-            consecutive_failed_batches: 0,
             consecutive_unproductive_turns: 0,
             consecutive_shell_nudge_count: 0,
-            terminal_review_continue_count: 0,
+            complete_nudge_count: 0,
+            audit_run_header_written: false,
             preloaded_immediate_context: Some(immediate_context),
-            tool_error_window: ToolErrorWindow::default(),
             budget: super::budget::BudgetCounter::new(run_token_budget),
         })
     }
@@ -542,6 +496,16 @@ impl AgentExecutor {
             ThreadRole::Conversation
         } else {
             ThreadRole::Executor
+        }
+    }
+
+    pub(crate) fn default_shell_cwd(&self) -> &'static str {
+        use super::project::status_machine::ThreadRole;
+        match self.current_thread_role() {
+            ThreadRole::Conversation => "/workspace",
+            ThreadRole::Coordinator | ThreadRole::Executor | ThreadRole::Reviewer => {
+                crate::runtime::task_workspace::TASK_WORKSPACE_DIR
+            }
         }
     }
 

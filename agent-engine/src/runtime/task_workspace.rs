@@ -7,6 +7,7 @@ pub const TASK_WORKSPACE_DIR: &str = "/task";
 pub const TASK_WORKSPACE_TASK_FILE: &str = "/task/TASK.md";
 pub const TASK_WORKSPACE_JOURNAL_FILE: &str = "/task/JOURNAL.md";
 pub const TASK_WORKSPACE_RUNBOOK_FILE: &str = "/task/RUNBOOK.md";
+pub const TASK_WORKSPACE_AUDIT_FILE: &str = "/task/AUDIT.log";
 
 const JOURNAL_TAIL_BYTES: usize = 16 * 1024;
 
