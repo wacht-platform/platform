@@ -597,11 +597,6 @@ impl ListProjectTaskBoardItemCommentsQuery {
         let comments = sqlx::query_as!(
             ProjectTaskBoardItemComment,
             r#"
-            WITH target AS (
-                SELECT id, schedule_id
-                FROM project_task_board_items
-                WHERE id = $1
-            )
             SELECT
                 c.id AS "id!",
                 c.deployment_id AS "deployment_id!",
@@ -617,11 +612,8 @@ impl ListProjectTaskBoardItemCommentsQuery {
                 c.resolution_summary
             FROM project_task_board_item_comments c
             INNER JOIN project_task_board_items i ON i.id = c.board_item_id
-            INNER JOIN target t ON (
-                i.id = t.id
-                OR (t.schedule_id IS NOT NULL AND i.schedule_id = t.schedule_id)
-            )
-            WHERE c.archived_at IS NULL
+            WHERE c.board_item_id = $1
+              AND c.archived_at IS NULL
               AND i.archived_at IS NULL
             ORDER BY c.created_at ASC, c.id ASC
             "#,
