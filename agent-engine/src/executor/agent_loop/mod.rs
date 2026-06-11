@@ -2,6 +2,7 @@ mod meta_tools;
 pub(crate) mod prompt;
 mod response;
 mod shell_guard;
+mod tool_call_salvage;
 mod tool_schema;
 pub(crate) use super::core;
 
@@ -24,6 +25,20 @@ const MAX_LOOP_ITERATIONS: usize = 50;
 const MAX_UNPRODUCTIVE_TURNS: usize = 8;
 const LARGE_TOOL_BATCH: usize = 10;
 const SHELL_NUDGE_ESCALATE_AT: usize = 2;
+
+/// True when assistant text carries leaked tool-call markup the provider parser
+/// failed to lift into a structured call. Conservative: single-tag forms that
+/// also appear in normal prose (a bare `<function=`) require a second marker.
+fn detect_leaked_tool_call(text: &str) -> bool {
+    text.contains("<tool_call>")
+        || text.contains("</tool_call>")
+        || (text.contains("<function=") && text.contains("<parameter="))
+        || text.contains("[TOOL_CALLS]")
+        || text.contains("<|python_tag|>")
+        || text.contains("<｜tool▁call")
+        || text.contains("<|START_ACTION|>")
+        || (text.contains("<arg_key>") && text.contains("<arg_value>"))
+}
 
 impl AgentExecutor {
     fn require_worker_task_identity(
@@ -994,6 +1009,35 @@ impl AgentExecutor {
         self.record_llm_usage_for_compaction(output.usage_metadata.as_ref());
         if let Some(cache_state) = output.cache_state.as_ref() {
             self.write_prompt_cache_state(cache_state).await;
+        }
+
+        if let Some(leaked) = output
+            .content_text
+            .clone()
+            .filter(|t| detect_leaked_tool_call(t))
+        {
+            // Tool-call markup leaked into the text — the provider parser choked
+            // on it (commonly shell metachars in a parameter value). Tier 1: heal
+            // it. Recover the call(s) and keep any genuine prose with the markup
+            // excised; drop residual that still looks like markup so no fragment
+            // streams to the user or invites imitation.
+            let healed = tool_call_salvage::salvage(&leaked);
+            output.content_text = healed
+                .residual_text
+                .filter(|t| !detect_leaked_tool_call(t));
+            for mut call in healed.calls {
+                let canonical = dto::json::tool_calls::canonical_tool_name(&call.tool_name);
+                if canonical != call.tool_name {
+                    call.tool_name = canonical.to_string();
+                }
+                output.calls.push(call);
+            }
+            // Tier 2: nothing recoverable and nothing else ran — reject the turn
+            // and re-prompt cleanly (no message back, to avoid imitation).
+            if output.calls.is_empty() && output.content_text.is_none() {
+                self.note_unproductive_turn();
+                return Ok(true);
+            }
         }
 
         let note_calls: Vec<_> = output

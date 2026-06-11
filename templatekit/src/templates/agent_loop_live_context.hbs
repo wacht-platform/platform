@@ -35,11 +35,11 @@ ask_user_scope = "only for slice-specific questions you genuinely need answered 
 [stop_condition]
 role = "coordinator"
 when_all = [
-  "routing decision is made (or confirmed already-covered)",
+  "routing decision is made and dispatched (assign or status transition)",
   "every [unresolved] feedback item is resolved",
   "journal has a one-line rationale",
 ]
-lane_independence = "lanes run independently — do not wait, do not re-issue an identical assignment to a lane that's already actively assigned"
+ownership = "this event means prior assignments are settled (completed/preempted) — no other thread holds the task; route without fail, never wait for a lane"
 
 {{else if (eq thread.purpose "review")}}
 [stop_condition]

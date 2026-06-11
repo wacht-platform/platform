@@ -176,6 +176,15 @@ impl AgentExecutor {
     }
 
     fn coerce_scalar(value: Value, field_type: &str) -> Value {
+        // Scalar expected but the model wrapped it in an array (["1"], [true],
+        // ["a", "b"]) — take the first element and coerce it. Empty array has
+        // nothing to unwrap, so leave it untouched.
+        if let Value::Array(items) = value {
+            return match items.into_iter().next() {
+                Some(first) => Self::coerce_scalar(first, field_type),
+                None => Value::Array(Vec::new()),
+            };
+        }
         match (field_type, value) {
             ("BOOLEAN", Value::String(s)) => match s.trim().to_ascii_lowercase().as_str() {
                 "true" => Value::Bool(true),

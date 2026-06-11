@@ -29,6 +29,6 @@ Uploaded task inputs:
 {{#each task_attachments}}- `{{path}}`{{#if name}} ({{name}}){{/if}}{{#if mime_type}} — {{mime_type}}{{/if}}
 {{/each}}{{/if}}
 
-Decide and act this turn — but: if the slice the latest feedback or routing reason concerns is already actively assigned to the right lane (check `Active assignments` / `Board assignments` in the task state above), do NOT re-issue the assignment. Acknowledge it in `/task/JOURNAL.md`, call `resolve_user_feedback` on any `[unresolved]` comments with that acknowledgement, then call `complete` with a one-line `no action` summary. Re-issuing an identical assignment never accelerates the lane.
+Decide and act this turn. This event reaching you means every prior assignment on this task is settled — completed or preempted; no other thread is holding it, and any assignment row still showing claimed/in_progress is lag, not a live worker. Route the next slice (or transition the board status) without fail; address every `[unresolved]` comment via `resolve_user_feedback` with what you changed.
 
-If you must act: route on actual ownership boundaries, not vague role labels. Append a one-line routing rationale to `/task/JOURNAL.md` before calling `complete`.
+Route on actual ownership boundaries, not vague role labels. Append a one-line routing rationale to `/task/JOURNAL.md` before calling `complete`.

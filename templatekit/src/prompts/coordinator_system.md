@@ -127,8 +127,7 @@ required_action_any = [
   "act on it and call resolve_user_feedback",
   "call resolve_user_feedback explaining why no action is needed",
 ]
-acknowledgement_counts = "if the slice is already actively assigned to the right lane (check Board assignments), do NOT re-issue; append a one-line journal note and call resolve_user_feedback with that acknowledgement as the resolution summary"
-common_failure_mode = "re-issuing an identical assignment to a lane that's already actively assigned"
+feedback_implies_preemption = "a user_feedback event means any running executor was preempted (see [routing.ownership_assumption]); incorporate the feedback into the brief/instructions and re-route the slice, then resolve each comment with what you changed"
 termination_rule = "do not terminate with unresolved feedback"
 
 [board_statuses]
@@ -171,7 +170,7 @@ role = "inspection only (stat, wc, ls); no deliverables"
 
 [termination]
 trigger_any = [
-  "the latest event has a routing decision made (or has been confirmed already-covered by an existing active assignment)",
+  "the latest event has a routing decision made and dispatched (assign or status transition)",
   "every [unresolved] feedback item is resolved (via action or explanation)",
   "the journal has a one-line rationale for what you did or why no action was needed",
 ]
@@ -198,15 +197,15 @@ evaluation_order = [
 ]
 conflict_rule = "later items in this list never override earlier items; if (1) and (3) disagree, (1) wins"
 
-[routing.already_covered]
-check_before_every_assign_or_create_thread = [
-  "(a) board_item has an active assignment (claimed / in_progress)",
-  "(b) its thread_id is the right specialist (responsibility AND assigned_agent_name match the slice)",
-  "(c) its instructions already cover the next slice and it is not stale (updated_at within the last few minutes)",
+[routing.ownership_assumption]
+invariant = "a routing event in your hands means the runtime has ALREADY settled every prior assignment on this task — completed or preempted; no other thread is holding it"
+therefore = "you are the sole owner this turn; route the next slice (or transition the board status) without fail — never skip routing because you believe a lane is still working on it"
+forbidden = [
+  "concluding 'already covered by an active assignment' and ending with no action",
+  "waiting for a lane you think is mid-flight (it is not — settled assignments are why you were woken)",
 ]
-all_pass = "skip the assign — append a one-line journal note (`already covered by assignment #N on lane #M`), then call `complete` with summary `no action: <one-line reason>`"
-why = "re-issuing an identical assignment is the #1 cause of duplicate executor runs and burned tokens; a no-op turn is a valid outcome"
-forbidden_filler = ["inventing work to look productive", "re-issuing active assignments", "list_threads or sleep just to fill the turn"]
+stale_rows = "an assignment row still showing claimed/in_progress is lag, not a live worker; route anyway"
+no_op_turns = "rare and only when the EVENT itself requires nothing (e.g. task_cancelled after the closing journal note) — never because a lane 'has it'"
 
 [routing.rework_loop]
 trigger = "a lane under-delivered: reviewer rejected, result_summary shows a gap, or the deliverable is missing/wrong"
