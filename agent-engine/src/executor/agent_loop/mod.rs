@@ -99,6 +99,14 @@ impl AgentExecutor {
                     .reader(common::ReadConsistency::Eventual),
             )
             .await?;
+        // TEMP DEBUG
+        println!(
+            "🔴FEEDBACK timeline thread_id={} board_item_id={} rows={} ids={:?}",
+            self.ctx.thread_id,
+            board_item_id,
+            comments.len(),
+            comments.iter().map(|c| (c.id, c.board_item_id)).collect::<Vec<_>>()
+        );
         Ok(comments
             .into_iter()
             .map(|c| {
@@ -152,11 +160,30 @@ impl AgentExecutor {
                     .reader(common::ReadConsistency::Strong),
             )
             .await?;
-        Ok(comments
+        // TEMP DEBUG
+        println!(
+            "🔴FEEDBACK unresolved_feedback_ids thread_id={} board_item_id={} total_rows={}",
+            self.ctx.thread_id,
+            board_item_id,
+            comments.len()
+        );
+        for c in &comments {
+            println!(
+                "🔴FEEDBACK   row id={} board_item_id={} resolved={} body={:?}",
+                c.id,
+                c.board_item_id,
+                c.resolved_at.is_some(),
+                c.body.chars().take(80).collect::<String>()
+            );
+        }
+        let ids: Vec<i64> = comments
             .into_iter()
             .filter(|c| c.resolved_at.is_none())
             .map(|c| c.id)
-            .collect())
+            .collect();
+        // TEMP DEBUG
+        println!("🔴FEEDBACK   -> unresolved ids={ids:?}");
+        Ok(ids)
     }
 
     pub(super) fn can_abort_current_assignment_execution(&self) -> bool {
@@ -553,9 +580,12 @@ impl AgentExecutor {
                         )
                 });
 
-                let comment_timeline = self
-                    .load_comment_timeline_for_board_item(board_item_id)
-                    .await?;
+                // Comments/feedback are the coordinator's task-level concern, not
+                // the executor's. Executors must not fetch or be shown task
+                // comments — it made them try to resolve_user_feedback they don't
+                // own (UPDATE hits 0 rows) and loop. The coordinator bakes any
+                // feedback the executor must act on into the assignment brief.
+                let comment_timeline: Vec<serde_json::Value> = Vec::new();
                 let prior_fires = self.load_prior_fires_for_board_item(board_item_id).await?;
 
                 render_template_with_prompt(
@@ -1000,6 +1030,28 @@ impl AgentExecutor {
                 call.tool_name = canonical.to_string();
             }
         }
+        // TEMP DEBUG
+        println!(
+            "🔵LOOP iter={} thread_id={} role={:?} board_item={:?} calls=[{}] has_text={}",
+            self.current_iteration,
+            self.ctx.thread_id,
+            self.current_thread_role(),
+            self.current_board_item_id(),
+            output
+                .calls
+                .iter()
+                .map(|c| {
+                    let args = serde_json::to_string(&c.arguments).unwrap_or_default();
+                    format!("{}({})", c.tool_name, args.chars().take(80).collect::<String>())
+                })
+                .collect::<Vec<_>>()
+                .join(" | "),
+            output
+                .content_text
+                .as_deref()
+                .map(|t| !t.trim().is_empty())
+                .unwrap_or(false),
+        );
         let raw_output_snapshot = serde_json::to_string(&output).unwrap_or_default();
         self.budget.tick_llm();
         self.budget.tick_tools(output.calls.len());
@@ -1022,6 +1074,11 @@ impl AgentExecutor {
             // excised; drop residual that still looks like markup so no fragment
             // streams to the user or invites imitation.
             let healed = tool_call_salvage::salvage(&leaked);
+            println!(
+                "🔵LOOP leaked_tool_call detected — salvaged {} call(s), residual_text={}",
+                healed.calls.len(),
+                healed.residual_text.is_some()
+            ); // TEMP DEBUG
             output.content_text = healed
                 .residual_text
                 .filter(|t| !detect_leaked_tool_call(t));
@@ -1094,12 +1151,18 @@ impl AgentExecutor {
             self.reset_unproductive_turns();
         }
 
+        if !resolve_calls.is_empty() {
+            println!("🔵LOOP decision=resolve_user_feedback n={}", resolve_calls.len()); // TEMP DEBUG
+        }
+
         if let Some(call) = ask_user_calls.first() {
+            println!("🔵LOOP decision=ask_user"); // TEMP DEBUG
             self.reset_unproductive_turns();
             return self.handle_ask_user_call(call).await;
         }
 
         if let Some(call) = notify_calls.first() {
+            println!("🔵LOOP decision=notify_user"); // TEMP DEBUG
             self.reset_unproductive_turns();
             return self.handle_notify_user_call(call).await;
         }
@@ -1138,6 +1201,7 @@ impl AgentExecutor {
                 .unwrap_or(true);
 
         if note_only {
+            println!("🔵LOOP decision=note_only (continue)"); // TEMP DEBUG
             self.consecutive_note_count = self.consecutive_note_count.saturating_add(1);
             if self.consecutive_note_count >= 3 {
                 self.signal(core::RuntimeSignal::NoteLoop {
@@ -1151,6 +1215,7 @@ impl AgentExecutor {
         }
 
         if let Some(abort_call) = non_note_calls.iter().find(|c| c.tool_name == "abort_task") {
+            println!("🔵LOOP decision=abort_task (stop)"); // TEMP DEBUG
             #[derive(serde::Deserialize)]
             struct AbortArgs {
                 outcome: AbortOutcome,
@@ -1168,10 +1233,12 @@ impl AgentExecutor {
 
         if let Some(complete_call) = complete_calls.first() {
             if non_note_calls.is_empty() {
+                println!("🔵LOOP decision=complete (stop)"); // TEMP DEBUG
                 return self
                     .handle_complete_call(complete_call, output.content_text.as_deref())
                     .await;
             }
+            println!("🔵LOOP decision=complete_rejected (paired with other calls)"); // TEMP DEBUG
             self.record_invalid_tool_call(
                 "complete",
                 &complete_call.arguments,
@@ -1182,6 +1249,7 @@ impl AgentExecutor {
 
         if non_note_calls.is_empty() {
             if !resolve_calls.is_empty() {
+                println!("🔵LOOP decision=resolve_only (continue)"); // TEMP DEBUG
                 return Ok(true);
             }
             if let Some(text) = output
@@ -1189,8 +1257,10 @@ impl AgentExecutor {
                 .map(|t| t.trim().to_string())
                 .filter(|t| !t.is_empty())
             {
+                println!("🔵LOOP decision=terminal_text"); // TEMP DEBUG
                 return self.handle_terminal_text_response(text).await;
             }
+            println!("🔵LOOP decision=empty_response (continue)"); // TEMP DEBUG
             let truncated_raw = raw_output_snapshot.chars().take(800).collect::<String>();
             tracing::warn!(
                 thread_id = self.ctx.thread_id,
@@ -1288,6 +1358,7 @@ impl AgentExecutor {
         }
 
         if tool_requests.is_empty() {
+            println!("🔵LOOP decision=no_valid_tool_requests (continue)"); // TEMP DEBUG
             self.note_unproductive_turn();
             return Ok(true);
         }
@@ -1330,6 +1401,16 @@ impl AgentExecutor {
         }
 
         let batch_size = tool_requests.len();
+        // TEMP DEBUG
+        println!(
+            "🔵LOOP decision=dispatch_tools n={} [{}]",
+            batch_size,
+            tool_requests
+                .iter()
+                .map(|r| r.tool_name().to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
         self.run_hooks(
             super::hooks::LifecyclePhase::BeforeTool,
             serde_json::Value::Null,

@@ -83,7 +83,22 @@ impl AgentExecutor {
             ));
         }
 
-        let unresolved_ids = self.unresolved_feedback_ids().await?;
+        // Feedback resolution is coordinator-owned. Only the coordinator is
+        // blocked on unresolved task comments; executors/reviewers never own them.
+        let unresolved_ids = if self.is_coordinator_thread {
+            self.unresolved_feedback_ids().await?
+        } else {
+            Vec::new()
+        };
+        // TEMP DEBUG
+        println!(
+            "🔴FEEDBACK completion_guard thread_id={} board_item_id={:?} role={:?} is_coordinator={} blocking_ids={:?}",
+            self.ctx.thread_id,
+            self.current_board_item_id(),
+            self.current_thread_role(),
+            self.is_coordinator_thread,
+            unresolved_ids
+        );
         if !unresolved_ids.is_empty() {
             let ids_csv = unresolved_ids
                 .iter()

@@ -111,7 +111,7 @@ impl JobScheduler {
         });
 
         // Event-log dispatcher: publishes pending event_log rows to NATS.
-        // Wakes via NATS subject `agent.outbox.wake.>` + 30s safety poll.
+        // Wakes via NATS subject `agent.outbox.wake.>` + 15s safety poll.
         let dispatcher_state = self.app_state.clone();
         tokio::spawn(async move {
             loop {

@@ -467,12 +467,25 @@ pub async fn create_project_task_board_item_comment(
         .execute_with_db(app_state.db_router.writer())
         .await?;
 
+    // Only LIVE assignments (pending/available/claimed/in_progress) capture the
+    // feedback directly; terminal ones (completed/cancelled/rejected/blocked)
+    // have no live executor, so the item falls through to coordinator routing.
     let active_executor_threads: Vec<i64> = {
+        use models::project_task_board::assignment_status;
         let mut seen = std::collections::HashSet::new();
         queries::ListProjectTaskBoardItemAssignmentsQuery::new(item_id)
             .execute_with_db(app_state.db_router.writer())
             .await?
             .into_iter()
+            .filter(|a| {
+                matches!(
+                    a.status.as_str(),
+                    assignment_status::PENDING
+                        | assignment_status::AVAILABLE
+                        | assignment_status::CLAIMED
+                        | assignment_status::IN_PROGRESS
+                )
+            })
             .filter_map(|a| seen.insert(a.thread_id).then_some(a.thread_id))
             .collect()
     };

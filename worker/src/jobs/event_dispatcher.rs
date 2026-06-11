@@ -34,7 +34,7 @@ use crate::metrics::{
 pub const WAKE_SUBJECT: &str = "agent.outbox.wake";
 
 const BATCH_SIZE: i64 = 100;
-const PARANOID_SWEEP: Duration = Duration::from_secs(120);
+const PARANOID_SWEEP: Duration = Duration::from_secs(15);
 
 pub async fn run(app_state: AppState) -> Result<()> {
     let mut wake_sub = app_state

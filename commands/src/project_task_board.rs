@@ -85,7 +85,7 @@ impl ResolveBoardItemCommentsCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        sqlx::query!(
+        let result = sqlx::query!(
             r#"
             UPDATE project_task_board_item_comments
             SET resolved_at = NOW(),
@@ -104,6 +104,14 @@ impl ResolveBoardItemCommentsCommand {
         )
         .execute(executor)
         .await?;
+        // TEMP DEBUG
+        println!(
+            "🔴FEEDBACK resolve UPDATE board_item_id={} thread_id={} comment_ids={:?} rows_affected={}",
+            self.board_item_id,
+            self.resolved_by_thread_id,
+            self.comment_ids,
+            result.rows_affected()
+        );
         Ok(())
     }
 }
