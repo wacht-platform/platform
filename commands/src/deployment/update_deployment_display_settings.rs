@@ -91,6 +91,11 @@ impl UpdateDeploymentDisplaySettingsCommand {
             query_builder.push_bind(serde_json::to_value(dark_mode_settings)?);
         }
 
+        if let Some(theme_tokens) = &self.settings.theme_tokens {
+            query_builder.push(", theme_tokens = ");
+            query_builder.push_bind(serde_json::to_value(theme_tokens)?);
+        }
+
         if let Some(after_logo_click_url) = &self.settings.after_logo_click_url {
             query_builder.push(", after_logo_click_url = ");
             query_builder.push_bind(after_logo_click_url);

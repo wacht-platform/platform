@@ -100,6 +100,48 @@ pub struct TokenOverrides {
     pub letter_spacing_tight: Option<String>,
 }
 
+/// The 23 `--wa-*` SDK design tokens (plus the two optional font tokens), per
+/// theme. Field names are snake_case and map to the kebab-case CSS custom
+/// property suffix on the SDK side (e.g. `surface_subtle` -> `--wa-surface-subtle`).
+/// Every token is optional; anything left unset falls back to the SDK default.
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct WaThemeTokens {
+    pub surface: Option<String>,
+    pub surface_subtle: Option<String>,
+    pub background: Option<String>,
+    pub canvas: Option<String>,
+    pub text: Option<String>,
+    pub text_secondary: Option<String>,
+    pub text_muted: Option<String>,
+    pub text_faint: Option<String>,
+    pub border: Option<String>,
+    pub border_strong: Option<String>,
+    pub primary: Option<String>,
+    pub primary_soft: Option<String>,
+    pub primary_foreground: Option<String>,
+    pub success: Option<String>,
+    pub success_soft: Option<String>,
+    pub info: Option<String>,
+    pub info_soft: Option<String>,
+    pub warning: Option<String>,
+    pub warning_soft: Option<String>,
+    pub error: Option<String>,
+    pub error_soft: Option<String>,
+    pub radius: Option<String>,
+    pub radius_lg: Option<String>,
+    pub font_sans: Option<String>,
+    pub font_mono: Option<String>,
+}
+
+/// Per-deployment override of the SDK `--wa-*` token contract, split by mode.
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct ThemeTokens {
+    #[serde(default)]
+    pub light: Option<WaThemeTokens>,
+    #[serde(default)]
+    pub dark: Option<WaThemeTokens>,
+}
+
 fn default_light_mode_token_overrides() -> TokenOverrides {
     TokenOverrides {
         card: Some("oklch(1 0 0)".to_string()),
@@ -298,6 +340,8 @@ pub struct DeploymentUISettings {
     pub signup_terms_statement_shown: bool,
     pub light_mode_settings: LightModeSettings,
     pub dark_mode_settings: DarkModeSettings,
+    #[serde(default)]
+    pub theme_tokens: Option<ThemeTokens>,
     pub after_logo_click_url: String,
     pub organization_profile_url: String,
     pub create_organization_url: String,
@@ -335,6 +379,7 @@ impl Default for DeploymentUISettings {
             signup_terms_statement_shown: true,
             light_mode_settings: LightModeSettings::default(),
             dark_mode_settings: DarkModeSettings::default(),
+            theme_tokens: None,
             after_logo_click_url: "".to_string(),
             organization_profile_url: "".to_string(),
             create_organization_url: "".to_string(),

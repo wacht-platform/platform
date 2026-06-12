@@ -194,6 +194,7 @@ impl GetDeploymentWithSettingsQuery {
                 deployment_ui_settings.signup_terms_statement_shown,
                 deployment_ui_settings.light_mode_settings,
                 deployment_ui_settings.dark_mode_settings,
+                deployment_ui_settings.theme_tokens,
                 deployment_ui_settings.after_logo_click_url,
                 deployment_ui_settings.organization_profile_url,
                 deployment_ui_settings.create_organization_url,
@@ -364,6 +365,10 @@ impl GetDeploymentWithSettingsQuery {
                 signup_terms_statement_shown: row.signup_terms_statement_shown,
                 light_mode_settings: parse_json(row.light_mode_settings, "light_mode_settings")?,
                 dark_mode_settings: parse_json(row.dark_mode_settings, "dark_mode_settings")?,
+                theme_tokens: match row.theme_tokens {
+                    Some(v) => Some(parse_json(v, "theme_tokens")?),
+                    None => None,
+                },
                 after_logo_click_url: row.after_logo_click_url,
                 organization_profile_url: row.organization_profile_url,
                 create_organization_url: row.create_organization_url,
