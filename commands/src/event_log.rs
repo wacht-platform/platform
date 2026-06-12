@@ -605,8 +605,7 @@ where
         r#"
         UPDATE work_lease
         SET heartbeat_at = NOW(),
-            expires_at = NOW() + ($3::text)::interval,
-            attempts = attempts + 1
+            expires_at = NOW() + ($3::text)::interval
         WHERE event_id = $1 AND worker_id = $2
         RETURNING event_id
         "#,

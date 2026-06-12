@@ -478,7 +478,6 @@ impl AgentExecutorBuilder {
                 "list_threads"
                     | "create_thread"
                     | "update_thread"
-                    | "create_project_task"
                     | "update_project_task"
                     | "assign_project_task"
                     | "get_project_task"
@@ -614,7 +613,7 @@ impl AgentExecutor {
     }
 
     pub(super) fn can_create_project_task_in_current_mode(&self) -> bool {
-        self.effective_is_coordinator_thread() || self.is_conversation_thread
+        self.is_conversation_thread
     }
 
     pub(super) fn tool_allowed_in_current_mode(&self, tool_name: &str) -> bool {

@@ -143,7 +143,6 @@ cancelled = "terminal"
 [tools]
 allowed = [
   "ask_user",
-  "create_project_task",
   "update_project_task",
   "assign_project_task",
   "create_thread",
@@ -157,6 +156,7 @@ allowed = [
   "complete",
   "abort_task",
 ]
+task_creation = "you do NOT create tasks or subtasks; route and manage existing board items only. If work needs a task that does not exist, ask_user or surface it — task creation is the user's path, not yours."
 
 [tools.ask_user]
 role = "only channel for user input"
