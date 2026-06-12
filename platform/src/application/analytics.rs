@@ -57,7 +57,10 @@ async fn breakdown(
     from: DateTime<Utc>,
     to: DateTime<Utc>,
 ) -> Vec<BreakdownItem> {
-    match clickhouse.get_breakdown(deployment_id, column, from, to).await {
+    match clickhouse
+        .get_breakdown(deployment_id, column, from, to)
+        .await
+    {
         Ok(rows) => rows
             .into_iter()
             .map(|r| BreakdownItem {

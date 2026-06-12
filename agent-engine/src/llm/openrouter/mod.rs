@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::{
-    json_schema::{normalize_json_schema, normalize_openai_tool_schema, schema_has_free_form_object},
+    json_schema::{
+        normalize_json_schema, normalize_openai_tool_schema, schema_has_free_form_object,
+    },
     llm::{
         GeneratedToolCall, NativeToolDefinition, PromptCacheRequest, SemanticLlmContentBlock,
         SemanticLlmMessage, SemanticLlmRequest, StructuredGenerationOutput,

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT deployment_id as \"deployment_id!\",\n                   app_slug as \"app_slug!\",\n                   name as \"name!\",\n                   description,\n                   signing_secret as \"signing_secret!\",\n                   failure_notification_emails,\n                   event_catalog_slug,\n                   is_active as \"is_active!\",\n                   created_at as \"created_at!\",\n                   updated_at as \"updated_at!\"\n            FROM webhook_apps\n            WHERE deployment_id = $1\n              AND ($2::bool OR is_active = true)\n            ORDER BY created_at DESC\n            LIMIT $3 OFFSET $4\n            ",
+  "query": "\n            SELECT deployment_id as \"deployment_id!\",\n                   app_slug as \"app_slug!\",\n                   name as \"name!\",\n                   description,\n                   signing_secret as \"signing_secret!\",\n                   failure_notification_emails,\n                   event_catalog_slug,\n                   is_active as \"is_active!\",\n                   created_at as \"created_at!\",\n                   updated_at as \"updated_at!\"\n            FROM webhook_apps\n            WHERE deployment_id = $1\n              AND ($2::bool OR is_active = true)\n              AND ($5::text IS NULL OR app_slug = $5)\n            ORDER BY created_at DESC\n            LIMIT $3 OFFSET $4\n            ",
   "describe": {
     "columns": [
       {
@@ -59,7 +59,8 @@
         "Int8",
         "Bool",
         "Int8",
-        "Int8"
+        "Int8",
+        "Text"
       ]
     },
     "nullable": [
@@ -75,5 +76,5 @@
       true
     ]
   },
-  "hash": "1808747bf97d618f7d015edeb38c5786b7c2121168ac9d2ee02054dc13caf3eb"
+  "hash": "bc733af3a7a1c130c37ae2451425d5e8125f74cbc9eed85b9a07881dcdcd4c4a"
 }

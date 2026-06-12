@@ -28,12 +28,9 @@ pub struct ApiKeyActivationResponse {
 #[derive(Debug, Deserialize)]
 pub struct ListApiAuthAppsQuery {
     pub include_inactive: Option<bool>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ListApiAuthAppsResponse {
-    pub apps: Vec<ApiAuthApp>,
-    pub total: usize,
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
+    pub search: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

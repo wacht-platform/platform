@@ -121,9 +121,9 @@ fn render_sibling_message_body(content: &models::ConversationContent) -> String 
             outcome,
             summary,
             ..
-        } => format!(
-            "handoff from thread #{source_thread_id} ({source_role}, {outcome}): {summary}"
-        ),
+        } => {
+            format!("handoff from thread #{source_thread_id} ({source_role}, {outcome}): {summary}")
+        }
     }
 }
 

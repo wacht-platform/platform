@@ -44,8 +44,8 @@ pub const DISPATCHER_WAKE_SUBJECT: &str = "agent.outbox.wake";
 /// from event_log rows.
 pub const EVENT_LOG_WORK_SUBJECT: &str = "worker.tasks.agent.event_log_work";
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct DeferredDispatch {
     pending: AtomicBool,

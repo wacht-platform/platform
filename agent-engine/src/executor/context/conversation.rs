@@ -651,7 +651,6 @@ impl AgentExecutor {
         history
     }
 
-
     fn render_trigger_marker(&self, conv: &ConversationRecord) -> String {
         self.trigger_stub(&conv.content)
     }
@@ -2044,7 +2043,9 @@ fn format_handoff_list_field(label: &str, value: &Value) -> Option<String> {
     for item in array {
         let line = match item {
             Value::String(s) => s.clone(),
-            Value::Object(_) => serde_json::to_string(item).unwrap_or_else(|_| "<unrenderable>".into()),
+            Value::Object(_) => {
+                serde_json::to_string(item).unwrap_or_else(|_| "<unrenderable>".into())
+            }
             _ => serde_json::to_string(item).unwrap_or_else(|_| "<unrenderable>".into()),
         };
         out.push_str("\n  - ");

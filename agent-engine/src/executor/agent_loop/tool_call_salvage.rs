@@ -191,7 +191,10 @@ fn salvage_glm(text: &str) -> Vec<GeneratedToolCall> {
             .map(|i| val_start + i)
             .unwrap_or(text.len());
         if !key.is_empty() {
-            args.insert(key, Value::String(text[val_start..val_end].trim().to_string()));
+            args.insert(
+                key,
+                Value::String(text[val_start..val_end].trim().to_string()),
+            );
         }
         cursor = val_end;
     }

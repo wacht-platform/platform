@@ -105,7 +105,10 @@ impl AgentExecutor {
             self.ctx.thread_id,
             board_item_id,
             comments.len(),
-            comments.iter().map(|c| (c.id, c.board_item_id)).collect::<Vec<_>>()
+            comments
+                .iter()
+                .map(|c| (c.id, c.board_item_id))
+                .collect::<Vec<_>>()
         );
         Ok(comments
             .into_iter()
@@ -1042,7 +1045,11 @@ impl AgentExecutor {
                 .iter()
                 .map(|c| {
                     let args = serde_json::to_string(&c.arguments).unwrap_or_default();
-                    format!("{}({})", c.tool_name, args.chars().take(80).collect::<String>())
+                    format!(
+                        "{}({})",
+                        c.tool_name,
+                        args.chars().take(80).collect::<String>()
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join(" | "),
@@ -1079,9 +1086,7 @@ impl AgentExecutor {
                 healed.calls.len(),
                 healed.residual_text.is_some()
             ); // TEMP DEBUG
-            output.content_text = healed
-                .residual_text
-                .filter(|t| !detect_leaked_tool_call(t));
+            output.content_text = healed.residual_text.filter(|t| !detect_leaked_tool_call(t));
             for mut call in healed.calls {
                 let canonical = dto::json::tool_calls::canonical_tool_name(&call.tool_name);
                 if canonical != call.tool_name {
@@ -1152,7 +1157,10 @@ impl AgentExecutor {
         }
 
         if !resolve_calls.is_empty() {
-            println!("🔵LOOP decision=resolve_user_feedback n={}", resolve_calls.len()); // TEMP DEBUG
+            println!(
+                "🔵LOOP decision=resolve_user_feedback n={}",
+                resolve_calls.len()
+            ); // TEMP DEBUG
         }
 
         if let Some(call) = ask_user_calls.first() {
@@ -1602,7 +1610,10 @@ impl AgentExecutor {
         let recipient_conv_id = match self.ctx.app_state.sf.next_id() {
             Ok(id) => id as i64,
             Err(error) => {
-                tracing::warn!(?error, "snowflake id allocation for handoff conversation failed");
+                tracing::warn!(
+                    ?error,
+                    "snowflake id allocation for handoff conversation failed"
+                );
                 return;
             }
         };
@@ -1660,23 +1671,16 @@ impl AgentExecutor {
         }
     }
 
-    async fn resolve_handoff_recipient(
-        &self,
-        board_item_id: i64,
-    ) -> Result<Option<i64>, AppError> {
-        let Some(board_item) =
-            queries::GetProjectTaskBoardItemByIdQuery::new(board_item_id)
-                .execute_with_db(self.ctx.app_state.db_router.writer())
-                .await?
+    async fn resolve_handoff_recipient(&self, board_item_id: i64) -> Result<Option<i64>, AppError> {
+        let Some(board_item) = queries::GetProjectTaskBoardItemByIdQuery::new(board_item_id)
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await?
         else {
             return Ok(None);
         };
 
-        let is_delegated = board_item
-            .metadata
-            .get("kind")
-            .and_then(|v| v.as_str())
-            == Some("delegated_task");
+        let is_delegated =
+            board_item.metadata.get("kind").and_then(|v| v.as_str()) == Some("delegated_task");
         if is_delegated {
             if let Some(id) = board_item
                 .metadata

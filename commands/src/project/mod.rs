@@ -2,12 +2,12 @@ use common::HasIdProvider;
 use common::error::AppError;
 use common::validators::ProjectValidator;
 use models::{
-    AuthFactorsEnabled, CustomSmtpConfig, DarkModeSettings, Deployment, DeploymentAuthSettings,
+    AuthFactorsEnabled, CustomSmtpConfig, Deployment, DeploymentAuthSettings,
     DeploymentB2bSettings, DeploymentB2bSettingsWithRoles, DeploymentEmailTemplate, DeploymentMode,
     DeploymentOrganizationRole, DeploymentRestrictions, DeploymentSmsTemplate,
     DeploymentUISettings, DeploymentWorkspaceRole, DomainVerificationRecords, EmailProvider,
     EmailSettings, EmailVerificationRecords, FirstFactor, IndividualAuthSettings,
-    LightModeSettings, OauthCredentials, PasswordSettings, PhoneSettings, ProjectWithDeployments,
+    OauthCredentials, PasswordSettings, PhoneSettings, ProjectWithDeployments,
     SecondFactorPolicy, SocialConnectionProvider, UsernameSettings, VerificationPolicy,
     VerificationStatus,
 };

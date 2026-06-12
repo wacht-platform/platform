@@ -192,8 +192,6 @@ impl GetDeploymentWithSettingsQuery {
                 deployment_ui_settings.privacy_policy_url,
                 deployment_ui_settings.signup_terms_statement,
                 deployment_ui_settings.signup_terms_statement_shown,
-                deployment_ui_settings.light_mode_settings,
-                deployment_ui_settings.dark_mode_settings,
                 deployment_ui_settings.theme_tokens,
                 deployment_ui_settings.after_logo_click_url,
                 deployment_ui_settings.organization_profile_url,
@@ -363,8 +361,6 @@ impl GetDeploymentWithSettingsQuery {
                 privacy_policy_url: row.privacy_policy_url,
                 signup_terms_statement: row.signup_terms_statement,
                 signup_terms_statement_shown: row.signup_terms_statement_shown,
-                light_mode_settings: parse_json(row.light_mode_settings, "light_mode_settings")?,
-                dark_mode_settings: parse_json(row.dark_mode_settings, "dark_mode_settings")?,
                 theme_tokens: match row.theme_tokens {
                     Some(v) => Some(parse_json(v, "theme_tokens")?),
                     None => None,
@@ -1207,5 +1203,41 @@ impl GetDeploymentModeQuery {
         .fetch_optional(executor)
         .await?;
         Ok(row.map(|r| r.mode))
+    }
+}
+
+pub struct GetDeploymentImageUrlQuery {
+    pub deployment_id: i64,
+    pub image_type: String,
+}
+
+impl GetDeploymentImageUrlQuery {
+    pub fn new(deployment_id: i64, image_type: impl Into<String>) -> Self {
+        Self {
+            deployment_id,
+            image_type: image_type.into(),
+        }
+    }
+
+    /// Current stored CDN URL for the given deployment image slot, or None.
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Option<String>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let column = match self.image_type.as_str() {
+            "logo" => "logo_image_url",
+            "favicon" => "favicon_image_url",
+            "user-profile" => "default_user_profile_image_url",
+            "org-profile" => "default_organization_profile_image_url",
+            "workspace-profile" => "default_workspace_profile_image_url",
+            _ => return Ok(None),
+        };
+        // `column` is from the fixed whitelist above — not user input.
+        let sql = format!("SELECT {column} FROM deployment_ui_settings WHERE deployment_id = $1");
+        let row: Option<(Option<String>,)> = sqlx::query_as(&sql)
+            .bind(self.deployment_id)
+            .fetch_optional(executor)
+            .await?;
+        Ok(row.and_then(|(url,)| url).filter(|u| !u.trim().is_empty()))
     }
 }

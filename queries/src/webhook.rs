@@ -69,6 +69,7 @@ pub struct GetWebhookAppsQuery {
     include_inactive: bool,
     limit: Option<i64>,
     offset: Option<i64>,
+    search: Option<String>,
 }
 
 impl GetWebhookAppsQuery {
@@ -78,6 +79,7 @@ impl GetWebhookAppsQuery {
             include_inactive: false,
             limit: None,
             offset: None,
+            search: None,
         }
     }
 
@@ -89,6 +91,11 @@ impl GetWebhookAppsQuery {
     pub fn with_pagination(mut self, limit: Option<i64>, offset: Option<i64>) -> Self {
         self.limit = limit;
         self.offset = offset;
+        self
+    }
+
+    pub fn with_search(mut self, search: Option<String>) -> Self {
+        self.search = search.filter(|s| !s.trim().is_empty());
         self
     }
 
@@ -115,13 +122,15 @@ impl GetWebhookAppsQuery {
             FROM webhook_apps
             WHERE deployment_id = $1
               AND ($2::bool OR is_active = true)
+              AND ($5::text IS NULL OR app_slug = $5)
             ORDER BY created_at DESC
             LIMIT $3 OFFSET $4
             "#,
             self.deployment_id,
             self.include_inactive,
             limit + 1,
-            offset
+            offset,
+            self.search
         )
         .fetch_all(executor)
         .await?;

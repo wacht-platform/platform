@@ -1,12 +1,12 @@
 use chrono::{Datelike, Utc};
 use commands::webhook_trigger::{TriggerWebhookEventCommand, console_webhook_app_slug};
 use common::{db_router::ReadConsistency, state::AppState};
+use dto::clickhouse::ModelTokenUsageEvent;
 use queries::{
     b2b::{GetOrganizationDetailsQuery, GetWorkspaceDetailsQuery},
     signin::GetSessionWithSignInsQuery,
     user::{GetUserAuthenticatorQuery, GetUserDetailsQuery},
 };
-use dto::clickhouse::ModelTokenUsageEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -225,7 +225,11 @@ async fn record_model_token_usage(task: &WebhookEventTask, app_state: &AppState)
     };
     let event = ModelTokenUsageEvent {
         deployment_id: task.deployment_id,
-        model: p.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        model: p
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
         thread_id: id("thread_id"),
         actor_id: id("actor_id"),
         is_byok: u8::from(p.get("is_byok").and_then(|v| v.as_bool()).unwrap_or(false)),

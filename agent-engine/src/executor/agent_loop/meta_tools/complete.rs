@@ -54,8 +54,16 @@ impl AgentExecutor {
 
         let handoff = CompletionHandoff {
             summary: summary.to_string(),
-            artifacts: call.arguments.get("artifacts").cloned().filter(|v| !v.is_null()),
-            blockers: call.arguments.get("blockers").cloned().filter(|v| !v.is_null()),
+            artifacts: call
+                .arguments
+                .get("artifacts")
+                .cloned()
+                .filter(|v| !v.is_null()),
+            blockers: call
+                .arguments
+                .get("blockers")
+                .cloned()
+                .filter(|v| !v.is_null()),
             next_actions: call
                 .arguments
                 .get("next_actions")

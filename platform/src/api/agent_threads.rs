@@ -1,7 +1,8 @@
 use crate::api::multipart::MultipartPayload;
 use crate::application::{
     agent_thread_execution as agent_thread_execution_app, agent_threads as agent_threads_app,
-    board_item_actions as board_actions_app, response::{ApiResult, PaginatedResponse},
+    board_item_actions as board_actions_app,
+    response::{ApiResult, PaginatedResponse},
 };
 use crate::middleware::RequireDeployment;
 use axum::extract::{FromRequest, Json, Multipart, Path, Query, Request, State};

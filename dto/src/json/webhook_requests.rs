@@ -14,6 +14,7 @@ pub struct ListWebhookAppsQuery {
     pub include_inactive: Option<bool>,
     pub limit: Option<i32>,
     pub offset: Option<i32>,
+    pub search: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

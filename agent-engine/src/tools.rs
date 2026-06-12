@@ -226,7 +226,9 @@ impl ToolExecutor {
 
         let scratch_filename = format!("tool_output_{}_{}.{}", timestamp, random_suffix, extension);
         let scratch_path = format!("/scratch/{}", scratch_filename);
-        let scratch_write_result = filesystem.write_file(&scratch_path, scratch_body, false).await;
+        let scratch_write_result = filesystem
+            .write_file(&scratch_path, scratch_body, false)
+            .await;
         let scratch_saved = scratch_write_result.is_ok();
         let scratch_write_error = scratch_write_result.err().map(|e| e.to_string());
 
@@ -236,7 +238,10 @@ impl ToolExecutor {
         let size_bytes = scratch_body.len();
 
         let reason = if char_count > threshold {
-            format!("Output is {} chars (inline limit {})", char_count, threshold)
+            format!(
+                "Output is {} chars (inline limit {})",
+                char_count, threshold
+            )
         } else {
             format!(
                 "Output is structurally complex (depth={}, leaves={}, max_object_array_len={})",

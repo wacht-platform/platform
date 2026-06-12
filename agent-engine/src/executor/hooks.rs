@@ -270,7 +270,7 @@ impl AgentExecutor {
         tool_name: &str,
         extra: Value,
     ) {
-        use commands::webhook_trigger::{TriggerWebhookEventCommand, console_webhook_app_slug};
+        use commands::webhook_trigger::{console_webhook_app_slug, TriggerWebhookEventCommand};
 
         let event_name = hook_webhook_event(kind, status);
 

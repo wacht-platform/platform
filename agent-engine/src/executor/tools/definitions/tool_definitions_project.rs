@@ -239,7 +239,9 @@ pub fn list_threads_schema() -> Vec<SchemaField> {
         SchemaField {
             name: "include_conversation_threads".to_string(),
             field_type: "BOOLEAN".to_string(),
-            description: Some("Include conversation/user-facing threads. Default false.".to_string()),
+            description: Some(
+                "Include conversation/user-facing threads. Default false.".to_string(),
+            ),
             required: false,
             ..Default::default()
         },

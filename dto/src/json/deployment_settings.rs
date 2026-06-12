@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use models::{
-    CountryRestrictions, CustomSigningKey, DarkModeSettings, DeploymentPermissionCatalogEntry,
-    DeploymentRestrictionsSignUpMode, FirstFactor, LightModeSettings, MultiSessionSupport,
-    OauthCredentials, SecondFactorPolicy, SocialConnectionProvider, ThemeTokens,
+    CountryRestrictions, CustomSigningKey, DeploymentPermissionCatalogEntry,
+    DeploymentRestrictionsSignUpMode, FirstFactor, MultiSessionSupport, OauthCredentials,
+    SecondFactorPolicy, SocialConnectionProvider, ThemeTokens,
 };
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -238,8 +238,6 @@ pub struct DeploymentDisplaySettingsUpdates {
     pub privacy_policy_url: Option<String>,
     pub signup_terms_statement: Option<String>,
     pub signup_terms_statement_shown: Option<bool>,
-    pub light_mode_settings: Option<LightModeSettings>,
-    pub dark_mode_settings: Option<DarkModeSettings>,
     pub theme_tokens: Option<ThemeTokens>,
     pub after_logo_click_url: Option<String>,
     pub organization_profile_url: Option<String>,

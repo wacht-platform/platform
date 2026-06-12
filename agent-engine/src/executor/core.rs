@@ -466,9 +466,7 @@ impl AgentExecutorBuilder {
         // Drop Parallel-backed tools from the catalog when PARALLEL_API_KEY is
         // missing — otherwise the LLM sees them, calls them, and trips an
         // internal-error every turn.
-        if matches!(tool_name, "web_search" | "url_content")
-            && !parallel_extract_available()
-        {
+        if matches!(tool_name, "web_search" | "url_content") && !parallel_extract_available() {
             return false;
         }
 

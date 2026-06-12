@@ -22,13 +22,12 @@ use models::{
 use queries::{
     GetActorByIdQuery, GetActorProjectByIdQuery, GetAgentThreadByIdQuery, GetAgentThreadStateQuery,
     GetAiAgentByIdQuery, GetLatestThreadTaskGraphQuery, GetMcpServerByIdQuery,
-    GetProjectTaskBoardByIdQuery,
-    GetProjectTaskBoardByProjectIdQuery, GetProjectTaskBoardItemByIdQuery,
-    GetProjectTaskScheduleByTaskKeyQuery, GetThreadTaskGraphByIdQuery,
-    GetThreadTaskGraphSummaryQuery, ListActorProjectsQuery, ListActorsQuery, ListAgentThreadsQuery,
-    ListAssignmentsForThreadQuery, ListProjectTaskBoardItemAssignmentsQuery,
-    ListProjectTaskBoardItemRelationsQuery, ListProjectTaskBoardItemsQuery,
-    ListThreadTaskEdgesQuery, ListThreadTaskNodesQuery,
+    GetProjectTaskBoardByIdQuery, GetProjectTaskBoardByProjectIdQuery,
+    GetProjectTaskBoardItemByIdQuery, GetProjectTaskScheduleByTaskKeyQuery,
+    GetThreadTaskGraphByIdQuery, GetThreadTaskGraphSummaryQuery, ListActorProjectsQuery,
+    ListActorsQuery, ListAgentThreadsQuery, ListAssignmentsForThreadQuery,
+    ListProjectTaskBoardItemAssignmentsQuery, ListProjectTaskBoardItemRelationsQuery,
+    ListProjectTaskBoardItemsQuery, ListThreadTaskEdgesQuery, ListThreadTaskNodesQuery,
 };
 
 use crate::application::{AppState, agent_thread_execution as agent_thread_execution_app};

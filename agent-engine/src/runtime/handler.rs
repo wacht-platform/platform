@@ -387,13 +387,12 @@ impl AgentHandler {
                 ));
             }
         };
-        let defer_guard = if thread_state.thread_purpose
-            == models::agent_thread::purpose::COORDINATOR
-        {
-            Some(commands::event_log::DeferredDispatch::new())
-        } else {
-            None
-        };
+        let defer_guard =
+            if thread_state.thread_purpose == models::agent_thread::purpose::COORDINATOR {
+                Some(commands::event_log::DeferredDispatch::new())
+            } else {
+                None
+            };
 
         let execution_future = self.run_execution_mode(
             &request.watch_key,
@@ -784,7 +783,7 @@ async fn publish_stream_event(
         .await
         .map_err_internal("Failed to publish to NATS")?;
 
-    use commands::webhook_trigger::{TriggerWebhookEventCommand, console_webhook_app_slug};
+    use commands::webhook_trigger::{console_webhook_app_slug, TriggerWebhookEventCommand};
 
     let webhook_payload = serde_json::json!({
         "thread_id": thread_key,

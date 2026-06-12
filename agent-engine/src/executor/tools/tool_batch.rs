@@ -27,7 +27,13 @@ fn input_preview(input: &Value) -> String {
     truncate_chars(&serialized, MAX_TOOL_ERROR_INPUT_CHARS)
 }
 
-fn audit_line(iteration: usize, tool: &str, status: &str, input: &str, error: Option<&str>) -> String {
+fn audit_line(
+    iteration: usize,
+    tool: &str,
+    status: &str,
+    input: &str,
+    error: Option<&str>,
+) -> String {
     let error_part = error
         .map(|e| format!(" error=\"{}\"", truncate_chars(&e.replace('\n', " "), 400)))
         .unwrap_or_default();
@@ -70,7 +76,8 @@ impl AgentExecutor {
 
         let batch_was_empty = planned_calls.is_empty();
         let mut audit_lines: Vec<String> = Vec::new();
-        let mut failed_tools: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut failed_tools: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
         let mut succeeded_tools: std::collections::BTreeSet<String> =
             std::collections::BTreeSet::new();
 
@@ -211,7 +218,11 @@ impl AgentExecutor {
                 "[execution run={} thread={} role={} assignment={} started={}]\n",
                 self.ctx.execution_run_id,
                 self.ctx.thread_id,
-                if self.is_delegated_task { "delegated" } else { "executor" },
+                if self.is_delegated_task {
+                    "delegated"
+                } else {
+                    "executor"
+                },
                 self.current_assignment_id()
                     .map(|id| id.to_string())
                     .unwrap_or_else(|| "-".to_string()),

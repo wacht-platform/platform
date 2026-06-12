@@ -117,7 +117,10 @@ impl AgentExecutor {
                 continue;
             }
 
-            input.insert(field.name.clone(), Self::coerce_to_field(current_value, field));
+            input.insert(
+                field.name.clone(),
+                Self::coerce_to_field(current_value, field),
+            );
         }
 
         input
@@ -990,4 +993,3 @@ External tool catalog with descriptions and input schemas:
         }
     }
 }
-

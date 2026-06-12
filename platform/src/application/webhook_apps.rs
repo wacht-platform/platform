@@ -36,6 +36,7 @@ pub async fn list_webhook_apps(
     let apps = GetWebhookAppsQuery::new(deployment_id)
         .with_inactive(include_inactive)
         .with_pagination(Some(limit as i64 + 1), Some(offset as i64))
+        .with_search(params.search)
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 

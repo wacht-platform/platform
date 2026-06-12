@@ -81,16 +81,6 @@ impl UpdateDeploymentDisplaySettingsCommand {
             query_builder.push_bind(signup_terms_statement_shown);
         }
 
-        if let Some(light_mode_settings) = &self.settings.light_mode_settings {
-            query_builder.push(", light_mode_settings = ");
-            query_builder.push_bind(serde_json::to_value(light_mode_settings)?);
-        }
-
-        if let Some(dark_mode_settings) = &self.settings.dark_mode_settings {
-            query_builder.push(", dark_mode_settings = ");
-            query_builder.push_bind(serde_json::to_value(dark_mode_settings)?);
-        }
-
         if let Some(theme_tokens) = &self.settings.theme_tokens {
             query_builder.push(", theme_tokens = ");
             query_builder.push_bind(serde_json::to_value(theme_tokens)?);

@@ -3,13 +3,14 @@ use commands::api_key_app::{
 };
 use common::db_router::ReadConsistency;
 use common::state::AppState;
-use dto::json::api_key::{
-    CreateApiAuthAppRequest, ListApiAuthAppsQuery, ListApiAuthAppsResponse, UpdateApiAuthAppRequest,
-};
+use dto::json::api_key::{CreateApiAuthAppRequest, ListApiAuthAppsQuery, UpdateApiAuthAppRequest};
 use models::api_key::ApiAuthApp;
 use models::error::AppError;
 use models::plan_features::PlanTier;
 use queries::{api_key::GetApiAuthAppsQuery, plan_access::GetDeploymentPlanTierQuery};
+
+use crate::api::pagination::paginate_results;
+use crate::application::response::PaginatedResponse;
 
 use super::api_key_shared::get_api_auth_app_by_slug;
 
@@ -17,19 +18,20 @@ pub async fn list_api_auth_apps(
     app_state: &AppState,
     deployment_id: i64,
     params: ListApiAuthAppsQuery,
-) -> Result<ListApiAuthAppsResponse, AppError> {
+) -> Result<PaginatedResponse<ApiAuthApp>, AppError> {
     let include_inactive = params.include_inactive.unwrap_or(false);
+    let limit = params.limit.unwrap_or(50) as u64;
+    let offset = params.offset.unwrap_or(0) as u64;
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
 
     let apps = GetApiAuthAppsQuery::new(deployment_id)
         .with_inactive(include_inactive)
+        .with_pagination(Some(limit as i64 + 1), Some(offset as i64))
+        .with_search(params.search)
         .execute_with_db(reader)
         .await?;
 
-    Ok(ListApiAuthAppsResponse {
-        total: apps.len(),
-        apps,
-    })
+    Ok(paginate_results(apps, limit as i32, Some(offset as i64)))
 }
 
 pub async fn get_api_auth_app(

@@ -485,9 +485,7 @@ pub async fn create_checkout(
         if let Some(ref subscription) = account.subscription {
             // A seeded local Starter is the default plan, not a real paid
             // subscription — let it proceed to checkout so tenants can upgrade.
-            if subscription.status == "active"
-                && !is_local_starter_subscription(subscription)
-            {
+            if subscription.status == "active" && !is_local_starter_subscription(subscription) {
                 return Err(AppError::Validation(
                     "Subscription already exists".to_string(),
                 ));

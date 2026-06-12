@@ -1,4 +1,5 @@
-use commands::{UpdateDeploymentDisplaySettingsCommand, UploadToCdnCommand};
+use commands::{DeleteFromCdnCommand, UpdateDeploymentDisplaySettingsCommand, UploadToCdnCommand};
+use common::ReadConsistency;
 use common::error::AppError;
 use dto::json::{DeploymentDisplaySettingsUpdates, UploadResult};
 
@@ -9,53 +10,14 @@ fn build_upload_target(
     deployment_id: i64,
     image_type: &str,
     file_extension: &str,
+    asset_id: i64,
 ) -> Result<(String, DeploymentDisplaySettingsUpdates), AppError> {
-    let mut updates = DeploymentDisplaySettingsUpdates::default();
-    let (cdn_url, file_path) = match image_type {
-        "logo" => (
-            format!(
-                "https://cdn.wacht.services/deployments/{}/logo.{}",
-                deployment_id, file_extension
-            ),
-            format!("deployments/{}/logo.{}", deployment_id, file_extension),
-        ),
-        "favicon" => (
-            format!(
-                "https://cdn.wacht.services/deployments/{}/favicon.{}",
-                deployment_id, file_extension
-            ),
-            format!("deployments/{}/favicon.{}", deployment_id, file_extension),
-        ),
-        "user-profile" => (
-            format!(
-                "https://cdn.wacht.services/deployments/{}/user-profile.{}",
-                deployment_id, file_extension
-            ),
-            format!(
-                "deployments/{}/user-profile.{}",
-                deployment_id, file_extension
-            ),
-        ),
-        "org-profile" => (
-            format!(
-                "https://cdn.wacht.services/deployments/{}/org-profile.{}",
-                deployment_id, file_extension
-            ),
-            format!(
-                "deployments/{}/org-profile.{}",
-                deployment_id, file_extension
-            ),
-        ),
-        "workspace-profile" => (
-            format!(
-                "https://cdn.wacht.services/deployments/{}/workspace-profile.{}",
-                deployment_id, file_extension
-            ),
-            format!(
-                "deployments/{}/workspace-profile.{}",
-                deployment_id, file_extension
-            ),
-        ),
+    let name = match image_type {
+        "logo" => "logo",
+        "favicon" => "favicon",
+        "user-profile" => "user-profile",
+        "org-profile" => "org-profile",
+        "workspace-profile" => "workspace-profile",
         _ => {
             return Err(AppError::Validation(
                 "Invalid image type. Allowed types: logo, favicon, user-profile, org-profile, workspace-profile".to_string(),
@@ -63,6 +25,12 @@ fn build_upload_target(
         }
     };
 
+    // Random snowflake in the key → every upload is a unique URL. No cache to
+    // bust, and clearing/replacing actually takes effect.
+    let file_path = format!("deployments/{deployment_id}/{name}-{asset_id}.{file_extension}");
+    let cdn_url = format!("https://cdn.wacht.services/{file_path}");
+
+    let mut updates = DeploymentDisplaySettingsUpdates::default();
     match image_type {
         "logo" => updates.logo_image_url = Some(cdn_url),
         "favicon" => updates.favicon_image_url = Some(cdn_url),
@@ -75,6 +43,22 @@ fn build_upload_target(
     Ok((file_path, updates))
 }
 
+/// Current stored URL for this image type, so the old object can be deleted.
+async fn current_image_url(
+    app_state: &AppState,
+    deployment_id: i64,
+    image_type: &str,
+) -> Result<Option<String>, AppError> {
+    queries::deployment::GetDeploymentImageUrlQuery::new(deployment_id, image_type)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
+        .await
+}
+
+fn cdn_key_from_url(url: &str) -> Option<&str> {
+    url.strip_prefix("https://cdn.wacht.services/")
+        .filter(|key| !key.is_empty())
+}
+
 pub async fn upload_image(
     app_state: &AppState,
     deployment_id: i64,
@@ -82,7 +66,12 @@ pub async fn upload_image(
     image_buffer: Vec<u8>,
     file_extension: &str,
 ) -> Result<UploadResult, AppError> {
-    let (file_path, updates) = build_upload_target(deployment_id, image_type, file_extension)?;
+    let asset_id = app_state.sf.next_id()? as i64;
+    let (file_path, updates) =
+        build_upload_target(deployment_id, image_type, file_extension, asset_id)?;
+
+    let previous_url = current_image_url(app_state, deployment_id, image_type).await?;
+
     let s3_deps = deps::from_app(app_state).s3();
     let db_redis_deps = deps::from_app(app_state).db().redis();
 
@@ -93,6 +82,13 @@ pub async fn upload_image(
     UpdateDeploymentDisplaySettingsCommand::new(deployment_id, updates)
         .execute_with_deps(&db_redis_deps)
         .await?;
+
+    // Best-effort: drop the previous (now-orphaned) object so it doesn't linger.
+    if let Some(old_key) = previous_url.as_deref().and_then(cdn_key_from_url) {
+        let _ = DeleteFromCdnCommand::new(old_key.to_string())
+            .execute_with_deps(&s3_deps)
+            .await;
+    }
 
     Ok(UploadResult { url })
 }

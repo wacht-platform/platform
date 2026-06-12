@@ -1,5 +1,7 @@
 use chrono::Utc;
-use common::{HasDbRouter, HasIdProvider, HasNatsJetStreamProvider, ReadConsistency, error::AppError};
+use common::{
+    HasDbRouter, HasIdProvider, HasNatsJetStreamProvider, ReadConsistency, error::AppError,
+};
 use models::{ProjectTaskBoardItem, ProjectTaskBoardItemAssignment, TaskSubscriptionEventKind};
 use queries::{ListProjectTaskBoardItemAssignmentsQuery, ListSubscribersForBoardItemQuery};
 use serde::Serialize;

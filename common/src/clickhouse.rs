@@ -2,11 +2,11 @@ use crate::error::AppError;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use clickhouse::{Client, Row};
 use dto::clickhouse::ApiKeyVerificationEvent;
+use dto::clickhouse::webhook::*;
 use dto::clickhouse::{
     GatewayUsageBucket, ModelTokenUsageEvent, TokenUsageBucket, TokenUsageByModel,
     WebhookUsageBucket,
 };
-use dto::clickhouse::webhook::*;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, error, info};

@@ -310,8 +310,6 @@ pub(in crate::project) fn build_ui_settings(
         after_sign_out_one_page_url: frontend_url.clone(),
         sign_in_page_url: format!("{}/sign-in", frontend_url),
         sign_up_page_url: format!("{}/sign-up", frontend_url),
-        dark_mode_settings: DarkModeSettings::default(),
-        light_mode_settings: LightModeSettings::default(),
         organization_profile_url: format!("{}/organization", frontend_url),
         create_organization_url: format!("{}/create-organization", frontend_url),
         user_profile_url: format!("{}/me", frontend_url),

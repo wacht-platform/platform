@@ -1,8 +1,8 @@
 use commands::event_log::{self, EVENT_LOG_WORK_SUBJECT, EventLogPayload, InsertEventLogCommand};
 use commands::{
     CreateProjectTaskBoardItemAssignmentCommand, CreateProjectTaskBoardItemCommand,
-    InsertTaskRoutingEvent, SetBoardItemPendingApprovalCommand,
-    SetBoardItemPendingQuestionCommand, build_task_routing_summary,
+    InsertTaskRoutingEvent, SetBoardItemPendingApprovalCommand, SetBoardItemPendingQuestionCommand,
+    build_task_routing_summary,
 };
 use common::HasDbRouter;
 use common::ResultExt;
@@ -145,12 +145,11 @@ pub async fn answer_project_task_board_item_question(
     // The renderer (conversation.rs) pairs ClarificationResponse → ClarificationRequest
     // by request_message_id. Without it the answer is dropped and the agent
     // keeps seeing "Pending".
-    let request_message_id = queries::GetLatestPendingClarificationOnThreadQuery::new(
-        pending.asked_by_thread_id,
-    )
-    .execute_with_db(app_state.db_router.writer())
-    .await?
-    .map(|row| row.id);
+    let request_message_id =
+        queries::GetLatestPendingClarificationOnThreadQuery::new(pending.asked_by_thread_id)
+            .execute_with_db(app_state.db_router.writer())
+            .await?
+            .map(|row| row.id);
 
     let freeform_text = submission.freeform_trimmed();
     let answers_json =

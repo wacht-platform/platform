@@ -154,6 +154,9 @@ fn parse_json_array<T: DeserializeOwned>(value: Option<serde_json::Value>) -> Ve
 pub struct GetApiAuthAppsQuery {
     pub deployment_id: i64,
     pub include_inactive: bool,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    pub search: Option<String>,
 }
 
 impl GetApiAuthAppsQuery {
@@ -161,6 +164,9 @@ impl GetApiAuthAppsQuery {
         Self {
             deployment_id,
             include_inactive: false,
+            limit: None,
+            offset: None,
+            search: None,
         }
     }
 
@@ -169,16 +175,34 @@ impl GetApiAuthAppsQuery {
         self
     }
 
+    pub fn with_pagination(mut self, limit: Option<i64>, offset: Option<i64>) -> Self {
+        self.limit = limit;
+        self.offset = offset;
+        self
+    }
+
+    pub fn with_search(mut self, search: Option<String>) -> Self {
+        self.search = search.filter(|s| !s.trim().is_empty());
+        self
+    }
+
     pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<ApiAuthApp>, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
+        let limit = self.limit.unwrap_or(50);
+        let offset = self.offset.unwrap_or(0);
+
         let rows = sqlx::query(&api_auth_app_base_query(
-            "a.deployment_id = $1 AND a.deleted_at IS NULL AND ($2 OR a.is_active = true)",
-            "ORDER BY a.created_at DESC",
+            "a.deployment_id = $1 AND a.deleted_at IS NULL AND ($2 OR a.is_active = true) \
+             AND ($3::text IS NULL OR a.app_slug = $3)",
+            "ORDER BY a.created_at DESC LIMIT $4 OFFSET $5",
         ))
         .bind(self.deployment_id)
         .bind(self.include_inactive)
+        .bind(&self.search)
+        .bind(limit + 1)
+        .bind(offset)
         .fetch_all(executor)
         .await?;
 

@@ -1,6 +1,9 @@
 use axum::extract::{Json, Path, Query, State};
 
-use crate::application::{api_key_app as api_key_app_app, response::ApiResult};
+use crate::application::{
+    api_key_app as api_key_app_app,
+    response::{ApiResult, PaginatedResponse},
+};
 use crate::middleware::{AppSlugParams, RequireDeployment};
 use common::state::AppState;
 use dto::json::api_key::*;
@@ -10,7 +13,7 @@ pub async fn list_api_auth_apps(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<ListApiAuthAppsQuery>,
-) -> ApiResult<ListApiAuthAppsResponse> {
+) -> ApiResult<PaginatedResponse<ApiAuthApp>> {
     let apps = api_key_app_app::list_api_auth_apps(&app_state, deployment_id, params).await?;
     Ok(apps.into())
 }
