@@ -8,8 +8,23 @@ use axum::{
 };
 use common::{db_router::ReadConsistency, state::AppState};
 use models::Actor;
-use queries::agent_thread_model::GetActorByExternalKeyQuery;
+use queries::agent_thread_model::{GetActorByExternalKeyQuery, ListActorsQuery};
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize)]
+pub struct ListActorsResponse {
+    pub actors: Vec<Actor>,
+}
+
+pub async fn list_actors(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+) -> ApiResult<ListActorsResponse> {
+    let actors = ListActorsQuery::new(deployment_id)
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
+        .await?;
+    Ok(ListActorsResponse { actors }.into())
+}
 
 #[derive(Debug, Deserialize)]
 pub struct CreateActorRequest {

@@ -50,9 +50,9 @@ fn otlp_headers() -> HashMap<String, String> {
 }
 
 pub fn init_telemetry(service_name: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // TEMP DEBUG: silence the log flood so feedback println! traces stand out.
-    // Revert to: EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
-    let env_filter = EnvFilter::new("error").add_directive("rmcp=off".parse()?);
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"))
+        .add_directive("rmcp=off".parse()?);
 
     let fmt_layer = fmt::layer().with_target(true).with_thread_ids(true);
     let registry = tracing_subscriber::registry()

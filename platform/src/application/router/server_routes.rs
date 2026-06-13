@@ -97,6 +97,7 @@ pub(super) fn backend_specific_routes() -> Router<AppState> {
             post(api::session_tickets::create_backend_session_ticket),
         )
         .route("/ai/actors", post(api::actors::create_actor))
+        .route("/ai/actors", get(api::actors::list_actors))
         .route("/ai/actors/lookup", get(api::actors::lookup_actor))
         .route("/webhooks/apps", get(api::webhook::list_webhook_apps))
         .route("/webhooks/apps", post(api::webhook::create_webhook_app))

@@ -98,15 +98,6 @@ impl AgentExecutor {
         } else {
             Vec::new()
         };
-        // TEMP DEBUG
-        println!(
-            "🔴FEEDBACK completion_guard thread_id={} board_item_id={:?} role={:?} is_coordinator={} blocking_ids={:?}",
-            self.ctx.thread_id,
-            self.current_board_item_id(),
-            self.current_thread_role(),
-            self.is_coordinator_thread,
-            unresolved_ids
-        );
         if !unresolved_ids.is_empty() {
             let ids_csv = unresolved_ids
                 .iter()
