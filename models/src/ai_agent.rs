@@ -84,6 +84,10 @@ pub struct AiAgent {
     pub tool_approval_rules: Vec<AgentToolApprovalRule>,
     #[serde(default)]
     pub limits: AgentLimits,
+    /// Names of built-in (internal) tools disabled for this agent. Empty = all
+    /// internal tools enabled.
+    #[serde(default)]
+    pub disabled_internal_tools: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -121,6 +125,10 @@ pub struct AiAgentWithDetails {
     pub tool_approval_rules: Vec<AgentToolApprovalRule>,
     #[serde(default)]
     pub limits: AgentLimits,
+    /// Names of built-in (internal) tools disabled for this agent. Empty = all
+    /// internal tools enabled.
+    #[serde(default)]
+    pub disabled_internal_tools: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -158,4 +166,8 @@ pub struct AiAgentWithFeatures {
     pub tool_approval_rules: Vec<AgentToolApprovalRule>,
     #[serde(default)]
     pub limits: AgentLimits,
+    /// Names of built-in (internal) tools disabled for this agent. Empty = all
+    /// internal tools enabled.
+    #[serde(default)]
+    pub disabled_internal_tools: Vec<String>,
 }

@@ -288,6 +288,14 @@ impl AgentExecutorBuilder {
             .map(|approval| approval.tool_id)
             .collect::<HashSet<_>>();
 
+        // Per-agent denylist of built-in tools (empty = all enabled).
+        let disabled_internal: HashSet<&str> = ctx
+            .agent
+            .disabled_internal_tools
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+
         let internal_tools = super::tools::definitions::internal_tools();
         let mut current_tools = ctx
             .agent
@@ -298,6 +306,9 @@ impl AgentExecutorBuilder {
                 if tool.tool_type != AiToolType::Internal {
                     return true;
                 }
+                if disabled_internal.contains(tool.name.as_str()) {
+                    return false;
+                }
                 Self::should_inject_internal_tool(
                     is_coordinator_thread,
                     is_service_thread,
@@ -306,6 +317,9 @@ impl AgentExecutorBuilder {
             })
             .collect::<Vec<_>>();
         for (name, desc, tool_type, schema) in internal_tools {
+            if disabled_internal.contains(name) {
+                continue;
+            }
             if !Self::should_inject_internal_tool(is_coordinator_thread, is_service_thread, name) {
                 continue;
             }

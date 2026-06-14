@@ -28,6 +28,7 @@ struct AiAgentDetailsRow {
     require_approval_mcp: bool,
     require_approval_virtual: bool,
     tool_approval_rules: Json<Vec<AgentToolApprovalRule>>,
+    disabled_internal_tools: Json<Vec<String>>,
     sub_agents: serde_json::Value,
     tools_count: i64,
     knowledge_bases_count: i64,
@@ -54,6 +55,7 @@ struct AiAgentFeaturesRow {
     require_approval_mcp: bool,
     require_approval_virtual: bool,
     tool_approval_rules: Json<Vec<AgentToolApprovalRule>>,
+    disabled_internal_tools: Json<Vec<String>>,
     sub_agents: serde_json::Value,
     tools: serde_json::Value,
     knowledge_bases: serde_json::Value,
@@ -89,6 +91,7 @@ fn map_details_row(row: AiAgentDetailsRow) -> Result<AiAgentWithDetails, AppErro
         require_approval_virtual: row.require_approval_virtual,
         tool_approval_rules: row.tool_approval_rules.0,
         limits: row.limits.0,
+        disabled_internal_tools: row.disabled_internal_tools.0,
     })
 }
 
@@ -174,6 +177,7 @@ impl GetAiAgentsQuery {
                     a.require_approval_mcp,
                     a.require_approval_virtual,
                     a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+                    a.disabled_internal_tools as "disabled_internal_tools!: Json<Vec<String>>",
                     COALESCE((
                         SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                         FROM ai_agent_sub_agents rel
@@ -217,6 +221,7 @@ impl GetAiAgentsQuery {
                     a.require_approval_mcp,
                     a.require_approval_virtual,
                     a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+                    a.disabled_internal_tools as "disabled_internal_tools!: Json<Vec<String>>",
                     COALESCE((
                         SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                         FROM ai_agent_sub_agents rel
@@ -278,6 +283,7 @@ impl GetAiAgentByIdQuery {
                 a.require_approval_mcp,
                 a.require_approval_virtual,
                 a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+                a.disabled_internal_tools as "disabled_internal_tools!: Json<Vec<String>>",
                 COALESCE((
                     SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                     FROM ai_agent_sub_agents rel
@@ -339,6 +345,7 @@ impl GetAiAgentsByIdsQuery {
                 a.require_approval_mcp,
                 a.require_approval_virtual,
                 a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+                a.disabled_internal_tools as "disabled_internal_tools!: Json<Vec<String>>",
                 COALESCE((
                     SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                     FROM ai_agent_sub_agents rel
@@ -395,6 +402,7 @@ impl GetAiAgentByIdWithFeatures {
                 a.require_approval_mcp,
                 a.require_approval_virtual,
                 a.tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+                a.disabled_internal_tools as "disabled_internal_tools!: Json<Vec<String>>",
                 COALESCE((
                     SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)
                     FROM ai_agent_sub_agents rel
@@ -484,6 +492,7 @@ impl GetAiAgentByIdWithFeatures {
             require_approval_virtual: row.require_approval_virtual,
             tool_approval_rules: row.tool_approval_rules.0,
             limits: row.limits.0,
+            disabled_internal_tools: row.disabled_internal_tools.0,
         })
     }
 }

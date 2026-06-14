@@ -49,6 +49,8 @@ pub struct AgentDetailsResponse {
     #[serde(default)]
     pub hooks: models::AgentHooksConfig,
     pub limits: models::AgentLimits,
+    #[serde(default)]
+    pub disabled_internal_tools: Vec<String>,
 }
 
 pub async fn get_ai_agents(
@@ -111,6 +113,9 @@ pub async fn create_ai_agent(
     if let Some(rules) = request.tool_approval_rules {
         command = command.with_tool_approval_rules(rules);
     }
+    if let Some(tools) = request.disabled_internal_tools {
+        command = command.with_disabled_internal_tools(tools);
+    }
     command.execute_with_deps(&db_deps).await
 }
 
@@ -154,6 +159,7 @@ pub async fn get_ai_agent_details(
         tool_approval_rules: agent.tool_approval_rules,
         hooks: agent.hooks,
         limits: agent.limits,
+        disabled_internal_tools: agent.disabled_internal_tools,
     })
 }
 
@@ -203,6 +209,9 @@ pub async fn update_ai_agent(
     }
     if let Some(rules) = request.tool_approval_rules {
         command = command.with_tool_approval_rules(rules);
+    }
+    if let Some(tools) = request.disabled_internal_tools {
+        command = command.with_disabled_internal_tools(tools);
     }
     command.execute_with_deps(&db_deps).await
 }

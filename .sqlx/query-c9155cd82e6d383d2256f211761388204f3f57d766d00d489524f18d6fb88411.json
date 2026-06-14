@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT\n                    a.id, a.created_at, a.updated_at, a.name, a.description,\n                    a.deployment_id,\n                    a.reviewer_agent_id,\n                    a.conversation_agent_id,\n                    a.strong_model_provider, a.strong_model, a.strong_model_profile_id,\n                    a.weak_model_provider, a.weak_model, a.weak_model_profile_id,\n                    a.hooks as \"hooks!: Json<AgentHooksConfig>\",\n                    a.limits as \"limits!: Json<AgentLimits>\",\n                    a.require_approval_mcp,\n                    a.require_approval_virtual,\n                    a.tool_approval_rules as \"tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>\",\n                    COALESCE((\n                        SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)\n                        FROM ai_agent_sub_agents rel\n                        WHERE rel.deployment_id = a.deployment_id\n                            AND rel.agent_id = a.id\n                    ), '[]'::jsonb) as \"sub_agents!: serde_json::Value\",\n                    COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as \"tools_count!\",\n                    COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as \"knowledge_bases_count!\"\n                FROM ai_agents a\n                WHERE a.deployment_id = $1\n                ORDER BY a.created_at DESC\n                LIMIT $2 OFFSET $3\n                ",
+  "query": "\n            SELECT\n                a.id, a.created_at, a.updated_at, a.name, a.description,\n                a.deployment_id,\n                a.reviewer_agent_id,\n                a.conversation_agent_id,\n                a.strong_model_provider, a.strong_model, a.strong_model_profile_id,\n                a.weak_model_provider, a.weak_model, a.weak_model_profile_id,\n                a.hooks as \"hooks!: Json<AgentHooksConfig>\",\n                    a.limits as \"limits!: Json<AgentLimits>\",\n                a.require_approval_mcp,\n                a.require_approval_virtual,\n                a.tool_approval_rules as \"tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>\",\n                a.disabled_internal_tools as \"disabled_internal_tools!: Json<Vec<String>>\",\n                COALESCE((\n                    SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)\n                    FROM ai_agent_sub_agents rel\n                    WHERE rel.deployment_id = a.deployment_id\n                        AND rel.agent_id = a.id\n                ), '[]'::jsonb) as \"sub_agents!: serde_json::Value\",\n                COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as \"tools_count!\",\n                COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as \"knowledge_bases_count!\"\n            FROM ai_agents a\n            WHERE a.id = $1 AND a.deployment_id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -100,23 +100,27 @@
       },
       {
         "ordinal": 19,
-        "name": "sub_agents!: serde_json::Value",
+        "name": "disabled_internal_tools!: Json<Vec<String>>",
         "type_info": "Jsonb"
       },
       {
         "ordinal": 20,
+        "name": "sub_agents!: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 21,
         "name": "tools_count!",
         "type_info": "Int8"
       },
       {
-        "ordinal": 21,
+        "ordinal": 22,
         "name": "knowledge_bases_count!",
         "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
         "Int8",
         "Int8"
       ]
@@ -141,10 +145,11 @@
       false,
       false,
       false,
+      false,
       null,
       null,
       null
     ]
   },
-  "hash": "ba87a631bfa76f4d5c55cefb248fc2a83501cdbd6c0ce7bd3f100ccd3e4e7472"
+  "hash": "c9155cd82e6d383d2256f211761388204f3f57d766d00d489524f18d6fb88411"
 }

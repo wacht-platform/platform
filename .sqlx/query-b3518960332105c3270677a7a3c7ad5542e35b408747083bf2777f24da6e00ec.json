@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT\n                    a.id, a.created_at, a.updated_at, a.name, a.description,\n                    a.deployment_id,\n                    a.reviewer_agent_id,\n                    a.conversation_agent_id,\n                    a.strong_model_provider, a.strong_model, a.strong_model_profile_id,\n                    a.weak_model_provider, a.weak_model, a.weak_model_profile_id,\n                    a.hooks as \"hooks!: Json<AgentHooksConfig>\",\n                    a.limits as \"limits!: Json<AgentLimits>\",\n                    a.require_approval_mcp,\n                    a.require_approval_virtual,\n                    a.tool_approval_rules as \"tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>\",\n                    COALESCE((\n                        SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)\n                        FROM ai_agent_sub_agents rel\n                        WHERE rel.deployment_id = a.deployment_id\n                            AND rel.agent_id = a.id\n                    ), '[]'::jsonb) as \"sub_agents!: serde_json::Value\",\n                    COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as \"tools_count!\",\n                    COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as \"knowledge_bases_count!\"\n                FROM ai_agents a\n                WHERE a.deployment_id = $1\n                    AND (a.name ILIKE $2 OR a.description ILIKE $2)\n                ORDER BY a.created_at DESC\n                LIMIT $3 OFFSET $4\n                ",
+  "query": "\n            SELECT\n                a.id, a.created_at, a.updated_at, a.name, a.description,\n                a.deployment_id,\n                a.reviewer_agent_id,\n                a.conversation_agent_id,\n                a.strong_model_provider, a.strong_model, a.strong_model_profile_id,\n                a.weak_model_provider, a.weak_model, a.weak_model_profile_id,\n                a.hooks as \"hooks!: Json<AgentHooksConfig>\",\n                    a.limits as \"limits!: Json<AgentLimits>\",\n                a.require_approval_mcp,\n                a.require_approval_virtual,\n                a.tool_approval_rules as \"tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>\",\n                a.disabled_internal_tools as \"disabled_internal_tools!: Json<Vec<String>>\",\n                COALESCE((\n                    SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)\n                    FROM ai_agent_sub_agents rel\n                    WHERE rel.deployment_id = a.deployment_id\n                        AND rel.agent_id = a.id\n                ), '[]'::jsonb) as \"sub_agents!: serde_json::Value\",\n                COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as \"tools_count!\",\n                COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as \"knowledge_bases_count!\"\n            FROM ai_agents a\n            WHERE a.deployment_id = $1\n              AND a.id = ANY($2::bigint[])\n            ORDER BY a.name ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -100,16 +100,21 @@
       },
       {
         "ordinal": 19,
-        "name": "sub_agents!: serde_json::Value",
+        "name": "disabled_internal_tools!: Json<Vec<String>>",
         "type_info": "Jsonb"
       },
       {
         "ordinal": 20,
+        "name": "sub_agents!: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 21,
         "name": "tools_count!",
         "type_info": "Int8"
       },
       {
-        "ordinal": 21,
+        "ordinal": 22,
         "name": "knowledge_bases_count!",
         "type_info": "Int8"
       }
@@ -117,9 +122,7 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Text",
-        "Int8",
-        "Int8"
+        "Int8Array"
       ]
     },
     "nullable": [
@@ -142,10 +145,11 @@
       false,
       false,
       false,
+      false,
       null,
       null,
       null
     ]
   },
-  "hash": "609f8876164f6f6eb4a1d64c3faa6a21314935b94c05dc68eca735fc6005c5b9"
+  "hash": "b3518960332105c3270677a7a3c7ad5542e35b408747083bf2777f24da6e00ec"
 }

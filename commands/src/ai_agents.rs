@@ -27,6 +27,7 @@ pub struct CreateAiAgentCommand {
     pub require_approval_mcp: Option<bool>,
     pub require_approval_virtual: Option<bool>,
     pub tool_approval_rules: Option<Vec<AgentToolApprovalRule>>,
+    pub disabled_internal_tools: Option<Vec<String>>,
 }
 
 impl CreateAiAgentCommand {
@@ -46,6 +47,7 @@ impl CreateAiAgentCommand {
             require_approval_mcp: None,
             require_approval_virtual: None,
             tool_approval_rules: None,
+            disabled_internal_tools: None,
         }
     }
 
@@ -98,6 +100,11 @@ impl CreateAiAgentCommand {
         self.tool_approval_rules = Some(rules);
         self
     }
+
+    pub fn with_disabled_internal_tools(mut self, tools: Vec<String>) -> Self {
+        self.disabled_internal_tools = Some(tools);
+        self
+    }
 }
 
 impl CreateAiAgentCommand {
@@ -144,6 +151,8 @@ impl CreateAiAgentCommand {
         let require_approval_mcp = self.require_approval_mcp.unwrap_or(false);
         let require_approval_virtual = self.require_approval_virtual.unwrap_or(false);
         let approval_rules_value = Json(self.tool_approval_rules.clone().unwrap_or_default());
+        let disabled_internal_tools_value =
+            Json(self.disabled_internal_tools.clone().unwrap_or_default());
 
         let mut tx = deps
             .db_router()
@@ -167,9 +176,10 @@ impl CreateAiAgentCommand {
                 id, created_at, updated_at, name, description, deployment_id,
                 strong_model_provider, strong_model, strong_model_profile_id,
                 weak_model_provider, weak_model, weak_model_profile_id, hooks,
-                require_approval_mcp, require_approval_virtual, tool_approval_rules, limits
+                require_approval_mcp, require_approval_virtual, tool_approval_rules, limits,
+                disabled_internal_tools
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             RETURNING id, created_at, updated_at, name, description, deployment_id,
                       strong_model_provider, strong_model, strong_model_profile_id,
                       weak_model_provider, weak_model, weak_model_profile_id,
@@ -177,7 +187,8 @@ impl CreateAiAgentCommand {
                       require_approval_mcp,
                       require_approval_virtual,
                       tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
-                      limits as "limits!: Json<AgentLimits>"
+                      limits as "limits!: Json<AgentLimits>",
+                      disabled_internal_tools as "disabled_internal_tools!: Json<Vec<String>>"
             "#,
             agent_id,
             now,
@@ -196,6 +207,7 @@ impl CreateAiAgentCommand {
             require_approval_virtual,
             approval_rules_value as _,
             limits_value as _,
+            disabled_internal_tools_value as _,
         )
         .fetch_one(&mut *tx)
         .await
@@ -236,6 +248,7 @@ impl CreateAiAgentCommand {
             require_approval_virtual: agent.require_approval_virtual,
             tool_approval_rules: agent.tool_approval_rules.0,
             limits: agent.limits.0,
+            disabled_internal_tools: agent.disabled_internal_tools.0,
         })
     }
 }
@@ -256,6 +269,7 @@ pub struct UpdateAiAgentCommand {
     pub require_approval_mcp: Option<bool>,
     pub require_approval_virtual: Option<bool>,
     pub tool_approval_rules: Option<Vec<AgentToolApprovalRule>>,
+    pub disabled_internal_tools: Option<Vec<String>>,
 }
 
 impl UpdateAiAgentCommand {
@@ -276,6 +290,7 @@ impl UpdateAiAgentCommand {
             require_approval_mcp: None,
             require_approval_virtual: None,
             tool_approval_rules: None,
+            disabled_internal_tools: None,
         }
     }
 
@@ -347,6 +362,11 @@ impl UpdateAiAgentCommand {
         self.tool_approval_rules = Some(rules);
         self
     }
+
+    pub fn with_disabled_internal_tools(mut self, tools: Vec<String>) -> Self {
+        self.disabled_internal_tools = Some(tools);
+        self
+    }
 }
 
 impl UpdateAiAgentCommand {
@@ -400,6 +420,7 @@ impl UpdateAiAgentCommand {
         let require_approval_mcp = self.require_approval_mcp;
         let require_approval_virtual = self.require_approval_virtual;
         let approval_rules_value = self.tool_approval_rules.clone().map(Json);
+        let disabled_internal_tools_value = self.disabled_internal_tools.clone().map(Json);
 
         let mut tx = deps
             .db_router()
@@ -458,7 +479,8 @@ impl UpdateAiAgentCommand {
                 require_approval_mcp = COALESCE($15, require_approval_mcp),
                 require_approval_virtual = COALESCE($16, require_approval_virtual),
                 tool_approval_rules = COALESCE($17, tool_approval_rules),
-                limits = COALESCE($18, limits)
+                limits = COALESCE($18, limits),
+                disabled_internal_tools = COALESCE($19, disabled_internal_tools)
             WHERE id = $4 AND deployment_id = $5
             RETURNING id, created_at, updated_at, name, description, deployment_id,
                       strong_model_provider, strong_model, strong_model_profile_id,
@@ -467,7 +489,8 @@ impl UpdateAiAgentCommand {
                       require_approval_mcp,
                       require_approval_virtual,
                       tool_approval_rules as "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
-                      limits as "limits!: Json<AgentLimits>"
+                      limits as "limits!: Json<AgentLimits>",
+                      disabled_internal_tools as "disabled_internal_tools!: Json<Vec<String>>"
             "#,
             now,
             self.name,
@@ -487,6 +510,7 @@ impl UpdateAiAgentCommand {
             require_approval_virtual,
             approval_rules_value as _,
             limits_value as _,
+            disabled_internal_tools_value as _,
         )
         .fetch_one(&mut *tx)
         .await
@@ -526,6 +550,7 @@ impl UpdateAiAgentCommand {
             require_approval_virtual: agent.require_approval_virtual,
             tool_approval_rules: agent.tool_approval_rules.0,
             limits: agent.limits.0,
+            disabled_internal_tools: agent.disabled_internal_tools.0,
         })
     }
 }

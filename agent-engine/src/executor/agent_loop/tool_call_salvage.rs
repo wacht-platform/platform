@@ -125,6 +125,23 @@ fn salvage_qwen_xml(text: &str) -> Vec<GeneratedToolCall> {
     calls
 }
 
+/// XML/GLM parameter values arrive as raw strings, but some tools expect
+/// structured arguments (e.g. an array or object parameter such as
+/// `ask_user.questions`). Coerce values that look like JSON to the real thing so
+/// downstream schema validation passes; anything else stays a string. Mirrors the
+/// snippet harness fix for the same leak shape.
+fn coerce_value(raw: &str) -> Value {
+    let trimmed = raw.trim();
+    let looks_json = (trimmed.starts_with('[') && trimmed.ends_with(']'))
+        || (trimmed.starts_with('{') && trimmed.ends_with('}'));
+    if looks_json {
+        if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
+            return value;
+        }
+    }
+    Value::String(trimmed.to_string())
+}
+
 fn parse_xml_parameters(region: &str) -> Map<String, Value> {
     const DELIMS: [&str; 4] = ["</parameter>", "<parameter=", "</function>", "</tool_call>"];
     let mut args = Map::new();
@@ -149,7 +166,7 @@ fn parse_xml_parameters(region: &str) -> Map<String, Value> {
             .min()
             .unwrap_or(rest.len());
         if !key.is_empty() {
-            args.insert(key, Value::String(rest[..value_end].trim().to_string()));
+            args.insert(key, coerce_value(&rest[..value_end]));
         }
         cursor = value_start + value_end;
     }
@@ -191,10 +208,7 @@ fn salvage_glm(text: &str) -> Vec<GeneratedToolCall> {
             .map(|i| val_start + i)
             .unwrap_or(text.len());
         if !key.is_empty() {
-            args.insert(
-                key,
-                Value::String(text[val_start..val_end].trim().to_string()),
-            );
+            args.insert(key, coerce_value(&text[val_start..val_end]));
         }
         cursor = val_end;
     }

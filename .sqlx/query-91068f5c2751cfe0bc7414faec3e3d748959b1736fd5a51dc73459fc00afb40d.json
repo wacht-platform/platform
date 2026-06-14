@@ -1,0 +1,154 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                a.id,\n                a.created_at,\n                a.updated_at,\n                a.description,\n                a.name,\n                a.deployment_id,\n                a.reviewer_agent_id,\n                a.conversation_agent_id,\n                a.strong_model_provider, a.strong_model, a.strong_model_profile_id,\n                a.weak_model_provider, a.weak_model, a.weak_model_profile_id,\n                a.hooks as \"hooks!: Json<AgentHooksConfig>\",\n                    a.limits as \"limits!: Json<AgentLimits>\",\n                a.require_approval_mcp,\n                a.require_approval_virtual,\n                a.tool_approval_rules as \"tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>\",\n                a.disabled_internal_tools as \"disabled_internal_tools!: Json<Vec<String>>\",\n                COALESCE((\n                    SELECT jsonb_agg(rel.sub_agent_id ORDER BY rel.sub_agent_id)\n                    FROM ai_agent_sub_agents rel\n                    WHERE rel.deployment_id = a.deployment_id\n                        AND rel.agent_id = a.id\n                ), '[]'::jsonb) as \"sub_agents!: serde_json::Value\",\n                tools.list as \"tools!: serde_json::Value\",\n                knowledge_bases.list as \"knowledge_bases!: serde_json::Value\"\n            FROM ai_agents a\n            LEFT JOIN LATERAL (\n                SELECT COALESCE(jsonb_agg(\n                    jsonb_build_object(\n                        'id', t.id::text,\n                        'created_at', t.created_at,\n                        'updated_at', t.updated_at,\n                        'name', t.name,\n                        'description', t.description,\n                        'tool_type', t.tool_type,\n                        'deployment_id', t.deployment_id::text,\n                        'approval_action', at.approval_action,\n                        'configuration', t.configuration\n                    )\n                ), '[]'::jsonb) as list\n                FROM ai_tools t\n                JOIN ai_agent_tools at ON at.tool_id = t.id\n                WHERE t.deployment_id = a.deployment_id\n                    AND at.agent_id = a.id\n                    AND at.deployment_id = a.deployment_id\n            ) tools ON true\n            LEFT JOIN LATERAL (\n                SELECT COALESCE(jsonb_agg(\n                    jsonb_build_object(\n                        'id', kb.id::text,\n                        'created_at', kb.created_at,\n                        'updated_at', kb.updated_at,\n                        'name', kb.name,\n                        'description', kb.description,\n                        'deployment_id', kb.deployment_id::text\n                        ,'configuration', kb.configuration\n                    )\n                ), '[]'::jsonb) as list\n                FROM ai_knowledge_bases kb\n                JOIN ai_agent_knowledge_bases ak ON ak.knowledge_base_id = kb.id\n                WHERE kb.deployment_id = a.deployment_id\n                    AND ak.agent_id = a.id\n                    AND ak.deployment_id = a.deployment_id\n            ) knowledge_bases ON true\n            WHERE a.id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "reviewer_agent_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "conversation_agent_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "strong_model_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "strong_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "strong_model_profile_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "weak_model_provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "weak_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "weak_model_profile_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
+        "name": "hooks!: Json<AgentHooksConfig>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 15,
+        "name": "limits!: Json<AgentLimits>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 16,
+        "name": "require_approval_mcp",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 17,
+        "name": "require_approval_virtual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 18,
+        "name": "tool_approval_rules!: Json<Vec<AgentToolApprovalRule>>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 19,
+        "name": "disabled_internal_tools!: Json<Vec<String>>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 20,
+        "name": "sub_agents!: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 21,
+        "name": "tools!: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 22,
+        "name": "knowledge_bases!: serde_json::Value",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "91068f5c2751cfe0bc7414faec3e3d748959b1736fd5a51dc73459fc00afb40d"
+}

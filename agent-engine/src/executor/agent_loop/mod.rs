@@ -1026,19 +1026,28 @@ impl AgentExecutor {
             // excised; drop residual that still looks like markup so no fragment
             // streams to the user or invites imitation.
             let healed = tool_call_salvage::salvage(&leaked);
-            output.content_text = healed.residual_text.filter(|t| !detect_leaked_tool_call(t));
-            for mut call in healed.calls {
-                let canonical = dto::json::tool_calls::canonical_tool_name(&call.tool_name);
-                if canonical != call.tool_name {
-                    call.tool_name = canonical.to_string();
+            // Only heal when the markup is the dominant content. A long prose reply that
+            // merely describes tool syntax leaves a large residual — keep it whole.
+            let residual_len = healed
+                .residual_text
+                .as_deref()
+                .map(|t| t.trim().chars().count())
+                .unwrap_or(0);
+            if residual_len <= 240 {
+                output.content_text = healed.residual_text.filter(|t| !detect_leaked_tool_call(t));
+                for mut call in healed.calls {
+                    let canonical = dto::json::tool_calls::canonical_tool_name(&call.tool_name);
+                    if canonical != call.tool_name {
+                        call.tool_name = canonical.to_string();
+                    }
+                    output.calls.push(call);
                 }
-                output.calls.push(call);
-            }
-            // Tier 2: nothing recoverable and nothing else ran — reject the turn
-            // and re-prompt cleanly (no message back, to avoid imitation).
-            if output.calls.is_empty() && output.content_text.is_none() {
-                self.note_unproductive_turn();
-                return Ok(true);
+                // Tier 2: nothing recoverable and nothing else ran — reject the turn
+                // and re-prompt cleanly (no message back, to avoid imitation).
+                if output.calls.is_empty() && output.content_text.is_none() {
+                    self.note_unproductive_turn();
+                    return Ok(true);
+                }
             }
         }
 

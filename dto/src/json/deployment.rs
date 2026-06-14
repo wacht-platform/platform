@@ -20,6 +20,8 @@ pub struct CreateAgentRequest {
     pub require_approval_mcp: Option<bool>,
     pub require_approval_virtual: Option<bool>,
     pub tool_approval_rules: Option<Vec<AgentToolApprovalRule>>,
+    /// Built-in tool names to disable for this agent (empty = all enabled).
+    pub disabled_internal_tools: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -40,6 +42,8 @@ pub struct UpdateAgentRequest {
     pub require_approval_mcp: Option<bool>,
     pub require_approval_virtual: Option<bool>,
     pub tool_approval_rules: Option<Vec<AgentToolApprovalRule>>,
+    /// Built-in tool names to disable for this agent (empty = all enabled).
+    pub disabled_internal_tools: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
