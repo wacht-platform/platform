@@ -75,6 +75,9 @@ impl GetActorByIdQuery {
 pub struct ListActorsQuery {
     pub deployment_id: i64,
     pub include_archived: bool,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    pub search: Option<String>,
 }
 
 impl ListActorsQuery {
@@ -82,6 +85,9 @@ impl ListActorsQuery {
         Self {
             deployment_id,
             include_archived: false,
+            limit: None,
+            offset: None,
+            search: None,
         }
     }
 
@@ -90,37 +96,44 @@ impl ListActorsQuery {
         self
     }
 
+    pub fn with_pagination(mut self, limit: Option<i64>, offset: Option<i64>) -> Self {
+        self.limit = limit;
+        self.offset = offset;
+        self
+    }
+
+    pub fn with_search(mut self, search: Option<String>) -> Self {
+        self.search = search.filter(|s| !s.trim().is_empty());
+        self
+    }
+
     pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<Actor>, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let rows = if self.include_archived {
-            sqlx::query_as!(
-                Actor,
-                r#"
-                SELECT id, deployment_id, subject_type, external_key, display_name, metadata, created_at, updated_at, archived_at
-                FROM actors
-                WHERE deployment_id = $1
-                ORDER BY created_at DESC
-                "#,
-                self.deployment_id,
-            )
-            .fetch_all(executor)
-            .await?
-        } else {
-            sqlx::query_as!(
-                Actor,
-                r#"
-                SELECT id, deployment_id, subject_type, external_key, display_name, metadata, created_at, updated_at, archived_at
-                FROM actors
-                WHERE deployment_id = $1 AND archived_at IS NULL
-                ORDER BY created_at DESC
-                "#,
-                self.deployment_id,
-            )
-            .fetch_all(executor)
-            .await?
-        };
+        let limit = self.limit.unwrap_or(50);
+        let offset = self.offset.unwrap_or(0);
+
+        let rows = sqlx::query_as::<_, Actor>(
+            r#"
+            SELECT id, deployment_id, subject_type, external_key, display_name, metadata, created_at, updated_at, archived_at
+            FROM actors
+            WHERE deployment_id = $1
+              AND ($2 OR archived_at IS NULL)
+              AND ($3::text IS NULL
+                   OR display_name ILIKE '%' || $3 || '%'
+                   OR external_key ILIKE '%' || $3 || '%')
+            ORDER BY created_at DESC
+            LIMIT $4 OFFSET $5
+            "#,
+        )
+        .bind(self.deployment_id)
+        .bind(self.include_archived)
+        .bind(&self.search)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(executor)
+        .await?;
 
         Ok(rows)
     }

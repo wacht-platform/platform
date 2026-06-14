@@ -1,5 +1,9 @@
 use crate::{
-    application::{actors as actors_app, response::ApiResult},
+    api::pagination::paginate_results,
+    application::{
+        actors as actors_app,
+        response::{ApiResult, PaginatedResponse},
+    },
     middleware::RequireDeployment,
 };
 use axum::{
@@ -11,19 +15,34 @@ use models::Actor;
 use queries::agent_thread_model::{GetActorByExternalKeyQuery, ListActorsQuery};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
-pub struct ListActorsResponse {
-    pub actors: Vec<Actor>,
+#[derive(Debug, Deserialize)]
+pub struct ListActorsParams {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    pub search: Option<String>,
+    pub include_archived: Option<bool>,
 }
 
 pub async fn list_actors(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-) -> ApiResult<ListActorsResponse> {
-    let actors = ListActorsQuery::new(deployment_id)
+    Query(params): Query<ListActorsParams>,
+) -> ApiResult<PaginatedResponse<Actor>> {
+    let limit = params.limit.unwrap_or(50);
+    let offset = params.offset.unwrap_or(0);
+
+    let mut query = ListActorsQuery::new(deployment_id)
+        .with_pagination(Some(limit + 1), Some(offset))
+        .with_search(params.search);
+    if params.include_archived.unwrap_or(false) {
+        query = query.include_archived();
+    }
+
+    let actors = query
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
         .await?;
-    Ok(ListActorsResponse { actors }.into())
+
+    Ok(paginate_results(actors, limit as i32, Some(offset)).into())
 }
 
 #[derive(Debug, Deserialize)]

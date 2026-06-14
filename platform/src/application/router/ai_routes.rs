@@ -170,6 +170,7 @@ pub(super) fn ai_routes() -> Router<AppState> {
                 .patch(api::ai_settings::update_ai_provider_profile)
                 .delete(api::ai_settings::delete_ai_provider_profile),
         )
+        .route("/ai/actors", get(api::actors::list_actors))
         .route(
             "/ai/actor-projects",
             get(api::agent_threads::list_actor_projects_flat)
