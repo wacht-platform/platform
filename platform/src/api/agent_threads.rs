@@ -86,6 +86,8 @@ pub struct ThreadMessagesQuery {
     pub limit: Option<i64>,
     pub before_id: Option<i64>,
     pub after_id: Option<i64>,
+    /// Scope messages to a single task (board item). Omit = whole thread.
+    pub board_item_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -1187,6 +1189,7 @@ pub async fn get_agent_thread_messages(
         query.limit.unwrap_or(50),
         query.before_id,
         query.after_id,
+        query.board_item_id,
     )
     .await?;
     Ok(ListMessagesResponse {

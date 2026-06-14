@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, thread_id, board_item_id, execution_run_id, timestamp,\n                   content, message_type, created_at, updated_at, metadata\n            FROM conversations\n            WHERE thread_id = $1\n              AND message_type <> 'task_subscription_notification'\n              AND ($2::bigint IS NULL OR id < $2)\n              AND ($3::bigint IS NULL OR id > $3)\n            ORDER BY\n              CASE WHEN $3::bigint IS NOT NULL THEN id END ASC,\n              CASE WHEN $3::bigint IS NULL THEN id END DESC\n            LIMIT $4\n            ",
+  "query": "\n            SELECT id, thread_id, board_item_id, execution_run_id, timestamp,\n                   content, message_type, created_at, updated_at, metadata\n            FROM conversations\n            WHERE thread_id = $1\n              AND message_type <> 'task_subscription_notification'\n              AND ($2::bigint IS NULL OR id < $2)\n              AND ($3::bigint IS NULL OR id > $3)\n              AND ($5::bigint IS NULL OR board_item_id = $5)\n            ORDER BY\n              CASE WHEN $3::bigint IS NOT NULL THEN id END ASC,\n              CASE WHEN $3::bigint IS NULL THEN id END DESC\n            LIMIT $4\n            ",
   "describe": {
     "columns": [
       {
@@ -59,6 +59,7 @@
         "Int8",
         "Int8",
         "Int8",
+        "Int8",
         "Int8"
       ]
     },
@@ -75,5 +76,5 @@
       true
     ]
   },
-  "hash": "4a2efd948611569dc4c549d17d53891588999d36d085a5922122c9ed92ead393"
+  "hash": "0c93217626f3911955c3455ae56f6c0a68a47615fc7606e069a4fb5065e6df59"
 }

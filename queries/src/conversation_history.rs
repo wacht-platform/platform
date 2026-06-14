@@ -329,6 +329,7 @@ pub struct ListThreadMessagesForUserQuery {
     pub limit: i64,
     pub before_id: Option<i64>,
     pub after_id: Option<i64>,
+    pub board_item_id: Option<i64>,
 }
 
 impl ListThreadMessagesForUserQuery {
@@ -338,6 +339,7 @@ impl ListThreadMessagesForUserQuery {
             limit,
             before_id: None,
             after_id: None,
+            board_item_id: None,
         }
     }
 
@@ -348,6 +350,12 @@ impl ListThreadMessagesForUserQuery {
 
     pub fn with_after_id(mut self, after_id: Option<i64>) -> Self {
         self.after_id = after_id;
+        self
+    }
+
+    /// Scope to a single task (board item). None = all messages on the thread.
+    pub fn with_board_item_id(mut self, board_item_id: Option<i64>) -> Self {
+        self.board_item_id = board_item_id;
         self
     }
 
@@ -367,6 +375,7 @@ impl ListThreadMessagesForUserQuery {
               AND message_type <> 'task_subscription_notification'
               AND ($2::bigint IS NULL OR id < $2)
               AND ($3::bigint IS NULL OR id > $3)
+              AND ($5::bigint IS NULL OR board_item_id = $5)
             ORDER BY
               CASE WHEN $3::bigint IS NOT NULL THEN id END ASC,
               CASE WHEN $3::bigint IS NULL THEN id END DESC
@@ -376,6 +385,7 @@ impl ListThreadMessagesForUserQuery {
             self.before_id,
             self.after_id,
             self.limit,
+            self.board_item_id,
         )
         .fetch_all(executor)
         .await

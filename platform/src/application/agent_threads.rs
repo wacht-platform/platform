@@ -1063,12 +1063,14 @@ pub async fn list_thread_messages(
     limit: i64,
     before_id: Option<i64>,
     after_id: Option<i64>,
+    board_item_id: Option<i64>,
 ) -> Result<(Vec<ConversationRecord>, bool), AppError> {
     get_agent_thread_by_id(app_state, deployment_id, thread_id).await?;
     let limit = normalize_limit(limit, 50, 100);
     let mut data = queries::ListThreadMessagesForUserQuery::new(thread_id, limit + 1)
         .with_before_id(before_id)
         .with_after_id(after_id)
+        .with_board_item_id(board_item_id)
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
