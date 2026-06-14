@@ -42,14 +42,14 @@ impl CompletionBlock {
     pub(crate) fn tool_error(&self) -> String {
         match self {
             Self::MissingTaskBrief { task_key } => format!(
-                "Completion rejected: `/task/TASK.md` for task {task_key} is missing or too thin. Write a concrete brief (title, context, numbered acceptance criteria, scope boundaries) with `write_file`, then call `complete`."
+                "Completion rejected: `/task/TASK.md` for task {task_key} is missing or too thin. Write a concrete brief (title, context, numbered acceptance criteria, scope boundaries) with `write_file`, then call `terminate_loop`."
             ),
             Self::IncompleteChildren { task_key, child_task_keys } => format!(
-                "Completion rejected: parent task {task_key} is `completed` but these child tasks are still open: {}. Call `update_project_task` to move the parent to `waiting_for_children`, then call `complete`.",
+                "Completion rejected: parent task {task_key} is `completed` but these child tasks are still open: {}. Call `update_project_task` to move the parent to `waiting_for_children`, then call `terminate_loop`.",
                 child_task_keys.join(", ")
             ),
             Self::CoordinatorOwnsTask { task_key, status } => format!(
-                "Completion rejected: task {task_key} is in status `{status}` and no active assignment is routed away from you — completing now would stall the task with the coordinator still owning it. Either `assign_project_task` to route the next stage, or `update_project_task` to a holding state (`needs_clarification`, `blocked`, `waiting_for_children`, or `completed`), then call `complete`."
+                "Completion rejected: task {task_key} is in status `{status}` and no active assignment is routed away from you — completing now would stall the task with the coordinator still owning it. Either `assign_project_task` to route the next stage, or `update_project_task` to a holding state (`needs_clarification`, `blocked`, `waiting_for_children`, or `completed`), then call `terminate_loop`."
             ),
             Self::ExecutorOwnsTask { task_key } => format!(
                 "Completion rejected: task {task_key} still belongs to this thread and the assignment is not finished. Continue the work, or call `abort_task` if it cannot proceed."

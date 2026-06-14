@@ -206,11 +206,12 @@ pub fn resolve_user_feedback_tool() -> NativeToolDefinition {
 
 pub fn complete_tool() -> NativeToolDefinition {
     NativeToolDefinition {
-        name: "complete".to_string(),
-        description: "Finish this run. The ONLY clean exit from the loop — pure text never ends a run. \
+        name: "terminate_loop".to_string(),
+        description: "End your turn and hand control back — the ONLY clean exit from the loop; \
+            pure text never ends a run, you must call `terminate_loop`. \
             Before calling, self-review the turn: every action you said you'd take must already be done \
             (tool call visible in history), journal updated for service work, user feedback resolved. \
-            If anything is still pending, do it first and call `complete` on a later turn. \
+            If anything is still pending, do it first and call `terminate_loop` on a later turn. \
             Must be the only tool call in its response; text alongside it is delivered as your final reply/log. \
             `summary` is the durable handoff — the next lane or reviewer reads it cold, so ground it in what \
             actually happened this run. Pull `artifacts` from real tool results, never from intention."

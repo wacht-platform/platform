@@ -51,9 +51,9 @@ impl RuntimeSignal {
     pub(crate) fn message(&self) -> String {
         match self {
             Self::NoteLoop { count } => format!(
-                "{count} consecutive notes with no action; next move is a working tool call, or `complete` if done"
+                "{count} consecutive notes with no action; next move is a working tool call, or `terminate_loop` if done"
             ),
-            Self::EmptyResponse => "previous turn was empty (no tool call, no text); emit the next concrete tool call, or reply and call `complete` if done".to_string(),
+            Self::EmptyResponse => "previous turn was empty (no tool call, no text); emit the next concrete tool call, or reply and call `terminate_loop` if done".to_string(),
             Self::ShellDiscipline { message } => message.clone(),
             Self::ShellDisciplineEscalated { count } => format!(
                 "{count} turns of file work routed through the shell; switch to write_file / append_file / edit_file / read_file — shell is for inspection"
@@ -64,7 +64,7 @@ impl RuntimeSignal {
             Self::BatchBackpressure { batch_size } => format!(
                 "{batch_size} tool calls in one turn; read those results and let them choose the next narrow step before fanning out further"
             ),
-            Self::CompleteRequired => "previous turn: text with no tool call — it did not end the run; if that text was your final output call `complete` alone now (summary only, no new message), otherwise take the next concrete step".to_string(),
+            Self::CompleteRequired => "previous turn: text with no tool call — it did not end the run; if that text was your final output call `terminate_loop` alone now (summary only, no new message), otherwise take the next concrete step".to_string(),
             Self::CompleteBlocked { reason } => reason.clone(),
             Self::AskUserBlocked { reason } => reason.clone(),
             Self::UserVisibilityLapse => "no user-visible message in the last 4 visible steps; add one short progress line beside the next tool call unless it is a tiny read".to_string(),

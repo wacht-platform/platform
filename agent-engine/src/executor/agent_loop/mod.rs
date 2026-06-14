@@ -952,7 +952,7 @@ impl AgentExecutor {
             serde_json::from_value(context_json.clone()).map_err(|e| {
                 AppError::Internal(format!("Failed to deserialize prompt context: {e}"))
             })?;
-        let request = self.build_agent_loop_request(&prompt_context, &context_json, None)?;
+        let mut request = self.build_agent_loop_request(&prompt_context, &context_json, None)?;
 
         let available_tools = self.available_tools_for_mode().await;
         let active_board_item = self.active_board_item_prompt_item().await?;
@@ -971,6 +971,13 @@ impl AgentExecutor {
         }
         if self.can_abort_current_assignment_execution() {
             native_tools.push(abort_tool());
+        }
+
+        // After a text-only stall, require a tool call so the model commits to work
+        // or `terminate_loop` instead of re-narrating intent.
+        if self.complete_nudge_count > 0 {
+            request.forced_tool_names =
+                Some(native_tools.iter().map(|t| t.name.clone()).collect());
         }
 
         let llm = self.create_strong_llm().await?;
@@ -1078,7 +1085,7 @@ impl AgentExecutor {
         let complete_calls: Vec<_> = output
             .calls
             .iter()
-            .filter(|c| c.tool_name == "complete")
+            .filter(|c| c.tool_name == "terminate_loop")
             .cloned()
             .collect();
         let non_note_calls: Vec<_> = output
@@ -1089,7 +1096,7 @@ impl AgentExecutor {
                     && c.tool_name != "ask_user"
                     && c.tool_name != "resolve_user_feedback"
                     && c.tool_name != "notify_user"
-                    && c.tool_name != "complete"
+                    && c.tool_name != "terminate_loop"
             })
             .cloned()
             .collect();
@@ -1184,9 +1191,9 @@ impl AgentExecutor {
                     .await;
             }
             self.record_invalid_tool_call(
-                "complete",
+                "terminate_loop",
                 &complete_call.arguments,
-                "`complete` must be the only tool call in its response. The other tool calls in this turn ran; review their results, then call `complete` alone once the run is actually finished.",
+                "`terminate_loop` must be the only tool call in its response. The other tool calls in this turn ran; review their results, then call `terminate_loop` alone once the run is actually finished.",
             )
             .await?;
         }
@@ -1416,8 +1423,10 @@ impl AgentExecutor {
             super::project::status_machine::ThreadRole::Conversation
         );
 
-        const MAX_COMPLETE_NUDGES: usize = 2;
-        if !is_conversation && self.complete_nudge_count < MAX_COMPLETE_NUDGES {
+        // Service (assignment-execution) threads get more rope to keep working
+        // through text-only turns; coordinator/review threads stay tight.
+        let max_complete_nudges = if self.is_service_mode_execution() { 5 } else { 2 };
+        if !is_conversation && self.complete_nudge_count < max_complete_nudges {
             self.complete_nudge_count += 1;
             self.store_conversation(
                 ConversationContent::Steer {

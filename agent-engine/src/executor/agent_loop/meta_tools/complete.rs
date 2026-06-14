@@ -38,16 +38,16 @@ impl AgentExecutor {
             .filter(|s| !s.is_empty());
         let Some(summary) = summary else {
             self.record_invalid_tool_call(
-                "complete",
+                "terminate_loop",
                 &call.arguments,
-                "`complete` requires a non-empty `summary` (1-3 sentences: what was accomplished, key decisions, resulting state).",
+                "`terminate_loop` requires a non-empty `summary` (1-3 sentences: what was accomplished, key decisions, resulting state).",
             )
             .await?;
             return Ok(true);
         };
 
         if let Some(error) = self.completion_guard_error().await? {
-            self.record_invalid_tool_call("complete", &call.arguments, &error)
+            self.record_invalid_tool_call("terminate_loop", &call.arguments, &error)
                 .await?;
             return Ok(true);
         }
@@ -80,14 +80,14 @@ impl AgentExecutor {
         self.finalize_completion(handoff, final_message).await
     }
 
-    /// Completion preconditions shared by `complete` and the text-only
+    /// Completion preconditions shared by `terminate_loop` and the text-only
     /// auto-complete fallback. `Some(error)` means completion must be refused.
     pub(in crate::executor::agent_loop) async fn completion_guard_error(
         &mut self,
     ) -> Result<Option<String>, AppError> {
         if self.is_service_mode_execution() && !self.service_mode_journal_was_updated().await? {
             return Ok(Some(
-                "Completion rejected: `/task/JOURNAL.md` is still empty this run. Append a short concrete entry (did/found/left) with `append_file`, then call `complete`.".to_string(),
+                "Completion rejected: `/task/JOURNAL.md` is still empty this run. Append a short concrete entry (did/found/left) with `append_file`, then call `terminate_loop`.".to_string(),
             ));
         }
 
@@ -105,7 +105,7 @@ impl AgentExecutor {
                 .collect::<Vec<_>>()
                 .join(", ");
             return Ok(Some(format!(
-                "Completion rejected: feedback comment(s) {ids_csv} are still [unresolved]. Close each via `resolve_user_feedback` (one call per id, with a one-line summary) — if you already acted on it, call the tool now; if no action is needed, call it with the explanation — then call `complete`."
+                "Completion rejected: feedback comment(s) {ids_csv} are still [unresolved]. Close each via `resolve_user_feedback` (one call per id, with a one-line summary) — if you already acted on it, call the tool now; if no action is needed, call it with the explanation — then call `terminate_loop`."
             )));
         }
 
