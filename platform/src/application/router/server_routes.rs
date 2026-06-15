@@ -30,6 +30,10 @@ pub(super) fn console_specific_routes() -> Router<AppState> {
             "/session/tickets",
             post(api::session_tickets::create_session_ticket),
         )
+        .route(
+            "/access/session-ticket",
+            post(api::session_tickets::create_access_session_ticket),
+        )
         .route("/webhooks/apps", get(api::webhook::list_webhook_apps))
         .route(
             "/webhooks/event-catalogs",

@@ -13,7 +13,6 @@ pub struct CreateSessionTicketResponse {
     pub url: String,
 }
 
-/// Console: actor_id is always the deployment_id regardless of what the caller sends.
 pub async fn create_session_ticket(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -22,6 +21,22 @@ pub async fn create_session_ticket(
     request.actor_id = Some(deployment_id.to_string());
     let resp =
         session_tickets_app::create_session_ticket(&app_state, deployment_id, request, false, true)
+            .await?;
+    Ok(CreateSessionTicketResponse {
+        ticket: resp.ticket,
+        expires_at: resp.expires_at,
+        url: resp.url,
+    }
+    .into())
+}
+
+pub async fn create_access_session_ticket(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Json(request): Json<CreateSessionTicketRequest>,
+) -> ApiResult<CreateSessionTicketResponse> {
+    let resp =
+        session_tickets_app::create_session_ticket(&app_state, deployment_id, request, true, false)
             .await?;
     Ok(CreateSessionTicketResponse {
         ticket: resp.ticket,
