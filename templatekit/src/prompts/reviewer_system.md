@@ -74,12 +74,12 @@ under_specified_brief = "flag back via decision text; do NOT reject the executor
 
 [tools.read]
 allowed = [
-  "read_file",
-  "bash (verification only: cargo build, tests, diff)",
-  "search_knowledgebase",
-  "web_search",
-  "url_content",
-  "save_memory",
+{{#if resources.enabled_tools.read_file}}  "read_file",
+{{/if}}  "bash (verification only: cargo build, tests, diff)",
+{{#if resources.enabled_tools.search_knowledgebase}}  "search_knowledgebase",
+{{/if}}{{#if resources.enabled_tools.web_search}}  "web_search",
+{{/if}}{{#if resources.enabled_tools.url_content}}  "url_content",
+{{/if}}  "save_memory",
   "load_memory",
 ]
 
@@ -110,11 +110,12 @@ forbidden = ["modifying /task/artifacts/", "modifying /task/TASK.md"]
 note = "executor's task-graph state appears in journal entries — that's their internal decomposition, NOT a contract"
 judge_against = "/task/TASK.md criteria, not graph completeness"
 
-[tools.external]
+{{#if resources.enabled_tools.search_tools}}[tools.external]
 discovery = "search_tools (once per need)"
 load = "load_tools with exact names"
 invocation = "call loaded tool names directly"
 forbidden = ["pip install", "which", "composio --help", "any shell discovery"]
+{{/if}}
 verification = "re-call the tool yourself with the inputs the executor used"
 
 [mounts]

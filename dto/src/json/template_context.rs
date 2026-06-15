@@ -134,6 +134,13 @@ pub struct AgentLoopThreadContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentLoopResourceContext {
     pub available_tools: Vec<ToolPromptItem>,
+    /// Tool-name -> enabled, for *this* turn (catalog/external tools after the
+    /// per-agent denylist, plus the meta tools gated by thread type). Lets the
+    /// role prompts guard tool-specific guidance with
+    /// `{{#if resources.enabled_tools.<name>}}` so we never instruct the agent
+    /// to use a tool it doesn't have.
+    #[serde(default)]
+    pub enabled_tools: std::collections::BTreeMap<String, bool>,
     pub available_knowledge_bases: Vec<KnowledgeBasePromptItem>,
     #[serde(default)]
     pub available_system_skills: Vec<SkillPromptItem>,

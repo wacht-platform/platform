@@ -255,12 +255,9 @@ pub async fn create_session_ticket(
 
     if is_static_agent_access_request(&ticket_type, &request) {
         if auto_create_actor {
-            // Console: actor_id is always the deployment_id, set unconditionally by the handler.
-            // No user-supplied value is accepted — just ensure the actor exists.
             let parsed_id = parse_actor_id(request.actor_id.as_deref().unwrap_or(""))?;
             ensure_actor_auto_created(app_state, deployment_id, parsed_id).await?;
         } else {
-            // Backend: actor_id must be provided by the caller and must already exist.
             let actor_id = require_non_empty_actor_id(request.actor_id.clone())?;
             ensure_actor_exists(app_state, deployment_id, parse_actor_id(&actor_id)?).await?;
             request.actor_id = Some(actor_id);

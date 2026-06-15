@@ -1,4 +1,4 @@
-mod meta_tools;
+pub(crate) mod meta_tools;
 pub(crate) mod prompt;
 mod response;
 mod shell_guard;
@@ -960,8 +960,19 @@ impl AgentExecutor {
             .iter()
             .map(|t| self.build_native_tool_definition(t, active_board_item.as_ref()))
             .collect();
+        // `ask_user` is the one meta tool operators can disable per-agent (via the
+        // shared internal-tool denylist). The other meta tools stay protected so the
+        // loop can always exit / report.
+        let ask_user_enabled = !self
+            .ctx
+            .agent
+            .disabled_internal_tools
+            .iter()
+            .any(|t| t == "ask_user");
         native_tools.push(note_tool());
-        native_tools.push(ask_user_tool());
+        if ask_user_enabled {
+            native_tools.push(ask_user_tool());
+        }
         native_tools.push(complete_tool());
         if self.is_conversation_thread {
             native_tools.push(notify_user_tool());
@@ -1064,12 +1075,16 @@ impl AgentExecutor {
             .filter(|c| c.tool_name == "note")
             .cloned()
             .collect();
-        let ask_user_calls: Vec<_> = output
-            .calls
-            .iter()
-            .filter(|c| c.tool_name == "ask_user")
-            .cloned()
-            .collect();
+        let ask_user_calls: Vec<_> = if ask_user_enabled {
+            output
+                .calls
+                .iter()
+                .filter(|c| c.tool_name == "ask_user")
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        };
         let resolve_calls: Vec<_> = output
             .calls
             .iter()
@@ -1093,7 +1108,9 @@ impl AgentExecutor {
             .iter()
             .filter(|c| {
                 c.tool_name != "note"
-                    && c.tool_name != "ask_user"
+                    // When ask_user is disabled, let the call fall through to regular
+                    // execution so it errors as "not available" instead of being handled.
+                    && !(ask_user_enabled && c.tool_name == "ask_user")
                     && c.tool_name != "resolve_user_feedback"
                     && c.tool_name != "notify_user"
                     && c.tool_name != "terminate_loop"

@@ -161,6 +161,7 @@ pub(crate) struct BoardPromptContext {
 
 pub(crate) struct ToolPromptContext {
     pub(crate) tool_prompt_items: Vec<ToolPromptItem>,
+    pub(crate) enabled_tools: std::collections::BTreeMap<String, bool>,
     pub(crate) knowledge_base_prompt_items: Vec<KnowledgeBasePromptItem>,
     pub(crate) available_sub_agents: Vec<dto::json::SubAgentPromptInfo>,
     pub(crate) discoverable_external_tool_names: Vec<String>,
@@ -407,6 +408,7 @@ impl AgentExecutor {
             },
             resources: AgentLoopResourceContext {
                 available_tools: tool_context.tool_prompt_items,
+                enabled_tools: tool_context.enabled_tools,
                 available_knowledge_bases: tool_context.knowledge_base_prompt_items,
                 available_system_skills: Vec::new(),
                 available_agent_skills: Vec::new(),
@@ -1051,9 +1053,40 @@ impl AgentExecutor {
             Vec::new()
         };
 
+        // Flags the role prompts branch on so tool guidance only renders when the
+        // tool is actually available this turn. Catalog/external tools come from the
+        // denylist-filtered `available_tools`; the meta tools are injected separately
+        // (mod.rs) so we mirror their gating here.
+        let mut enabled_tools: std::collections::BTreeMap<String, bool> = available_tools
+            .iter()
+            .map(|tool| (tool.name.clone(), true))
+            .collect();
+        // Always-on meta tools.
+        enabled_tools.insert("note".to_string(), true);
+        enabled_tools.insert("complete".to_string(), true);
+        // `ask_user` is the one meta tool operators can disable per-agent.
+        let ask_user_enabled = !self
+            .ctx
+            .agent
+            .disabled_internal_tools
+            .iter()
+            .any(|t| t == "ask_user");
+        enabled_tools.insert("ask_user".to_string(), ask_user_enabled);
+        // Meta tools gated by thread shape (match mod.rs injection conditions).
+        if self.is_conversation_thread {
+            enabled_tools.insert("notify_user".to_string(), true);
+        }
+        if self.current_board_item_id().is_some() {
+            enabled_tools.insert("resolve_user_feedback".to_string(), true);
+        }
+        if self.can_abort_current_assignment_execution() {
+            enabled_tools.insert("abort_task".to_string(), true);
+        }
+
         Ok(ToolPromptContext {
             available_sub_agents,
             tool_prompt_items,
+            enabled_tools,
             knowledge_base_prompt_items,
             discoverable_external_tool_names,
             loaded_external_tool_names,
