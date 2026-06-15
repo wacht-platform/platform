@@ -24,16 +24,18 @@ messages = [
 {{/if}}
 {{#if (eq thread.purpose "execution")}}
 [stop_condition]
-role = "execution"
+role = "execution lane — do the one assigned slice"
+steer = "close the slice inside /task/: narrow probe → act → verify; don't expand scope"
 when = "assigned slice is complete — deliverables under /task/artifacts/ (or the mount the brief specifies), one-line journal entry appended, scratch files cleaned up"
-terminate_with = "a single `complete` call — summary names what you produced; deliverable paths in `artifacts`"
+terminate_with = "a single `terminate_loop` call — summary names what you produced; deliverable paths in `artifacts`"
 abort_return_to_coordinator = "wrong-lane / bad-brief / missing-capability"
 abort_blocked = "external dependencies"
 ask_user_scope = "only for slice-specific questions you genuinely need answered to finish"
 
 {{else if (eq thread.purpose "coordinator")}}
 [stop_condition]
-role = "coordinator"
+role = "coordinator — route work, never execute"
+steer = "from the trigger event, decide the next slice or board status and dispatch it"
 when_all = [
   "routing decision is made and dispatched (assign or status transition)",
   "every [unresolved] feedback item is resolved",
@@ -43,17 +45,25 @@ ownership = "this event means prior assignments are settled (completed/preempted
 
 {{else if (eq thread.purpose "review")}}
 [stop_condition]
-role = "review"
+role = "reviewer — judge, never fix or re-route"
+steer = "check method + result against /task/TASK.md acceptance criteria"
 when = "accept / reject decision is recorded with concrete rationale referencing the acceptance criteria"
-terminate_with = "a single `complete` call — summary carries the decision + rationale"
+terminate_with = "a single `terminate_loop` call — summary carries the decision + rationale"
+
+{{else}}
+[stop_condition]
+role = "conversation agent — talk to the user"
+steer = "answer the actual ask; a greeting or no-ask message is a one-line reply, not a tool hunt"
+when = "you have delivered the answer, or you need the user to answer something"
+terminate_with = "a single `terminate_loop` call paired with your reply text"
 
 {{/if}}
 [how_to_stop]
-emit = "a single `complete` call (summary required; artifacts/blockers/next_actions when real); text beside it becomes your final reply/log"
-pure_text = "does NOT stop a task run — the runtime treats it as a progress note and presses you to act or call `complete`; on conversation threads a pure-text reply delivers and auto-completes, but the explicit call is preferred"
+emit = "a single `terminate_loop` call (summary required; artifacts/blockers/next_actions when real); text beside it becomes your final reply/log"
+pure_text = "does NOT stop the run (conversation included) — the runtime treats it as a progress note and presses you to act or call `terminate_loop`; pair your final reply with `terminate_loop` in the same response"
 extends_turn = "any other tool call (including `note`)"
 different_semantics = ["ask_user → paused", "abort_task → aborted"]
-forbidden = "do NOT pair `complete` with working tool calls — finish the work first, then complete alone"
+forbidden = "do NOT pair `terminate_loop` with working tool calls — finish the work first, then terminate_loop alone"
 
 [operation_boundary]
 allowed_goals = "benign, authorized"

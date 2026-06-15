@@ -11,6 +11,12 @@ pub(crate) const MAX_LOADED_EXTERNAL_TOOLS: usize = 15;
 pub(crate) struct PlannedToolCall {
     pub(crate) request: ToolCallRequest,
     pub(crate) retryable_on_failure: bool,
+    #[serde(default)]
+    pub(crate) signature: Option<String>,
+    #[serde(default)]
+    pub(crate) origin_provider: String,
+    #[serde(default)]
+    pub(crate) origin_model: String,
 }
 
 impl PlannedToolCall {

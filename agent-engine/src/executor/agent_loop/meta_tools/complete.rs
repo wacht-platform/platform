@@ -29,6 +29,7 @@ impl AgentExecutor {
         &mut self,
         call: &crate::llm::GeneratedToolCall,
         accompanying_text: Option<&str>,
+        prev_was_text_nudge: bool,
     ) -> Result<bool, AppError> {
         let summary = call
             .arguments
@@ -71,11 +72,15 @@ impl AgentExecutor {
                 .filter(|v| !v.is_null()),
         };
 
-        let final_message = accompanying_text
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .map(|t| Self::sanitize_user_facing_message(t, summary))
-            .unwrap_or_else(|| summary.to_string());
+        let final_message = if prev_was_text_nudge {
+            String::new()
+        } else {
+            accompanying_text
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .map(|t| Self::sanitize_user_facing_message(t, summary))
+                .unwrap_or_else(|| summary.to_string())
+        };
 
         self.finalize_completion(handoff, final_message).await
     }

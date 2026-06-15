@@ -538,9 +538,6 @@ impl AgentExecutor {
                         "Next-step decision live context message missing".to_string(),
                     )
                 })?;
-        // Conversation stays snappy at low and escalates when looping; task /
-        // coordinator / reviewer work runs at a medium floor so it plans instead
-        // of firing scattershot tool calls.
         let reasoning_effort =
             if self.repeated_tool_call_count >= 2 || self.consecutive_tool_failure_count >= 3 {
                 "medium"
@@ -549,7 +546,7 @@ impl AgentExecutor {
             } else {
                 "medium"
             };
-        // Profiles can opt out for models that don't support a reasoning level.
+
         let reasoning_effort = if self.ctx.reasoning_effort_disabled(LlmRole::Strong) {
             None
         } else {
@@ -1063,7 +1060,7 @@ impl AgentExecutor {
             .collect();
         // Always-on meta tools.
         enabled_tools.insert("note".to_string(), true);
-        enabled_tools.insert("complete".to_string(), true);
+        enabled_tools.insert("terminate_loop".to_string(), true);
         // `ask_user` is the one meta tool operators can disable per-agent.
         let ask_user_enabled = !self
             .ctx

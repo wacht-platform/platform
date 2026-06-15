@@ -21,6 +21,7 @@ pub enum ResumeContext {
 pub(crate) enum RuntimeSignal {
     NoteLoop { count: usize },
     EmptyResponse,
+    ResponseTruncated,
     ShellDiscipline { message: String },
     ShellDisciplineEscalated { count: usize },
     ToolCallLoop { count: usize },
@@ -36,6 +37,7 @@ impl RuntimeSignal {
         match self {
             Self::NoteLoop { .. } => "note_loop",
             Self::EmptyResponse => "empty_response",
+            Self::ResponseTruncated => "response_truncated",
             Self::ShellDiscipline { .. } | Self::ShellDisciplineEscalated { .. } => {
                 "shell_discipline"
             }
@@ -54,6 +56,7 @@ impl RuntimeSignal {
                 "{count} consecutive notes with no action; next move is a working tool call, or `terminate_loop` if done"
             ),
             Self::EmptyResponse => "previous turn was empty (no tool call, no text); emit the next concrete tool call, or reply and call `terminate_loop` if done".to_string(),
+            Self::ResponseTruncated => "previous turn hit the output token limit and was cut off before finishing; it was not treated as final — produce a shorter response or split the work into smaller steps, then continue".to_string(),
             Self::ShellDiscipline { message } => message.clone(),
             Self::ShellDisciplineEscalated { count } => format!(
                 "{count} turns of file work routed through the shell; switch to write_file / append_file / edit_file / read_file — shell is for inspection"
@@ -76,6 +79,7 @@ impl RuntimeSignal {
             self,
             Self::NoteLoop { .. }
                 | Self::EmptyResponse
+                | Self::ResponseTruncated
                 | Self::ToolCallLoop { .. }
                 | Self::CompleteBlocked { .. }
         )
@@ -117,17 +121,7 @@ pub struct AgentExecutor {
     pub(crate) board_context_cache: Option<crate::executor::agent_loop::prompt::BoardPromptContext>,
     pub(crate) tool_context_cache: Option<crate::executor::agent_loop::prompt::ToolPromptContext>,
     pub(crate) active_thread_event: Option<ThreadEvent>,
-    /// Full rendered task brief for the trigger event that started this
-    /// iteration. Set in execute_with_thread_event before the REPL runs;
-    /// cleared at end-of-iteration. The history renderer uses this to
-    /// rehydrate the latest AssignmentExecutionTrigger / TaskRoutingTrigger
-    /// marker into a full prompt block.
     pub(crate) current_trigger_brief: Option<String>,
-    /// Coordinator-role assignment auto-created when a TASK_ROUTING event
-    /// reaches this coordinator thread. Holds (assignment_id, board_item_id)
-    /// so the runtime can complete it at end-of-iteration without re-querying.
-    /// `None` for non-coordinator threads and when no routing event triggered
-    /// this run.
     pub(crate) coordinator_assignment: Option<(i64, i64)>,
     pub(crate) active_schedule_carryover: Option<models::ScheduleCarryover>,
     pub(crate) is_conversation_thread: bool,
@@ -143,6 +137,8 @@ pub struct AgentExecutor {
     pub(crate) last_failed_tool_label: Option<String>,
     pub(crate) consecutive_tool_failure_count: usize,
     pub(crate) consecutive_unproductive_turns: usize,
+    pub(crate) consecutive_empty_responses: usize,
+    pub(crate) pending_text_nudge: bool,
     pub(crate) consecutive_shell_nudge_count: usize,
     pub(crate) complete_nudge_count: usize,
     pub(crate) pending_runtime_signals: Vec<RuntimeSignal>,
@@ -463,6 +459,8 @@ impl AgentExecutorBuilder {
             last_failed_tool_label: None,
             consecutive_tool_failure_count: 0,
             consecutive_unproductive_turns: 0,
+            consecutive_empty_responses: 0,
+            pending_text_nudge: false,
             consecutive_shell_nudge_count: 0,
             complete_nudge_count: 0,
             pending_runtime_signals: Vec::new(),

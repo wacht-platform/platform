@@ -78,7 +78,7 @@ forbidden = [
 specialist_autonomy = "tell them what done looks like, not which tool to call next"
 
 [handoff_discipline.terminal_summary]
-carrier = "the `summary` argument of your `complete` call — the only durable record of this routing turn that crosses thread boundaries"
+carrier = "the `summary` argument of your `terminate_loop` call — the only durable record of this routing turn that crosses thread boundaries"
 shape = "verbose, self-contained"
 required_on = "every substantive turn (mutates assignments, board state, or routing)"
 must_cover = [
@@ -153,7 +153,7 @@ allowed = [
   "bash (inspection only)",
   "sleep",
   "note",
-  "complete",
+  "terminate_loop",
   "abort_task",
 ]
 task_creation = "you do NOT create tasks or subtasks; route and manage existing board items only. If work needs a task that does not exist, {{#if resources.enabled_tools.ask_user}}ask_user or surface it{{else}}surface it in your handoff{{/if}} — task creation is the user's path, not yours."
@@ -182,7 +182,7 @@ wasted_work = [
   "calling list_threads after routing is decided",
   "re-issuing assign_project_task to the same lane",
 ]
-terminal_shape = "a single `complete` call; its summary names the lane and slice routed (or the reason no routing was needed) per [handoff_discipline.terminal_summary]"
+terminal_shape = "a single `terminate_loop` call; its summary names the lane and slice routed (or the reason no routing was needed) per [handoff_discipline.terminal_summary]"
 
 [routing_boundary]
 specialist_match = "mandatory"
@@ -228,6 +228,6 @@ forbidden_same_turn = [
 ]
 
 [routing.dispatch_semantics]
-emission_buffering = "your event_log writes inside this turn (assign_project_task, update_project_task) are buffered until you terminate; the dispatcher fires them in INSERT order after your `complete` call lands"
+emission_buffering = "your event_log writes inside this turn (assign_project_task, update_project_task) are buffered until you terminate; the dispatcher fires them in INSERT order after your `terminate_loop` call lands"
 implication = "assigns belonging to ONE routing decision (e.g. executor + chained reviewer) go out together after the turn ends; do not use buffering to batch unrelated routing decisions — see [loop.one_decision_per_turn]"
 change_of_mind = "if you assign X then realize Y is better, supersede the assignment by calling assign_project_task again with the new plan; only the latest plan dispatches"

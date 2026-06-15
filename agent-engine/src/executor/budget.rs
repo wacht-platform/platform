@@ -16,7 +16,7 @@
 
 use std::time::Instant;
 
-pub const LLM_CALL_LIMIT: u32 = 150;
+pub const LLM_CALL_LIMIT: u32 = 300;
 pub const TOOL_CALL_LIMIT: u32 = 600;
 pub const WALL_TIME_LIMIT_SECS: u64 = 45 * 60;
 

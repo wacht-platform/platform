@@ -53,6 +53,7 @@ pub(crate) async fn publish_model_usage(ctx: ModelUsageContext<'_>, usage: &Usag
         "total_token_count": usage.total_token_count,
         "cached_content_token_count": usage.cached_content_token_count,
         "thoughts_token_count": usage.thoughts_token_count,
+        "cache_write_token_count": usage.cache_write_token_count,
     });
 
     let task_message = dto::json::NatsTaskMessage {

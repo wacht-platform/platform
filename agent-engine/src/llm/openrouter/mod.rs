@@ -46,6 +46,8 @@ struct OpenRouterResponse {
 #[derive(Debug, Deserialize)]
 struct OpenRouterChoice {
     message: OpenRouterMessageResponse,
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -285,23 +287,30 @@ impl OpenRouterClient {
             .ok_or_else(|| AppError::Internal("OpenRouter returned no choices".to_string()))?
             .message;
 
+        // Parse each tool call independently: one unparseable arguments blob
+        // (usually a length-truncated call) skips that call instead of failing the
+        // whole turn. If nothing parses and there's no text, the loop's empty guard handles it.
         let calls = match message.tool_calls.as_ref() {
             Some(tc) => tc
                 .iter()
-                .map(|call| {
-                    let arguments = serde_json::from_str::<Value>(&call.function.arguments)
-                        .map_err(|error| {
-                            AppError::Internal(format!(
-                                "Failed to parse OpenRouter tool arguments for {}: {}",
-                                call.function.name, error
-                            ))
-                        })?;
-                    Ok(GeneratedToolCall {
-                        tool_name: call.function.name.clone(),
-                        arguments,
-                    })
-                })
-                .collect::<Result<Vec<_>, AppError>>()?,
+                .filter_map(
+                    |call| match serde_json::from_str::<Value>(&call.function.arguments) {
+                        Ok(arguments) => Some(GeneratedToolCall {
+                            tool_name: call.function.name.clone(),
+                            arguments,
+                            signature: None,
+                        }),
+                        Err(error) => {
+                            tracing::warn!(
+                                tool = %call.function.name,
+                                %error,
+                                "skipping OpenRouter tool call with unparseable arguments (likely truncated)"
+                            );
+                            None
+                        }
+                    },
+                )
+                .collect::<Vec<_>>(),
             None => Vec::new(),
         };
 
@@ -312,10 +321,14 @@ impl OpenRouterClient {
             .filter(|t| !t.trim().is_empty());
 
         if calls.is_empty() && content_text.is_none() {
-            return Err(AppError::Internal(
-                "OpenRouter returned no tool calls and no text".to_string(),
-            ));
+            // Empty turn, not an error — let the loop's empty-response guard handle it.
+            tracing::warn!("OpenRouter returned no tool calls and no text");
         }
+
+        let finish_reason = parsed
+            .choices
+            .first()
+            .and_then(|choice| choice.finish_reason.clone());
 
         let usage_metadata = parsed.usage.map(Self::map_usage_metadata);
         if let Some(usage) = &usage_metadata {
@@ -326,6 +339,7 @@ impl OpenRouterClient {
             content_text,
             usage_metadata,
             cache_state: None,
+            finish_reason,
         })
     }
 
@@ -336,7 +350,7 @@ impl OpenRouterClient {
             prompt
                 .messages
                 .into_iter()
-                .map(|message| self.semantic_message_to_openrouter(message)),
+                .flat_map(|message| self.semantic_message_to_openrouter(message)),
         );
 
         let mut body = serde_json::Map::new();
@@ -379,7 +393,7 @@ impl OpenRouterClient {
             prompt
                 .messages
                 .into_iter()
-                .map(|message| self.semantic_message_to_openrouter(message)),
+                .flat_map(|message| self.semantic_message_to_openrouter(message)),
         );
 
         if let Some(cache_request) = cache.as_ref() {
@@ -439,7 +453,7 @@ impl OpenRouterClient {
             prompt
                 .messages
                 .into_iter()
-                .map(|message| self.semantic_message_to_openrouter(message)),
+                .flat_map(|message| self.semantic_message_to_openrouter(message)),
         );
 
         if let Some(cache_request) = cache.as_ref() {
@@ -578,14 +592,71 @@ impl OpenRouterClient {
         })
     }
 
-    fn semantic_message_to_openrouter(&self, message: SemanticLlmMessage) -> Value {
+    fn semantic_message_to_openrouter(&self, message: SemanticLlmMessage) -> Vec<Value> {
         let role = match message.role.as_str() {
             "model" | "assistant" => "assistant",
             "system" => "system",
             "developer" => "developer",
-            "user" => "user",
             _ => "user",
         };
+
+        let tool_results = message
+            .content_blocks
+            .iter()
+            .filter_map(|block| match block {
+                SemanticLlmContentBlock::ToolResult {
+                    call_id, output, ..
+                } => Some(json!({
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": serde_json::to_string(output).unwrap_or_default(),
+                })),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if !tool_results.is_empty() {
+            return tool_results;
+        }
+
+        let tool_calls = message
+            .content_blocks
+            .iter()
+            .filter_map(|block| match block {
+                SemanticLlmContentBlock::ToolCall {
+                    id, name, args, ..
+                } => Some(json!({
+                    "id": id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string()),
+                    },
+                })),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if !tool_calls.is_empty() {
+            let text = message
+                .content_blocks
+                .iter()
+                .filter_map(|block| match block {
+                    SemanticLlmContentBlock::Text { text } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let content = if text.trim().is_empty() {
+                Value::Null
+            } else {
+                Value::String(text)
+            };
+            return vec![json!({
+                "role": "assistant",
+                "content": content,
+                "tool_calls": tool_calls,
+            })];
+        }
+
         let content_blocks = message
             .content_blocks
             .into_iter()
@@ -600,6 +671,10 @@ impl OpenRouterClient {
                         "url": format!("data:{};base64,{}", mime_type, data),
                     }
                 }),
+                SemanticLlmContentBlock::ToolCall { .. }
+                | SemanticLlmContentBlock::ToolResult { .. } => {
+                    json!({ "type": "text", "text": "" })
+                }
             })
             .collect::<Vec<_>>();
 
@@ -618,10 +693,10 @@ impl OpenRouterClient {
             Value::Array(content_blocks)
         };
 
-        json!({
+        vec![json!({
             "role": role,
             "content": content,
-        })
+        })]
     }
 
     fn apply_cache_controls(&self, messages: &mut [Value], cache_request: &PromptCacheRequest) {
@@ -710,7 +785,8 @@ impl OpenRouterClient {
             candidates_token_count: usage.completion_tokens,
             total_token_count: usage.total_tokens,
             thoughts_token_count: None,
-            tool_use_prompt_token_count: usage
+            tool_use_prompt_token_count: None,
+            cache_write_token_count: usage
                 .prompt_tokens_details
                 .as_ref()
                 .and_then(|details| details.cache_write_tokens),

@@ -57,7 +57,7 @@ sequence = [
 then = [
   "produce decision: accept / revise / reject with concrete reasoning addressing both axes",
   "record the decision in /task/JOURNAL.md with concrete reasoning",
-  "call `complete` — summary carries the decision + reasoning",
+  "call `terminate_loop` — summary carries the decision + reasoning",
 ]
 
 [forbidden_behaviors]
@@ -84,7 +84,7 @@ allowed = [
 ]
 
 [tools.report]
-terminate_with_complete = "a single `complete` call — summary carries the decision (accept / revise / reject) + reasoning; runtime closes the assignment; coordinator decides board transition"
+terminate_with = "a single `terminate_loop` call — summary carries the decision (accept / revise / reject) + reasoning; runtime closes the assignment; coordinator decides board transition"
 note = "reasoning into history (see operating_style [tools.note])"
 abort_task = "ONLY when review cannot proceed at all (artifacts missing, criteria undefined); outcome = blocked"
 resolve_user_feedback = "for [unresolved] comments you act on as part of review; resolve with one-line summary"
@@ -203,11 +203,11 @@ list = [
   "3. Evidence-grounded. Every method verdict cites a journal entry or /task/AUDIT.log line; every criterion verdict cites a tool result.",
   "4. Don't approve unmet criteria or unsound method. Don't modify work to make it pass.",
   "5. Under-specified criteria → flag back, don't silently infer.",
-  "6. Call `complete` once the decision is recorded. No additional review passes without new work.",
+  "6. Call `terminate_loop` once the decision is recorded. No additional review passes without new work.",
 ]
 
 [terminating]
-shape = "a single `complete` call, after /task/JOURNAL.md has the review entry"
+shape = "a single `terminate_loop` call, after /task/JOURNAL.md has the review entry"
 summary_content = "decision (accept / revise / reject) + reasoning; for revise/reject, name the failed criterion or unsound step and the concrete change needed"
 audience = "coordinator (not user-facing); short and technical"
 post_termination = "coordinator reads and decides the board transition"

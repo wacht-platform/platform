@@ -14,11 +14,35 @@ pub struct LlmInlineData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmToolCall {
+    pub id: String,
+    pub name: String,
+    pub args: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmToolResult {
+    pub call_id: String,
+    pub name: String,
+    pub output: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmHistoryPart {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inline_data: Option<LlmInlineData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call: Option<LlmToolCall>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_result: Option<LlmToolResult>,
 }
 
 impl LlmHistoryPart {
@@ -26,6 +50,8 @@ impl LlmHistoryPart {
         Self {
             text: Some(text.into()),
             inline_data: None,
+            tool_call: None,
+            tool_result: None,
         }
     }
 
@@ -36,6 +62,26 @@ impl LlmHistoryPart {
                 mime_type: mime_type.into(),
                 data: data.into(),
             }),
+            tool_call: None,
+            tool_result: None,
+        }
+    }
+
+    pub fn tool_call(call: LlmToolCall) -> Self {
+        Self {
+            text: None,
+            inline_data: None,
+            tool_call: Some(call),
+            tool_result: None,
+        }
+    }
+
+    pub fn tool_result(result: LlmToolResult) -> Self {
+        Self {
+            text: None,
+            inline_data: None,
+            tool_call: None,
+            tool_result: Some(result),
         }
     }
 }

@@ -231,10 +231,12 @@ impl GeminiClient {
             .candidates
             .iter()
             .flat_map(|candidate| candidate.content.parts.iter())
-            .filter_map(|part| part.function_call.as_ref())
-            .map(|call| GeneratedToolCall {
-                tool_name: call.name.clone(),
-                arguments: call.args.clone(),
+            .filter_map(|part| {
+                part.function_call.as_ref().map(|call| GeneratedToolCall {
+                    tool_name: call.name.clone(),
+                    arguments: call.args.clone(),
+                    signature: part.thought_signature.clone(),
+                })
             })
             .collect::<Vec<_>>();
 
@@ -246,9 +248,8 @@ impl GeminiClient {
         };
 
         if calls.is_empty() && content_text.is_none() {
-            return Err(AppError::Internal(
-                "Gemini returned no function calls and no text".to_string(),
-            ));
+            // Empty turn, not an error — let the loop's empty-response guard handle it.
+            tracing::warn!(model = %self.model, "Gemini returned no function calls and no text");
         }
 
         let cache_state = if let (Some(cache_request), Some(cache_plan)) =
@@ -264,11 +265,17 @@ impl GeminiClient {
             None
         };
 
+        let finish_reason = parsed
+            .candidates
+            .first()
+            .and_then(|candidate| candidate.finish_reason.clone());
+
         Ok(ToolCallGenerationOutput {
             calls,
             content_text,
             usage_metadata: parsed.usage_metadata,
             cache_state,
+            finish_reason,
         })
     }
 
@@ -293,14 +300,7 @@ impl GeminiClient {
                 let parts = message
                     .content_blocks
                     .iter()
-                    .map(|block| match block {
-                        crate::llm::SemanticLlmContentBlock::Text { text } => {
-                            json!({ "text": text })
-                        }
-                        crate::llm::SemanticLlmContentBlock::InlineData { mime_type, data } => {
-                            json!({ "inline_data": { "mime_type": mime_type, "data": data } })
-                        }
-                    })
+                    .map(|block| gemini_part_for_block(block, &self.model))
                     .collect::<Vec<_>>();
                 json!({ "role": message.role, "parts": parts })
             })
@@ -327,7 +327,7 @@ impl GeminiClient {
         if let Some(ref reasoning_effort) = prompt.reasoning_effort {
             generation_config.insert(
                 "thinkingConfig".to_string(),
-                thinking_config_for(reasoning_effort),
+                thinking_config_for(&self.model, reasoning_effort),
             );
         }
 
@@ -349,11 +349,6 @@ impl GeminiClient {
                 }
             })
         } else {
-            // VALIDATED: model picks either a function call or natural language
-            // (same flexibility as AUTO, so the agent can still emit a pure-text
-            // terminal response). Gemini additionally enforces function-call
-            // schema adherence, which reduces malformed-args parse failures we
-            // were occasionally hitting on AUTO.
             json!({ "functionCallingConfig": { "mode": "VALIDATED" } })
         };
         body.insert("toolConfig".to_string(), tool_config);
@@ -376,10 +371,6 @@ impl GeminiClient {
         request_body: &str,
     ) -> Result<GeminiResponse, AppError> {
         let mut attempt = 0u32;
-        // RETRY POLICY (explicit product requirement):
-        // - Up to 15 attempts on retryable failures (timeouts, 5xx, 429, transient parse).
-        // - Fixed random delay between attempts, uniformly in [2s, 4s].
-        // - No exponential backoff. Do not honor Retry-After; the fixed window is the contract.
         const MAX_RETRIES: u32 = 15;
         let mut current_body = request_body.to_string();
         let mut safety_retry_used = false;
@@ -500,19 +491,61 @@ impl GeminiClient {
     }
 }
 
-fn serialize_gemini_structured_request(prompt: &SemanticLlmRequest) -> Result<String, AppError> {
-    serialize_gemini_request_inner(prompt, true)
+fn gemini_part_for_block(block: &crate::llm::SemanticLlmContentBlock, model: &str) -> Value {
+    use crate::llm::SemanticLlmContentBlock;
+    match block {
+        SemanticLlmContentBlock::Text { text } => json!({ "text": text }),
+        SemanticLlmContentBlock::InlineData { mime_type, data } => {
+            json!({ "inline_data": { "mime_type": mime_type, "data": data } })
+        }
+        SemanticLlmContentBlock::ToolCall {
+            name,
+            args,
+            signature,
+            origin_provider,
+            origin_model,
+            ..
+        } => {
+            let mut part = json!({ "functionCall": { "name": name, "args": args } });
+            if let Some(sig) = signature {
+                if origin_provider.as_deref() == Some("gemini")
+                    && origin_model.as_deref() == Some(model)
+                {
+                    part["thoughtSignature"] = json!(sig);
+                }
+            }
+            part
+        }
+        SemanticLlmContentBlock::ToolResult { name, output, .. } => {
+            let response = if output.is_object() {
+                output.clone()
+            } else {
+                json!({ "result": output })
+            };
+            json!({ "functionResponse": { "name": name, "response": response } })
+        }
+    }
 }
 
-fn serialize_gemini_text_request(prompt: &SemanticLlmRequest) -> Result<String, AppError> {
-    serialize_gemini_request_inner(prompt, false)
+fn serialize_gemini_structured_request(
+    prompt: &SemanticLlmRequest,
+    model: &str,
+) -> Result<String, AppError> {
+    serialize_gemini_request_inner(prompt, model, true)
+}
+
+fn serialize_gemini_text_request(
+    prompt: &SemanticLlmRequest,
+    model: &str,
+) -> Result<String, AppError> {
+    serialize_gemini_request_inner(prompt, model, false)
 }
 
 fn serialize_gemini_request_inner(
     prompt: &SemanticLlmRequest,
+    model: &str,
     include_response_schema: bool,
 ) -> Result<String, AppError> {
-    use crate::llm::SemanticLlmContentBlock;
     let contents = prompt
         .messages
         .iter()
@@ -520,12 +553,7 @@ fn serialize_gemini_request_inner(
             let parts = message
                 .content_blocks
                 .iter()
-                .map(|block| match block {
-                    SemanticLlmContentBlock::Text { text } => json!({ "text": text }),
-                    SemanticLlmContentBlock::InlineData { mime_type, data } => {
-                        json!({ "inline_data": { "mime_type": mime_type, "data": data } })
-                    }
-                })
+                .map(|block| gemini_part_for_block(block, model))
                 .collect::<Vec<_>>();
             json!({ "role": message.role, "parts": parts })
         })
@@ -548,7 +576,7 @@ fn serialize_gemini_request_inner(
     if let Some(reasoning_effort) = prompt.reasoning_effort.as_ref() {
         generation_config.insert(
             "thinkingConfig".to_string(),
-            thinking_config_for(reasoning_effort),
+            thinking_config_for(model, reasoning_effort),
         );
     }
 
@@ -611,13 +639,29 @@ fn inject_safety_steering(body: &str, block_reason: &str) -> Result<String, AppE
     serde_json::to_string(&value).map_err_internal("Failed to re-serialize Gemini request")
 }
 
-// Gemini 2.5 uses thinkingBudget (integer); Gemini 3+ uses thinkingLevel (string).
-// Detect by whether the value parses as an integer.
-fn thinking_config_for(reasoning_effort: &str) -> Value {
+// Gemini 2.5 takes integer `thinkingBudget`; 3+ takes string `thinkingLevel` — route by model so 2.5 doesn't 400.
+fn thinking_config_for(model: &str, reasoning_effort: &str) -> Value {
     if let Ok(budget) = reasoning_effort.parse::<i64>() {
-        json!({ "thinkingBudget": budget })
+        return json!({ "thinkingBudget": budget });
+    }
+    if is_gemini_2_5(model) {
+        json!({ "thinkingBudget": thinking_budget_for_effort(reasoning_effort) })
     } else {
         json!({ "thinkingLevel": reasoning_effort })
+    }
+}
+
+fn is_gemini_2_5(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    m.contains("2.5") || m.contains("2-5")
+}
+
+// Valid across the 2.5 family (flash 0–24576, pro 128–32768).
+fn thinking_budget_for_effort(effort: &str) -> i64 {
+    match effort {
+        "low" => 1024,
+        "high" => 24576,
+        _ => 8192,
     }
 }
 
@@ -636,7 +680,7 @@ impl crate::llm::LlmProvider for GeminiClient {
         prompt: SemanticLlmRequest,
         cache: Option<PromptCacheRequest>,
     ) -> Result<crate::llm::StructuredGenerationOutput<Value>, AppError> {
-        let body = serialize_gemini_structured_request(&prompt)?;
+        let body = serialize_gemini_structured_request(&prompt, &self.model)?;
         let output = self
             .generate_structured_content_with_usage_and_cache::<Value>(body, cache.map(Into::into))
             .await?;
@@ -660,7 +704,7 @@ impl crate::llm::LlmProvider for GeminiClient {
         &self,
         prompt: SemanticLlmRequest,
     ) -> Result<crate::llm::TextGenerationOutput, AppError> {
-        let body = serialize_gemini_text_request(&prompt)?;
+        let body = serialize_gemini_text_request(&prompt, &self.model)?;
         GeminiClient::generate_text(self, body).await
     }
 }

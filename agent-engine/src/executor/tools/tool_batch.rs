@@ -55,13 +55,18 @@ impl AgentExecutor {
     )]
     pub(crate) async fn execute_requested_actions(
         &mut self,
-        requested_actions: Vec<ToolCallRequest>,
+        requested_actions: Vec<(ToolCallRequest, Option<String>)>,
+        origin_provider: String,
+        origin_model: String,
     ) -> Result<ToolExecutionLoopOutcome, AppError> {
         let planned_calls: Vec<PlannedToolCall> = requested_actions
             .into_iter()
-            .map(|request| PlannedToolCall {
+            .map(|(request, signature)| PlannedToolCall {
                 request,
                 retryable_on_failure: false,
+                signature,
+                origin_provider: origin_provider.clone(),
+                origin_model: origin_model.clone(),
             })
             .collect();
         let mut any_pending = false;
@@ -347,7 +352,12 @@ impl AgentExecutor {
         output: Option<Value>,
         error: Option<String>,
     ) -> Result<(), AppError> {
-        self.store_conversation(
+        let metadata = serde_json::json!({
+            "signature": call.signature.clone(),
+            "origin_provider": call.origin_provider.clone(),
+            "origin_model": call.origin_model.clone(),
+        });
+        self.store_conversation_with_metadata(
             ConversationContent::ToolResult {
                 tool_name: call.tool_name().to_string(),
                 status: status.to_string(),
@@ -356,6 +366,7 @@ impl AgentExecutor {
                 error,
             },
             ConversationMessageType::ToolResult,
+            Some(metadata),
         )
         .await
     }

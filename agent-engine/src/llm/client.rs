@@ -34,6 +34,8 @@ pub struct NativeToolDefinition {
 pub struct GeneratedToolCall {
     pub tool_name: String,
     pub arguments: Value,
+    #[serde(default)]
+    pub signature: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,13 +49,38 @@ pub struct ToolCallGenerationOutput {
     pub usage_metadata: Option<UsageMetadata>,
     #[serde(default)]
     pub cache_state: Option<PromptCacheState>,
+    /// Provider finish reason for the turn (e.g. "STOP"/"length"/"MAX_TOKENS").
+    /// Used by the loop to detect truncated turns. None when the provider omits it.
+    #[serde(default)]
+    pub finish_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SemanticLlmContentBlock {
-    Text { text: String },
-    InlineData { mime_type: String, data: String },
+    Text {
+        text: String,
+    },
+    InlineData {
+        mime_type: String,
+        data: String,
+    },
+    ToolCall {
+        id: String,
+        name: String,
+        args: Value,
+        #[serde(default)]
+        signature: Option<String>,
+        #[serde(default)]
+        origin_provider: Option<String>,
+        #[serde(default)]
+        origin_model: Option<String>,
+    },
+    ToolResult {
+        call_id: String,
+        name: String,
+        output: Value,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,9 +124,6 @@ pub struct SemanticLlmRequest {
     pub max_output_tokens: Option<u32>,
     #[serde(default)]
     pub reasoning_effort: Option<String>,
-    /// When set, forces Gemini's `toolConfig.functionCallingConfig.mode` to `ANY`
-    /// and constrains `allowed_function_names` to this list. Use for narrow
-    /// dispatch calls where text fallback is not acceptable.
     #[serde(default)]
     pub forced_tool_names: Option<Vec<String>>,
 }

@@ -7,12 +7,16 @@ mod tool_schema;
 pub(crate) use super::core;
 
 use super::core::AgentExecutor;
-use common::ResultExt;
-use templatekit::{render_template_with_prompt, AgentTemplates};
-
+use crate::llm::NativeToolDefinition;
 use commands::UpdateAgentThreadStateCommand;
 use common::error::AppError;
+use common::ResultExt;
 use dto::json::agent_executor::ToolCallRequest;
+use dto::json::agent_executor::{AbortDirective, AbortOutcome};
+use meta_tools::{
+    abort_tool, ask_user_tool, complete_tool, note_tool, notify_user_tool,
+    resolve_user_feedback_tool,
+};
 use models::{AgentThreadStatus, ConversationContent, ConversationMessageType};
 use queries::{
     GetProjectTaskBoardItemAssignmentByIdQuery, GetProjectTaskScheduleByIdQuery,
@@ -20,15 +24,26 @@ use queries::{
 };
 use serde_json::json;
 use std::collections::HashSet;
+use templatekit::{render_template_with_prompt, AgentTemplates};
 
-const MAX_LOOP_ITERATIONS: usize = 50;
-const MAX_UNPRODUCTIVE_TURNS: usize = 8;
+const MAX_LOOP_ITERATIONS: usize = 300;
+const MAX_UNPRODUCTIVE_TURNS: usize = 4;
 const LARGE_TOOL_BATCH: usize = 10;
 const SHELL_NUDGE_ESCALATE_AT: usize = 2;
 
-/// True when assistant text carries leaked tool-call markup the provider parser
-/// failed to lift into a structured call. Conservative: single-tag forms that
-/// also appear in normal prose (a bare `<function=`) require a second marker.
+/// Meta tools drive the loop, not the task — excluded from the work-tool budget.
+fn is_meta_tool_name(name: &str) -> bool {
+    matches!(
+        name,
+        "note"
+            | "ask_user"
+            | "terminate_loop"
+            | "notify_user"
+            | "resolve_user_feedback"
+            | "abort_task"
+    )
+}
+
 fn detect_leaked_tool_call(text: &str) -> bool {
     text.contains("<tool_call>")
         || text.contains("</tool_call>")
@@ -38,6 +53,12 @@ fn detect_leaked_tool_call(text: &str) -> bool {
         || text.contains("<｜tool▁call")
         || text.contains("<|START_ACTION|>")
         || (text.contains("<arg_key>") && text.contains("<arg_value>"))
+}
+
+/// Provider finish reasons that mean the output was cut off at the token limit
+/// (OpenAI/OpenRouter "length", Gemini "MAX_TOKENS"), not a clean stop.
+fn is_truncated_finish(reason: &str) -> bool {
+    reason.eq_ignore_ascii_case("length") || reason.eq_ignore_ascii_case("max_tokens")
 }
 
 impl AgentExecutor {
@@ -761,20 +782,13 @@ impl AgentExecutor {
         self.run_hooks(LifecyclePhase::ExecutionStart, serde_json::Value::Null)
             .await;
 
-        // Spawn a sandbox keepalive task that pings the node every 5 minutes
-        // while this loop runs. The sandbox node's idle timeout is 60 minutes,
-        // so this gives a 12x safety margin against eviction during long
-        // gaps between tool calls (LLM streaming, slow Veo calls, etc.).
-        // SelfHealingHandle handles NotFound by recreating the sandbox, so a
-        // touch on an evicted sandbox restores it; we tolerate touch errors
-        // by logging and continuing.
         let keepalive = {
             let sandbox = self.sandbox.clone();
             let thread_id = self.ctx.thread_id;
             let label = sandbox.id().to_string();
             tokio::spawn(async move {
                 let mut ticker = tokio::time::interval(std::time::Duration::from_secs(5 * 60));
-                ticker.tick().await; // skip the immediate first tick
+                ticker.tick().await;
                 loop {
                     ticker.tick().await;
                     if let Err(e) = sandbox.touch().await {
@@ -797,22 +811,14 @@ impl AgentExecutor {
 
         let result = self.repl_inner().await;
 
-        // Stop the keepalive as soon as the loop exits. Abort is fire-and-forget;
-        // the next interval tick will be cancelled cleanly.
         keepalive.abort();
 
         self.cleanup_prompt_cache_on_finish().await;
 
         if result.is_err() {
-            if let Err(e) = self.force_thread_idle_on_error_exit().await {
-                tracing::error!(
-                    thread_id = self.ctx.thread_id,
-                    execution_run_id = self.ctx.execution_run_id,
-                    error = ?e,
-                    "failed to mark thread idle on error exit; thread may be stuck running"
-                );
-            }
+            let _ = self.force_thread_idle_on_error_exit().await;
         }
+
         self.run_hooks(LifecyclePhase::ExecutionEnd, serde_json::Value::Null)
             .await;
         result
@@ -855,6 +861,7 @@ impl AgentExecutor {
     async fn repl_inner(&mut self) -> Result<(), AppError> {
         let mut iteration = 0;
         let mut consecutive_errors = 0usize;
+
         loop {
             iteration += 1;
             self.current_iteration = iteration;
@@ -891,21 +898,7 @@ impl AgentExecutor {
         )
     )]
     async fn run_unified_iteration(&mut self) -> Result<bool, AppError> {
-        use crate::llm::NativeToolDefinition;
-        use dto::json::agent_executor::{AbortDirective, AbortOutcome};
-        use meta_tools::{
-            abort_tool, ask_user_tool, complete_tool, note_tool, notify_user_tool,
-            resolve_user_feedback_tool,
-        };
-
         if let Err(exhausted) = self.budget.check() {
-            tracing::warn!(
-                thread_id = self.ctx.thread_id,
-                board_item_id = ?self.current_board_item_id(),
-                execution_run_id = self.ctx.execution_run_id,
-                "budget exhausted: {}",
-                exhausted.reason()
-            );
             self.run_hooks(
                 super::hooks::LifecyclePhase::OnBudgetExhausted,
                 serde_json::json!({ "reason": exhausted.reason() }),
@@ -928,13 +921,6 @@ impl AgentExecutor {
         }
 
         if self.consecutive_unproductive_turns >= MAX_UNPRODUCTIVE_TURNS {
-            tracing::warn!(
-                thread_id = self.ctx.thread_id,
-                board_item_id = ?self.current_board_item_id(),
-                execution_run_id = self.ctx.execution_run_id,
-                turns = self.consecutive_unproductive_turns,
-                "unproductive_turn_backstop: no forward progress, stopping"
-            );
             if self.can_abort_current_assignment_execution() {
                 self.abort_current_assignment_execution(&AbortDirective {
                     reason: "Run stopped: repeated turns with no forward progress (note-spam, empty replies, or rejected calls). Coordinator should retry with a tighter brief or mark the task blocked.".to_string(),
@@ -947,6 +933,7 @@ impl AgentExecutor {
             return Ok(false);
         }
 
+        let prev_was_text_nudge = std::mem::take(&mut self.pending_text_nudge);
         let context_json = self.build_agent_loop_context_json().await?;
         let prompt_context: dto::json::AgentLoopPromptEnvelope =
             serde_json::from_value(context_json.clone()).map_err(|e| {
@@ -960,9 +947,7 @@ impl AgentExecutor {
             .iter()
             .map(|t| self.build_native_tool_definition(t, active_board_item.as_ref()))
             .collect();
-        // `ask_user` is the one meta tool operators can disable per-agent (via the
-        // shared internal-tool denylist). The other meta tools stay protected so the
-        // loop can always exit / report.
+
         let ask_user_enabled = !self
             .ctx
             .agent
@@ -984,23 +969,25 @@ impl AgentExecutor {
             native_tools.push(abort_tool());
         }
 
-        // After a text-only stall, require a tool call so the model commits to work
-        // or `terminate_loop` instead of re-narrating intent.
-        if self.complete_nudge_count > 0 {
-            request.forced_tool_names =
-                Some(native_tools.iter().map(|t| t.name.clone()).collect());
+        let turn_tool_names: Vec<String> = native_tools.iter().map(|t| t.name.clone()).collect();
+
+        if self.complete_nudge_count >= 1 {
+            request.forced_tool_names = Some(
+                turn_tool_names
+                    .iter()
+                    .filter(|name| name.as_str() != "note" && name.as_str() != "ask_user")
+                    .cloned()
+                    .collect(),
+            );
         }
 
         let llm = self.create_strong_llm().await?;
-        // Live tail = everything past the conversation history. The cacheable
-        // prefix is `[stable_context?, ...history]` — definitionally stable.
-        // The post-history slots (virtual_task_state?, live_context,
-        // current_request, trailing_user?) mutate per turn (journal grows,
-        // statuses flip, per-second timestamp) and MUST stay out of the cache,
-        // otherwise the prefix-hash check invalidates the cache every call.
+        let turn_provider = llm.provider_label().to_string();
+        let turn_model = llm.model_name().to_string();
+
         let history_len = prompt_context.conversation_history_prefix.len();
         let total_messages = request.messages.len();
-        let pre_history = total_messages.saturating_sub(history_len).min(1); // stable_context (0 or 1)
+        let pre_history = total_messages.saturating_sub(history_len).min(1);
         let live_tail_count = total_messages.saturating_sub(pre_history + history_len);
         let cache_request = self.build_prompt_cache_request(live_tail_count).await;
         self.run_hooks(
@@ -1016,6 +1003,7 @@ impl AgentExecutor {
             serde_json::Value::Null,
         )
         .await;
+
         for call in output.calls.iter_mut() {
             let canonical = dto::json::tool_calls::canonical_tool_name(&call.tool_name);
             if canonical != call.tool_name {
@@ -1024,10 +1012,18 @@ impl AgentExecutor {
         }
         let raw_output_snapshot = serde_json::to_string(&output).unwrap_or_default();
         self.budget.tick_llm();
-        self.budget.tick_tools(output.calls.len());
+        self.budget.tick_tools(
+            output
+                .calls
+                .iter()
+                .filter(|c| !is_meta_tool_name(&c.tool_name))
+                .count(),
+        );
+
         if let Some(usage) = output.usage_metadata.as_ref() {
             self.budget.tick_tokens(usage.total_token_count as u64);
         }
+
         self.record_llm_usage_for_compaction(output.usage_metadata.as_ref());
         if let Some(cache_state) = output.cache_state.as_ref() {
             self.write_prompt_cache_state(cache_state).await;
@@ -1038,21 +1034,18 @@ impl AgentExecutor {
             .clone()
             .filter(|t| detect_leaked_tool_call(t))
         {
-            // Tool-call markup leaked into the text — the provider parser choked
-            // on it (commonly shell metachars in a parameter value). Tier 1: heal
-            // it. Recover the call(s) and keep any genuine prose with the markup
-            // excised; drop residual that still looks like markup so no fragment
-            // streams to the user or invites imitation.
             let healed = tool_call_salvage::salvage(&leaked);
-            // Only heal when the markup is the dominant content. A long prose reply that
-            // merely describes tool syntax leaves a large residual — keep it whole.
             let residual_len = healed
                 .residual_text
                 .as_deref()
                 .map(|t| t.trim().chars().count())
                 .unwrap_or(0);
+            // Strip the markup from user-visible text regardless of length; only recover calls when it dominated.
+            output.content_text = healed
+                .residual_text
+                .clone()
+                .filter(|t| !detect_leaked_tool_call(t));
             if residual_len <= 240 {
-                output.content_text = healed.residual_text.filter(|t| !detect_leaked_tool_call(t));
                 for mut call in healed.calls {
                     let canonical = dto::json::tool_calls::canonical_tool_name(&call.tool_name);
                     if canonical != call.tool_name {
@@ -1060,13 +1053,23 @@ impl AgentExecutor {
                     }
                     output.calls.push(call);
                 }
-                // Tier 2: nothing recoverable and nothing else ran — reject the turn
-                // and re-prompt cleanly (no message back, to avoid imitation).
                 if output.calls.is_empty() && output.content_text.is_none() {
                     self.note_unproductive_turn();
                     return Ok(true);
                 }
             }
+        }
+
+        // Truncated turn (hit the output token limit): surface a steering signal so
+        // the model shortens/splits next turn. The terminal-text path below also
+        // refuses to treat truncated text as a final answer.
+        let response_truncated = output
+            .finish_reason
+            .as_deref()
+            .map(is_truncated_finish)
+            .unwrap_or(false);
+        if response_truncated {
+            self.signal(core::RuntimeSignal::ResponseTruncated);
         }
 
         let note_calls: Vec<_> = output
@@ -1108,8 +1111,6 @@ impl AgentExecutor {
             .iter()
             .filter(|c| {
                 c.tool_name != "note"
-                    // When ask_user is disabled, let the call fall through to regular
-                    // execution so it errors as "not available" instead of being handled.
                     && !(ask_user_enabled && c.tool_name == "ask_user")
                     && c.tool_name != "resolve_user_feedback"
                     && c.tool_name != "notify_user"
@@ -1122,6 +1123,18 @@ impl AgentExecutor {
             self.complete_nudge_count = 0;
         }
 
+        if output.calls.is_empty()
+            && output
+                .content_text
+                .as_ref()
+                .map(|t| t.trim().is_empty())
+                .unwrap_or(true)
+        {
+            self.consecutive_empty_responses = self.consecutive_empty_responses.saturating_add(1);
+        } else {
+            self.consecutive_empty_responses = 0;
+        }
+
         for call in &resolve_calls {
             self.handle_resolve_user_feedback_call(call).await?;
         }
@@ -1129,16 +1142,7 @@ impl AgentExecutor {
             self.reset_unproductive_turns();
         }
 
-        if let Some(call) = ask_user_calls.first() {
-            self.reset_unproductive_turns();
-            return self.handle_ask_user_call(call).await;
-        }
-
-        if let Some(call) = notify_calls.first() {
-            self.reset_unproductive_turns();
-            return self.handle_notify_user_call(call).await;
-        }
-
+        // Persist notes before the ask_user / notify early returns, which exit the iteration.
         if !note_calls.is_empty() {
             for call in &note_calls {
                 let entry = call
@@ -1161,6 +1165,16 @@ impl AgentExecutor {
                 )
                 .await?;
             }
+        }
+
+        if let Some(call) = ask_user_calls.first() {
+            self.reset_unproductive_turns();
+            return self.handle_ask_user_call(call).await;
+        }
+
+        if let Some(call) = notify_calls.first() {
+            self.reset_unproductive_turns();
+            return self.handle_notify_user_call(call).await;
         }
 
         let note_only = !note_calls.is_empty()
@@ -1204,7 +1218,11 @@ impl AgentExecutor {
         if let Some(complete_call) = complete_calls.first() {
             if non_note_calls.is_empty() {
                 return self
-                    .handle_complete_call(complete_call, output.content_text.as_deref())
+                    .handle_complete_call(
+                        complete_call,
+                        output.content_text.as_deref(),
+                        prev_was_text_nudge,
+                    )
                     .await;
             }
             self.record_invalid_tool_call(
@@ -1224,6 +1242,11 @@ impl AgentExecutor {
                 .map(|t| t.trim().to_string())
                 .filter(|t| !t.is_empty())
             {
+                if response_truncated {
+                    // Cut-off text is not a complete answer — nudge, don't auto-complete.
+                    self.note_unproductive_turn();
+                    return Ok(true);
+                }
                 return self.handle_terminal_text_response(text).await;
             }
             let truncated_raw = raw_output_snapshot.chars().take(800).collect::<String>();
@@ -1234,6 +1257,19 @@ impl AgentExecutor {
                 raw_output_preview = %truncated_raw,
                 "empty_response_guard: LLM returned no tool calls and no text",
             );
+            if self.consecutive_empty_responses >= 2 {
+                if self.can_abort_current_assignment_execution() {
+                    self.abort_current_assignment_execution(&AbortDirective {
+                        reason: "Run stopped: model returned empty responses repeatedly."
+                            .to_string(),
+                        outcome: AbortOutcome::Blocked,
+                    })
+                    .await?;
+                } else {
+                    self.finish_without_summary().await?;
+                }
+                return Ok(false);
+            }
             self.signal(core::RuntimeSignal::EmptyResponse);
             self.note_unproductive_turn();
             return Ok(true);
@@ -1261,6 +1297,7 @@ impl AgentExecutor {
         }
 
         let mut tool_requests: Vec<ToolCallRequest> = Vec::new();
+        let mut tool_call_signatures: Vec<Option<String>> = Vec::new();
         let mut pending_shell_nudge: Option<String> = None;
         for call in non_note_calls
             .into_iter()
@@ -1281,11 +1318,7 @@ impl AgentExecutor {
             let tool = match available_tools.iter().find(|t| t.name == call.tool_name) {
                 Some(t) => t,
                 None => {
-                    let available_names = available_tools
-                        .iter()
-                        .map(|t| dto::json::tool_calls::agent_facing_tool_name(&t.name))
-                        .collect::<Vec<_>>()
-                        .join(", ");
+                    let available_names = turn_tool_names.join(", ");
                     self.record_invalid_tool_call(
                         &call.tool_name,
                         &call.arguments,
@@ -1314,7 +1347,10 @@ impl AgentExecutor {
                 }
             };
             match self.build_tool_call_request_from_native_call(tool, input_object) {
-                Ok(req) => tool_requests.push(req),
+                Ok(req) => {
+                    tool_requests.push(req);
+                    tool_call_signatures.push(call.signature.clone());
+                }
                 Err(e) => {
                     self.record_invalid_tool_call(&call.tool_name, &call.arguments, &e.to_string())
                         .await?;
@@ -1370,7 +1406,11 @@ impl AgentExecutor {
             serde_json::Value::Null,
         )
         .await;
-        let outcome = self.execute_requested_actions(tool_requests).await?;
+        let tool_calls_with_signatures: Vec<(ToolCallRequest, Option<String>)> =
+            tool_requests.into_iter().zip(tool_call_signatures).collect();
+        let outcome = self
+            .execute_requested_actions(tool_calls_with_signatures, turn_provider, turn_model)
+            .await?;
         self.reset_unproductive_turns();
         if batch_size >= LARGE_TOOL_BATCH {
             self.signal(core::RuntimeSignal::BatchBackpressure { batch_size });
@@ -1435,16 +1475,15 @@ impl AgentExecutor {
         let safe_message =
             Self::sanitize_user_facing_message(&text, "Completed the requested work.");
 
-        let is_conversation = matches!(
-            self.current_thread_role(),
-            super::project::status_machine::ThreadRole::Conversation
-        );
-
-        // Service (assignment-execution) threads get more rope to keep working
-        // through text-only turns; coordinator/review threads stay tight.
-        let max_complete_nudges = if self.is_service_mode_execution() { 5 } else { 2 };
-        if !is_conversation && self.complete_nudge_count < max_complete_nudges {
+        // Run ends only on an explicit terminate_loop (conversation included); a text-only turn is nudged, then auto-completes as a fallback. Service lanes get more rope.
+        let max_complete_nudges = if self.is_service_mode_execution() {
+            5
+        } else {
+            2
+        };
+        if self.complete_nudge_count < max_complete_nudges {
             self.complete_nudge_count += 1;
+            self.pending_text_nudge = true;
             self.store_conversation(
                 ConversationContent::Steer {
                     message: safe_message,
@@ -1464,8 +1503,6 @@ impl AgentExecutor {
             return Ok(true);
         }
 
-        // Conversation replies auto-complete; task lanes only land here after
-        // exhausting the nudges, with the text as fallback summary.
         self.finalize_completion(
             meta_tools::CompletionHandoff::from_summary(safe_message.clone()),
             safe_message,

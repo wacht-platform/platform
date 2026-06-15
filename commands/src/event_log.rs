@@ -754,3 +754,66 @@ where
         })
         .collect())
 }
+
+/// Stuck assignment that can never recover on its own — the subset the backstop
+/// sweeper acts on.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct RecoverableStuckAssignment {
+    pub assignment_id: i64,
+    pub board_item_id: i64,
+    pub thread_id: i64,
+}
+
+/// Stale non-coordinator assignments with no live lease, no `pending`/`publishing`
+/// event left to re-run them, an open board item, and no pending human input —
+/// i.e. silent finalize leaks. Runtime query, so no offline `.sqlx` entry needed.
+pub async fn list_recoverable_stuck_assignments<'e, E>(
+    executor: E,
+    stale_seconds: i64,
+    limit: i64,
+) -> Result<Vec<RecoverableStuckAssignment>, AppError>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let rows = sqlx::query_as::<_, RecoverableStuckAssignment>(
+        r#"
+        SELECT a.id AS assignment_id, a.board_item_id, a.thread_id
+        FROM project_task_board_item_assignments a
+        JOIN project_task_board_items i ON i.id = a.board_item_id
+        WHERE a.status IN ('claimed', 'in_progress')
+          AND a.assignment_role <> 'coordinator'
+          AND a.updated_at < NOW() - INTERVAL '1 second' * $1
+          AND i.archived_at IS NULL
+          AND i.status NOT IN ('completed', 'cancelled')
+          AND i.pending_question IS NULL
+          AND i.pending_approval IS NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM event_log el
+              INNER JOIN work_lease wl ON wl.event_id = el.id
+              WHERE el.aggregate_type = 'assignment'
+                AND el.aggregate_id = a.id
+                AND wl.expires_at > NOW()
+          )
+          AND EXISTS (
+              SELECT 1 FROM event_log el
+              WHERE el.aggregate_type = 'assignment'
+                AND el.aggregate_id = a.id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM event_log el
+              WHERE el.aggregate_type = 'assignment'
+                AND el.aggregate_id = a.id
+                AND el.publish_status IN ('pending', 'publishing')
+          )
+        ORDER BY a.updated_at ASC
+        LIMIT $2
+        "#,
+    )
+    .bind(stale_seconds as f64)
+    .bind(limit)
+    .fetch_all(executor)
+    .await?;
+
+    Ok(rows)
+}

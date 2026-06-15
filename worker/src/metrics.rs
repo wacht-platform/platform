@@ -111,6 +111,14 @@ pub static STUCK_ASSIGNMENT_DETECTED: LazyLock<Counter<u64>> = LazyLock::new(|| 
         .build()
 });
 
+/// Counter — stuck assignments marked blocked and reconciled to the coordinator.
+pub static STUCK_ASSIGNMENT_RECOVERED: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("stuck_assignment_recovered_total")
+        .with_description("Stuck assignments marked blocked and reconciled to the coordinator")
+        .build()
+});
+
 /// Helper: build a single-pair KeyValue slice for labels.
 pub fn label(key: &'static str, value: impl Into<String>) -> [KeyValue; 1] {
     [KeyValue::new(key, value.into())]

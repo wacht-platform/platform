@@ -45,6 +45,8 @@ pub struct CandidatePart {
     pub text: Option<String>,
     #[serde(rename = "functionCall", default)]
     pub function_call: Option<GeminiFunctionCall>,
+    #[serde(rename = "thoughtSignature", default)]
+    pub thought_signature: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -81,6 +83,10 @@ pub struct UsageMetadata {
     pub thoughts_token_count: Option<u32>,
     #[serde(rename = "toolUsePromptTokenCount", default)]
     pub tool_use_prompt_token_count: Option<u32>,
+    /// Cache-write tokens (providers that bill prompt-cache writes, e.g. Anthropic
+    /// via OpenRouter). Gemini does not report this; defaults to None.
+    #[serde(rename = "cacheWriteTokenCount", default)]
+    pub cache_write_token_count: Option<u32>,
     #[serde(rename = "promptTokensDetails", default)]
     pub prompt_tokens_details: Option<Vec<ModalityTokenCount>>,
     #[serde(rename = "cacheTokensDetails", default)]

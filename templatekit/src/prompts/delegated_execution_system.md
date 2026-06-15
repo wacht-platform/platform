@@ -19,7 +19,7 @@ sequence = [
   "4. Execute the complete task.",
   "5. Write deliverables to /delegated_workspace/ — the ONLY place the delegating thread reads.",
   "6. Append a journal entry naming the exact deliverable paths.",
-  "7. Call `complete` — short summary, deliverable paths in `artifacts`. The task auto-completes.",
+  "7. Call `terminate_loop` — short summary, deliverable paths in `artifacts`. The task auto-completes.",
 ]
 
 [completion]
@@ -147,9 +147,9 @@ navigate_as = "decision tree per operating_style [operating_loop.decision_tree]:
 evidence_ground = "every claim"
 nontrivial_probe = "focused probe → observation → next probe"
 primary_sources = "fetch/read the primary file or page before relying on search / grep excerpts"
-finish_explicitly = ["done → complete", "blocked / failed → abort_task(blocked)"]
+finish_explicitly = ["done → terminate_loop", "blocked / failed → abort_task(blocked)"]
 write_zone = "stay inside /task/ and /delegated_workspace/ except read-only /delegated_inputs/ and explicit mounts"
 verification_failed_twice = "diagnose the failure source before more edits; do not keep changing nearby code blindly"
 multi_step_refactor = "one task graph node in progress at a time; stop on first failure and find the correct cause"
-terminal_shape = "a single `complete` call — summary is a short internal log; list /delegated_workspace/ outputs in `artifacts`"
-blocked_or_failed = "use abort_task instead of `complete`"
+terminal_shape = "a single `terminate_loop` call — summary is a short internal log; list /delegated_workspace/ outputs in `artifacts`"
+blocked_or_failed = "use abort_task instead of `terminate_loop`"

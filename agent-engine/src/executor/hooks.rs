@@ -200,7 +200,7 @@ impl AgentExecutor {
     }
 
     async fn run_hook_step(
-        &self,
+        &mut self,
         tool_name: &str,
         input: Value,
     ) -> Result<HookStepOutcome, AppError> {
@@ -229,6 +229,32 @@ impl AgentExecutor {
         };
 
         let request = AgentExecutor::build_tool_call_request(&tool, input)?;
+
+        match &request {
+            dto::json::agent_executor::ToolCallRequest::LoadTools { params, .. } => {
+                let params = params.clone();
+                return match timeout(HOOK_STEP_TIMEOUT, self.execute_load_tools(params)).await {
+                    Ok(Ok(output)) => Ok(HookStepOutcome::Success(output)),
+                    Ok(Err(e)) => Err(e),
+                    Err(_) => Err(AppError::Internal(format!(
+                        "Hook tool '{tool_name}' timed out after {}s",
+                        HOOK_STEP_TIMEOUT.as_secs()
+                    ))),
+                };
+            }
+            dto::json::agent_executor::ToolCallRequest::SearchTools { params, .. } => {
+                let params = params.clone();
+                return match timeout(HOOK_STEP_TIMEOUT, self.execute_search_tools(params)).await {
+                    Ok(Ok(output)) => Ok(HookStepOutcome::Success(output)),
+                    Ok(Err(e)) => Err(e),
+                    Err(_) => Err(AppError::Internal(format!(
+                        "Hook tool '{tool_name}' timed out after {}s",
+                        HOOK_STEP_TIMEOUT.as_secs()
+                    ))),
+                };
+            }
+            _ => {}
+        }
 
         let exec_fut =
             self.tool_executor

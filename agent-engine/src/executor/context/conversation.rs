@@ -8,7 +8,7 @@ use templatekit::render_prompt_text;
 
 use commands::CreateConversationCommand;
 use common::error::AppError;
-use dto::json::{LlmHistoryEntry, LlmHistoryPart, StreamEvent};
+use dto::json::{LlmHistoryEntry, LlmHistoryPart, LlmToolCall, LlmToolResult, StreamEvent};
 use models::{ConversationContent, ConversationMessageType, ConversationRecord};
 use queries::GetCompactionWindowConversationsQuery;
 use serde_json::{json, Value};
@@ -77,6 +77,23 @@ impl AgentExecutor {
                         data: data.data.clone(),
                     });
                 }
+                if let Some(call) = part.tool_call.as_ref() {
+                    content_blocks.push(SemanticLlmContentBlock::ToolCall {
+                        id: call.id.clone(),
+                        name: call.name.clone(),
+                        args: call.args.clone(),
+                        signature: call.signature.clone(),
+                        origin_provider: call.origin_provider.clone(),
+                        origin_model: call.origin_model.clone(),
+                    });
+                }
+                if let Some(result) = part.tool_result.as_ref() {
+                    content_blocks.push(SemanticLlmContentBlock::ToolResult {
+                        call_id: result.call_id.clone(),
+                        name: result.name.clone(),
+                        output: result.output.clone(),
+                    });
+                }
             }
             return SemanticLlmMessage {
                 role: entry.role.clone(),
@@ -102,6 +119,23 @@ impl AgentExecutor {
             .send(StreamEvent::ConversationMessage(conversation))
             .await;
 
+        Ok(())
+    }
+
+    pub(crate) async fn store_conversation_with_metadata(
+        &mut self,
+        content: ConversationContent,
+        message_type: ConversationMessageType,
+        metadata: Option<Value>,
+    ) -> Result<(), AppError> {
+        let conversation = self
+            .create_conversation_with_metadata(content, message_type, metadata)
+            .await?;
+        self.conversations.push(conversation.clone());
+        let _ = self
+            .channel
+            .send(StreamEvent::ConversationMessage(conversation))
+            .await;
         Ok(())
     }
 
@@ -452,50 +486,90 @@ impl AgentExecutor {
                         error,
                     } = &conv.content
                     {
-                        let mut inline_parts: Vec<LlmHistoryPart> = Vec::new();
-
-                        if tool_name == "read_image" {
-                            let path = output
-                                .as_ref()
-                                .and_then(|v| v.get("data"))
-                                .and_then(|v| v.get("path"))
-                                .and_then(|v| v.as_str());
-                            let mime_type = output
-                                .as_ref()
-                                .and_then(|v| v.get("data"))
-                                .and_then(|v| v.get("mime_type"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("application/octet-stream");
-                            if let Some(path) = path {
-                                if let Ok(bytes) = self.filesystem.read_file_bytes(path).await {
-                                    use base64::{engine::general_purpose::STANDARD, Engine};
-                                    inline_parts.push(LlmHistoryPart::inline_data(
-                                        mime_type,
-                                        STANDARD.encode(bytes),
-                                    ));
+                        if tool_name == "read_image" || status == "pending" {
+                            let mut inline_parts: Vec<LlmHistoryPart> = Vec::new();
+                            if tool_name == "read_image" {
+                                let path = output
+                                    .as_ref()
+                                    .and_then(|v| v.get("data"))
+                                    .and_then(|v| v.get("path"))
+                                    .and_then(|v| v.as_str());
+                                let mime_type = output
+                                    .as_ref()
+                                    .and_then(|v| v.get("data"))
+                                    .and_then(|v| v.get("mime_type"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("application/octet-stream");
+                                if let Some(path) = path {
+                                    if let Ok(bytes) = self.filesystem.read_file_bytes(path).await {
+                                        use base64::{engine::general_purpose::STANDARD, Engine};
+                                        inline_parts.push(LlmHistoryPart::inline_data(
+                                            mime_type,
+                                            STANDARD.encode(bytes),
+                                        ));
+                                    }
                                 }
                             }
+                            let narrative = Self::render_tool_event(
+                                tool_name,
+                                status.as_str(),
+                                input,
+                                output.as_ref(),
+                                error.as_deref(),
+                            );
+                            let mut parts = vec![LlmHistoryPart::text(narrative)];
+                            parts.extend(inline_parts);
+                            let mut entry = LlmHistoryEntry::with_parts(
+                                "user",
+                                "tool_result",
+                                timestamp.clone(),
+                                parts,
+                            );
+                            entry.metadata = conv.metadata.clone();
+                            history.push(entry);
+                        } else {
+                            let meta = conv.metadata.as_ref();
+                            let meta_str = |key: &str| {
+                                meta.and_then(|m| m.get(key))
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string())
+                            };
+                            let call_id = meta_str("tool_call_id")
+                                .unwrap_or_else(|| format!("call_{}", conv.id));
+
+                            let mut call_entry = LlmHistoryEntry::with_parts(
+                                "model",
+                                "tool_call",
+                                timestamp.clone(),
+                                vec![LlmHistoryPart::tool_call(LlmToolCall {
+                                    id: call_id.clone(),
+                                    name: tool_name.clone(),
+                                    args: input.clone(),
+                                    signature: meta_str("signature"),
+                                    origin_provider: meta_str("origin_provider"),
+                                    origin_model: meta_str("origin_model"),
+                                })],
+                            );
+                            call_entry.metadata = conv.metadata.clone();
+                            history.push(call_entry);
+
+                            let result_output = match output {
+                                Some(v) => v.clone(),
+                                None => serde_json::json!({
+                                    "error": error.clone().unwrap_or_default()
+                                }),
+                            };
+                            history.push(LlmHistoryEntry::with_parts(
+                                "user",
+                                "tool_result",
+                                timestamp.clone(),
+                                vec![LlmHistoryPart::tool_result(LlmToolResult {
+                                    call_id,
+                                    name: tool_name.clone(),
+                                    output: result_output,
+                                })],
+                            ));
                         }
-
-                        let narrative = Self::render_tool_event(
-                            tool_name,
-                            status.as_str(),
-                            input,
-                            output.as_ref(),
-                            error.as_deref(),
-                        );
-
-                        let mut parts = vec![LlmHistoryPart::text(narrative)];
-                        parts.extend(inline_parts);
-
-                        let mut entry = LlmHistoryEntry::with_parts(
-                            "user",
-                            "tool_result",
-                            timestamp.clone(),
-                            parts,
-                        );
-                        entry.metadata = conv.metadata.clone();
-                        history.push(entry);
                     }
                     i += 1;
                 }

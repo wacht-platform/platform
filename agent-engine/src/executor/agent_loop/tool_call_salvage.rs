@@ -118,6 +118,7 @@ fn salvage_qwen_xml(text: &str) -> Vec<GeneratedToolCall> {
             calls.push(GeneratedToolCall {
                 tool_name: name,
                 arguments: Value::Object(arguments),
+                signature: None,
             });
         }
         cursor = region_end;
@@ -218,6 +219,7 @@ fn salvage_glm(text: &str) -> Vec<GeneratedToolCall> {
     vec![GeneratedToolCall {
         tool_name: name,
         arguments: Value::Object(args),
+        signature: None,
     }]
 }
 
@@ -240,6 +242,7 @@ fn salvage_deepseek(text: &str) -> Vec<GeneratedToolCall> {
             calls.push(GeneratedToolCall {
                 tool_name: name,
                 arguments,
+                signature: None,
             });
         }
         cursor = name_start + name_len;
@@ -274,6 +277,7 @@ fn collect_json_calls(value: &Value, out: &mut Vec<GeneratedToolCall>) {
             out.push(GeneratedToolCall {
                 tool_name: name.to_string(),
                 arguments,
+                signature: None,
             });
         }
         _ => {}
