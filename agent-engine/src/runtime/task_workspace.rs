@@ -6,7 +6,6 @@ use sha2::{Digest, Sha256};
 pub const TASK_WORKSPACE_DIR: &str = "/task";
 pub const TASK_WORKSPACE_TASK_FILE: &str = "/task/TASK.md";
 pub const TASK_WORKSPACE_JOURNAL_FILE: &str = "/task/JOURNAL.md";
-pub const TASK_WORKSPACE_RUNBOOK_FILE: &str = "/task/RUNBOOK.md";
 pub const TASK_WORKSPACE_AUDIT_FILE: &str = "/task/AUDIT.log";
 
 const JOURNAL_TAIL_BYTES: usize = 16 * 1024;
@@ -166,20 +165,6 @@ pub async fn prepare_task_workspace(
             contents.into_bytes()
         }
     };
-
-    if input.is_recurring
-        && read_sandbox_optional(filesystem, TASK_WORKSPACE_RUNBOOK_FILE)
-            .await?
-            .is_none()
-    {
-        let contents = format!(
-            "# Runbook\n\nTask key: {}\nTask title: {}\n\nKeep this file short. Store only critical carry-forward facts:\n- key file or script paths\n- main data shape or storage location\n- reusable commands or procedures\n- non-obvious gotchas or invariants\n\nDo not put timeline history here. Use `/task/JOURNAL.md` for that.\n",
-            task_key, input.title
-        );
-        filesystem
-            .write_file(TASK_WORKSPACE_RUNBOOK_FILE, &contents, false)
-            .await?;
-    }
 
     if let Some(brief) = input.brief {
         if read_sandbox_optional(filesystem, TASK_WORKSPACE_TASK_FILE)

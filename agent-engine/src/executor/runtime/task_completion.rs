@@ -3,7 +3,7 @@ use super::core::AgentExecutor;
 use crate::runtime::task_workspace::{
     compute_task_journal_hash, prepare_task_workspace, read_task_journal_tail,
     TaskWorkspaceBriefInput, TASK_WORKSPACE_DIR, TASK_WORKSPACE_JOURNAL_FILE,
-    TASK_WORKSPACE_RUNBOOK_FILE, TASK_WORKSPACE_TASK_FILE,
+    TASK_WORKSPACE_TASK_FILE,
 };
 
 use commands::UpdateAgentThreadStateCommand;
@@ -17,7 +17,6 @@ pub(crate) struct TaskWorkspaceContext {
     pub(crate) directory_path: String,
     pub(crate) task_file_path: String,
     pub(crate) journal_file_path: String,
-    pub(crate) runbook_file_path: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -474,7 +473,6 @@ impl AgentExecutor {
                 directory_path: TASK_WORKSPACE_DIR.to_string(),
                 task_file_path: TASK_WORKSPACE_TASK_FILE.to_string(),
                 journal_file_path: TASK_WORKSPACE_JOURNAL_FILE.to_string(),
-                runbook_file_path: is_recurring.then_some(TASK_WORKSPACE_RUNBOOK_FILE.to_string()),
             },
             prepared.journal_hash,
         ))

@@ -383,6 +383,16 @@ impl AgentExecutor {
             }
             _ => Vec::new(),
         };
+
+        // Nudge the coordinator to write the brief before routing, so the lane
+        // it dispatches has a `/task/TASK.md` to read (completion is also gated).
+        if is_coordinator
+            && board_context.active_board_item.is_some()
+            && !self.task_brief_is_ready().await?
+        {
+            self.signal(crate::executor::core::RuntimeSignal::CoordinatorBriefMissing);
+        }
+
         let context = AgentLoopContext {
             runtime: AgentLoopRuntimeContext {
                 current_datetime_utc: chrono::Utc::now()

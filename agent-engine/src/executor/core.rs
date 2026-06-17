@@ -30,6 +30,7 @@ pub(crate) enum RuntimeSignal {
     CompleteBlocked { reason: String },
     AskUserBlocked { reason: String },
     UserVisibilityLapse,
+    CoordinatorBriefMissing,
 }
 
 impl RuntimeSignal {
@@ -47,6 +48,7 @@ impl RuntimeSignal {
             Self::CompleteBlocked { .. } => "complete_blocked",
             Self::AskUserBlocked { .. } => "ask_user_blocked",
             Self::UserVisibilityLapse => "user_visibility",
+            Self::CoordinatorBriefMissing => "coordinator_brief_missing",
         }
     }
 
@@ -71,6 +73,7 @@ impl RuntimeSignal {
             Self::CompleteBlocked { reason } => reason.clone(),
             Self::AskUserBlocked { reason } => reason.clone(),
             Self::UserVisibilityLapse => "no user-visible message in the last 4 visible steps; add one short progress line beside the next tool call unless it is a tiny read".to_string(),
+            Self::CoordinatorBriefMissing => "the task brief `/task/TASK.md` isn't ready yet — write a complete brief there (objective, scope, acceptance criteria) before routing work to a lane, so the executor has one to read".to_string(),
         }
     }
 

@@ -128,7 +128,7 @@ not_a_reason = "'I might need it later' without a concrete downstream reader"
 list = [
   "files explicitly named in the brief or acceptance criteria",
   "files at mount surfaces the caller reads (/task/artifacts/, /delegated_workspace/, /shared/)",
-  "/task/JOURNAL.md, /task/TASK.md, /task/RUNBOOK.md",
+  "/task/JOURNAL.md, /task/TASK.md",
 ]
 
 [workspace_hygiene.delete]
