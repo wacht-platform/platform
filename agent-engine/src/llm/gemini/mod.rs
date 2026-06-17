@@ -491,6 +491,11 @@ impl GeminiClient {
     }
 }
 
+// Google's documented skip sentinel — base64("skip_thought_signature_validator").
+// Gemini 3 requires a thoughtSignature on replayed functionCall parts but does
+// not validate its value; used for calls that originated on another model.
+const GEMINI_SKIP_THOUGHT_SIGNATURE: &str = "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I=";
+
 fn gemini_part_for_block(block: &crate::llm::SemanticLlmContentBlock, model: &str) -> Value {
     use crate::llm::SemanticLlmContentBlock;
     match block {
@@ -507,12 +512,17 @@ fn gemini_part_for_block(block: &crate::llm::SemanticLlmContentBlock, model: &st
             ..
         } => {
             let mut part = json!({ "functionCall": { "name": name, "args": args } });
-            if let Some(sig) = signature {
-                if origin_provider.as_deref() == Some("gemini")
+            let own_signature = signature.as_deref().filter(|_| {
+                origin_provider.as_deref() == Some("gemini")
                     && origin_model.as_deref() == Some(model)
-                {
-                    part["thoughtSignature"] = json!(sig);
-                }
+            });
+            if let Some(sig) = own_signature {
+                part["thoughtSignature"] = json!(sig);
+            } else if !is_gemini_2_5(model) {
+                // No same-model signature (e.g. call replayed from another
+                // model/provider). Gemini 3+ would 400 without one, so attach
+                // the documented skip sentinel; Gemini 2.5 doesn't require it.
+                part["thoughtSignature"] = json!(GEMINI_SKIP_THOUGHT_SIGNATURE);
             }
             part
         }
