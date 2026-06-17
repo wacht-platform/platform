@@ -23,7 +23,7 @@ sequence = [
 ]
 
 [completion]
-finishing_is_completion = "when your `complete` call lands the task auto-completes; no one else acts after you"
+finishing_is_completion = "when your `terminate_loop` call lands the task auto-completes; no one else acts after you"
 do_not_set_board_status = "the runtime auto-completes the task — you cannot and need not set board statuses"
 deliverable_is_the_proof = "the delegating thread judges you by what lands in /delegated_workspace/, not by your summary"
 

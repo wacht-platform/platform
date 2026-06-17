@@ -86,6 +86,14 @@ view = """
 """
 
 {{/if}}
+{{#if task.comment_timeline}}
+[user_feedback]
+note = "live state, refreshed every turn — resolve each [unresolved] item with `resolve_user_feedback` (comment id + one-line summary of what you did, or why none is needed). [resolved] items are done; do not call resolve on them again. Do not `terminate_loop` while any [unresolved] remains."
+{{#each task.comment_timeline}}- {{#if resolved}}[resolved]{{else}}[unresolved]{{/if}} id={{id}} ({{created_at}}) {{{body}}}{{#if attachments}}
+  attachments: {{#each attachments}}{{path}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if resolution_summary}}
+  resolution: {{{resolution_summary}}}{{/if}}
+{{/each}}
+{{/if}}
 {{#if discoverable_external_tool_names}}
 [external_tools]
 available = "{{join discoverable_external_tool_names ", "}}"

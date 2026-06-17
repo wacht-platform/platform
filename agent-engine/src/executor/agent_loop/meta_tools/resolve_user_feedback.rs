@@ -6,7 +6,7 @@ impl AgentExecutor {
     pub(in crate::executor::agent_loop) async fn handle_resolve_user_feedback_call(
         &mut self,
         call: &crate::llm::GeneratedToolCall,
-    ) -> Result<(), AppError> {
+    ) -> Result<u64, AppError> {
         let args: dto::json::agent_executor::ResolveUserFeedbackParams =
             serde_json::from_value(call.arguments.clone()).map_err(|e| {
                 AppError::BadRequest(format!("resolve_user_feedback params malformed: {e}"))
@@ -43,14 +43,22 @@ impl AgentExecutor {
                 "resolve_user_feedback requires at least one valid comment_id".to_string(),
             ));
         }
-        commands::ResolveBoardItemCommentsCommand {
+        let rows_affected = commands::ResolveBoardItemCommentsCommand {
             board_item_id,
-            comment_ids,
+            comment_ids: comment_ids.clone(),
             resolved_by_thread_id: self.ctx.thread_id,
             resolution_summary: resolution,
         }
         .execute_with_db(self.ctx.app_state.db_router.writer())
         .await?;
-        Ok(())
+        tracing::info!(
+            target: "loop",
+            board_item_id,
+            thread_id = self.ctx.thread_id,
+            comment_ids = ?comment_ids,
+            rows_affected,
+            "resolve_user_feedback"
+        );
+        Ok(rows_affected)
     }
 }

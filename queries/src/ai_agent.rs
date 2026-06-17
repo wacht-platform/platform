@@ -371,12 +371,16 @@ impl GetAiAgentsByIdsQuery {
 }
 
 pub struct GetAiAgentByIdWithFeatures {
+    pub deployment_id: i64,
     pub agent_id: i64,
 }
 
 impl GetAiAgentByIdWithFeatures {
-    pub fn new(agent_id: i64) -> Self {
-        Self { agent_id }
+    pub fn new(deployment_id: i64, agent_id: i64) -> Self {
+        Self {
+            deployment_id,
+            agent_id,
+        }
     }
 
     pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<AiAgentWithFeatures, AppError>
@@ -450,9 +454,10 @@ impl GetAiAgentByIdWithFeatures {
                     AND ak.agent_id = a.id
                     AND ak.deployment_id = a.deployment_id
             ) knowledge_bases ON true
-            WHERE a.id = $1
+            WHERE a.id = $1 AND a.deployment_id = $2
             "#,
-            self.agent_id
+            self.agent_id,
+            self.deployment_id
         )
         .fetch_one(executor)
         .await

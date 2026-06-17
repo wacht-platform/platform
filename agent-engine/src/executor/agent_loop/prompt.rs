@@ -377,6 +377,12 @@ impl AgentExecutor {
         {
             self.signal(crate::executor::core::RuntimeSignal::UserVisibilityLapse);
         }
+        let comment_timeline = match self.current_board_item_id() {
+            Some(board_item_id) if is_coordinator && board_item_id > 0 => {
+                self.load_comment_timeline_for_board_item(board_item_id).await?
+            }
+            _ => Vec::new(),
+        };
         let context = AgentLoopContext {
             runtime: AgentLoopRuntimeContext {
                 current_datetime_utc: chrono::Utc::now()
@@ -423,6 +429,7 @@ impl AgentExecutor {
                 task_journal_tail: board_context.task_journal_tail,
                 thread_assignment_queue: board_context.thread_assignment_queue,
                 task_graph_view,
+                comment_timeline,
             },
         };
 

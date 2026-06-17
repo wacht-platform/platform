@@ -213,11 +213,12 @@ impl AgentExecutor {
             super::status_machine::validate_terminal_payload_shape(next_status, &params)?;
             if next_status == "completed" {
                 if let Some(artifacts) = params.artifacts.as_deref() {
-                    for path in artifacts {
-                        if !self.filesystem.exists(path).await? {
+                    for artifact in artifacts {
+                        if !self.filesystem.exists(&artifact.path).await? {
                             return Err(AppError::BadRequest(format!(
-                                "update_project_task: declared artifact `{path}` is not present in \
-                                 the task sandbox. Write the file before marking the task completed."
+                                "update_project_task: declared artifact `{}` is not present in \
+                                 the task sandbox. Write the file before marking the task completed.",
+                                artifact.path
                             )));
                         }
                     }
@@ -829,14 +830,14 @@ Rules:\n\
             .as_deref()
             .map(str::trim)
             .unwrap_or("");
-        let artifacts: Vec<String> = params
+        let artifacts: Vec<dto::json::TaskArtifact> = params
             .artifacts
             .clone()
             .unwrap_or_default()
             .into_iter()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
+            .filter(|a| !a.path.trim().is_empty())
             .collect();
+        let artifact_paths: Vec<String> = artifacts.iter().map(|a| a.path.clone()).collect();
 
         append_journal_handoff_entry(
             &self.filesystem,
@@ -845,7 +846,7 @@ Rules:\n\
             "completed",
             outcome,
             &handoff,
-            &artifacts,
+            &artifact_paths,
             chrono::Utc::now(),
         )
         .await?;

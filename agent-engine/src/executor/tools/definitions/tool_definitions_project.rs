@@ -340,8 +340,16 @@ pub fn update_project_task_schema() -> Vec<SchemaField> {
         SchemaField {
             name: "artifacts".to_string(),
             field_type: "ARRAY".to_string(),
-            items_type: Some("STRING".to_string()),
-            description: Some("Required for status completed. Deliverable paths (typically `/task/artifacts/`); each must exist in the sandbox now — missing paths are rejected. Omit otherwise.".to_string()),
+            items_schema: Some(Box::new(SchemaField {
+                field_type: "OBJECT".to_string(),
+                properties: Some(vec![
+                    SchemaField { name: "path".to_string(), field_type: "STRING".to_string(), description: Some("Path to the deliverable file in the sandbox (typically `/task/artifacts/...`). Must exist now — missing paths are rejected.".to_string()), required: true, ..Default::default() },
+                    SchemaField { name: "kind".to_string(), field_type: "STRING".to_string(), description: Some("Short type label, e.g. `report`, `dataset`, `code`, `image`.".to_string()), required: false, ..Default::default() },
+                    SchemaField { name: "note".to_string(), field_type: "STRING".to_string(), description: Some("One-line description of what this deliverable is.".to_string()), required: false, ..Default::default() },
+                ]),
+                ..Default::default()
+            })),
+            description: Some("Required for status completed. List of deliverables produced, each `{path, kind?, note?}`. Omit otherwise.".to_string()),
             min_items: Some(1),
             required: false,
             ..Default::default()

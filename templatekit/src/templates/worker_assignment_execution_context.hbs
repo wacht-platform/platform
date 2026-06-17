@@ -9,14 +9,13 @@
 ## Task
 
 - **Key:** `{{task_key}}`
-- **Title:** {{title}}
-- **Status:** `{{status}}`
-- **Description:** {{description}}
+- **Title:** {{{title}}}
+- **Description:** {{{description}}}
 
 ## Your slice
 
 - **Role:** `{{assignment_role}}`{{#if assignment_count}} ({{assignment_count}} active on this task){{/if}}
-- **Instructions:** {{instructions}}
+- **Instructions:** {{{instructions}}}
 {{#if handoff_file_path}}- **Handoff from prior lane:** `{{handoff_file_path}}`
 {{/if}}- **After you finish:** {{#if is_delegated}}task auto-completes; the delegating conversation reads your output from `/delegated_workspace/` (no coordinator, no reviewer).{{else}}{{#if has_reviewer_after}}a reviewer reads your output and decides accept/reject.{{else}}the coordinator reads your `result_summary` and decides next steps.{{/if}}{{/if}}
 
@@ -38,7 +37,7 @@
 ## Mounts
 
 S3-backed paths inside the sandbox; contents persist across this task's lifetime. For recurring tasks, contents persist across every fire of the schedule. Read at the start, write before you finish.
-{{#each task_mounts}}- `{{mount_path}}` ({{mode}}){{#if description}} — {{description}}{{/if}}
+{{#each task_mounts}}- `{{mount_path}}` ({{mode}}){{#if description}} — {{{description}}}{{/if}}
 {{/each}}{{#if schedule_scheduled_for}}Scheduled fire: `{{schedule_scheduled_for}}`.
 {{/if}}When you write to a mounted path, note it in `/task/JOURNAL.md` so the next run (or a reviewer) can see what changed in shared storage.
 {{/if}}
@@ -49,9 +48,9 @@ Newest first, read-only at `/project_workspace/tasks/<task_key>/`:
 {{/each}}
 {{/if}}{{#if comment_timeline}}## User feedback
 
-{{#each comment_timeline}}- **{{#if resolved}}[resolved]{{else}}[unresolved]{{/if}}** id `{{id}}` ({{created_at}}) — {{body}}{{#if attachments}}
+{{#each comment_timeline}}- **{{#if resolved}}[resolved]{{else}}[unresolved]{{/if}}** id `{{id}}` ({{created_at}}) — {{{body}}}{{#if attachments}}
   attachments: {{#each attachments}}`{{path}}`{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if resolution_summary}}
-  resolution: {{resolution_summary}}{{/if}}
+  resolution: {{{resolution_summary}}}{{/if}}
 {{/each}}
 For each `[unresolved]` entry: incorporate it into your work this turn **and** call `resolve_user_feedback` with the comment id(s) and a short resolution summary; or call `resolve_user_feedback` explaining why no action is needed. Don't terminate while any `[unresolved]` remains.
 

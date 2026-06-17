@@ -305,6 +305,9 @@ impl GetCompactionWindowConversationsQuery {
 
         records
             .into_iter()
+            // Window is board-scoped in SQL (cross-thread); keep only this
+            // thread's rows so a compaction summary never ingests sibling lanes.
+            .filter(|row| row.thread_id == Some(self.thread_id))
             .map(|row| {
                 build_conversation_record(
                     row.id,

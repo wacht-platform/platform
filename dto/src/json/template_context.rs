@@ -214,6 +214,32 @@ pub struct AgentLoopTaskContext {
     pub thread_assignment_queue: Vec<ProjectTaskBoardAssignmentPromptItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub task_graph_view: Option<String>,
+    /// Live user-feedback comments on the active board item, refreshed every
+    /// iteration so resolved items flip to `[resolved]` immediately. Coordinator
+    /// threads only; empty for everyone else.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub comment_timeline: Vec<CommentTimelinePromptItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommentTimelinePromptItem {
+    pub id: String,
+    pub body: String,
+    pub created_at: String,
+    pub resolved: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<CommentAttachmentPromptItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolution_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommentAttachmentPromptItem {
+    pub path: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub mime_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -47,7 +47,7 @@ impl ReopenBoardItemIfClosedCommand {
 }
 
 fn board_item_status_is_terminal(status: &str) -> bool {
-    matches!(status, "completed" | "cancelled")
+    matches!(status, "completed" | "cancelled" | "failed" | "rejected")
 }
 
 fn map_assignment_fk_error(err: sqlx::Error, thread_id: i64, board_item_id: i64) -> AppError {
@@ -81,11 +81,11 @@ pub struct ResolveBoardItemCommentsCommand {
 }
 
 impl ResolveBoardItemCommentsCommand {
-    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<u64, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        sqlx::query!(
+        let result = sqlx::query!(
             r#"
             UPDATE project_task_board_item_comments
             SET resolved_at = NOW(),
@@ -104,7 +104,7 @@ impl ResolveBoardItemCommentsCommand {
         )
         .execute(executor)
         .await?;
-        Ok(())
+        Ok(result.rows_affected())
     }
 }
 

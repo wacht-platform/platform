@@ -149,7 +149,19 @@ impl AgentExecutor {
         result: Option<&Value>,
         error_message: Option<String>,
     ) -> Value {
-        let status = if error_message.is_some() {
+        // A tool that returns a failure payload without throwing (e.g. an HTTP
+        // tool returning {success:false, error:...}) must not be reported as success.
+        let effective_error = error_message.or_else(|| {
+            let r = result?;
+            let failed = matches!(
+                r.get("status").and_then(|s| s.as_str()),
+                Some("error") | Some("failed")
+            ) || (r.get("success").and_then(|v| v.as_bool()) == Some(false)
+                && r.get("error").map(|e| !e.is_null()).unwrap_or(false));
+            failed.then(|| Self::extract_tool_error_message(r))
+        });
+
+        let status = if effective_error.is_some() {
             "error"
         } else if result
             .and_then(|r| r.get("status"))
@@ -184,7 +196,7 @@ impl AgentExecutor {
             "schema_version": 1,
             "tool_name": tool_name,
             "status": status,
-            "error": error_message.map(|msg| json!({
+            "error": effective_error.map(|msg| json!({
                 "code": "tool_execution_error",
                 "message": msg,
             })),
@@ -196,6 +208,28 @@ impl AgentExecutor {
                 "generated_at": chrono::Utc::now().to_rfc3339(),
             }
         })
+    }
+
+    fn extract_tool_error_message(r: &Value) -> String {
+        if let Some(s) = r.get("error").and_then(|v| v.as_str()) {
+            return s.to_string();
+        }
+        if let Some(s) = r
+            .get("error")
+            .and_then(|v| v.get("message"))
+            .and_then(|v| v.as_str())
+        {
+            return s.to_string();
+        }
+        for k in ["error_message", "message"] {
+            if let Some(s) = r.get(k).and_then(|v| v.as_str()) {
+                return s.to_string();
+            }
+        }
+        match r.get("status").and_then(|s| s.as_i64()) {
+            Some(c) => format!("tool reported failure (status {c})"),
+            None => "tool reported failure".to_string(),
+        }
     }
 
     pub(crate) async fn finish_without_summary(&mut self) -> Result<(), AppError> {

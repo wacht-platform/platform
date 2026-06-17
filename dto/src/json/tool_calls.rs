@@ -235,6 +235,16 @@ pub struct CreateProjectTaskParams {
     pub auto_subscribe: Option<bool>,
 }
 
+/// A produced deliverable: a structured `{path, kind?, note?}` object.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct TaskArtifact {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct UpdateProjectTaskParams {
     pub task_key: String,
@@ -252,11 +262,11 @@ pub struct UpdateProjectTaskParams {
     /// summaries are rejected with a `BadRequest`.
     #[serde(default)]
     pub result_summary: Option<String>,
-    /// Required when transitioning to `completed`. Each path must point at a file
-    /// that exists in the task sandbox at the moment of the call. Typically under
-    /// `/task/artifacts/`. Validated at the boundary.
+    /// Required when transitioning to `completed`. Each `path` must point at a
+    /// file that exists in the task sandbox at the moment of the call. Typically
+    /// under `/task/artifacts/`. Validated at the boundary.
     #[serde(default)]
-    pub artifacts: Option<Vec<String>>,
+    pub artifacts: Option<Vec<TaskArtifact>>,
     #[serde(default)]
     pub findings: Option<String>,
     #[serde(default)]

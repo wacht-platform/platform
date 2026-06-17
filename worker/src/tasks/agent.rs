@@ -580,7 +580,7 @@ async fn run_event_log_work(
         Some(id) => id,
         None => resolve_agent_id_for_thread(&app_state, thread_id).await?,
     };
-    let agent = GetAiAgentByIdWithFeatures::new(agent_id)
+    let agent = GetAiAgentByIdWithFeatures::new(deployment_id, agent_id)
         .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| AgentExecutionError::Other(anyhow::anyhow!("load agent: {e}")))?;

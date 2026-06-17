@@ -175,15 +175,6 @@ impl AgentExecutor {
         signals.iter().map(|signal| signal.render()).collect()
     }
 
-    pub(crate) async fn create_conversation(
-        &self,
-        content: ConversationContent,
-        message_type: ConversationMessageType,
-    ) -> Result<ConversationRecord, AppError> {
-        self.create_conversation_with_metadata(content, message_type, None)
-            .await
-    }
-
     pub(crate) async fn create_conversation_with_metadata(
         &self,
         content: ConversationContent,
@@ -1855,12 +1846,13 @@ Output plain text only — no JSON, no code fences, no surrounding prose."#,
         agent_execution: String,
     ) -> Result<(usize, ConversationRecord), AppError> {
         let summary_record = self
-            .create_conversation(
+            .create_conversation_with_metadata(
                 ConversationContent::ExecutionSummary {
                     user_message: user_request,
                     agent_execution,
                 },
                 ConversationMessageType::ExecutionSummary,
+                None,
             )
             .await?;
 
@@ -1938,13 +1930,14 @@ Output plain text. No JSON, no code fences, no preface.";
         }
 
         let record = self
-            .create_conversation(
+            .create_conversation_with_metadata(
                 ConversationContent::ExecutionSummary {
-                    user_message: "Recent activity orientation (verbatim transcript follows below)"
+                    user_message: "Recent activity orientation (condensed; raw events were compacted)"
                         .to_string(),
                     agent_execution: trimmed.to_string(),
                 },
                 ConversationMessageType::ExecutionSummary,
+                None,
             )
             .await?;
 

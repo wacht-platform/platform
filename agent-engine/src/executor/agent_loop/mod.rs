@@ -108,7 +108,7 @@ impl AgentExecutor {
     async fn load_comment_timeline_for_board_item(
         &self,
         board_item_id: i64,
-    ) -> Result<Vec<serde_json::Value>, AppError> {
+    ) -> Result<Vec<dto::json::CommentTimelinePromptItem>, AppError> {
         if board_item_id <= 0 {
             return Ok(Vec::new());
         }
@@ -120,6 +120,26 @@ impl AgentExecutor {
                     .reader(common::ReadConsistency::Eventual),
             )
             .await?;
+        let timeline_state: Vec<String> = comments
+            .iter()
+            .map(|c| {
+                format!(
+                    "{}={}",
+                    c.id,
+                    if c.resolved_at.is_some() {
+                        "resolved"
+                    } else {
+                        "unresolved"
+                    }
+                )
+            })
+            .collect();
+        tracing::info!(
+            target: "loop",
+            board_item_id,
+            timeline = ?timeline_state,
+            "comment_timeline loaded"
+        );
         Ok(comments
             .into_iter()
             .map(|c| {
@@ -131,29 +151,33 @@ impl AgentExecutor {
                         arr.iter()
                             .filter_map(|a| {
                                 a.get("path").and_then(|p| p.as_str()).map(|p| {
-                                    json!({
-                                        "path": p,
-                                        "name": a.get("original_name")
+                                    dto::json::CommentAttachmentPromptItem {
+                                        path: p.to_string(),
+                                        name: a
+                                            .get("original_name")
                                             .or_else(|| a.get("name"))
                                             .and_then(|n| n.as_str())
-                                            .unwrap_or(""),
-                                        "mime_type": a.get("mime_type")
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        mime_type: a
+                                            .get("mime_type")
                                             .and_then(|m| m.as_str())
-                                            .unwrap_or(""),
-                                    })
+                                            .unwrap_or("")
+                                            .to_string(),
+                                    }
                                 })
                             })
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
-                json!({
-                    "id": c.id.to_string(),
-                    "body": c.body,
-                    "created_at": c.created_at.to_rfc3339(),
-                    "attachments": attachments,
-                    "resolved": c.resolved_at.is_some(),
-                    "resolution_summary": c.resolution_summary,
-                })
+                dto::json::CommentTimelinePromptItem {
+                    id: c.id.to_string(),
+                    body: c.body,
+                    created_at: c.created_at.to_rfc3339(),
+                    resolved: c.resolved_at.is_some(),
+                    attachments,
+                    resolution_summary: c.resolution_summary,
+                }
             })
             .collect())
     }
@@ -325,9 +349,6 @@ impl AgentExecutor {
                     .as_ref()
                     .and_then(|p| p.last_assignment_result_status.clone());
 
-                let comment_timeline = self
-                    .load_comment_timeline_for_board_item(board_item_id)
-                    .await?;
                 let prior_fires = self.load_prior_fires_for_board_item(board_item_id).await?;
 
                 render_template_with_prompt(
@@ -354,7 +375,6 @@ impl AgentExecutor {
                         "changed_fields": changed_fields,
                         "last_assignment_result_status": last_assignment_result_status,
                         "active_assignments": active_assignments,
-                        "comment_timeline": comment_timeline,
                         "prior_fires": prior_fires,
                     }),
                 )
@@ -1010,6 +1030,40 @@ impl AgentExecutor {
                 call.tool_name = canonical.to_string();
             }
         }
+
+        {
+            let mut produced = String::new();
+            for call in &output.calls {
+                let args: String = serde_json::to_string(&call.arguments)
+                    .unwrap_or_default()
+                    .chars()
+                    .take(400)
+                    .collect();
+                produced.push_str(&format!("\n  • {} {}", call.tool_name, args));
+            }
+            if let Some(text) = output
+                .content_text
+                .as_deref()
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+            {
+                let text: String = text.chars().take(1000).collect();
+                produced.push_str(&format!("\n  text: {text}"));
+            }
+            if produced.is_empty() {
+                produced.push_str(" <empty response>");
+            }
+            tracing::info!(
+                target: "loop",
+                "iter {} [{}/{}] finish={}{}",
+                self.current_iteration,
+                turn_provider,
+                turn_model,
+                output.finish_reason.as_deref().unwrap_or("-"),
+                produced,
+            );
+        }
+
         let raw_output_snapshot = serde_json::to_string(&output).unwrap_or_default();
         self.budget.tick_llm();
         self.budget.tick_tools(

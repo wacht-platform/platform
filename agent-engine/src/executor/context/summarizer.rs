@@ -311,7 +311,11 @@ impl AgentExecutor {
             project_id: thread.project_id,
             query,
             categories: Vec::new(),
-            sources: Vec::new(),
+            sources: vec![
+                dto::json::agent_executor::MemorySource::Thread,
+                dto::json::agent_executor::MemorySource::Project,
+                dto::json::agent_executor::MemorySource::Actor,
+            ],
             depth: None,
             search_approach: Default::default(),
         }

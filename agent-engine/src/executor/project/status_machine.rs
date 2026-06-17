@@ -43,11 +43,10 @@ fn allowed_statuses_for_role(role: ThreadRole) -> &'static [&'static str] {
             "blocked",
             "cancelled",
             "failed",
-            "needs_clarification",
             "waiting_for_children",
         ],
         ThreadRole::Reviewer => &["rejected", "blocked", "failed"],
-        ThreadRole::Executor => &["blocked", "needs_clarification"],
+        ThreadRole::Executor => &["blocked"],
     }
 }
 
@@ -100,10 +99,10 @@ pub fn validate_terminal_payload_shape(
                  `artifacts` (paths to deliverables produced, typically under `/task/artifacts/`)."
             )));
         }
-        for path in artifacts {
-            if path.trim().is_empty() {
+        for artifact in artifacts {
+            if artifact.path.trim().is_empty() {
                 return Err(AppError::BadRequest(
-                    "update_project_task: `artifacts` entries must be non-empty paths.".to_string(),
+                    "update_project_task: each `artifacts` entry needs a non-empty `path`.".to_string(),
                 ));
             }
         }

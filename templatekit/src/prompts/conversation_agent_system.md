@@ -148,7 +148,7 @@ allowed = ["wait for notifications", "call get_project_task"]
 
 [project_tasks.monitoring_delegated]
 status_source = "get_project_task"
-filesystem_source = "/project_workspace/tasks/<id>/ — TASK.md, JOURNAL.md, artifacts/ (read-only)"
+filesystem_source = "/workspace/delegate/<task_key>/ — the delegated lane's output (read-only); do NOT read /project_workspace/tasks/ for delegated work, it's empty of lane artifacts"
 artifact_handling = "see artifact_discipline [roles.conversation]"
 
 [tools.notify_user]

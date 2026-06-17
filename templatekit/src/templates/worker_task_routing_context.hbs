@@ -6,7 +6,7 @@
 {{else if (eq routing_reason "assignment_completed")}}Assignment on this task terminated `{{last_assignment_result_status}}`. Decide: accept (mark task `completed`), route to reviewer, reassign with follow-up, close.
 {{else if (eq routing_reason "task_cancelled")}}User cancelled this task. Append a closing note to `/task/JOURNAL.md`. Do not reassign.
 {{else if (eq routing_reason "user_responded")}}User answered a clarification. Re-evaluate brief and routing with the answer in hand.
-{{else if (eq routing_reason "user_feedback")}}User left feedback. The current executor (if any) was preempted; partial work is in `/task/JOURNAL.md`. Address every `[unresolved]` entry below.
+{{else if (eq routing_reason "user_feedback")}}User left feedback. The current executor (if any) was preempted; partial work is in `/task/JOURNAL.md`. Address every `[unresolved]` item in the live `[user_feedback]` section.
 {{else}}Routing event for this task.
 {{/if}}{{#if is_recurring}}
 > **Recurring task.** This is one fire of a schedule that runs repeatedly.{{#if task_schedule}} Schedule: `{{task_schedule.kind}}`{{#if task_schedule.interval}}, every `{{task_schedule.interval}}`{{/if}}, next run `{{task_schedule.next_run_at}}`{{#if task_schedule.last_fired_at}}, last fired `{{task_schedule.last_fired_at}}`{{/if}}, overlap `{{task_schedule.overlap_policy}}`.{{/if}}{{#if schedule_scheduled_for}} Scheduled fire: {{schedule_scheduled_for}}.{{/if}}
@@ -18,17 +18,12 @@ Status was previously `{{previous_status}}`.
 {{/if}}{{#if prior_fires}}
 Recent prior fires of this schedule (read-only at /project_workspace/tasks/<task_key>/, newest first):
 {{#each prior_fires}}- {{task_key}} (fired {{fired_at}}, {{status}})
-{{/each}}{{/if}}{{#if comment_timeline}}
-User feedback timeline (chronological, oldest first):
-{{#each comment_timeline}}- {{#if resolved}}[resolved]{{else}}[unresolved]{{/if}} (id={{id}}, {{created_at}}) {{body}}{{#if attachments}}
-  attachments: {{#each attachments}}{{path}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if resolution_summary}}
-  resolution: {{resolution_summary}}{{/if}}
 {{/each}}{{/if}}
 {{#if task_attachments}}
 Uploaded task inputs:
 {{#each task_attachments}}- `{{path}}`{{#if name}} ({{name}}){{/if}}{{#if mime_type}} — {{mime_type}}{{/if}}
 {{/each}}{{/if}}
 
-Decide and act this turn. This event reaching you means every prior assignment on this task is settled — completed or preempted; no other thread is holding it, and any assignment row still showing claimed/in_progress is lag, not a live worker. Route the next slice (or transition the board status) without fail; address every `[unresolved]` comment via `resolve_user_feedback` with what you changed.
+Decide and act this turn. This event reaching you means every prior assignment on this task is settled — completed or preempted; no other thread is holding it, and any assignment row still showing claimed/in_progress is lag, not a live worker. Route the next slice (or transition the board status) without fail; resolve every `[unresolved]` item in the live `[user_feedback]` section via `resolve_user_feedback` with what you changed.
 
 Route on actual ownership boundaries, not vague role labels. Append a one-line routing rationale to `/task/JOURNAL.md` before calling `terminate_loop`.
