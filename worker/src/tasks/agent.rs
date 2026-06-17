@@ -430,21 +430,28 @@ pub async fn process_event_log_work(
         async move {
             tracing::info!("background event_log work started");
 
-            let (heartbeat_handle, heartbeat_stop) = spawn_event_log_heartbeat(
+            let (heartbeat_handle, heartbeat_stop, mut lease_lost) = spawn_event_log_heartbeat(
                 app_state_bg.clone(),
                 event_log_id,
                 worker_id_bg.clone(),
             );
 
-            let outcome = run_event_log_work(
-                app_state_bg.clone(),
-                event_log_id,
-                deployment_id,
-                thread_id,
-                &kind_bg,
-                payload,
-            )
-            .await;
+            let outcome = tokio::select! {
+                res = run_event_log_work(
+                    app_state_bg.clone(),
+                    event_log_id,
+                    deployment_id,
+                    thread_id,
+                    &kind_bg,
+                    payload,
+                ) => res,
+                _ = &mut lease_lost => {
+                    tracing::warn!(event_log_id, "lease lost mid-run; aborting to avoid duplicate execution");
+                    Err(AgentExecutionError::Other(anyhow::anyhow!(
+                        "lease lost mid-run; aborted to avoid duplicate execution"
+                    )))
+                }
+            };
 
             let _ = heartbeat_stop.send(());
             let _ = heartbeat_handle.await;
@@ -474,6 +481,7 @@ pub async fn process_event_log_work(
             if let Err(release_err) = commands::event_log::release_work_lease(
                 app_state_bg.db_router.writer(),
                 event_log_id,
+                &worker_id_bg,
             )
             .await
             {
@@ -817,9 +825,12 @@ fn spawn_event_log_heartbeat(
 ) -> (
     tokio::task::JoinHandle<()>,
     tokio::sync::oneshot::Sender<()>,
+    tokio::sync::oneshot::Receiver<()>,
 ) {
     let (tx, mut rx) = tokio::sync::oneshot::channel::<()>();
+    let (lost_tx, lost_rx) = tokio::sync::oneshot::channel::<()>();
     let handle = tokio::spawn(async move {
+        let mut lost_tx = Some(lost_tx);
         let mut tick = interval(Duration::from_secs(EVENT_LOG_HEARTBEAT_SECONDS));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
@@ -836,6 +847,9 @@ fn spawn_event_log_heartbeat(
                     match result {
                         Ok(false) => {
                             tracing::warn!(event_log_id, "lease lost during heartbeat");
+                            if let Some(tx) = lost_tx.take() {
+                                let _ = tx.send(());
+                            }
                             return;
                         }
                         Err(e) => {
@@ -847,5 +861,5 @@ fn spawn_event_log_heartbeat(
             }
         }
     });
-    (handle, tx)
+    (handle, tx, lost_rx)
 }

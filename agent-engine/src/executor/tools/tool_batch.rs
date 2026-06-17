@@ -9,8 +9,10 @@ use dto::json::agent_executor::{ApprovalRequestData, ToolCallRequest};
 use models::{AiTool, ApprovalAction, ConversationContent, ConversationMessageType};
 use serde_json::Value;
 use std::collections::HashSet;
+use std::time::Duration;
 
 const MAX_TOOL_ERROR_INPUT_CHARS: usize = 300;
+const TOOL_CALL_TIMEOUT: Duration = Duration::from_secs(900);
 
 fn truncate_chars(s: &str, max: usize) -> String {
     let count = s.chars().count();
@@ -115,7 +117,18 @@ impl AgentExecutor {
                 tool,
             };
 
-            let result = self.execute_planned_tool_call(&resolved).await;
+            let result = match tokio::time::timeout(
+                TOOL_CALL_TIMEOUT,
+                self.execute_planned_tool_call(&resolved),
+            )
+            .await
+            {
+                Ok(r) => r,
+                Err(_) => Err(AppError::Internal(format!(
+                    "tool '{tool_name}' timed out after {}s",
+                    TOOL_CALL_TIMEOUT.as_secs()
+                ))),
+            };
 
             if Self::tool_name_mutates_task_graph(&tool_name) && result.is_ok() {
                 self.invalidate_task_graph_snapshot();

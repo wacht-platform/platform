@@ -619,13 +619,23 @@ where
 }
 
 /// Release the lease (work completed cleanly).
-pub async fn release_work_lease<'e, E>(executor: E, event_id: i64) -> Result<(), AppError>
+pub async fn release_work_lease<'e, E>(
+    executor: E,
+    event_id: i64,
+    worker_id: &str,
+) -> Result<(), AppError>
 where
     E: sqlx::Executor<'e, Database = Postgres>,
 {
-    sqlx::query!("DELETE FROM work_lease WHERE event_id = $1", event_id,)
-        .execute(executor)
-        .await?;
+    // Scoped to our worker_id: if we lost the lease, this is a safe no-op and
+    // won't delete the new owner's lease.
+    sqlx::query!(
+        "DELETE FROM work_lease WHERE event_id = $1 AND worker_id = $2",
+        event_id,
+        worker_id,
+    )
+    .execute(executor)
+    .await?;
     Ok(())
 }
 
@@ -641,10 +651,12 @@ where
     let rows = sqlx::query!(
         r#"
         WITH expired AS (
-            DELETE FROM work_lease
-            WHERE expires_at < NOW()
-              AND attempts < $1
-            RETURNING event_id
+            DELETE FROM work_lease wl
+            USING event_log el
+            WHERE wl.event_id = el.id
+              AND wl.expires_at < NOW()
+              AND el.publish_attempts < $1
+            RETURNING wl.event_id
         )
         UPDATE event_log
         SET publish_status = 'pending',
@@ -672,10 +684,12 @@ where
     let result = sqlx::query!(
         r#"
         WITH exhausted AS (
-            DELETE FROM work_lease
-            WHERE expires_at < NOW()
-              AND attempts >= $1
-            RETURNING event_id
+            DELETE FROM work_lease wl
+            USING event_log el
+            WHERE wl.event_id = el.id
+              AND wl.expires_at < NOW()
+              AND el.publish_attempts >= $1
+            RETURNING wl.event_id
         )
         UPDATE event_log
         SET publish_status = 'failed',

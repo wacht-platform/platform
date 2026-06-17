@@ -1173,7 +1173,13 @@ impl AgentExecutor {
             .cloned()
             .collect();
 
-        if output.calls.iter().any(|c| c.tool_name != "note") {
+        // Reset the complete-nudge only on a recognized non-note tool call —
+        // an unknown/rejected name isn't progress and must not defeat the gate.
+        if output
+            .calls
+            .iter()
+            .any(|c| c.tool_name != "note" && turn_tool_names.contains(&c.tool_name))
+        {
             self.complete_nudge_count = 0;
         }
 
