@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH exhausted AS (\n            DELETE FROM work_lease wl\n            USING event_log el\n            WHERE wl.event_id = el.id\n              AND wl.expires_at < NOW()\n              AND el.publish_attempts >= $1\n            RETURNING wl.event_id\n        )\n        UPDATE event_log\n        SET publish_status = 'failed',\n            publishing_started_at = NULL,\n            last_publish_error = 'lease retries exhausted'\n        WHERE id IN (SELECT event_id FROM exhausted)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8d81f179374d8b23b8535ae70885d8cf3f324c051ed71c613b84e433070cf2ee"
+}
