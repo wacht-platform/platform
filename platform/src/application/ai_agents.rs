@@ -31,6 +31,7 @@ pub struct AgentDetailsResponse {
     pub knowledge_bases_count: i64,
     pub tools: Vec<serde_json::Value>,
     pub knowledge_bases: Vec<serde_json::Value>,
+    #[serde(default, with = "models::utils::serde::option_vec_i64_as_string")]
     pub sub_agents: Option<Vec<i64>>,
     #[serde(default, with = "models::utils::serde::i64_as_string_option")]
     pub reviewer_agent_id: Option<i64>,
