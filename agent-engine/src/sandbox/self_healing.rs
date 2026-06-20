@@ -63,7 +63,7 @@ impl SandboxHandle for SelfHealingHandle {
         let handle = self.current().await;
         match handle.exec(request.clone()).await {
             Err(SandboxError::NotFound(detail)) => {
-                tracing::warn!(
+                tracing::debug!(
                     label = %self.label,
                     detail = %detail,
                     "sandbox: exec hit NotFound, recreating and retrying once",
@@ -99,7 +99,7 @@ impl SandboxHandle for SelfHealingHandle {
         let handle = self.current().await;
         match handle.touch().await {
             Err(SandboxError::NotFound(detail)) => {
-                tracing::warn!(
+                tracing::debug!(
                     label = %self.label,
                     detail = %detail,
                     "sandbox: touch hit NotFound, recreating and retrying once",
@@ -119,7 +119,7 @@ impl SandboxHandle for SelfHealingHandle {
         let handle = self.current().await;
         match handle.reconcile_skills(agent_id, slugs.clone()).await {
             Err(SandboxError::NotFound(detail)) => {
-                tracing::warn!(
+                tracing::debug!(
                     label = %self.label,
                     detail = %detail,
                     "sandbox: reconcile_skills hit NotFound, recreating and retrying once",
@@ -137,7 +137,7 @@ impl SandboxHandle for SelfHealingHandle {
             Err(SandboxError::NotFound(detail)) if !detail.starts_with("read ") => {
                 // NotFound from the sandbox layer (vs. the file-missing NotFound
                 // emitted by the default read_file helper) triggers a recreate.
-                tracing::warn!(
+                tracing::debug!(
                     label = %self.label,
                     detail = %detail,
                     "sandbox: read_file hit NotFound, recreating and retrying once",
@@ -153,7 +153,7 @@ impl SandboxHandle for SelfHealingHandle {
         let handle = self.current().await;
         match handle.write_file(path, content).await {
             Err(SandboxError::NotFound(detail)) => {
-                tracing::warn!(
+                tracing::debug!(
                     label = %self.label,
                     detail = %detail,
                     "sandbox: write_file hit NotFound, recreating and retrying once",

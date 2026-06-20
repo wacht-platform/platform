@@ -134,7 +134,7 @@ impl AgentExecutor {
                 )
             })
             .collect();
-        tracing::info!(
+        tracing::debug!(
             target: "loop",
             board_item_id,
             timeline = ?timeline_state,
@@ -710,7 +710,7 @@ impl AgentExecutor {
             self.ctx.thread_id,
         )
         .await?;
-        tracing::info!(
+        tracing::debug!(
             thread_id = self.ctx.thread_id,
             count = consumed,
             "marked subscription notifications consumed"

@@ -288,6 +288,18 @@ impl GeminiClient {
             .collect::<String>()
     }
 
+    /// True when the response carries neither a function call nor any non-empty
+    /// text — i.e. an empty turn the agent loop can't act on (the Gemini
+    /// finish=STOP-with-no-content flakiness).
+    fn response_has_no_actionable_content(response: &GeminiResponse) -> bool {
+        let has_call = response
+            .candidates
+            .iter()
+            .flat_map(|candidate| candidate.content.parts.iter())
+            .any(|part| part.function_call.is_some());
+        !has_call && Self::response_text(response).trim().is_empty()
+    }
+
     fn build_tool_call_request_body(
         &self,
         prompt: SemanticLlmRequest,
@@ -446,6 +458,42 @@ impl GeminiClient {
                             response_text.chars().take(500).collect::<String>()
                         )));
                     }
+
+                    // Gemini flash/flash-lite sometimes ends a turn (finish=STOP)
+                    // with a candidate that has no function call and no text, even
+                    // with tools available — transient sampling flakiness, made
+                    // worse by a large cached prefix + many tools. There IS a
+                    // candidate, so the no-candidates path above doesn't catch it.
+                    // Retry a few times with raised temperature to break the
+                    // determinism; if it persists, return the empty turn so the
+                    // loop's empty-response guard handles it rather than erroring.
+                    if Self::response_has_no_actionable_content(&parsed) {
+                        let finish = parsed
+                            .candidates
+                            .first()
+                            .and_then(|c| c.finish_reason.as_deref())
+                            .unwrap_or("unknown")
+                            .to_string();
+                        if empty_retries < MAX_EMPTY_CONTENT_RETRIES && attempt < MAX_RETRIES {
+                            empty_retries += 1;
+                            attempt += 1;
+                            tracing::warn!(
+                                model = %self.model,
+                                finish_reason = %finish,
+                                empty_retries,
+                                "Gemini returned an empty turn; resubmitting"
+                            );
+                            tokio::time::sleep(Self::calculate_backoff_delay(attempt)).await;
+                            continue;
+                        }
+                        tracing::warn!(
+                            model = %self.model,
+                            finish_reason = %finish,
+                            empty_retries,
+                            "Gemini still empty after retries; deferring to empty-response guard"
+                        );
+                    }
+
                     return Ok(parsed);
                 }
                 Err(e) => {

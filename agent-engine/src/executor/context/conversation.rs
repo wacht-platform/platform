@@ -153,7 +153,7 @@ impl AgentExecutor {
                 "runtime signal fired"
             );
         } else {
-            tracing::info!(
+            tracing::debug!(
                 thread_id = self.ctx.thread_id,
                 board_item_id = ?board_item_id,
                 execution_run_id = self.ctx.execution_run_id,
