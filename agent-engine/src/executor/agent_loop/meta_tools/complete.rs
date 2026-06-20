@@ -48,6 +48,7 @@ impl AgentExecutor {
         };
 
         if let Some(error) = self.completion_guard_error().await? {
+            self.terminate_loop_guard_rejections += 1;
             self.record_invalid_tool_call("terminate_loop", &call.arguments, &error)
                 .await?;
             return Ok(true);

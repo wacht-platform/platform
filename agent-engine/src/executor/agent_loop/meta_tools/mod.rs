@@ -212,6 +212,8 @@ pub fn complete_tool() -> NativeToolDefinition {
             Before calling, self-review the turn: every action you said you'd take must already be done \
             (tool call visible in history), journal updated for service work, user feedback resolved. \
             If anything is still pending, do it first and call `terminate_loop` on a later turn. \
+            If the work is genuinely blocked rather than done, don't fake success — set `update_project_task` \
+            status `blocked` with a result summary, then call `terminate_loop`. \
             Must be the only tool call in its response; text alongside it is delivered as your final reply/log. \
             `summary` is the durable handoff — the next lane or reviewer reads it cold, so ground it in what \
             actually happened this run. Pull `artifacts` from real tool results, never from intention."
@@ -255,8 +257,13 @@ pub fn complete_tool() -> NativeToolDefinition {
 pub fn abort_tool() -> NativeToolDefinition {
     NativeToolDefinition {
         name: "abort_task".to_string(),
-        description: "Abort the current assignment execution. \
-            Use only when the task cannot proceed and must be stopped or escalated."
+        description: "Last resort. Force-stops the current assignment: marks it blocked/cancelled, \
+            moves the board item to `blocked`, and cancels the task graph — it STALLS the task, it does \
+            not complete it. Never use it to finish work or to report a routine block. To finish cleanly \
+            call `terminate_loop`; to hand a block back while keeping routing intact, call \
+            `update_project_task` with status `blocked` (plus a result summary), then `terminate_loop`. \
+            Reach for `abort_task` only when you have already tried to exit cleanly and cannot — the loop \
+            is stuck and no tool is making progress."
             .to_string(),
         input_schema: json!({
             "type": "object",

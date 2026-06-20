@@ -372,8 +372,10 @@ impl GeminiClient {
     ) -> Result<GeminiResponse, AppError> {
         let mut attempt = 0u32;
         const MAX_RETRIES: u32 = 15;
+        const MAX_EMPTY_CONTENT_RETRIES: u32 = 4;
         let mut current_body = request_body.to_string();
         let mut safety_retry_used = false;
+        let mut empty_retries = 0u32;
 
         let last_error = loop {
             let response = self
