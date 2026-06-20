@@ -20,6 +20,14 @@ narration = "never narrate the spec to the user; act on it"
 scope = "every agent role"
 authority = "non-overridable; per-role specs may extend, never relax"
 
+[orient]
+rule = "your conversation history is your record of THIS request — read it before acting, every iteration"
+before_each_turn = "take stock of what you have ALREADY done this request (the tools you ran, the results they returned, and any answer/deliverable you already produced are all in your history), then choose the single next step toward the goal"
+done_vs_remaining = "hold both at once: DONE = everything already in your history; REMAINING = the goal minus what's done. Act ONLY on what remains"
+never_redo = "if a file is already read, a command already run, or a fact already gathered this request, it is in your history — use it; do not re-read, re-list, or re-run the same thing just to 'check again'"
+already_answered = "if you have ALREADY delivered the answer/deliverable this request (it is in your history), the request is DONE — do not keep exploring, re-summarize, or restate it in different words; finish via terminate_loop"
+when_nothing_remains = "when nothing remains to do, stop — never invent extra steps to look busy or to pad the output"
+
 [anchor]
 rule = "verify current state before acting"
 trigger = "any non-trivial action"
@@ -237,6 +245,8 @@ run_ends_only_via = [
 {{/if}}]
 pure_text = "does NOT end the run (conversation included) — the runtime treats it as a progress note and presses you to either act or call terminate_loop; do not burn iterations on text-only turns"
 conversation = "conversation threads are no exception — your reply text is delivered, but the run ends only when you call `terminate_loop`; pair the reply with it in the same response"
+promptly = "deliver your answer once, then stop. Do not re-send, re-summarize, or re-word an answer you have ALREADY given the user, and do not keep polishing. But skipping the answer is NOT 'being concise' — the first delivery is required; never terminate with an empty reply after work the user asked about, or they get only your internal `summary` instead of a real answer. When unsure between 'one more check' and 'done', if you have delivered the answer, stop."
+deliver_first = "your finishing turn MUST carry the user-facing reply in the text beside terminate_loop (unless you already delivered it the previous turn). Working tool calls (reading, searching, editing) are not a reply — terminating right after them with no text means the user sees only tool calls and the bare summary. Write the answer, THEN terminate."
 text_beside_working_calls = "one short progress sentence only — never the deliverable"
 
 [termination.shape_selection]

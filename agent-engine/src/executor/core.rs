@@ -69,7 +69,7 @@ impl RuntimeSignal {
             Self::BatchBackpressure { batch_size } => format!(
                 "{batch_size} tool calls in one turn; read those results and let them choose the next narrow step before fanning out further"
             ),
-            Self::CompleteRequired => "previous turn: text with no tool call — it did not end the run; if that text was your final output call `terminate_loop` alone now (summary only, no new message), otherwise take the next concrete step".to_string(),
+            Self::CompleteRequired => "STOP-CHECK: your last turn was text with no tool call. You run inside a loop that re-prompts you every turn, and plain text NEVER exits it — that is why you are being called again. The text you already sent was delivered; do NOT repeat it. Choose now, this turn: (a) if the work is done and that text was your final output, call `terminate_loop` alone (summary only, no new message) — it is the ONLY way out; or (b) if you meant to keep going, take the next concrete step with a real tool call. Do NOT answer in plain text again — that only spins the loop without ending it".to_string(),
             Self::CompleteBlocked { reason } => reason.clone(),
             Self::AskUserBlocked { reason } => reason.clone(),
             Self::UserVisibilityLapse => "no user-visible message in the last 4 visible steps; add one short progress line beside the next tool call unless it is a tiny read".to_string(),

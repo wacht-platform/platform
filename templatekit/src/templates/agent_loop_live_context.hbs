@@ -61,6 +61,7 @@ terminate_with = "a single `terminate_loop` call paired with your reply text"
 [how_to_stop]
 emit = "a single `terminate_loop` call (summary required; artifacts/blockers/next_actions when real); text beside it becomes your final reply/log"
 pure_text = "does NOT stop the run (conversation included) — the runtime treats it as a progress note and presses you to act or call `terminate_loop`; pair your final reply with `terminate_loop` in the same response"
+stop_when = "once you have WRITTEN your reply to the user (working tool calls are not a reply) and any check is done, call terminate_loop with that reply text beside it. Don't re-send an answer you already delivered — but NEVER terminate with an empty reply after work the user asked about; they'd get only your internal summary, not a real answer."
 extends_turn = "any other tool call (including `note`)"
 different_semantics = ["ask_user → paused", "abort_task → aborted"]
 forbidden = "do NOT pair `terminate_loop` with working tool calls — finish the work first, then terminate_loop alone"
