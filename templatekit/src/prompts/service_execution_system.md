@@ -164,6 +164,7 @@ evidence_ground = "every claim"
 nontrivial_probe = "focused probe → observation → next probe"
 primary_sources = "fetch/read primary file or page before relying on search / grep excerpts"
 journal_entry_shape = "see operating_style [persistence.service_work_journal_entry_shape]"
+mandatory_deliverable = "every completed slice MUST leave at least one concrete deliverable file under /task/artifacts/ (or the brief's mount) and list its path in the terminate_loop `artifacts` — the coordinator cites that path to mark the task completed, and completion is rejected without it. A null result is still a deliverable: write the findings (e.g. 'no opportunities found; checked X, Y, Z') to a real file; never finish with nothing on disk."
 finish_explicitly = ["done → terminate_loop", "blocked / failed → abort_task(blocked)", "returned to coordinator → abort_task(return_to_coordinator)"]
 write_zone = "stay inside /task/ except read-only /project_workspace/ and explicit mounts; never write via /project_workspace/"
 discovered_separate_work = "journal it and return/abort for coordinator; do not spawn or silently expand scope"

@@ -466,16 +466,18 @@ pub async fn create_project_task_board_item_comment(
         .execute_with_db(app_state.db_router.writer())
         .await?;
 
+    let all_assignments = queries::ListProjectTaskBoardItemAssignmentsQuery::new(item_id)
+        .execute_with_db(app_state.db_router.writer())
+        .await?;
+
     // Only LIVE assignments (pending/available/claimed/in_progress) capture the
     // feedback directly; terminal ones (completed/cancelled/rejected/blocked)
-    // have no live executor, so the item falls through to coordinator routing.
+    // have no live executor.
     let active_executor_threads: Vec<i64> = {
         use models::project_task_board::assignment_status;
         let mut seen = std::collections::HashSet::new();
-        queries::ListProjectTaskBoardItemAssignmentsQuery::new(item_id)
-            .execute_with_db(app_state.db_router.writer())
-            .await?
-            .into_iter()
+        all_assignments
+            .iter()
             .filter(|a| {
                 matches!(
                     a.status.as_str(),
@@ -559,6 +561,69 @@ pub async fn create_project_task_board_item_comment(
 
         tx.commit().await?;
         event_log::nudge_dispatcher(&app_state.nats_client).await;
+        return Ok(comment);
+    }
+
+    // Delegated / agent-owned items belong to a dedicated execution lane, never
+    // the project coordinator (mirrors the reconciler's exclusive_owner
+    // invariant). When the lane's last turn went terminal — e.g. blocked —
+    // feedback must re-engage that same lane rather than fall through below.
+    if item.exclusive_owner_agent_id.is_some() {
+        use models::project_task_board::{assignment_role, assignment_status};
+        let revive = all_assignments
+            .iter()
+            .filter(|a| a.assignment_role == assignment_role::EXECUTOR)
+            .max_by_key(|a| a.updated_at)
+            .or_else(|| all_assignments.iter().max_by_key(|a| a.updated_at));
+
+        if let Some(assignment) = revive {
+            let message = format!(
+                "[New feedback from user on task {}]\n{}",
+                item.task_key, comment_body_for_message
+            );
+            let conv_id = app_state.sf.next_id()? as i64;
+            commands::CreateConversationCommand::new(
+                conv_id,
+                assignment.thread_id,
+                ConversationContent::UserMessage {
+                    message,
+                    sender_name: None,
+                    files: None,
+                },
+                models::ConversationMessageType::UserMessage,
+            )
+            .with_board_item_id(item_id)
+            .execute_with_db(&mut *tx)
+            .await?;
+            tx.commit().await?;
+
+            // Re-open the lane's assignment: this lifts the board item off its
+            // terminal status, re-points assigned_thread_id back at the lane, and
+            // the command's reconcile dispatches an assignment_execution event to
+            // the lane — keeping the feedback off the coordinator entirely.
+            let deps = common::deps::from_app(app_state).db().nats().id();
+            commands::UpdateProjectTaskBoardItemAssignmentStateCommand::new(
+                assignment.id,
+                assignment_status::AVAILABLE.to_string(),
+            )
+            .with_note(format!(
+                "User feedback on delegated task {}; re-engaging assigned lane",
+                item.task_key
+            ))
+            .execute_with_deps(&deps)
+            .await?;
+
+            event_log::nudge_dispatcher(&app_state.nats_client).await;
+            return Ok(comment);
+        }
+
+        // Agent-owned item with no revivable assignment: record the comment, but
+        // never hand it to the coordinator — recovery is the lease/reconciler's job.
+        tx.commit().await?;
+        tracing::warn!(
+            board_item_id = item_id,
+            "delegated item feedback with no revivable assignment; comment recorded, lane not re-engaged"
+        );
         return Ok(comment);
     }
 

@@ -226,9 +226,23 @@ impl AgentExecutor {
     }
 
     async fn append_task_audit(&mut self, lines: &[String]) {
-        if lines.is_empty() || !(self.is_service_mode_execution() || self.is_delegated_task) {
+        // Every task lane (coordinator/executor/reviewer/delegated) keeps its own
+        // tool-call log under /task/audit/ for per-lane evaluation. Conversation
+        // turns have no board-item task workspace, so they're skipped.
+        if lines.is_empty() || self.current_board_item_id().is_none() {
             return;
         }
+        let role = if self.is_delegated_task {
+            "delegated"
+        } else {
+            self.current_thread_role().as_str()
+        };
+        let audit_path = format!(
+            "{}/{}-{}.log",
+            crate::runtime::task_workspace::TASK_WORKSPACE_AUDIT_DIR,
+            role,
+            self.ctx.thread_id,
+        );
         let mut content = String::new();
         if !self.audit_run_header_written {
             self.audit_run_header_written = true;
@@ -236,11 +250,7 @@ impl AgentExecutor {
                 "[execution run={} thread={} role={} assignment={} started={}]\n",
                 self.ctx.execution_run_id,
                 self.ctx.thread_id,
-                if self.is_delegated_task {
-                    "delegated"
-                } else {
-                    "executor"
-                },
+                role,
                 self.current_assignment_id()
                     .map(|id| id.to_string())
                     .unwrap_or_else(|| "-".to_string()),
@@ -250,11 +260,7 @@ impl AgentExecutor {
         content.push_str(&lines.join("\n"));
         if let Err(error) = self
             .filesystem
-            .write_file(
-                crate::runtime::task_workspace::TASK_WORKSPACE_AUDIT_FILE,
-                &content,
-                true,
-            )
+            .write_file(&audit_path, &content, true)
             .await
         {
             tracing::warn!(

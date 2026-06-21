@@ -16,6 +16,7 @@ both_must_be_judged_before_verdict = true
 question = "HOW the executor reached the result"
 evidence_sources = [
   "/task/JOURNAL.md",
+  "/task/audit/<role>-<thread_id>.log — the executed lane's runtime tool-call trail (see [method_audit_logs])",
   "task timeline in your history (cross-thread messages and routing events)",
 ]
 walks = "executor's tool calls in order"
@@ -31,6 +32,18 @@ rule = "correct-looking result reached by an unsound method is NOT acceptable �
 question = "WHAT they produced"
 inspect = "actual artifacts under /task/artifacts/ and any referenced paths"
 criterion = "does each acceptance criterion in /task/TASK.md pass with evidence?"
+
+[method_audit_logs]
+# The runtime records one tool-call log per lane; this is your ground truth for HOW.
+location = "/task/audit/ — one file per lane, named `<role>-<thread_id>.log` (e.g. `executor-77081229026970140.log`). Coordinator/executor/reviewer/delegated lanes each get their own; the runtime appends them, agents never edit them."
+line_format = "`[<ts>] iter=<n> tool=<name> status=<success|error|rejected> input=<preview> [error=\"…\"]`, one line per tool call, with a per-run `[execution run=… thread=… role=… assignment=… started=…]` header."
+list_lanes = "`bash 'ls /task/audit/'` to see every lane that ran on this task."
+grep_recipes = [
+  "bash 'grep -nE \"status=(error|rejected)\" /task/audit/executor-*.log' — failed/blocked calls",
+  "bash 'grep -n \"tool=execute_command\" /task/audit/executor-*.log' — what shell the lane ran",
+  "bash 'grep -c \"\" /task/audit/<file>' — tool-call count (effort proxy)",
+]
+use = "cross-check every method claim in the journal against the lane's audit log; a journal claim with no matching audit line is an unsound (unverified) method step."
 
 [timeline]
 shape = "single chronological task timeline across every thread on this task"
@@ -51,7 +64,7 @@ trust_rule = "do not trust journal claims that lack a corresponding tool call in
 sequence = [
   "/task/TASK.md — acceptance criteria you're judging against",
   "/task/JOURNAL.md — what the executor did and claimed (method evidence)",
-  "/task/AUDIT.log — runtime-recorded log of every executor tool call (tool, input, status, error), grouped per execution run; the ground truth for method claims",
+  "/task/audit/ — per-lane runtime tool-call logs (one file per lane, `<role>-<thread_id>.log`); the ground truth for method claims. `ls /task/audit/`, then read the executor lane's file or grep across them (see [method_audit_logs])",
   "actual artifacts (result evidence)",
 ]
 then = [
@@ -122,6 +135,7 @@ verification = "re-call the tool yourself with the inputs the executor used"
 # See sandbox_environment [paths] for the full catalog; reviewer-specific layout below.
 "/task/TASK.md"        = "brief; source of truth; do not modify"
 "/task/JOURNAL.md"     = "shared log; append-only"
+"/task/audit/"         = "per-lane tool-call logs (<role>-<thread_id>.log); runtime-written, READ-ONLY; grep for method evidence"
 "/task/artifacts/"     = "deliverables to judge; READ-ONLY"
 "/task/review/"        = "your outputs (report, diffs, verification)"
 "/project_workspace/"  = "read-only observability mount; mirrors /task/ layout per task_key; writes fail"
@@ -200,7 +214,7 @@ for_revise_or_reject = "name the failed criterion or unsound method step AND the
 list = [
   "1. Judge both method and result. A correct artifact reached by an unsound method is not acceptable.",
   "2. Read acceptance criteria before reading artifacts. Judge against brief, not taste.",
-  "3. Evidence-grounded. Every method verdict cites a journal entry or /task/AUDIT.log line; every criterion verdict cites a tool result.",
+  "3. Evidence-grounded. Every method verdict cites a journal entry or a /task/audit/ log line; every criterion verdict cites a tool result.",
   "4. Don't approve unmet criteria or unsound method. Don't modify work to make it pass.",
   "5. Under-specified criteria → flag back, don't silently infer.",
   "6. Call `terminate_loop` once the decision is recorded. No additional review passes without new work.",

@@ -795,30 +795,65 @@ where
         FROM project_task_board_item_assignments a
         JOIN project_task_board_items i ON i.id = a.board_item_id
         WHERE a.status IN ('claimed', 'in_progress')
-          AND a.assignment_role <> 'coordinator'
           AND a.updated_at < NOW() - INTERVAL '1 second' * $1
           AND i.archived_at IS NULL
           AND i.status NOT IN ('completed', 'cancelled')
           AND i.pending_question IS NULL
           AND i.pending_approval IS NULL
+          -- Coordinator assignments are included: a coordinator turn that
+          -- crashed leaves the assignment `in_progress` forever (nothing else
+          -- reclaims it) and blocks the reconciler from re-routing. Match the
+          -- driving event per role so a LIVE worker is still protected by its
+          -- lease: executor/reviewer turns are driven by an 'assignment'
+          -- aggregate event; a coordinator turn is driven by the board item's
+          -- 'task_routing' event ('board_item' aggregate from the
+          -- runtime/reconciler, or 'thread' aggregate from the feedback path).
           AND NOT EXISTS (
               SELECT 1
               FROM event_log el
               INNER JOIN work_lease wl ON wl.event_id = el.id
-              WHERE el.aggregate_type = 'assignment'
-                AND el.aggregate_id = a.id
-                AND wl.expires_at > NOW()
+              WHERE wl.expires_at > NOW()
+                AND (
+                    (el.aggregate_type = 'assignment' AND el.aggregate_id = a.id)
+                    OR (
+                        a.assignment_role = 'coordinator'
+                        AND el.event_type = 'task_routing'
+                        AND (
+                            (el.aggregate_type = 'board_item' AND el.aggregate_id = a.board_item_id)
+                            OR (el.aggregate_type = 'thread'
+                                AND el.payload->>'board_item_id' = a.board_item_id::text)
+                        )
+                    )
+                )
           )
           AND EXISTS (
               SELECT 1 FROM event_log el
-              WHERE el.aggregate_type = 'assignment'
-                AND el.aggregate_id = a.id
+              WHERE (el.aggregate_type = 'assignment' AND el.aggregate_id = a.id)
+                 OR (
+                     a.assignment_role = 'coordinator'
+                     AND el.event_type = 'task_routing'
+                     AND (
+                         (el.aggregate_type = 'board_item' AND el.aggregate_id = a.board_item_id)
+                         OR (el.aggregate_type = 'thread'
+                             AND el.payload->>'board_item_id' = a.board_item_id::text)
+                     )
+                 )
           )
           AND NOT EXISTS (
               SELECT 1 FROM event_log el
-              WHERE el.aggregate_type = 'assignment'
-                AND el.aggregate_id = a.id
-                AND el.publish_status IN ('pending', 'publishing')
+              WHERE el.publish_status IN ('pending', 'publishing')
+                AND (
+                    (el.aggregate_type = 'assignment' AND el.aggregate_id = a.id)
+                    OR (
+                        a.assignment_role = 'coordinator'
+                        AND el.event_type = 'task_routing'
+                        AND (
+                            (el.aggregate_type = 'board_item' AND el.aggregate_id = a.board_item_id)
+                            OR (el.aggregate_type = 'thread'
+                                AND el.payload->>'board_item_id' = a.board_item_id::text)
+                        )
+                    )
+                )
           )
         ORDER BY a.updated_at ASC
         LIMIT $2

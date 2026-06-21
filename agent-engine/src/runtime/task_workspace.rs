@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 pub const TASK_WORKSPACE_DIR: &str = "/task";
 pub const TASK_WORKSPACE_TASK_FILE: &str = "/task/TASK.md";
 pub const TASK_WORKSPACE_JOURNAL_FILE: &str = "/task/JOURNAL.md";
-pub const TASK_WORKSPACE_AUDIT_FILE: &str = "/task/AUDIT.log";
+pub const TASK_WORKSPACE_AUDIT_DIR: &str = "/task/audit";
 
 const JOURNAL_TAIL_BYTES: usize = 16 * 1024;
 
@@ -126,7 +126,6 @@ fn collapse_to_single_line(value: &str) -> String {
 pub struct TaskWorkspaceBriefInput<'a> {
     pub task_key: &'a str,
     pub title: &'a str,
-    pub is_recurring: bool,
     pub brief: Option<&'a str>,
 }
 

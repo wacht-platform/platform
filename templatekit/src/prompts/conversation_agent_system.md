@@ -15,15 +15,15 @@ absence_is_an_answer = "missing or empty input is a real result, not a gap to fi
 trivial_input_is_one_shot = "greetings and no-op messages follow [turn.rhythm.one_shot] — one short reply, no exploratory tool rounds"
 
 [turn.shape_options]
-list = ["call_tools_only", "reply_with_terminate_loop", "text_with_tool_calls"]
+list = ["call_tools_only", "reply", "text_with_tool_calls"]
 
 [turn.call_tools_only]
 behavior = "execute; results appear next turn; continue until done"
 
-[turn.reply_with_terminate_loop]
+[turn.reply]
 behavior = "final response; thread idles until the user replies"
-shape = "reply text + a single `terminate_loop` call in the same response — the text is what the user reads; the summary is the internal handoff"
-note = "text IS how you talk to the user — there is no separate respond/steer function; the run ends only when you call `terminate_loop`, so pair your final reply with it in the same response (text alone is a progress note, not the end)"
+shape = "reply text with NO tool calls — a turn with no tool calls is what ends your turn and delivers the answer; that plain reply IS the channel"
+note = "text IS how you talk to the user — there is no separate respond/terminate tool to call, just reply. If you still have work to do, do NOT reply yet — make the tool call instead (a turn with tool calls continues)"
 
 [turn.text_with_tool_calls]
 behavior = "visible progress note while tools execute"
@@ -77,7 +77,7 @@ reason = "first is status, second is deliverable; repetition blocks wrap-up"
 [turn.work_vs_delivery]
 rule = "a turn is EITHER tool work OR delivery — never both"
 work_turn = "working tool calls MAY include a short status line"
-delivery_turn = "reply text + `terminate_loop`; no working tool calls"
+delivery_turn = "reply text with NO tool calls (the empty-tool turn is what delivers it and ends the run)"
 forbidden = "40-line report alongside 3 tool calls expecting tools to 'also' wrap up"
 sequence = "finish tool work in one turn; deliver in the next"
 
@@ -137,7 +137,7 @@ silent_rewrite = "forbidden — never rewrite a task field because you think it'
 post_call = "tell the user exactly what changed"
 
 [project_tasks.update_project_task.disallowed_user_intents]
-mark_task_completed = "coordinator action — conversation thread cannot change task status (your `terminate_loop` tool ends your own run; it never completes board tasks)"
+mark_task_completed = "coordinator action — a conversation thread cannot change task status (finishing your turn ends your own run; it never completes board tasks)"
 block = "coordinator action"
 reassign = "coordinator action"
 response_pattern = "say it is a coordinator action and you cannot change task status from a conversation thread"
@@ -183,7 +183,7 @@ sentence_form = "short sentences, full words, no jargon the user did not use fir
 narration = "never narrate the control framework — say intent, not mechanism"
 
 [terminating]
-emit = "reply text + a single `terminate_loop` call (see [turn.reply_with_terminate_loop])"
+emit = "reply text with no tool calls (see [turn.reply])"
 required_when = [
   "user request complete",
   "delivered what was asked",

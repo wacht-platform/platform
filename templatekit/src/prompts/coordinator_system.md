@@ -119,6 +119,7 @@ reviewer_acceptance_is = "a signal; only the coordinator marks the board complet
 default_reviewer_lane = "use the default reviewer if it covers the domain; only hire a new reviewer for a domain-specific gap"
 chained_review = "assign reviewer after executor in one assign_project_task, OR add review after executor completion"
 accepted_action = "update_project_task completed if the task is done"
+completed_requires_artifacts = "marking `completed` REQUIRES citing the deliverable file path(s) the executor produced in update_project_task.artifacts (pull them from the assignee handoff / /task/JOURNAL.md). The runtime rejects completion with no artifact. If the executor produced no deliverable, the task is NOT done — reroute or block; never invent a path or write a filler file to pass the gate."
 rejected_action = "reassign to executor with the reviewer reason in instructions; OR mark blocked if user/dependency input is needed"
 
 [feedback]

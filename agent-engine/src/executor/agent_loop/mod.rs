@@ -302,7 +302,6 @@ impl AgentExecutor {
                     self.prepare_task_workspace_for_key(
                         &task_key,
                         &workspace_title,
-                        is_recurring,
                         board_item.as_ref(),
                     ),
                     self.task_journal_tail_snippet(),
@@ -547,7 +546,6 @@ impl AgentExecutor {
                     self.prepare_task_workspace_for_key(
                         &task_key,
                         &title,
-                        is_recurring,
                         board_item.as_ref(),
                     ),
                     self.task_journal_tail_snippet(),
@@ -1039,39 +1037,6 @@ impl AgentExecutor {
             }
         }
 
-        {
-            let mut produced = String::new();
-            for call in &output.calls {
-                let args: String = serde_json::to_string(&call.arguments)
-                    .unwrap_or_default()
-                    .chars()
-                    .take(400)
-                    .collect();
-                produced.push_str(&format!("\n  • {} {}", call.tool_name, args));
-            }
-            if let Some(text) = output
-                .content_text
-                .as_deref()
-                .map(str::trim)
-                .filter(|t| !t.is_empty())
-            {
-                let text: String = text.chars().take(1000).collect();
-                produced.push_str(&format!("\n  text: {text}"));
-            }
-            if produced.is_empty() {
-                produced.push_str(" <empty response>");
-            }
-            tracing::info!(
-                target: "loop",
-                "iter {} [{}/{}] finish={}{}",
-                self.current_iteration,
-                turn_provider,
-                turn_model,
-                output.finish_reason.as_deref().unwrap_or("-"),
-                produced,
-            );
-        }
-
         let raw_output_snapshot = serde_json::to_string(&output).unwrap_or_default();
         self.budget.tick_llm();
         self.budget.tick_tools(
@@ -1543,7 +1508,19 @@ impl AgentExecutor {
         let safe_message =
             Self::sanitize_user_facing_message(&text, "Completed the requested work.");
 
-        // Run ends only on an explicit terminate_loop (conversation included); a text-only turn is nudged, then auto-completes as a fallback. Service lanes get more rope.
+        // Conversation threads finish on a text-only turn ("no tool calls = done");
+        // service/coordinator threads still require an explicit terminate_loop (below).
+        if self.is_conversation_thread && !self.is_service_mode_execution() {
+            return self
+                .finalize_completion(
+                    meta_tools::CompletionHandoff::from_summary(safe_message.clone()),
+                    safe_message,
+                )
+                .await;
+        }
+
+        // A text-only turn is nudged, then auto-completes as a fallback. Service
+        // lanes get more rope.
         let max_complete_nudges = if self.is_service_mode_execution() {
             5
         } else {

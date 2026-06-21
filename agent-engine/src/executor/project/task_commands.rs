@@ -790,20 +790,6 @@ Rules:\n\
         &mut self,
         params: &UpdateProjectTaskParams,
     ) -> Result<(), AppError> {
-        let Some(assignment_id) = self.current_assignment_id() else {
-            return Ok(());
-        };
-
-        // Best-effort — never block the turn on memory housekeeping.
-        if let Err(err) = self.maybe_compact_task_journal().await {
-            tracing::warn!(
-                thread_id = self.ctx.thread_id,
-                assignment_id,
-                error = %err,
-                "journal compaction failed before handoff append; proceeding with oversized journal"
-            );
-        }
-
         let handoff = HandoffPayload {
             findings: params
                 .findings
@@ -839,35 +825,53 @@ Rules:\n\
             .collect();
         let artifact_paths: Vec<String> = artifacts.iter().map(|a| a.path.clone()).collect();
 
-        append_journal_handoff_entry(
-            &self.filesystem,
-            assignment_id,
-            &self.ctx.agent.name,
-            "completed",
-            outcome,
-            &handoff,
-            &artifact_paths,
-            chrono::Utc::now(),
-        )
-        .await?;
+        // Journal handoff + assignment result payload are assignment-scoped — they only
+        // exist when an execution lane (ASSIGNMENT_EXECUTION) owns this turn. Completion is
+        // driven by the coordinator (TASK_ROUTING, no assignment), so they're skipped there.
+        if let Some(assignment_id) = self.current_assignment_id() {
+            // Best-effort — never block the turn on memory housekeeping.
+            if let Err(err) = self.maybe_compact_task_journal().await {
+                tracing::warn!(
+                    thread_id = self.ctx.thread_id,
+                    assignment_id,
+                    error = %err,
+                    "journal compaction failed before handoff append; proceeding with oversized journal"
+                );
+            }
 
-        let payload_value =
-            serde_json::to_value(&handoff).map_err_internal("serialize handoff payload")?;
-        commands::WriteAssignmentResultPayloadCommand::new(assignment_id, payload_value)
-            .execute_with_db(self.ctx.app_state.db_router.writer())
+            append_journal_handoff_entry(
+                &self.filesystem,
+                assignment_id,
+                &self.ctx.agent.name,
+                "completed",
+                outcome,
+                &handoff,
+                &artifact_paths,
+                chrono::Utc::now(),
+            )
             .await?;
 
+            let payload_value =
+                serde_json::to_value(&handoff).map_err_internal("serialize handoff payload")?;
+            commands::WriteAssignmentResultPayloadCommand::new(assignment_id, payload_value)
+                .execute_with_db(self.ctx.app_state.db_router.writer())
+                .await?;
+        }
+
+        // The board-item deliverable feeds the frontend/vanity "deliverables" surface, so
+        // it must run on the coordinator's completion turn — gate only on the board item,
+        // never on an assignment id (the coordinator has no assignment payload).
         if let Some(board_item_id) = self.current_board_item_id() {
             let entry = serde_json::json!({
                 "at": chrono::Utc::now().to_rfc3339(),
-                "assignment_id": assignment_id.to_string(),
+                "assignment_id": self.current_assignment_id().map(|id| id.to_string()),
                 "by_thread_id": self.ctx.thread_id.to_string(),
                 "by_agent_name": self.ctx.agent.name,
                 "result_summary": outcome,
                 "artifacts": artifacts,
-                "findings": handoff.findings,
-                "cautions": handoff.cautions,
-                "next": handoff.next,
+                "findings": handoff.findings.clone(),
+                "cautions": handoff.cautions.clone(),
+                "next": handoff.next.clone(),
             });
             commands::AppendBoardItemDeliverableCommand::new(board_item_id, entry)
                 .execute_with_db(self.ctx.app_state.db_router.writer())

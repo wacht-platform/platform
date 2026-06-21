@@ -449,7 +449,6 @@ impl AgentExecutor {
         &self,
         task_key: &str,
         title: &str,
-        is_recurring: bool,
         board_item: Option<&models::ProjectTaskBoardItem>,
     ) -> Result<(TaskWorkspaceContext, String), AppError> {
         let safe_task_key = Self::sanitize_task_path_segment(task_key);
@@ -463,7 +462,6 @@ impl AgentExecutor {
             &TaskWorkspaceBriefInput {
                 task_key: &safe_task_key,
                 title,
-                is_recurring,
                 brief,
             },
         )

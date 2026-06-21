@@ -134,6 +134,7 @@ examples = [
 "/scratch/"                 = "temporary scratch | read+write | NOT guaranteed between turns"
 "/project_workspace/"       = "project tasks | read-only | visible to conversation threads"
 "/task/"                    = "task-local source of truth for service threads | read+write | TASK.md, JOURNAL.md, artifacts/"
+"/task/audit/"              = "runtime-written per-lane tool-call logs (<role>-<thread_id>.log) | read-only, never write | only read it when evaluating another lane's method (reviewer/coordinator); doing your own work, ignore it"
 "/delegated_workspace/"     = "deliverable surface | read+write | delegated tasks"
 "/delegated_inputs/<alias>/" = "input folders | read-only | delegated tasks, when provided"
 "/shared/"                  = "shared state | read+write | persists across recurring task fires"

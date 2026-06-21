@@ -297,7 +297,7 @@ pub fn update_project_task_schema() -> Vec<SchemaField> {
         SchemaField {
             name: "status".to_string(),
             field_type: "STRING".to_string(),
-            description: Some("Optional updated status. Omit to leave unchanged.".to_string()),
+            description: Some("Optional updated status. Omit to leave unchanged. `completed` is a strict gate: it requires a substantive `result_summary` AND at least one `artifacts` entry whose `path` is a real deliverable file that exists now — the runtime rejects completion otherwise. Before marking `completed`, cite the executor's deliverable path(s) (from their handoff / `/task/JOURNAL.md`); if no deliverable exists, the task is not done — reroute or block, do not invent a path.".to_string()),
             enum_values: string_enum(&[
                 "pending",
                 "in_progress",
@@ -349,7 +349,7 @@ pub fn update_project_task_schema() -> Vec<SchemaField> {
                 ]),
                 ..Default::default()
             })),
-            description: Some("Required for status completed. List of deliverables produced, each `{path, kind?, note?}`. Omit otherwise.".to_string()),
+            description: Some("MANDATORY when status is `completed`: at least one entry, each `{path, kind?, note?}`, every `path` a real deliverable file that exists now (executor output, typically under `/task/artifacts/`). Pull the paths from the assignee's handoff / `/task/JOURNAL.md`. Empty list or a missing path is rejected. Omit for non-completion updates.".to_string()),
             min_items: Some(1),
             required: false,
             ..Default::default()
