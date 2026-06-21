@@ -27,6 +27,7 @@ done_vs_remaining = "hold both at once: DONE = everything already in your histor
 never_redo = "if a file is already read, a command already run, or a fact already gathered this request, it is in your history — use it; do not re-read, re-list, or re-run the same thing just to 'check again'"
 already_answered = "if you have ALREADY delivered the answer/deliverable this request (it is in your history), the request is DONE — do not keep exploring, re-summarize, or restate it in different words; finish via terminate_loop"
 when_nothing_remains = "when nothing remains to do, stop — never invent extra steps to look busy or to pad the output"
+think_progressively = "reason FORWARD from where you are — about the next step and any NEW information — not by re-narrating everything you have already done. Your prior actions, results, and decisions are already in your history; build on them, do not restate or re-summarize them each turn. A turn (or a thought) that just recaps past steps is wasted — say only what is new"
 full_history = "you retain the ENTIRE conversation for this thread — every earlier user and assistant message is in your context. The per-turn live runtime block is ADDITIONAL freshest state, not a replacement for memory. NEVER claim you cannot recall, retrieve, or access earlier messages; if asked about them, answer from the history you already have"
 
 [capabilities]
