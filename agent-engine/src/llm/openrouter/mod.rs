@@ -524,7 +524,7 @@ impl OpenRouterClient {
                 .post(OPENROUTER_API_BASE_URL)
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("Content-Type", "application/json")
-                .header("HTTP-Referer", "https://wacht.tech")
+                .header("HTTP-Referer", "https://wacht.dev")
                 .header("X-Title", "Wacht")
                 .json(&request_body)
                 .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
