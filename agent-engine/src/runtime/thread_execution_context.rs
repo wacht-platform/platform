@@ -38,6 +38,7 @@ pub struct ResolvedProviderProfile {
     pub default_model: Option<String>,
     pub disable_prompt_caching: bool,
     pub disable_reasoning_effort: bool,
+    pub supports_image: bool,
 }
 
 impl DeploymentProviderKeys {
@@ -99,6 +100,7 @@ impl DeploymentProviderKeys {
                         default_model: profile.default_model.clone(),
                         disable_prompt_caching: profile.disable_prompt_caching,
                         disable_reasoning_effort: profile.disable_reasoning_effort,
+                        supports_image: profile.supports_image,
                     })
                 })
                 .collect::<Result<Vec<_>, AppError>>()?,
@@ -163,6 +165,14 @@ impl ThreadExecutionContext {
     pub(crate) fn reasoning_effort_disabled(&self, role: LlmRole) -> bool {
         self.agent_profile_for(role)
             .map(|profile| profile.disable_reasoning_effort)
+            .unwrap_or(false)
+    }
+
+    /// True when the provider profile resolved for `role` does not support image
+    /// input. No profile (deployment-default keys) means images are supported.
+    pub(crate) fn image_support_disabled(&self, role: LlmRole) -> bool {
+        self.agent_profile_for(role)
+            .map(|profile| !profile.supports_image)
             .unwrap_or(false)
     }
 

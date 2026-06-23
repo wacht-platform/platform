@@ -65,13 +65,13 @@ impl CreateDeploymentAiProviderProfileCommand {
             INSERT INTO deployment_ai_provider_profiles (
                 id, deployment_id, provider, name, slug, api_key, base_url,
                 organization, project, default_model, enabled, disable_prompt_caching,
-                disable_reasoning_effort
+                disable_reasoning_effort, supports_image
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, TRUE), COALESCE($12, FALSE), COALESCE($13, FALSE))
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, TRUE), COALESCE($12, FALSE), COALESCE($13, FALSE), COALESCE($14, TRUE))
             RETURNING
                 id, deployment_id, provider, name, slug, api_key, base_url,
                 organization, project, default_model, enabled, disable_prompt_caching,
-                disable_reasoning_effort, created_at, updated_at
+                disable_reasoning_effort, supports_image, created_at, updated_at
             "#,
             self.id,
             self.deployment_id,
@@ -86,6 +86,7 @@ impl CreateDeploymentAiProviderProfileCommand {
             self.request.enabled,
             self.request.disable_prompt_caching,
             self.request.disable_reasoning_effort,
+            self.request.supports_image,
         )
         .fetch_one(deps.db_router().writer())
         .await
@@ -138,12 +139,13 @@ impl UpdateDeploymentAiProviderProfileCommand {
                 enabled = COALESCE($10, enabled),
                 disable_prompt_caching = COALESCE($11, disable_prompt_caching),
                 disable_reasoning_effort = COALESCE($12, disable_reasoning_effort),
+                supports_image = COALESCE($13, supports_image),
                 updated_at = NOW()
             WHERE id = $1 AND deployment_id = $2
             RETURNING
                 id, deployment_id, provider, name, slug, api_key, base_url,
                 organization, project, default_model, enabled, disable_prompt_caching,
-                disable_reasoning_effort, created_at, updated_at
+                disable_reasoning_effort, supports_image, created_at, updated_at
             "#,
             self.profile_id,
             self.deployment_id,
@@ -157,6 +159,7 @@ impl UpdateDeploymentAiProviderProfileCommand {
             self.request.enabled,
             self.request.disable_prompt_caching,
             self.request.disable_reasoning_effort,
+            self.request.supports_image,
         )
         .fetch_optional(deps.db_router().writer())
         .await

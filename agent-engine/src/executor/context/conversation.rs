@@ -492,11 +492,17 @@ impl AgentExecutor {
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("application/octet-stream");
                                 if let Some(path) = path {
-                                    if let Ok(bytes) = self.filesystem.read_file_bytes(path).await {
-                                        use base64::{engine::general_purpose::STANDARD, Engine};
-                                        inline_parts.push(LlmHistoryPart::inline_data(
-                                            mime_type,
-                                            STANDARD.encode(bytes),
+                                    if !self.ctx.image_support_disabled(crate::llm::LlmRole::Strong) {
+                                        if let Ok(bytes) = self.filesystem.read_file_bytes(path).await {
+                                            use base64::{engine::general_purpose::STANDARD, Engine};
+                                            inline_parts.push(LlmHistoryPart::inline_data(
+                                                mime_type,
+                                                STANDARD.encode(bytes),
+                                            ));
+                                        }
+                                    } else {
+                                        inline_parts.push(LlmHistoryPart::text(
+                                            "[Note: The configured model for this agent cannot process images directly.]".to_string(),
                                         ));
                                     }
                                 }

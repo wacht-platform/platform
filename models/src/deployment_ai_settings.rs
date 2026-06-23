@@ -163,6 +163,7 @@ pub struct DeploymentAiProviderProfile {
     pub enabled: bool,
     pub disable_prompt_caching: bool,
     pub disable_reasoning_effort: bool,
+    pub supports_image: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -184,6 +185,7 @@ pub struct DeploymentAiProviderProfileResponse {
     pub enabled: bool,
     pub disable_prompt_caching: bool,
     pub disable_reasoning_effort: bool,
+    pub supports_image: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -208,6 +210,7 @@ impl From<DeploymentAiProviderProfile> for DeploymentAiProviderProfileResponse {
             enabled: profile.enabled,
             disable_prompt_caching: profile.disable_prompt_caching,
             disable_reasoning_effort: profile.disable_reasoning_effort,
+            supports_image: profile.supports_image,
             created_at: profile.created_at,
             updated_at: profile.updated_at,
         }
@@ -234,6 +237,8 @@ pub struct CreateDeploymentAiProviderProfileRequest {
     pub disable_prompt_caching: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disable_reasoning_effort: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_image: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -258,6 +263,8 @@ pub struct UpdateDeploymentAiProviderProfileRequest {
     pub disable_prompt_caching: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disable_reasoning_effort: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_image: Option<bool>,
 }
 
 impl From<DeploymentAiSettings> for DeploymentAiSettingsResponse {

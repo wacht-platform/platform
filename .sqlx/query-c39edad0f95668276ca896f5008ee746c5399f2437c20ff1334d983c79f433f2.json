@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE deployment_ai_provider_profiles\n            SET\n                name = COALESCE($3, name),\n                slug = COALESCE($4, slug),\n                api_key = COALESCE($5, api_key),\n                base_url = COALESCE($6, base_url),\n                organization = COALESCE($7, organization),\n                project = COALESCE($8, project),\n                default_model = COALESCE($9, default_model),\n                enabled = COALESCE($10, enabled),\n                disable_prompt_caching = COALESCE($11, disable_prompt_caching),\n                disable_reasoning_effort = COALESCE($12, disable_reasoning_effort),\n                updated_at = NOW()\n            WHERE id = $1 AND deployment_id = $2\n            RETURNING\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, disable_prompt_caching,\n                disable_reasoning_effort, created_at, updated_at\n            ",
+  "query": "\n            SELECT\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, disable_prompt_caching,\n                disable_reasoning_effort, supports_image, created_at, updated_at\n            FROM deployment_ai_provider_profiles\n            WHERE id = $1 AND deployment_id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -70,11 +70,16 @@
       },
       {
         "ordinal": 13,
+        "name": "supports_image",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -82,17 +87,7 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Int8",
-        "Text",
-        "Text",
-        "Text",
-        "Text",
-        "Text",
-        "Text",
-        "Text",
-        "Bool",
-        "Bool",
-        "Bool"
+        "Int8"
       ]
     },
     "nullable": [
@@ -110,8 +105,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "8643a9091b3b91f23dc8c93ea892297c63f29a1f2aedcd3133f71b5f5ae059dd"
+  "hash": "c39edad0f95668276ca896f5008ee746c5399f2437c20ff1334d983c79f433f2"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO deployment_ai_provider_profiles (\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, disable_prompt_caching,\n                disable_reasoning_effort\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, TRUE), COALESCE($12, FALSE), COALESCE($13, FALSE))\n            RETURNING\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, disable_prompt_caching,\n                disable_reasoning_effort, created_at, updated_at\n            ",
+  "query": "\n            INSERT INTO deployment_ai_provider_profiles (\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, disable_prompt_caching,\n                disable_reasoning_effort, supports_image\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, TRUE), COALESCE($12, FALSE), COALESCE($13, FALSE), COALESCE($14, TRUE))\n            RETURNING\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, disable_prompt_caching,\n                disable_reasoning_effort, supports_image, created_at, updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -70,11 +70,16 @@
       },
       {
         "ordinal": 13,
+        "name": "supports_image",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -91,6 +96,7 @@
         "Text",
         "Text",
         "Text",
+        "Bool",
         "Bool",
         "Bool",
         "Bool"
@@ -111,8 +117,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "3ca51383cc249a99b4d08c61d5726f988207965bac6f0936a0eda8530aa05843"
+  "hash": "0e934169008fdf4bc1619279788d2adb08abfe882abffe7fd41bce768a0c45dd"
 }

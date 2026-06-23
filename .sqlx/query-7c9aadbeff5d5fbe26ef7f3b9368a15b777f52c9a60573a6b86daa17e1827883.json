@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, disable_prompt_caching,\n                disable_reasoning_effort, created_at, updated_at\n            FROM deployment_ai_provider_profiles\n            WHERE deployment_id = $1\n            ORDER BY created_at DESC\n            LIMIT $2 OFFSET $3\n            ",
+  "query": "\n            UPDATE deployment_ai_provider_profiles\n            SET\n                name = COALESCE($3, name),\n                slug = COALESCE($4, slug),\n                api_key = COALESCE($5, api_key),\n                base_url = COALESCE($6, base_url),\n                organization = COALESCE($7, organization),\n                project = COALESCE($8, project),\n                default_model = COALESCE($9, default_model),\n                enabled = COALESCE($10, enabled),\n                disable_prompt_caching = COALESCE($11, disable_prompt_caching),\n                disable_reasoning_effort = COALESCE($12, disable_reasoning_effort),\n                supports_image = COALESCE($13, supports_image),\n                updated_at = NOW()\n            WHERE id = $1 AND deployment_id = $2\n            RETURNING\n                id, deployment_id, provider, name, slug, api_key, base_url,\n                organization, project, default_model, enabled, disable_prompt_caching,\n                disable_reasoning_effort, supports_image, created_at, updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -70,11 +70,16 @@
       },
       {
         "ordinal": 13,
+        "name": "supports_image",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -83,7 +88,17 @@
       "Left": [
         "Int8",
         "Int8",
-        "Int8"
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool"
       ]
     },
     "nullable": [
@@ -101,8 +116,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "bbd4a8b1e90e395352b1b2d55ebb52325d71f233426698f3e0daab86a891de81"
+  "hash": "7c9aadbeff5d5fbe26ef7f3b9368a15b777f52c9a60573a6b86daa17e1827883"
 }
