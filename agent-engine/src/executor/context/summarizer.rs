@@ -43,6 +43,10 @@ const SECTIONS: &[(&str, &str, &str, bool)] = &[
 
 const MAX_TURNS: usize = 30;
 
+/// The assembled summary must fit ~6k tokens (≈3.5 chars/token). `finalize` is
+/// rejected while over this so the summarizer progressively compresses.
+const SUMMARY_BUDGET_CHARS: usize = 21_000;
+
 const SYSTEM_PROMPT: &str = r#"# compaction_summarizer
 [identity]
 role = "summarization worker compacting an execution window into a structured durable summary"
@@ -55,6 +59,7 @@ order = "fill sections one at a time, most important first: objective → action
 revise = "call write_section again on a section to replace it once you know more"
 evidence = "preserve exact paths, IDs, error strings, and user corrections verbatim; no speculation, no padding"
 carry_forward = "every [tool_failure] in the window with no later record fixing it MUST appear verbatim in errors_open"
+budget = "the assembled table must fit ~6k tokens — be dense and minimal; finalize is rejected while over budget, so compress the largest sections (drop low-value detail) rather than padding"
 
 [memories]
 when = "the window holds a durable, reusable fact (root cause, working procedure, recurring failure signature, user preference) future runs should not rediscover"
@@ -274,13 +279,23 @@ impl AgentExecutor {
                 }
                 "finalize" => {
                     let missing = required_missing(&sections);
-                    if missing.is_empty() {
-                        return Ok(assemble(&sections));
+                    if !missing.is_empty() {
+                        feedback = format!(
+                            "finalize rejected: required section(s) empty: {}",
+                            missing.join(", ")
+                        );
+                    } else {
+                        let assembled = assemble(&sections);
+                        let len = assembled.chars().count();
+                        if len > SUMMARY_BUDGET_CHARS {
+                            feedback = format!(
+                                "finalize rejected: the table is ~{} chars over the ~6k-token budget — compress the largest sections (drop low-value detail), then finalize again",
+                                len - SUMMARY_BUDGET_CHARS
+                            );
+                        } else {
+                            return Ok(assembled);
+                        }
                     }
-                    feedback = format!(
-                        "finalize rejected: required section(s) empty: {}",
-                        missing.join(", ")
-                    );
                 }
                 other => feedback = format!("unknown tool `{other}`"),
             }
@@ -291,7 +306,14 @@ impl AgentExecutor {
                 thread_id = self.ctx.thread_id,
                 "agentic summary hit turn cap without finalize; assembling filled sections"
             );
-            return Ok(assemble(&sections));
+            // Hard-trim to the budget as a safety net at the turn cap.
+            let assembled = assemble(&sections);
+            return Ok(if assembled.chars().count() > SUMMARY_BUDGET_CHARS {
+                assembled.chars().take(SUMMARY_BUDGET_CHARS).collect::<String>()
+                    + "\n…[trimmed to fit the 6k-token budget]"
+            } else {
+                assembled
+            });
         }
         Err(AppError::Internal(
             "agentic summary exhausted turns with required sections unfilled".to_string(),
