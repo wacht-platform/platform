@@ -147,6 +147,7 @@ impl GeminiClient {
             return None;
         }
 
+        let mut should_refresh = true;
         if let Some(prior_state) = cache_request.prior_state.as_ref() {
             let can_use_prior_cache = self.can_use_cached_prefix(
                 cache_request,
@@ -157,11 +158,25 @@ impl GeminiClient {
                     prefix_signature: prefix_signature.clone(),
                     cached_contents_signature: cached_contents_signature.clone(),
                     cached_content_count: cacheable_contents.len(),
+                    should_refresh: true,
                 },
             );
             if can_use_prior_cache {
-                let mut delta_contents =
+                let delta_slice =
                     cacheable_contents[prior_state.cached_content_count..].to_vec();
+                // Cost rule D·M ≥ P: reuse the cache across turns and only re-create
+                // (re-pay the whole prefix at input rate) when the un-cached delta
+                // has grown worth absorbing, or the cache is near expiry. Recreating
+                // every turn — one discounted read per full-priced create — is
+                // net-negative. Price-independent (create and fresh both bill input).
+                let delta_tokens = Self::estimate_tokens(&Value::Array(delta_slice.clone()));
+                let m = (prior_state.reuse_turns as usize).saturating_add(1);
+                let near_expiry =
+                    prior_state.expire_at <= Utc::now() + chrono::Duration::seconds(120);
+                should_refresh =
+                    delta_tokens.saturating_mul(m) >= estimated_prefix_tokens || near_expiry;
+
+                let mut delta_contents = delta_slice;
                 delta_contents.extend(live_tail_contents.clone());
                 send_request_object.remove("system_instruction");
                 send_request_object.remove("systemInstruction");
@@ -180,6 +195,7 @@ impl GeminiClient {
             prefix_signature,
             cached_contents_signature,
             cached_content_count: cacheable_contents.len(),
+            should_refresh,
         })
     }
 
@@ -230,15 +246,15 @@ impl GeminiClient {
         cache_request: &ExplicitCacheRequest,
         plan: &ExplicitCachePlan,
     ) -> Result<Option<models::PromptCacheState>, AppError> {
-        if let Some(prior_state) = cache_request.prior_state.as_ref() {
-            let same_snapshot = prior_state.cache_key == cache_request.cache_key
-                && prior_state.model_name == self.model
-                && prior_state.prefix_signature == plan.prefix_signature
-                && prior_state.cached_contents_signature == plan.cached_contents_signature
-                && prior_state.cached_content_count == plan.cached_content_count
-                && prior_state.expire_at > Utc::now() + chrono::Duration::seconds(5);
-            if same_snapshot {
-                return Ok(Some(prior_state.clone()));
+        // Cost rule (set in build_explicit_cache_plan) says keep reusing the
+        // existing cache: return it aged (M++) so the re-checkpoint threshold grows.
+        // The delta was already sent fresh this turn; recreating now would re-pay the
+        // whole prefix at input rate for a single discounted read.
+        if !plan.should_refresh {
+            if let Some(prior_state) = cache_request.prior_state.as_ref() {
+                let mut aged = prior_state.clone();
+                aged.reuse_turns = aged.reuse_turns.saturating_add(1);
+                return Ok(Some(aged));
             }
         }
 
@@ -293,6 +309,7 @@ impl GeminiClient {
             cached_contents_signature: plan.cached_contents_signature.clone(),
             cached_content_count: plan.cached_content_count,
             expire_at,
+            reuse_turns: 0,
         };
 
         // Supersede: the prior cache for this key is now dead weight. Delete it so

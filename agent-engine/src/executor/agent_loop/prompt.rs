@@ -174,57 +174,6 @@ impl AgentExecutor {
     /// event. Surfaced as the MOST RECENT USER INPUT block at the top
     /// of the live context so the agent always reads the freshest steer
     /// first, even when older trigger markers in history are thin stubs.
-    fn latest_user_input_snapshot(
-        &self,
-    ) -> Option<dto::json::template_context::MostRecentUserInput> {
-        let mut latest: Option<(chrono::DateTime<chrono::Utc>, &'static str, String)> = None;
-        for conv in self.conversations.iter() {
-            let candidate: Option<(&'static str, String)> = match &conv.content {
-                models::ConversationContent::UserMessage { message, .. } => {
-                    let trimmed = message.trim();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(("user_message", trimmed.to_string()))
-                    }
-                }
-                models::ConversationContent::Steer { message, .. } => {
-                    let trimmed = message.trim();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(("steer", trimmed.to_string()))
-                    }
-                }
-                models::ConversationContent::ClarificationResponse { freeform_text, .. } => {
-                    freeform_text
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map(|t| ("freeform_clarification", t.to_string()))
-                }
-                _ => None,
-            };
-            if let Some((source, text)) = candidate {
-                let ts = conv.created_at;
-                let take = match latest.as_ref() {
-                    Some((existing, _, _)) => ts > *existing,
-                    None => true,
-                };
-                if take {
-                    latest = Some((ts, source, text));
-                }
-            }
-        }
-        latest.map(
-            |(ts, source, text)| dto::json::template_context::MostRecentUserInput {
-                source: source.to_string(),
-                text,
-                timestamp: ts.to_rfc3339(),
-            },
-        )
-    }
-
     fn last_sibling_thread_tail(
         &self,
         limit: usize,
@@ -468,7 +417,6 @@ impl AgentExecutor {
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(ToString::to_string),
-            most_recent_user_input: self.latest_user_input_snapshot(),
             last_sibling_thread_tail: self.last_sibling_thread_tail(5),
             live_context_message: None,
         };

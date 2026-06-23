@@ -260,24 +260,10 @@ pub struct AgentLoopPromptEnvelope {
     pub connected_external_integrations: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_system_instructions: Option<String>,
-    /// The latest user-originated event (comment, freeform clarification
-    /// reply, steer, or user message). Surfaced as its own block at the
-    /// top of the live context so the agent reads the freshest steer
-    /// before anything else.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub most_recent_user_input: Option<MostRecentUserInput>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_sibling_thread_tail: Option<LastSiblingThreadTail>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub live_context_message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MostRecentUserInput {
-    /// `comment` | `freeform_clarification` | `steer` | `user_message`
-    pub source: String,
-    pub text: String,
-    pub timestamp: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

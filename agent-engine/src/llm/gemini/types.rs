@@ -154,6 +154,8 @@ pub(crate) struct ExplicitCachePlan {
     pub(crate) prefix_signature: String,
     pub(crate) cached_contents_signature: String,
     pub(crate) cached_content_count: usize,
+    /// Whether to (re)create the cache this turn (cost rule D·M ≥ P) vs reuse it.
+    pub(crate) should_refresh: bool,
 }
 
 #[derive(Debug, Clone)]

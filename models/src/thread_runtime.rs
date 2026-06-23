@@ -92,6 +92,9 @@ pub struct PromptCacheState {
     #[serde(default)]
     pub cached_content_count: usize,
     pub expire_at: DateTime<Utc>,
+    /// Turns this cache has served since creation (M in the re-checkpoint rule).
+    #[serde(default)]
+    pub reuse_turns: u32,
 }
 
 impl PromptCacheState {
