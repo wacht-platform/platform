@@ -342,6 +342,18 @@ impl AgentExecutor {
             self.signal(crate::executor::core::RuntimeSignal::CoordinatorBriefMissing);
         }
 
+        // On every user message, nudge the model to record its intent as a note
+        // (prior in-progress work + next step), so the run stays anchored across
+        // the interruption. The note is an ordinary, visible note.
+        if self
+            .active_thread_event
+            .as_ref()
+            .map(|e| e.event_type == models::thread_event::event_type::USER_MESSAGE_RECEIVED)
+            .unwrap_or(false)
+        {
+            self.signal(crate::executor::core::RuntimeSignal::StateIntent);
+        }
+
         let context = AgentLoopContext {
             runtime: AgentLoopRuntimeContext {
                 current_datetime_utc: chrono::Utc::now()
