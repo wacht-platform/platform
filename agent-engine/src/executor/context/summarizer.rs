@@ -64,6 +64,7 @@ budget = "the assembled table must fit ~6k tokens — be dense and minimal; fina
 [memories]
 when = "the window holds a durable, reusable fact (root cause, working procedure, recurring failure signature, user preference) future runs should not rediscover"
 dedupe = "ALWAYS search_memories first; if a similar memory exists, do not save"
+category_picker = "fact for specific statements (e.g. \"User's timezone is UTC+2\"), preference for user settings (e.g. \"prefers verbose output\"), observation for events/outcomes (e.g. \"build failed because X\"), procedural for how-to sequences, semantic for general decisions, conversation_summary for recaps. Pick the most specific type that fits — facts and preferences get higher retrieval priority."
 volume = "no fixed cap — one save per distinct durable fact; a large window may hold many; stop when the window has no more, not at a quota"
 quality = "each memory must stand alone and be specific; skip marginal or window-local facts"
 
