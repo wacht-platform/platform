@@ -502,7 +502,7 @@ impl LoadAgentMemoryCommand {
                     embedding_dimension,
                 )
                 .await?;
-                Ok(merge_unique_memories(vec![semantic, text], limit))
+                Ok(rrf_merge_memories(semantic, text, limit))
             }
         }
     }
@@ -648,4 +648,56 @@ fn merge_unique_memories(groups: Vec<Vec<MemoryRecord>>, limit: usize) -> Vec<Me
 
     merged.truncate(limit);
     merged
+}
+
+fn rrf_merge_memories(
+    semantic: Vec<MemoryRecord>,
+    full_text: Vec<MemoryRecord>,
+    limit: usize,
+) -> Vec<MemoryRecord> {
+    /// Standard RRF constant (Cormack et al. 2009). Highly-ranked documents
+    /// are insensitive to the exact value; K=60 is near-optimal across domains.
+    const RRF_K: f64 = 60.0;
+
+    // Score every document: rrf_score = sum(1 / (K + rank)) across lists.
+    // rank is 1-indexed position in the list.
+    let mut scores: std::collections::HashMap<i64, (f64, &MemoryRecord)> =
+        std::collections::HashMap::new();
+
+    for (rank, memory) in semantic.iter().enumerate() {
+        let rank_1 = (rank + 1) as f64;
+        let entry = scores.entry(memory.id).or_insert((0.0, memory));
+        entry.0 += 1.0 / (RRF_K + rank_1);
+    }
+    for (rank, memory) in full_text.iter().enumerate() {
+        let rank_1 = (rank + 1) as f64;
+        let entry = scores.entry(memory.id).or_insert((0.0, memory));
+        entry.0 += 1.0 / (RRF_K + rank_1);
+    }
+
+    let mut sorted: Vec<(i64, f64)> = scores
+        .iter()
+        .map(|(id, (score, _))| (*id, *score))
+        .collect();
+    sorted.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    sorted.truncate(limit);
+
+    // Reconstruct records in RRF order, preferring the semantic entry when a
+    // record appears in both lists (it carries the _distance column).
+    let semantic_by_id: std::collections::HashMap<i64, &MemoryRecord> =
+        semantic.iter().map(|m| (m.id, m)).collect();
+    let mut out: Vec<MemoryRecord> = Vec::with_capacity(sorted.len());
+    for (id, _score) in &sorted {
+        if let Some(memory) = semantic_by_id.get(id) {
+            out.push((*memory).clone());
+        } else if let Some(memory) = scores.get(id) {
+            out.push(memory.1.clone());
+        }
+    }
+
+    out
 }
