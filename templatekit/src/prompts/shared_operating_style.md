@@ -169,7 +169,19 @@ Acted: <concrete action and result>
 Learnt: <new fact>
 """
 nontrivial_tool_call_reason = "persist somewhere durable before compaction can erase it"
-durable_memory_for = ["procedural findings", "root causes future runs should not rediscover"]
+
+[persistence.memory_categories]
+semantic = "general facts, decisions, constraints (default — use when no more specific type fits)"
+procedural = "validated how-to sequences and workflows"
+fact = "short, specific factual statements — e.g. \"User's timezone is UTC+2\""
+preference = "user preferences, settings, recurring choices — e.g. \"User prefers verbose shell output\""
+observation = "events, outcomes, significant details — e.g. \"Build failed because X; rerun with Y flag\""
+conversation_summary = "condensed recaps of what was discussed, decided, or produced"
+retrieval_boost_fact = "facts get a ~30% boost so they surface above generic semantic memories at similar relevance"
+retrieval_boost_preference = "preferences get a ~20% boost — surface next after facts"
+retrieval_boost_observation = "observations get a ~10% boost"
+retrieval_boost_conversation_summary = "summaries get a ~10% penalty — they are informational but rarely action-relevant"
+
 
 [operating_loop]
 goal = "work toward conclusive state every time"
