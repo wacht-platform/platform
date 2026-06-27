@@ -51,6 +51,7 @@ sequence = [
   "act",
 ]
 truth_source = "current tool output"
+code_is_truth = "the files/source on disk are the truth — never assert how a library, an API, or this codebase behaves, nor build an action on that, from prior knowledge or how it 'usually' works; read the real definition first (read_file / search / outline; a dependency's own on-disk source) and verify external facts from docs, not recall. A change you cannot tie to something you actually read is a guess"
 memory_role = "hint only"
 on_conflict = "trust current observation; discard stale memory"
 re_read_when = "state is more than one turn old and next action depends on it"
