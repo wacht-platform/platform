@@ -17,11 +17,11 @@ shape = "ordered steps proven to work"
 
 [categories.fact]
 covers = ["specific factual statement about user, project, or world"]
-shape = "short, specific, standalone — e.g. \"User's preferred timezone is UTC+2\""
+shape = "short, specific, standalone — e.g. \"Project's CI pipeline runs on GitHub Actions\""
 
 [categories.preference]
 covers = ["user preference, setting, or recurring choice"]
-shape = "what the user consistently wants — e.g. \"User prefers verbose output in shell commands\""
+shape = "what the user consistently wants — e.g. \"User prefers verbose output in shell commands\" or \"User's preferred timezone is UTC+2\""
 
 [categories.observation]
 covers = ["event, outcome, or significant detail"]

@@ -467,37 +467,48 @@ impl LoadAgentMemoryCommand {
         match self.search_approach {
             MemorySearchApproach::Semantic => {
                 let embedding = build_query_embedding(deps, self.deployment_id, &query).await?;
+                // Over-fetch by 3x so category re-ranking can promote
+                // lower-ranked facts/preferences before truncation.
+                let fetch_limit = limit * 3;
                 let results = search_memories_in_table(
                     &table,
                     self.deployment_id,
                     &embedding,
                     &filters,
-                    limit,
+                    fetch_limit,
                     embedding_dimension,
                 )
                 .await?;
-                Ok(apply_category_weights(results))
+                let mut ranked = apply_category_weights(results);
+                ranked.truncate(limit);
+                Ok(ranked)
             }
             MemorySearchApproach::FullText => {
+                let fetch_limit = limit * 3;
                 let results = search_memories_full_text_in_table(
                     &table,
                     self.deployment_id,
                     &query,
                     &filters,
-                    limit,
+                    fetch_limit,
                     embedding_dimension,
                 )
                 .await?;
-                Ok(apply_category_weights(results))
+                let mut ranked = apply_category_weights(results);
+                ranked.truncate(limit);
+                Ok(ranked)
             }
             MemorySearchApproach::Hybrid => {
                 let embedding = build_query_embedding(deps, self.deployment_id, &query).await?;
+                // Over-fetch for each leg so RRF + category re-ranking works
+                // on a broader set.
+                let fetch_limit = limit * 2;
                 let semantic = search_memories_in_table(
                     &table,
                     self.deployment_id,
                     &embedding,
                     &filters,
-                    limit,
+                    fetch_limit,
                     embedding_dimension,
                 )
                 .await?;
@@ -506,12 +517,14 @@ impl LoadAgentMemoryCommand {
                     self.deployment_id,
                     &query,
                     &filters,
-                    limit,
+                    fetch_limit,
                     embedding_dimension,
                 )
                 .await?;
-                let merged = rrf_merge_memories(semantic, text, limit);
-                Ok(apply_category_weights(merged))
+                let merged = rrf_merge_memories(semantic, text, limit * 3);
+                let mut ranked = apply_category_weights(merged);
+                ranked.truncate(limit);
+                Ok(ranked)
             }
         }
     }

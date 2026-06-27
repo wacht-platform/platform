@@ -119,7 +119,7 @@ fn summarizer_tools() -> Vec<NativeToolDefinition> {
                 "type": "object",
                 "properties": {
                     "content": { "type": "string", "description": "The durable fact, self-contained and specific." },
-                    "category": { "type": "string", "description": "Type: semantic (general fact/decision), procedural (how-to), fact (specific fact), preference (user preference), observation (event/outcome), conversation_summary (recap). Default semantic." },
+                    "category": { "type": "string", "enum": ["semantic", "procedural", "fact", "preference", "observation", "conversation_summary"], "description": "Type: semantic (general fact/decision), procedural (how-to), fact (specific fact), preference (user preference), observation (event/outcome), conversation_summary (recap). Default semantic." },
                     "observation": { "type": "string", "description": "One line on where in the window this came from." }
                 },
                 "required": ["content"]

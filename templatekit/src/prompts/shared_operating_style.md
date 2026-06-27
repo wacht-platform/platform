@@ -176,9 +176,10 @@ fact = "short, specific factual statements — e.g. \"User's timezone is UTC+2\"
 preference = "user preferences, settings, recurring choices — e.g. \"User prefers verbose shell output\""
 observation = "events, outcomes, significant details — e.g. \"Build failed because X; rerun with Y flag\""
 conversation_summary = "condensed recaps of what was discussed, decided, or produced"
-retrieval_boost_fact = "1.3× — facts surface first at similar relevance"
-retrieval_boost_preference = "1.2× — preferences surface next"
-retrieval_boost_observation = "1.1×"
+retrieval_boost_fact = "facts get a ~30% boost so they surface above generic semantic memories at similar relevance"
+retrieval_boost_preference = "preferences get a ~20% boost — surface next after facts"
+retrieval_boost_observation = "observations get a ~10% boost"
+retrieval_boost_conversation_summary = "summaries get a ~10% penalty — they are informational but rarely action-relevant"
 
 
 [operating_loop]
