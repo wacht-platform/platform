@@ -118,6 +118,7 @@ fn summarizer_tools() -> Vec<NativeToolDefinition> {
                 "type": "object",
                 "properties": {
                     "content": { "type": "string", "description": "The durable fact, self-contained and specific." },
+                    "category": { "type": "string", "description": "Type: semantic (general fact/decision), procedural (how-to), fact (specific fact), preference (user preference), observation (event/outcome), conversation_summary (recap). Default semantic." },
                     "observation": { "type": "string", "description": "One line on where in the window this came from." }
                 },
                 "required": ["content"]
@@ -275,7 +276,12 @@ impl AgentExecutor {
                         .get("observation")
                         .and_then(|v| v.as_str())
                         .map(str::to_string);
-                    feedback = self.summarizer_save_memory(content, observation).await;
+                    let category = call
+                        .arguments
+                        .get("category")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    feedback = self.summarizer_save_memory(content, category, observation).await;
                 }
                 "finalize" => {
                     let missing = required_missing(&sections);
@@ -358,7 +364,7 @@ impl AgentExecutor {
         }
     }
 
-    async fn summarizer_save_memory(&self, content: String, observation: Option<String>) -> String {
+    async fn summarizer_save_memory(&self, content: String, category: Option<String>, observation: Option<String>) -> String {
         let thread = match self.ctx.get_thread().await {
             Ok(thread) => thread,
             Err(error) => return format!("memory save unavailable: {error}"),
@@ -371,7 +377,7 @@ impl AgentExecutor {
             actor_id: thread.actor_id,
             project_id: thread.project_id,
             content,
-            category: None,
+            category,
             scope: None,
             observation,
             signals: Vec::new(),
