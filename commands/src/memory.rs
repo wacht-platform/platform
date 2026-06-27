@@ -679,7 +679,11 @@ fn rrf_merge_memories(
         .iter()
         .map(|(id, (score, _))| (*id, *score))
         .collect();
-    sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
     sorted.truncate(limit);
 
     // Reconstruct records in RRF order, preferring the semantic entry when a
