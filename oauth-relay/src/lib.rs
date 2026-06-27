@@ -134,7 +134,7 @@ async fn handle_oauth_callback(
             .into_response();
     };
 
-    let redirect_uri = format!("https://{}/sso-callback", frontend_host);
+    let redirect_uri = format!("https://{}/social/login", frontend_host);
 
     let target_url = match Url::parse(&redirect_uri) {
         Ok(url) => url,

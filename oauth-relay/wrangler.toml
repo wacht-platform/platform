@@ -8,5 +8,5 @@ command = "cargo install -q worker-build && worker-build --release"
 # OAuth relay service for staging deployments
 # Redirects OAuth callbacks to the appropriate staging environment
 [[routes]]
-pattern = "ssocallback.wacht.services"
+pattern = "social.wacht.services"
 custom_domain = true
