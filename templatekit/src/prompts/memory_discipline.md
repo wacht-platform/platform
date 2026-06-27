@@ -15,6 +15,22 @@ shape = "what is true, OR what was decided and why"
 covers = ["validated reusable sequence"]
 shape = "ordered steps proven to work"
 
+[categories.fact]
+covers = ["specific factual statement about user, project, or world"]
+shape = "short, specific, standalone — e.g. \"User's preferred timezone is UTC+2\""
+
+[categories.preference]
+covers = ["user preference, setting, or recurring choice"]
+shape = "what the user consistently wants — e.g. \"User prefers verbose output in shell commands\""
+
+[categories.observation]
+covers = ["event, outcome, or significant detail"]
+shape = "what happened, the outcome, and why it matters — e.g. \"Build failed because X; rerun with Y flag\""
+
+[categories.conversation_summary]
+covers = ["condensed recap of a conversation or task run"]
+shape = "what was discussed, decided, or produced — kept dense and minimal"
+
 [scopes.project]
 default = true
 covers = ["project conventions", "decisions", "recurring procedures"]
@@ -50,6 +66,8 @@ required_when_any = [
   "surprise: reality differed from your model and future runs could repeat the mistake",
   "decision with reason: user correction, validated project ruling, compliance/legal/stakeholder constraint",
   "validated procedure: non-obvious sequence worth reusing",
+  "established user preference that affects behaviour",
+  "recurring observation or failure pattern",
 ]
 timing = "immediately upon trigger"
 
@@ -69,7 +87,7 @@ template = """
 Why: <reason or evidence>
 How to apply: <trigger that recalls it>
 """
-category_picker = "semantic for facts/decisions; procedural for recipes"
+category_picker = "semantic (general fact/decision), procedural (how-to), fact (specific fact), preference (user setting), observation (event/outcome), conversation_summary (condensed recap)"
 scope_picker = "project (default); actor (user-wide preference only); thread (lane-local continuity only)"
 
 [entry.enrichment]
