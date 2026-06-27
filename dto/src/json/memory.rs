@@ -42,11 +42,15 @@ pub struct CreateConversationRequest {
     pub message_type: ConversationMessageType,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryCategory {
     Procedural,
     Semantic,
+    Fact,
+    Preference,
+    Observation,
+    ConversationSummary,
 }
 
 impl ToString for MemoryCategory {
@@ -54,6 +58,10 @@ impl ToString for MemoryCategory {
         match self {
             MemoryCategory::Procedural => "procedural".to_string(),
             MemoryCategory::Semantic => "semantic".to_string(),
+            MemoryCategory::Fact => "fact".to_string(),
+            MemoryCategory::Preference => "preference".to_string(),
+            MemoryCategory::Observation => "observation".to_string(),
+            MemoryCategory::ConversationSummary => "conversation_summary".to_string(),
         }
     }
 }
@@ -63,7 +71,48 @@ impl MemoryCategory {
         match s.to_lowercase().as_str() {
             "procedural" => Some(MemoryCategory::Procedural),
             "semantic" => Some(MemoryCategory::Semantic),
+            "fact" => Some(MemoryCategory::Fact),
+            "preference" => Some(MemoryCategory::Preference),
+            "observation" => Some(MemoryCategory::Observation),
+            "conversation_summary" => Some(MemoryCategory::ConversationSummary),
             _ => None,
+        }
+    }
+
+    /// Returns the default retrieval weight boost for this category.
+    /// Higher weight = more likely to surface in results.
+    pub fn retrieval_weight(&self) -> f64 {
+        match self {
+            Self::Fact => 1.3,
+            Self::Preference => 1.2,
+            Self::Observation => 1.1,
+            Self::ConversationSummary => 0.9,
+            Self::Semantic => 1.0,
+            Self::Procedural => 1.0,
+        }
+    }
+
+    /// Human-readable label for tool descriptions.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Semantic => "fact or decision",
+            Self::Procedural => "procedure or workflow",
+            Self::Fact => "factual statement",
+            Self::Preference => "user preference",
+            Self::Observation => "event or observation",
+            Self::ConversationSummary => "conversation summary",
+        }
+    }
+
+    /// Hint about content structure for the agent.
+    pub fn content_hint(&self) -> &'static str {
+        match self {
+            Self::Semantic => "A statement of fact, decision, or constraint.",
+            Self::Procedural => "Validated steps to accomplish a recurring task.",
+            Self::Fact => "A short, specific fact — e.g. \"User's timezone is UTC+2\".",
+            Self::Preference => "A preference or setting — e.g. \"User prefers verbose output\".",
+            Self::Observation => "What happened, the outcome, and why it matters — e.g. \"Build failed because X; rerun with Y flag\".",
+            Self::ConversationSummary => "A condensed summary of what was discussed, decided, or produced in a conversation.",
         }
     }
 }

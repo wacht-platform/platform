@@ -462,7 +462,7 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "categories".to_string(),
                     field_type: "ARRAY".to_string(),
-                    description: Some("Categories to include.".to_string()),
+                    description: Some("Categories to include: semantic, procedural, fact, preference, observation, conversation_summary.".to_string()),
                     items_type: Some("STRING".to_string()),
                     required: false,
                     ..Default::default()
@@ -508,8 +508,8 @@ pub(crate) fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "category".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("semantic (facts/decisions/constraints) or procedural (validated how-to). Default semantic.".to_string()),
-                    enum_values: string_enum(&["semantic", "procedural"]),
+                    description: Some("Type of memory: semantic (general fact/decision), procedural (validated how-to), fact (specific factual statement), preference (user preference/setting), observation (event or outcome), conversation_summary (condensed recap). Default semantic.".to_string()),
+                    enum_values: string_enum(&["semantic", "procedural", "fact", "preference", "observation", "conversation_summary"]),
                     required: false,
                     ..Default::default()
                 },
@@ -569,7 +569,7 @@ pub(crate) fn internal_tools() -> Vec<(
                     name: "category".to_string(),
                     field_type: "STRING".to_string(),
                     description: Some("New category. Omit to keep current.".to_string()),
-                    enum_values: string_enum(&["semantic", "procedural"]),
+                    enum_values: string_enum(&["semantic", "procedural", "fact", "preference", "observation", "conversation_summary"]),
                     required: false,
                     ..Default::default()
                 },

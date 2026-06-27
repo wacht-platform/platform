@@ -15,6 +15,12 @@ use crate::{
     ResolveDeploymentStorageCommand, VECTOR_STORE_MEMORY, resolve_deployment_embedding_dimension,
 };
 
+/// Category weight multiplier applied as a post-retrieval boost.
+/// The base weight comes from `MemoryCategory::retrieval_weight()`, and is
+/// applied as a rank adjustment so higher-weighted categories surface above
+/// lower-weighted ones at similar relevance, without overwhelming top matches.
+const CATEGORY_WEIGHT_STRENGTH: f64 = 0.3;
+
 pub struct StoreMemoryCommand {
     pub id: i64,
     pub deployment_id: i64,
@@ -461,7 +467,7 @@ impl LoadAgentMemoryCommand {
         match self.search_approach {
             MemorySearchApproach::Semantic => {
                 let embedding = build_query_embedding(deps, self.deployment_id, &query).await?;
-                search_memories_in_table(
+                let results = search_memories_in_table(
                     &table,
                     self.deployment_id,
                     &embedding,
@@ -469,10 +475,11 @@ impl LoadAgentMemoryCommand {
                     limit,
                     embedding_dimension,
                 )
-                .await
+                .await?;
+                Ok(apply_category_weights(results))
             }
             MemorySearchApproach::FullText => {
-                search_memories_full_text_in_table(
+                let results = search_memories_full_text_in_table(
                     &table,
                     self.deployment_id,
                     &query,
@@ -480,7 +487,8 @@ impl LoadAgentMemoryCommand {
                     limit,
                     embedding_dimension,
                 )
-                .await
+                .await?;
+                Ok(apply_category_weights(results))
             }
             MemorySearchApproach::Hybrid => {
                 let embedding = build_query_embedding(deps, self.deployment_id, &query).await?;
@@ -502,7 +510,8 @@ impl LoadAgentMemoryCommand {
                     embedding_dimension,
                 )
                 .await?;
-                Ok(rrf_merge_memories(semantic, text, limit))
+                let merged = rrf_merge_memories(semantic, text, limit);
+                Ok(apply_category_weights(merged))
             }
         }
     }
@@ -700,4 +709,41 @@ fn rrf_merge_memories(
     }
 
     out
+}
+
+/// Applies category-based weight boosts to re-rank results.
+/// Higher-weight categories (facts, preferences) get a relevance bump so they
+/// surface above lower-weight categories at similar scores.
+fn apply_category_weights(memories: Vec<MemoryRecord>) -> Vec<MemoryRecord> {
+    let len = memories.len();
+    if len <= 1 {
+        return memories;
+    }
+
+    // Compute a boosted score per record: original position + category weight.
+    let weights: Vec<f64> = memories
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let category = MemoryCategory::from_str(&m.memory_category)
+                .unwrap_or(MemoryCategory::Semantic);
+            let base = 1.0 - (i as f64 / len as f64); // normalised position [0..1]
+            let boost = (category.retrieval_weight() - 1.0) * CATEGORY_WEIGHT_STRENGTH;
+            base + boost
+        })
+        .collect();
+
+    let mut indices: Vec<usize> = (0..len).collect();
+    indices.sort_by(|a, b| {
+        weights[*b]
+            .partial_cmp(&weights[*a])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Build result in the new order (MemoryRecord derives Clone).
+    let mut result = Vec::with_capacity(len);
+    for &idx in &indices {
+        result.push(memories[idx].clone());
+    }
+    result
 }
