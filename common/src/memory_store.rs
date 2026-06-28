@@ -691,6 +691,11 @@ fn parse_memory_records(
                 continue;
             };
 
+            let distance = batch
+                .column_by_name("_distance")
+                .and_then(|col| col.as_any().downcast_ref::<Float32Array>())
+                .and_then(|arr| if arr.is_null(idx) { None } else { Some(arr.value(idx)) });
+
             records.push(MemoryRecord {
                 id,
                 deployment_id,
@@ -709,6 +714,7 @@ fn parse_memory_records(
                 metadata: metadata_value,
                 created_at,
                 updated_at,
+                distance,
             });
         }
     }

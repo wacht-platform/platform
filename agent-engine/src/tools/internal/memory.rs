@@ -176,12 +176,15 @@ impl ToolExecutor {
         )
         .await?;
 
-        if results.is_empty() {
-            return Ok(None);
-        }
-
+        // Cosine distance threshold: 0.35 corresponds to roughly 70° angular
+        // separation between normalized vectors. Below this the content is
+        // semantically similar enough to be a likely duplicate; above it the
+        // match is too loose to block a save. The model can bypass this check
+        // with `confirmed: true`.
+        const SIMILARITY_CUTOFF: f32 = 0.35;
         let similar: Vec<serde_json::Value> = results
             .into_iter()
+            .filter(|m| m.distance.map_or(false, |d| d < SIMILARITY_CUTOFF))
             .map(|m| {
                 serde_json::json!({
                     "memory_id": m.id.to_string(),
