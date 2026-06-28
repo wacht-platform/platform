@@ -172,6 +172,13 @@ pub struct SaveMemoryParams {
     /// memory fires, these are the neighbors worth considering.
     #[serde(default)]
     pub related: Vec<String>,
+    /// Skip the dedup pre-check and save as a new memory regardless of
+    /// similar existing entries. Default false — the runtime searches
+    /// existing memories and returns any close matches for the agent to
+    /// decide, instead of saving immediately. Set `confirmed: true` to
+    /// force the save.
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
