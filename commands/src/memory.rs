@@ -15,7 +15,11 @@ use crate::{
     ResolveDeploymentStorageCommand, VECTOR_STORE_MEMORY, resolve_deployment_embedding_dimension,
 };
 
-/// Category weight multiplier applied as a post-retrieval boost.
+/// Weight applied per hour of staleness in the recency-adjusted composite
+/// score. At 0.0002, a record ages ~0.14 per 30 days — enough to give fresh
+/// results a slight edge over equally-similar old ones without overpowering a
+/// strong semantic match (the dedup cutoff of 0.35 is well above this).
+const DECAY_PER_HOUR: f32 = 0.0002;
 /// The base weight comes from `MemoryCategory::retrieval_weight()`, and is
 /// applied as a rank adjustment so higher-weighted categories surface above
 /// lower-weighted ones at similar relevance, without overwhelming top matches.
@@ -469,7 +473,7 @@ impl LoadAgentMemoryCommand {
         match self.search_approach {
             MemorySearchApproach::Semantic => {
                 let embedding = build_query_embedding(deps, self.deployment_id, &query).await?;
-                // Over-fetch by 3x so category re-ranking can promote
+                // Over-fetch by 3x so category + recency re-ranking can promote
                 // lower-ranked facts/preferences before truncation.
                 let fetch_limit = limit * 3;
                 let results = search_memories_in_table(
@@ -481,7 +485,8 @@ impl LoadAgentMemoryCommand {
                     embedding_dimension,
                 )
                 .await?;
-                let mut ranked = apply_category_weights(results);
+                let decayed = common::re_rank_by_recency(results, DECAY_PER_HOUR);
+                let mut ranked = apply_category_weights(decayed);
                 ranked.truncate(limit);
                 Ok(ranked)
             }
@@ -524,7 +529,8 @@ impl LoadAgentMemoryCommand {
                 )
                 .await?;
                 let merged = rrf_merge_memories(semantic, text, limit * 3);
-                let mut ranked = apply_category_weights(merged);
+                let decayed = common::re_rank_by_recency(merged, DECAY_PER_HOUR);
+                let mut ranked = apply_category_weights(decayed);
                 ranked.truncate(limit);
                 Ok(ranked)
             }

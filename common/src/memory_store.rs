@@ -774,3 +774,35 @@ fn build_memory_embedding_array(
     })?;
     Ok(Arc::new(array) as ArrayRef)
 }
+
+/// Re-rank memory records by a composite score that blends cosine distance with
+/// a recency penalty. LanceDB returns the inner top-N by pure vector similarity;
+/// this post-hoc step ensures fresh memories surface above equally-similar old
+/// ones without ever dropping a near-perfect match.
+///
+/// `decay_per_hour` controls the strength — at `0.0002`, a memory ages ~0.14
+/// per 30 days of staleness, enough to give fresh results a slight edge over
+/// equally-similar old ones without overpowering genuine semantic matches
+/// (the dedup cutoff of 0.35 is still well above the worst-case age penalty).
+pub fn re_rank_by_recency(
+    memories: Vec<MemoryRecord>,
+    decay_per_hour: f32,
+) -> Vec<MemoryRecord> {
+    let now = Utc::now();
+    let mut scored: Vec<(f64, MemoryRecord)> = memories
+        .into_iter()
+        .map(|m| {
+            let raw_distance = m.distance.unwrap_or(0.5) as f64;
+            let hours_age = (now - m.updated_at).num_hours().max(0) as f64;
+            let composite = raw_distance + decay_per_hour as f64 * hours_age;
+            (composite, m)
+        })
+        .collect();
+
+    scored.sort_by(|a, b| {
+        a.0.partial_cmp(&b.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    scored.into_iter().map(|(_, m)| m).collect()
+}
