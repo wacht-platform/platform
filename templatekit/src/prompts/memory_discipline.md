@@ -56,6 +56,11 @@ memory_role = "hint"
 truth_source = "current tool evidence"
 on_conflict = "current tool evidence wins"
 
+[load.recency]
+note = "the runtime applies a time-decay to every retrieval result — fresh memories surface above equally-similar old ones. At ~0.0005/hour, a memory ages ~0.36 per month of staleness. You do NOT need to compute or pass any decay yourself; it's automatic."
+effect_on_agent = "you will see fresher results first whenever semantic scores are close, so prefer the top-ranked hits and don't second-guess their ordering"
+implication_for_save = "when you save facts that supersede older memories (e.g. a preference flip), save the new version and trust the retrieval ranking to prefer it; you do NOT need to delete or 'supersede' the old one — recency does it implicitly"
+
 [load.followups]
 follow_when = "hit has `signals`, `observation`, or `related` AND they match the current situation"
 follow_rate = "one hop at a time"
