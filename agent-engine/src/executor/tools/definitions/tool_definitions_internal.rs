@@ -544,6 +544,13 @@ pub(crate) fn internal_tools() -> Vec<(
                     required: false,
                     ..Default::default()
                 },
+                SchemaField {
+                    name: "confirmed".to_string(),
+                    field_type: "BOOLEAN".to_string(),
+                    description: Some("Skip the dedup pre-check and save immediately. By default the runtime searches existing memories first and returns close matches for you to merge/update via `revise_memory` instead of creating a duplicate.".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
             ],
         ),
         (
