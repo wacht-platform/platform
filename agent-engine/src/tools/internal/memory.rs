@@ -165,23 +165,16 @@ impl ToolExecutor {
             thread_id: Some(thread_id),
             categories: None,
         };
-        // Fetch more candidates than we need because time-decay re-ranking
-        // drops old memories; a 4x factor ensures we keep enough fresh ones for
-        // the similarity cutoff.
+        // Fetch enough candidates that cosine-distance filtering is meaningful
         let results = search_memories_in_table(
             &table,
             deployment_id,
             &query_embedding,
             &filters,
-            60,
+            20,
             embedding_dimension,
         )
         .await?;
-
-        // Re-rank by composite score (cosine distance + recency decay) so fresh
-        // similar memories surface above equally-similar old ones.
-        const DECAY_PER_HOUR: f32 = 0.0005;
-        let results = common::re_rank_by_recency(results, DECAY_PER_HOUR);
 
         // Cosine distance threshold: 0.35 corresponds to roughly 70° angular
         // separation between normalized vectors. Below this the content is
