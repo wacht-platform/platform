@@ -16,9 +16,10 @@ use crate::{
 };
 
 /// Weight applied per hour of staleness in the recency-adjusted composite
-/// score. At 0.0005, a record ages ~0.36 per 30 days — enough to sink below
-/// any moderately similar fresh result without drowning a strong semantic match.
-const DECAY_PER_HOUR: f32 = 0.0005;
+/// score. At 0.0002, a record ages ~0.14 per 30 days — enough to give fresh
+/// results a slight edge over equally-similar old ones without overpowering a
+/// strong semantic match (the dedup cutoff of 0.35 is well above this).
+const DECAY_PER_HOUR: f32 = 0.0002;
 /// The base weight comes from `MemoryCategory::retrieval_weight()`, and is
 /// applied as a rank adjustment so higher-weighted categories surface above
 /// lower-weighted ones at similar relevance, without overwhelming top matches.

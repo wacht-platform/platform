@@ -180,7 +180,7 @@ impl ToolExecutor {
 
         // Re-rank by composite score (cosine distance + recency decay) so fresh
         // similar memories surface above equally-similar old ones.
-        const DECAY_PER_HOUR: f32 = 0.0005;
+        const DECAY_PER_HOUR: f32 = 0.0002;
         let results = common::re_rank_by_recency(results, DECAY_PER_HOUR);
 
         // Cosine distance threshold: 0.35 corresponds to roughly 70° angular

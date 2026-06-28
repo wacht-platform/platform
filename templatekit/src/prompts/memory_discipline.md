@@ -57,9 +57,9 @@ truth_source = "current tool evidence"
 on_conflict = "current tool evidence wins"
 
 [load.recency]
-note = "the runtime applies a time-decay to every retrieval result — fresh memories surface above equally-similar old ones. At ~0.0005/hour, a memory ages ~0.36 per month of staleness. You do NOT need to compute or pass any decay yourself; it's automatic."
-effect_on_agent = "you will see fresher results first whenever semantic scores are close, so prefer the top-ranked hits and don't second-guess their ordering"
-implication_for_save = "when you save facts that supersede older memories (e.g. a preference flip), save the new version and trust the retrieval ranking to prefer it; you do NOT need to delete or 'supersede' the old one — recency does it implicitly"
+note = "the runtime applies a gentle time-decay to semantic and hybrid retrieval results — fresh memories surface slightly above equally-similar old ones at ~0.0002/hour (~0.14/month). Full-text search does not receive this treatment. You do NOT need to compute or pass any decay yourself; it's automatic for the paths that support it."
+effect_on_agent = "for semantic and hybrid loads, you will see fresher results first when scores are close — prefer the top-ranked hits. For full-text loads, results are ranked by text relevance alone."
+implication_for_save = "when you save facts that supersede older memories (e.g. a preference flip), save the new version and trust semantic/hybrid retrieval to prefer it; you do NOT need to delete or manually 'supersede' the old one — recency handles it implicitly"
 
 [load.followups]
 follow_when = "hit has `signals`, `observation`, or `related` AND they match the current situation"

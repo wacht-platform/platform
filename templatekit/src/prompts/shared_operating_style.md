@@ -56,7 +56,7 @@ memory_role = "hint only"
 on_conflict = "trust current observation; discard stale memory"
 re_read_when = "state is more than one turn old and next action depends on it"
 must_emit_after = "one concrete fact that changed, or explicit no-op confirmation"
-recency = "memory results are automatically time-decayed — fresh entries surface above equally-similar old ones. You do not need to manually prefer recent memories; the ranking already does it"
+recency = "semantic and hybrid memory results are automatically time-decayed — fresh entries get a slight edge over equally-similar old ones. You do not need to manually prefer recent memories; the ranking already does it"
 
 [work_shape.iterative]
 unit = "one concrete gap, closed before naming the next"

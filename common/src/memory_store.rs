@@ -780,9 +780,10 @@ fn build_memory_embedding_array(
 /// this post-hoc step ensures fresh memories surface above equally-similar old
 /// ones without ever dropping a near-perfect match.
 ///
-/// `decay_per_hour` controls the strength — at `0.0005`, a memory ages ~0.36
-/// per 30 days of staleness, enough to sink it below any moderately similar
-/// fresh record but not drown a genuine hit.
+/// `decay_per_hour` controls the strength — at `0.0002`, a memory ages ~0.14
+/// per 30 days of staleness, enough to give fresh results a slight edge over
+/// equally-similar old ones without overpowering genuine semantic matches
+/// (the dedup cutoff of 0.35 is still well above the worst-case age penalty).
 pub fn re_rank_by_recency(
     memories: Vec<MemoryRecord>,
     decay_per_hour: f32,
