@@ -36,6 +36,10 @@ pub struct MemoryRecord {
     pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Cosine distance from the query vector (set during vector search). Range
+    /// is [0, 2] where 0 = identical direction, 1 = orthogonal, 2 = opposite.
+    /// Absent for non-vector loads (e.g. full-text search, startup memory fetch).
+    pub distance: Option<f32>,
 }
 
 impl MemoryRecord {

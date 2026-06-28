@@ -109,6 +109,7 @@ impl StoreMemoryCommand {
             metadata: self.metadata,
             created_at: now,
             updated_at: now,
+            distance: None,
         };
         insert_memory(&table, &record, embedding_dimension).await?;
 
@@ -386,6 +387,7 @@ impl UpdateAgentMemoryCommand {
             metadata: serde_json::Value::Object(metadata_obj),
             created_at: existing.created_at,
             updated_at: now,
+            distance: None,
         };
 
         table
