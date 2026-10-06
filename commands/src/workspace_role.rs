@@ -49,6 +49,7 @@ impl CreateWorkspaceRoleCommand {
                 SELECT id
                 FROM workspace_roles
                 WHERE workspace_id = $2 AND name = $3
+                  AND EXISTS (SELECT 1 FROM workspaces WHERE id = $2 AND deployment_id = $4)
             ),
             ins AS (
                 INSERT INTO workspace_roles (
@@ -56,6 +57,7 @@ impl CreateWorkspaceRoleCommand {
                 )
                 SELECT $1, $2, $4, $3, $5, $6, $7
                 WHERE NOT EXISTS (SELECT 1 FROM dup)
+                  AND EXISTS (SELECT 1 FROM workspaces WHERE id = $2 AND deployment_id = $4)
                 RETURNING id, created_at, updated_at, permissions
             )
             SELECT
@@ -92,8 +94,10 @@ impl CreateWorkspaceRoleCommand {
             ));
         }
 
+        let id = row.id.ok_or_else(|| AppError::NotFound("Workspace not found".to_string()))?;
+
         Ok(WorkspaceRole {
-            id: row.id.unwrap_or(role_id),
+            id,
             created_at: row.created_at.unwrap_or(now),
             updated_at: row.updated_at.unwrap_or(now),
             name: self.name,
@@ -137,7 +141,7 @@ impl UpdateWorkspaceRoleCommand {
     {
         // Build update query dynamically
         let mut query_parts = Vec::new();
-        let mut param_count = 3; // role_id is $1, workspace_id is $2
+        let mut param_count = 4;
 
         if self.name.is_some() {
             query_parts.push(format!("name = ${}", param_count));
@@ -155,11 +159,12 @@ impl UpdateWorkspaceRoleCommand {
         query_parts.push(format!("updated_at = ${}", param_count));
 
         let query_str = format!(
-            "UPDATE workspace_roles SET {} WHERE id = $1 AND workspace_id = $2 RETURNING id, created_at, updated_at, name, permissions",
+            "UPDATE workspace_roles SET {} WHERE deployment_id = $1 AND id = $2 AND workspace_id = $3 AND EXISTS (SELECT 1 FROM workspaces WHERE id = $3 AND deployment_id = $1) RETURNING id, created_at, updated_at, name, permissions",
             query_parts.join(", ")
         );
 
         let mut query = sqlx::query(&query_str)
+            .bind(self.deployment_id)
             .bind(self.role_id)
             .bind(self.workspace_id);
 

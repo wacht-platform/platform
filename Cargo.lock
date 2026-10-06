@@ -1290,7 +1290,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "url",
- "wacht",
+ "wacht 0.1.0-beta.6",
 ]
 
 [[package]]
@@ -1749,7 +1749,7 @@ dependencies = [
  "pgvector",
  "serde",
  "serde_json",
- "wacht",
+ "wacht 0.1.0-beta.6",
 ]
 
 [[package]]
@@ -3458,7 +3458,7 @@ dependencies = [
  "sqlx",
  "thiserror 1.0.69",
  "url",
- "wacht",
+ "wacht 0.1.0-beta.6",
 ]
 
 [[package]]
@@ -4215,7 +4215,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "urlencoding",
- "wacht",
+ "wacht 0.1.0-beta.8",
  "zstd",
 ]
 
@@ -6801,6 +6801,26 @@ name = "wacht"
 version = "0.1.0-beta.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abbd0b749938487dc24766325ab39fbcb5c1cb10984ebbbbdc515f34cd740e39"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "jsonwebtoken",
+ "once_cell",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "tokio",
+ "tower",
+ "tracing",
+ "url",
+ "urlencoding",
+]
+
+[[package]]
+name = "wacht"
+version = "0.1.0-beta.8"
 dependencies = [
  "axum",
  "base64 0.22.1",
