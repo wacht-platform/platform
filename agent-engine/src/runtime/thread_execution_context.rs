@@ -210,7 +210,7 @@ impl ThreadExecutionContext {
             .unwrap_or("gemini")
     }
 
-    fn resolve_model_name(&self, role: LlmRole) -> &str {
+    pub(crate) fn resolve_model_name(&self, role: LlmRole) -> &str {
         if let Some(over) = self.agent_override_for(role) {
             if let Some(model) = over.model.as_deref().filter(|value| !value.is_empty()) {
                 return model;
@@ -239,8 +239,7 @@ impl ThreadExecutionContext {
             }
             (LlmRole::Strong, "openai") => "gpt-5.1",
             (LlmRole::Weak, "openai") => "gpt-5-mini",
-            (LlmRole::Strong, _) => "gemini-3.1-pro-preview",
-            (LlmRole::Weak, _) => "gemini-3-flash-preview",
+            (LlmRole::Strong, _) | (LlmRole::Weak, _) => "gemini-3.7-flash",
         };
         tracing::warn!(
             deployment_id = self.agent.deployment_id,

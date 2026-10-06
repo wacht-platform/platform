@@ -13,9 +13,11 @@ pub(crate) mod providers {
 }
 
 pub use client::{
-    GeneratedToolCall, LlmRole, NativeToolDefinition, PromptCacheRequest, ResolvedLlm,
-    SemanticLlmContentBlock, SemanticLlmMessage, SemanticLlmPromptConfig, SemanticLlmRequest,
-    StructuredGenerationOutput, TextGenerationOutput, ToolCallGenerationOutput,
+    cache_states_from_request, stamp_attached_cache_tokens,
+    GeneratedToolCall, LlmRole, NativeToolDefinition, PromptCacheLayer, PromptCacheRequest,
+    ResolvedLlm, SemanticLlmContentBlock, SemanticLlmMessage, SemanticLlmPromptConfig,
+    SemanticLlmRequest, StructuredGenerationOutput, TextGenerationOutput,
+    ToolCallGenerationOutput,
 };
 pub use gemini::{GeminiClient, UsageMetadata};
 pub use openai::OpenAiClient;

@@ -1,3 +1,4 @@
+use chrono::Utc;
 use common::error::AppError;
 use models::PromptCacheState;
 use serde::{Deserialize, Serialize};
@@ -15,12 +16,18 @@ pub enum LlmRole {
 }
 
 #[derive(Debug, Clone)]
-pub struct PromptCacheRequest {
+pub struct PromptCacheLayer {
     pub cache_key: String,
     pub ttl_secs: i64,
     pub live_tail_count: usize,
     pub prior_state: Option<PromptCacheState>,
-    pub reuse_only: bool,
+    pub incremental: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct PromptCacheRequest {
+    pub shared: PromptCacheLayer,
+    pub incremental: PromptCacheLayer,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,12 +54,77 @@ pub struct ToolCallGenerationOutput {
     #[serde(default)]
     pub content_text: Option<String>,
     pub usage_metadata: Option<UsageMetadata>,
+    /// Shared + incremental handles to persist. Empty when caching is off.
     #[serde(default)]
-    pub cache_state: Option<PromptCacheState>,
+    pub cache_states: Vec<PromptCacheState>,
     /// Provider finish reason for the turn (e.g. "STOP"/"length"/"MAX_TOKENS").
     /// Used by the loop to detect truncated turns. None when the provider omits it.
     #[serde(default)]
     pub finish_reason: Option<String>,
+}
+
+fn provider_cached_tokens(usage: Option<&UsageMetadata>) -> Option<u32> {
+    usage.and_then(|meta| meta.cached_content_token_count.or(meta.cache_write_token_count))
+}
+
+/// Stamp generate-time cached tokens only on the attached Gemini object.
+/// The other layer keeps create/prior counts so shared ≠ incremental size.
+pub fn stamp_attached_cache_tokens(
+    mut states: Vec<PromptCacheState>,
+    attached_cache_name: Option<&str>,
+    usage: Option<&UsageMetadata>,
+) -> Vec<PromptCacheState> {
+    let Some(attached) = attached_cache_name.filter(|name| !name.is_empty()) else {
+        return states;
+    };
+    let tokens = provider_cached_tokens(usage);
+    for state in &mut states {
+        if state.cache_name == attached {
+            state.record_provider_cached_tokens(tokens);
+        }
+    }
+    states
+}
+
+fn layer_state_from_request(
+    layer: &PromptCacheLayer,
+    model_name: &str,
+    usage: Option<&UsageMetadata>,
+) -> Option<PromptCacheState> {
+    let expire_at = layer
+        .prior_state
+        .as_ref()
+        .map(|state| state.expire_at)
+        .unwrap_or_else(|| Utc::now() + chrono::Duration::seconds(layer.ttl_secs.max(1)));
+    let mut state = layer.prior_state.clone().unwrap_or_else(|| PromptCacheState {
+        cache_key: layer.cache_key.clone(),
+        model_name: model_name.to_string(),
+        cache_name: String::new(),
+        prefix_signature: String::new(),
+        cached_contents_signature: String::new(),
+        cached_content_count: 0,
+        expire_at,
+        reuse_turns: 0,
+        cached_token_count: None,
+    });
+    state.record_provider_cached_tokens(provider_cached_tokens(usage));
+    // Skip empty handles so a cache miss does not overwrite a prior count.
+    state.cached_token_count.is_some().then_some(state)
+}
+
+/// OpenAI / OpenRouter have no Gemini `cachedContents` resource. Persist the
+/// thread-level handle (the key we send) with the provider-reported count.
+pub fn cache_states_from_request(
+    cache: Option<PromptCacheRequest>,
+    model_name: &str,
+    usage: Option<&UsageMetadata>,
+) -> Vec<PromptCacheState> {
+    let Some(cache) = cache else {
+        return Vec::new();
+    };
+    layer_state_from_request(&cache.incremental, model_name, usage)
+        .into_iter()
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,7 +222,8 @@ impl SemanticLlmRequest {
 pub struct StructuredGenerationOutput<T> {
     pub value: T,
     pub usage_metadata: Option<UsageMetadata>,
-    pub cache_state: Option<PromptCacheState>,
+    #[serde(default)]
+    pub cache_states: Vec<PromptCacheState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,7 +287,7 @@ impl ResolvedLlm {
             .generate_tool_calls(prompt, vec![tool], cache)
             .await?;
         let usage_metadata = output.usage_metadata;
-        let cache_state = output.cache_state;
+        let cache_states = output.cache_states;
         let mut calls = output.calls;
 
         let idx = calls
@@ -234,7 +307,7 @@ impl ResolvedLlm {
         Ok(StructuredGenerationOutput {
             value,
             usage_metadata,
-            cache_state,
+            cache_states,
         })
     }
 
@@ -283,14 +356,14 @@ impl ResolvedLlm {
     }
 }
 
-impl From<PromptCacheRequest> for ExplicitCacheRequest {
-    fn from(value: PromptCacheRequest) -> Self {
+impl From<&PromptCacheLayer> for ExplicitCacheRequest {
+    fn from(layer: &PromptCacheLayer) -> Self {
         Self {
-            cache_key: value.cache_key,
-            ttl_secs: value.ttl_secs,
-            live_tail_count: value.live_tail_count,
-            prior_state: value.prior_state,
-            reuse_only: value.reuse_only,
+            cache_key: layer.cache_key.clone(),
+            ttl_secs: layer.ttl_secs,
+            live_tail_count: layer.live_tail_count,
+            prior_state: layer.prior_state.clone(),
+            incremental: layer.incremental,
         }
     }
 }

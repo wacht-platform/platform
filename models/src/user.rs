@@ -16,6 +16,8 @@ pub enum VerificationStrategy {
     OauthLinkedin,
     OauthDiscord,
     OauthApple,
+    EnterpriseSso,
+    Scim,
 }
 
 impl FromStr for VerificationStrategy {
@@ -31,6 +33,8 @@ impl FromStr for VerificationStrategy {
             "oauth_linkedin" => Ok(VerificationStrategy::OauthLinkedin),
             "oauth_discord" => Ok(VerificationStrategy::OauthDiscord),
             "oauth_apple" => Ok(VerificationStrategy::OauthApple),
+            "enterprise_sso" => Ok(VerificationStrategy::EnterpriseSso),
+            "scim" => Ok(VerificationStrategy::Scim),
             _ => Err(format!("Invalid verification strategy: {}", s)),
         }
     }
@@ -47,6 +51,8 @@ impl ToString for VerificationStrategy {
             VerificationStrategy::OauthLinkedin => "oauth_linkedin".to_string(),
             VerificationStrategy::OauthDiscord => "oauth_discord".to_string(),
             VerificationStrategy::OauthApple => "oauth_apple".to_string(),
+            VerificationStrategy::EnterpriseSso => "enterprise_sso".to_string(),
+            VerificationStrategy::Scim => "scim".to_string(),
         }
     }
 }

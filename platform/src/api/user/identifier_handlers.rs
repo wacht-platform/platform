@@ -48,10 +48,16 @@ pub async fn update_user_email(
 
 pub async fn delete_user_email(
     State(app_state): State<AppState>,
-    RequireDeployment(_): RequireDeployment,
+    RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<UserEmailParams>,
 ) -> ApiResult<()> {
-    user_identifier_app::delete_user_email(&app_state, params.user_id, params.email_id).await?;
+    user_identifier_app::delete_user_email(
+        &app_state,
+        deployment_id,
+        params.user_id,
+        params.email_id,
+    )
+    .await?;
     Ok(().into())
 }
 
@@ -69,12 +75,13 @@ pub async fn add_user_phone(
 
 pub async fn update_user_phone(
     State(app_state): State<AppState>,
-    RequireDeployment(_): RequireDeployment,
+    RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<UserPhoneParams>,
     Json(request): Json<UpdatePhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
     let phone = user_identifier_app::update_user_phone(
         &app_state,
+        deployment_id,
         params.user_id,
         params.phone_id,
         request,
@@ -85,20 +92,27 @@ pub async fn update_user_phone(
 
 pub async fn delete_user_phone(
     State(app_state): State<AppState>,
-    RequireDeployment(_): RequireDeployment,
+    RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<UserPhoneParams>,
 ) -> ApiResult<()> {
-    user_identifier_app::delete_user_phone(&app_state, params.user_id, params.phone_id).await?;
+    user_identifier_app::delete_user_phone(
+        &app_state,
+        deployment_id,
+        params.user_id,
+        params.phone_id,
+    )
+    .await?;
     Ok(().into())
 }
 
 pub async fn delete_user_social_connection(
     State(app_state): State<AppState>,
-    RequireDeployment(_): RequireDeployment,
+    RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<UserSocialParams>,
 ) -> ApiResult<()> {
     user_identifier_app::delete_user_social_connection(
         &app_state,
+        deployment_id,
         params.user_id,
         params.connection_id,
     )

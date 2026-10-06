@@ -1,5 +1,11 @@
 use super::*;
 
+fn parse_verification_strategy(value: Option<&str>) -> models::VerificationStrategy {
+    value
+        .and_then(|value| models::VerificationStrategy::from_str(value).ok())
+        .unwrap_or(models::VerificationStrategy::Otp)
+}
+
 pub struct GetUserDetailsQuery {
     deployment_id: i64,
     user_id: i64,
@@ -64,12 +70,8 @@ impl GetUserDetailsQuery {
         let email_addresses = email_rows
             .into_iter()
             .map(|row| -> Result<UserEmailAddress, AppError> {
-                let verification_strategy = match row.verification_strategy {
-                    Some(s) => models::VerificationStrategy::from_str(&s).map_err(|_| {
-                        AppError::Internal(format!("Invalid verification_strategy: {}", s))
-                    })?,
-                    None => models::VerificationStrategy::Otp,
-                };
+                let verification_strategy =
+                    parse_verification_strategy(row.verification_strategy.as_deref());
 
                 Ok(UserEmailAddress {
                     id: row.id,
@@ -196,6 +198,48 @@ impl GetUserDetailsQuery {
                 && !user_row.backup_codes.unwrap_or_default().is_empty(),
         };
         Ok(user_details)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_verification_strategy;
+    use models::VerificationStrategy;
+
+    #[test]
+    fn unknown_email_verification_strategy_uses_otp_fallback() {
+        assert_eq!(
+            parse_verification_strategy(Some("future_provider")),
+            VerificationStrategy::Otp
+        );
+    }
+
+    #[test]
+    fn known_email_verification_strategies_are_preserved() {
+        assert_eq!(
+            parse_verification_strategy(Some("oauth_google")),
+            VerificationStrategy::OauthGoogle
+        );
+        assert_eq!(
+            parse_verification_strategy(Some("otp")),
+            VerificationStrategy::Otp
+        );
+        assert_eq!(
+            parse_verification_strategy(Some("enterprise_sso")),
+            VerificationStrategy::EnterpriseSso
+        );
+        assert_eq!(
+            parse_verification_strategy(Some("scim")),
+            VerificationStrategy::Scim
+        );
+    }
+
+    #[test]
+    fn missing_email_verification_strategy_uses_otp_fallback() {
+        assert_eq!(
+            parse_verification_strategy(None),
+            VerificationStrategy::Otp
+        );
     }
 }
 

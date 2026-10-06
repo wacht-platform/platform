@@ -117,7 +117,7 @@ impl GeminiClient {
     pub async fn generate_structured_content_with_usage_and_cache<T>(
         &self,
         request_body: String,
-        cache_request: Option<ExplicitCacheRequest>,
+        cache_request: Option<PromptCacheRequest>,
     ) -> Result<StructuredContentOutput<T>, AppError>
     where
         T: for<'de> Deserialize<'de> + Serialize,
@@ -127,7 +127,8 @@ impl GeminiClient {
             .prepare_generate_request_body(request_body, cache_request.as_ref())
             .await;
         let request_body = prepared_request.request_body;
-        let cache_plan = prepared_request.cache_plan;
+        let cache_states = prepared_request.cache_states;
+        let attached_cache_name = prepared_request.attached_cache_name;
         let parsed = self
             .execute_generate_content_request(&url, &request_body)
             .await?;
@@ -160,23 +161,14 @@ impl GeminiClient {
             self.track_token_usage(usage, &parsed).await;
         }
 
-        let cache_state = if let (Some(cache_request), Some(cache_plan)) =
-            (cache_request.as_ref(), cache_plan.as_ref())
-        {
-            if cache_request.reuse_only {
-                None
-            } else {
-                self.refresh_explicit_cache(cache_request, cache_plan)
-                    .await?
-            }
-        } else {
-            None
-        };
-
         Ok(StructuredContentOutput {
             value: parsed_response,
-            usage_metadata: parsed.usage_metadata,
-            cache_state,
+            usage_metadata: parsed.usage_metadata.clone(),
+            cache_states: crate::llm::stamp_attached_cache_tokens(
+                cache_states,
+                attached_cache_name.as_deref(),
+                parsed.usage_metadata.as_ref(),
+            ),
         })
     }
 
@@ -212,12 +204,12 @@ impl GeminiClient {
         let url = format!("{}/{}:generateContent", GEMINI_API_BASE_URL, self.model);
         let request_body = self.build_tool_call_request_body(prompt, tools)?;
 
-        let cache_request: Option<ExplicitCacheRequest> = cache.map(Into::into);
         let prepared = self
-            .prepare_generate_request_body(request_body, cache_request.as_ref())
+            .prepare_generate_request_body(request_body, cache.as_ref())
             .await;
         let request_body = prepared.request_body;
-        let cache_plan = prepared.cache_plan;
+        let cache_states = prepared.cache_states;
+        let attached_cache_name = prepared.attached_cache_name;
 
         let parsed = self
             .execute_generate_content_request(&url, &request_body)
@@ -252,19 +244,6 @@ impl GeminiClient {
             tracing::warn!(model = %self.model, "Gemini returned no function calls and no text");
         }
 
-        let cache_state = if let (Some(cache_request), Some(cache_plan)) =
-            (cache_request.as_ref(), cache_plan.as_ref())
-        {
-            if cache_request.reuse_only {
-                None
-            } else {
-                self.refresh_explicit_cache(cache_request, cache_plan)
-                    .await?
-            }
-        } else {
-            None
-        };
-
         let finish_reason = parsed
             .candidates
             .first()
@@ -273,8 +252,12 @@ impl GeminiClient {
         Ok(ToolCallGenerationOutput {
             calls,
             content_text,
-            usage_metadata: parsed.usage_metadata,
-            cache_state,
+            usage_metadata: parsed.usage_metadata.clone(),
+            cache_states: crate::llm::stamp_attached_cache_tokens(
+                cache_states,
+                attached_cache_name.as_deref(),
+                parsed.usage_metadata.as_ref(),
+            ),
             finish_reason,
         })
     }
@@ -383,8 +366,8 @@ impl GeminiClient {
         request_body: &str,
     ) -> Result<GeminiResponse, AppError> {
         let mut attempt = 0u32;
-        const MAX_RETRIES: u32 = 15;
-        const MAX_EMPTY_CONTENT_RETRIES: u32 = 4;
+        const MAX_RETRIES: u32 = 4;
+        const MAX_EMPTY_CONTENT_RETRIES: u32 = 2;
         let mut current_body = request_body.to_string();
         let mut safety_retry_used = false;
         let mut empty_retries = 0u32;
@@ -532,7 +515,7 @@ impl GeminiClient {
     // Fixed random delay between retry attempts — uniformly in [2000ms, 4000ms].
     // No exponential backoff, no Retry-After header honoring; the fixed window is
     // the contract. See `execute_generate_content_request` for the matching
-    // `MAX_RETRIES: u32 = 15`.
+    // `MAX_RETRIES: u32 = 4`.
     fn calculate_backoff_delay(_attempt: u32) -> Duration {
         let jitter_ms = 2000 + (rand::random::<f64>() * 2000.0) as u64;
         let final_delay = jitter_ms;
@@ -742,12 +725,12 @@ impl crate::llm::LlmProvider for GeminiClient {
     ) -> Result<crate::llm::StructuredGenerationOutput<Value>, AppError> {
         let body = serialize_gemini_structured_request(&prompt, &self.model)?;
         let output = self
-            .generate_structured_content_with_usage_and_cache::<Value>(body, cache.map(Into::into))
+            .generate_structured_content_with_usage_and_cache::<Value>(body, cache)
             .await?;
         Ok(crate::llm::StructuredGenerationOutput {
             value: output.value,
             usage_metadata: output.usage_metadata,
-            cache_state: output.cache_state,
+            cache_states: output.cache_states,
         })
     }
 

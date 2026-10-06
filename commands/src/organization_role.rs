@@ -148,7 +148,7 @@ impl UpdateOrganizationRoleCommand {
     {
         // Build update query dynamically
         let mut query_parts = Vec::new();
-        let mut param_count = 3; // role_id is $1, organization_id is $2
+        let mut param_count = 4;
 
         if self.name.is_some() {
             query_parts.push(format!("name = ${}", param_count));
@@ -166,11 +166,12 @@ impl UpdateOrganizationRoleCommand {
         query_parts.push(format!("updated_at = ${}", param_count));
 
         let query_str = format!(
-            "UPDATE organization_roles SET {} WHERE id = $1 AND organization_id = $2 RETURNING id, created_at, updated_at, name, permissions",
+            "UPDATE organization_roles SET {} WHERE deployment_id = $1 AND id = $2 AND organization_id = $3 AND EXISTS (SELECT 1 FROM organizations WHERE id = $3 AND deployment_id = $1) RETURNING id, created_at, updated_at, name, permissions",
             query_parts.join(", ")
         );
 
         let mut query = sqlx::query(&query_str)
+            .bind(self.deployment_id)
             .bind(self.role_id)
             .bind(self.organization_id);
 
@@ -224,14 +225,17 @@ impl DeleteOrganizationRoleCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             DELETE FROM organization_roles
-            WHERE id = $1 AND organization_id = $2
+            WHERE id = $1
+              AND organization_id = $2
+              AND EXISTS (SELECT 1 FROM organizations WHERE id = $2 AND deployment_id = $3)
             "#,
-            self.role_id,
-            self.organization_id
         )
+        .bind(self.role_id)
+        .bind(self.organization_id)
+        .bind(self.deployment_id)
         .execute(executor)
         .await?;
 

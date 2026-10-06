@@ -10,9 +10,9 @@ use crate::{
         normalize_openai_response_schema, normalize_openai_tool_schema, schema_has_free_form_object,
     },
     llm::{
-        GeneratedToolCall, NativeToolDefinition, PromptCacheRequest, SemanticLlmContentBlock,
-        SemanticLlmMessage, SemanticLlmRequest, StructuredGenerationOutput,
-        ToolCallGenerationOutput, UsageMetadata,
+        cache_states_from_request, GeneratedToolCall, NativeToolDefinition, PromptCacheRequest,
+        SemanticLlmContentBlock, SemanticLlmMessage, SemanticLlmRequest,
+        StructuredGenerationOutput, ToolCallGenerationOutput, UsageMetadata,
     },
 };
 
@@ -234,12 +234,12 @@ impl OpenAiClient {
     pub async fn generate_structured_from_prompt<T>(
         &self,
         prompt: SemanticLlmRequest,
-        _cache: Option<PromptCacheRequest>,
+        cache: Option<PromptCacheRequest>,
     ) -> Result<StructuredGenerationOutput<T>, AppError>
     where
         T: for<'de> Deserialize<'de> + Serialize,
     {
-        let request_body = self.build_request_body(prompt);
+        let request_body = self.build_request_body(prompt, cache.as_ref());
         let parsed = self.execute_request(request_body).await?;
 
         let generated_text = parsed
@@ -267,10 +267,11 @@ impl OpenAiClient {
         if let Some(usage) = &usage_metadata {
             self.track_token_usage(usage).await;
         }
+        let cache_states = cache_states_from_request(cache, &self.model, usage_metadata.as_ref());
         Ok(StructuredGenerationOutput {
             value,
             usage_metadata,
-            cache_state: None,
+            cache_states,
         })
     }
 
@@ -310,7 +311,7 @@ impl OpenAiClient {
         tools: Vec<NativeToolDefinition>,
         cache: Option<PromptCacheRequest>,
     ) -> Result<ToolCallGenerationOutput, AppError> {
-        let request_body = self.build_tool_call_request_body(prompt, tools, cache);
+        let request_body = self.build_tool_call_request_body(prompt, tools, cache.as_ref());
         let parsed = self.execute_request(request_body).await?;
         let message = &parsed
             .choices
@@ -365,11 +366,12 @@ impl OpenAiClient {
         if let Some(usage) = &usage_metadata {
             self.track_token_usage(usage).await;
         }
+        let cache_states = cache_states_from_request(cache, &self.model, usage_metadata.as_ref());
         Ok(ToolCallGenerationOutput {
             calls,
             content_text,
             usage_metadata,
-            cache_state: None,
+            cache_states,
             finish_reason,
         })
     }
@@ -403,7 +405,11 @@ impl OpenAiClient {
         Value::Object(body)
     }
 
-    fn build_request_body(&self, prompt: SemanticLlmRequest) -> Value {
+    fn build_request_body(
+        &self,
+        prompt: SemanticLlmRequest,
+        cache: Option<&PromptCacheRequest>,
+    ) -> Value {
         let response_json_schema = normalize_openai_response_schema(prompt.response_json_schema);
         let mut messages = Vec::with_capacity(prompt.messages.len() + 1);
         messages.push(self.system_message(&prompt.system_prompt));
@@ -429,6 +435,12 @@ impl OpenAiClient {
                 }
             }),
         );
+        if let Some(cache_request) = cache {
+            body.insert(
+                "prompt_cache_key".to_string(),
+                json!(cache_request.incremental.cache_key),
+            );
+        }
         if let Some(temperature) = prompt.temperature {
             body.insert("temperature".to_string(), json!(temperature));
         }
@@ -448,7 +460,7 @@ impl OpenAiClient {
         &self,
         prompt: SemanticLlmRequest,
         tools: Vec<NativeToolDefinition>,
-        cache: Option<PromptCacheRequest>,
+        cache: Option<&PromptCacheRequest>,
     ) -> Value {
         let mut messages = Vec::with_capacity(prompt.messages.len() + 1);
         messages.push(self.system_message(&prompt.system_prompt));
@@ -490,10 +502,10 @@ impl OpenAiClient {
         };
         body.insert("tool_choice".to_string(), tool_choice);
         body.insert("stream".to_string(), json!(false));
-        if let Some(cache_request) = cache.as_ref() {
+        if let Some(cache_request) = cache {
             body.insert(
                 "prompt_cache_key".to_string(),
-                json!(cache_request.cache_key),
+                json!(cache_request.incremental.cache_key),
             );
         }
         if let Some(temperature) = prompt.temperature {

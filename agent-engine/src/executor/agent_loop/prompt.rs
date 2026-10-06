@@ -458,7 +458,8 @@ impl AgentExecutor {
     pub(crate) fn build_agent_loop_messages(
         &self,
         conversation_history_prefix: &[LlmHistoryEntry],
-        stable_context_message: Option<&str>,
+        agent_stable_context_message: Option<&str>,
+        thread_stable_context_message: Option<&str>,
         virtual_task_state_message: Option<&str>,
         live_context_message: &str,
         current_request_entry: &LlmHistoryEntry,
@@ -466,7 +467,14 @@ impl AgentExecutor {
     ) -> Vec<SemanticLlmMessage> {
         let mut messages = Vec::new();
 
-        if let Some(message) = stable_context_message
+        if let Some(message) = agent_stable_context_message
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            messages.push(SemanticLlmMessage::text("user", message));
+        }
+
+        if let Some(message) = thread_stable_context_message
             .map(str::trim)
             .filter(|value| !value.is_empty())
         {
@@ -506,7 +514,7 @@ impl AgentExecutor {
         prompt_context: &AgentLoopPromptEnvelope,
         prompt_context_value: &serde_json::Value,
         trailing_user_message: Option<&str>,
-    ) -> Result<SemanticLlmRequest, AppError> {
+    ) -> Result<(SemanticLlmRequest, usize, usize), AppError> {
         let live_context_message =
             prompt_context
                 .live_context_message
@@ -519,10 +527,8 @@ impl AgentExecutor {
         let reasoning_effort =
             if self.repeated_tool_call_count >= 2 || self.consecutive_tool_failure_count >= 3 {
                 "medium"
-            } else if self.is_conversation_thread {
-                "low"
             } else {
-                "medium"
+                "low"
             };
 
         let reasoning_effort = if self.ctx.reasoning_effort_disabled(LlmRole::Strong) {
@@ -537,40 +543,67 @@ impl AgentExecutor {
             reasoning_effort,
         };
         let system_prompt = render_prompt_text(self.system_prompt_name(), prompt_context_value)?;
-        let stable_context_message = Self::build_stable_context_message(prompt_context);
+        let agent_stable_context_message = Self::build_agent_stable_context_message(prompt_context);
+        let thread_stable_context_message = Self::build_thread_stable_context_message(prompt_context);
         let virtual_task_state_message = Self::build_virtual_task_state_message(prompt_context);
+        let agent_stable_prefix = usize::from(
+            agent_stable_context_message
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|value| !value.is_empty()),
+        );
+        let thread_stable_prefix = usize::from(
+            thread_stable_context_message
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|value| !value.is_empty()),
+        );
+        let history_len = prompt_context.conversation_history_prefix.len();
         let messages = self.build_agent_loop_messages(
             &prompt_context.conversation_history_prefix,
-            stable_context_message.as_deref(),
+            agent_stable_context_message.as_deref(),
+            thread_stable_context_message.as_deref(),
             virtual_task_state_message.as_deref(),
             live_context_message,
             &prompt_context.current_request_entry,
             trailing_user_message,
         );
-        Ok(SemanticLlmRequest::from_config(
-            system_prompt,
-            messages,
-            config,
+        let volatile_tail_count = messages
+            .len()
+            .saturating_sub(agent_stable_prefix + thread_stable_prefix + history_len);
+        Ok((
+            SemanticLlmRequest::from_config(system_prompt, messages, config),
+            agent_stable_prefix,
+            volatile_tail_count,
         ))
     }
 
-    /// Build the message that sits at index 0 of the prompt, *before* the
-    /// conversation history. Lives in the cacheable prefix so providers can
-    /// reuse tokens across iterations.
-    ///
-    /// Sections (in order):
-    ///   1. `IMPORTANT — AGENT IDENTITY` — durable steering for this agent.
-    ///      The agent description is the operator's primary tool for shaping
-    ///      behaviour; surfacing it here (instead of inside the per-turn live
-    ///      context) keeps it cache-resident and lets it act as a steering
-    ///      header rather than incidental metadata.
-    ///   2. `STABLE ROUTING CONTEXT` — sub-agent routing list (coordinators).
-    fn build_stable_context_message(prompt_context: &AgentLoopPromptEnvelope) -> Option<String> {
+    /// Agent-scoped cache prefix. Shared across every thread of this agent on
+    /// the same model/role: identity + assignable sub-agents. Thread/task
+    /// specifics stay out so one explicit Gemini cache can serve the fleet.
+    fn build_agent_stable_context_message(
+        prompt_context: &AgentLoopPromptEnvelope,
+    ) -> Option<String> {
         let mut sections: Vec<String> = Vec::new();
-
         if let Some(block) = Self::compose_agent_identity_section(prompt_context) {
             sections.push(block);
         }
+        if let Some(block) = Self::compose_sub_agent_routing_section(prompt_context) {
+            sections.push(block);
+        }
+        if sections.is_empty() {
+            None
+        } else {
+            Some(sections.join("\n\n"))
+        }
+    }
+
+    /// Per-thread durable context. Sits after the agent-stable prefix so it
+    /// does not bust the shared cache; still before history for implicit hits.
+    fn build_thread_stable_context_message(
+        prompt_context: &AgentLoopPromptEnvelope,
+    ) -> Option<String> {
+        let mut sections: Vec<String> = Vec::new();
         if let Some(block) = Self::compose_task_brief_section(prompt_context) {
             sections.push(block);
         }
@@ -580,10 +613,6 @@ impl AgentExecutor {
         if let Some(block) = Self::compose_routing_section(prompt_context) {
             sections.push(block);
         }
-        if let Some(block) = Self::compose_sub_agent_routing_section(prompt_context) {
-            sections.push(block);
-        }
-
         if sections.is_empty() {
             None
         } else {

@@ -69,6 +69,29 @@ impl DeleteUserAuthenticatorCommand {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn enrollment_url_is_returned_but_not_inserted() {
+        let source = include_str!("mfa_commands.rs");
+        let insert = source
+            .split("r#\"")
+            .find(|sql| {
+                sql.trim_start()
+                    .starts_with("INSERT INTO user_authenticators")
+            })
+            .unwrap();
+        let insert = insert.split("\"#").next().unwrap();
+        assert!(!insert.contains("otp_url"));
+        assert!(insert.contains("totp_secret"));
+        let response = super::CreateUserAuthenticatorResponse {
+            id: 1,
+            otp_url: "otpauth://totp/test?secret=test".to_string(),
+        };
+        assert_eq!(response.otp_url, "otpauth://totp/test?secret=test");
+    }
+}
+
 pub struct CreateUserAuthenticatorResponse {
     pub id: i64,
     pub otp_url: String,
@@ -203,16 +226,16 @@ impl CreateUserAuthenticatorCommand {
 
         let encrypted_secret = enc.encrypt(&normalized)?;
 
-        sqlx::query!(
+        // The enrollment URL contains the plaintext seed and must not be persisted.
+        sqlx::query(
             r#"
-            INSERT INTO user_authenticators (id, created_at, updated_at, user_id, totp_secret, otp_url)
-            VALUES ($1, NOW(), NOW(), $2, $3, $4)
+            INSERT INTO user_authenticators (id, created_at, updated_at, user_id, totp_secret)
+            VALUES ($1, NOW(), NOW(), $2, $3)
             "#,
-            self.authenticator_id,
-            self.user_id,
-            encrypted_secret,
-            otp_url,
         )
+        .bind(self.authenticator_id)
+        .bind(self.user_id)
+        .bind(&encrypted_secret)
         .execute(&mut *tx)
         .await?;
 

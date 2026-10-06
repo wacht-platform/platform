@@ -101,7 +101,7 @@ pub struct UsageMetadata {
 pub struct StructuredContentOutput<T> {
     pub value: T,
     pub usage_metadata: Option<UsageMetadata>,
-    pub cache_state: Option<models::PromptCacheState>,
+    pub cache_states: Vec<models::PromptCacheState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,7 +111,7 @@ pub struct ExplicitCacheRequest {
     pub live_tail_count: usize,
     pub prior_state: Option<models::PromptCacheState>,
     #[serde(default)]
-    pub reuse_only: bool,
+    pub incremental: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,12 +154,15 @@ pub(crate) struct ExplicitCachePlan {
     pub(crate) prefix_signature: String,
     pub(crate) cached_contents_signature: String,
     pub(crate) cached_content_count: usize,
-    /// Whether to (re)create the cache this turn (cost rule D·M ≥ P) vs reuse it.
+    /// Create a new cachedContents object (prefix missing or changed).
     pub(crate) should_refresh: bool,
+    /// PATCH TTL on the existing cache (same prefix, near expiry).
+    pub(crate) should_renew_ttl: bool,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct PreparedGenerateRequest {
     pub(crate) request_body: String,
-    pub(crate) cache_plan: Option<ExplicitCachePlan>,
+    pub(crate) cache_states: Vec<models::PromptCacheState>,
+    pub(crate) attached_cache_name: Option<String>,
 }

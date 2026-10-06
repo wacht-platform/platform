@@ -9,9 +9,9 @@ use crate::{
         normalize_json_schema, normalize_openai_tool_schema, schema_has_free_form_object,
     },
     llm::{
-        GeneratedToolCall, NativeToolDefinition, PromptCacheRequest, SemanticLlmContentBlock,
-        SemanticLlmMessage, SemanticLlmRequest, StructuredGenerationOutput,
-        ToolCallGenerationOutput, UsageMetadata,
+        cache_states_from_request, GeneratedToolCall, NativeToolDefinition, PromptCacheRequest,
+        SemanticLlmContentBlock, SemanticLlmMessage, SemanticLlmRequest,
+        StructuredGenerationOutput, ToolCallGenerationOutput, UsageMetadata,
     },
 };
 
@@ -208,7 +208,7 @@ impl OpenRouterClient {
     where
         T: for<'de> Deserialize<'de> + Serialize,
     {
-        let request_body = self.build_request_body(prompt, cache)?;
+        let request_body = self.build_request_body(prompt, cache.as_ref())?;
         let parsed = self.execute_request(request_body).await?;
 
         let generated_text = parsed
@@ -236,10 +236,11 @@ impl OpenRouterClient {
         if let Some(usage) = &usage_metadata {
             self.track_token_usage(usage).await;
         }
+        let cache_states = cache_states_from_request(cache, &self.model, usage_metadata.as_ref());
         Ok(StructuredGenerationOutput {
             value,
             usage_metadata,
-            cache_state: None,
+            cache_states,
         })
     }
 
@@ -279,7 +280,7 @@ impl OpenRouterClient {
         tools: Vec<NativeToolDefinition>,
         cache: Option<PromptCacheRequest>,
     ) -> Result<ToolCallGenerationOutput, AppError> {
-        let request_body = self.build_tool_call_request_body(prompt, tools, cache)?;
+        let request_body = self.build_tool_call_request_body(prompt, tools, cache.as_ref())?;
         let parsed = self.execute_request(request_body).await?;
         let message = &parsed
             .choices
@@ -334,11 +335,12 @@ impl OpenRouterClient {
         if let Some(usage) = &usage_metadata {
             self.track_token_usage(usage).await;
         }
+        let cache_states = cache_states_from_request(cache, &self.model, usage_metadata.as_ref());
         Ok(ToolCallGenerationOutput {
             calls,
             content_text,
             usage_metadata,
-            cache_state: None,
+            cache_states,
             finish_reason,
         })
     }
@@ -384,7 +386,7 @@ impl OpenRouterClient {
     fn build_request_body(
         &self,
         prompt: SemanticLlmRequest,
-        cache: Option<PromptCacheRequest>,
+        cache: Option<&PromptCacheRequest>,
     ) -> Result<Value, AppError> {
         let response_json_schema = normalize_json_schema(prompt.response_json_schema.clone());
         let mut messages = Vec::with_capacity(prompt.messages.len() + 1);
@@ -396,7 +398,7 @@ impl OpenRouterClient {
                 .flat_map(|message| self.semantic_message_to_openrouter(message)),
         );
 
-        if let Some(cache_request) = cache.as_ref() {
+        if let Some(cache_request) = cache {
             self.apply_cache_controls(&mut messages, cache_request);
         }
 
@@ -445,7 +447,7 @@ impl OpenRouterClient {
         &self,
         prompt: SemanticLlmRequest,
         tools: Vec<NativeToolDefinition>,
-        cache: Option<PromptCacheRequest>,
+        cache: Option<&PromptCacheRequest>,
     ) -> Result<Value, AppError> {
         let mut messages = Vec::with_capacity(prompt.messages.len() + 1);
         messages.push(self.system_message(&prompt.system_prompt));
@@ -456,7 +458,7 @@ impl OpenRouterClient {
                 .flat_map(|message| self.semantic_message_to_openrouter(message)),
         );
 
-        if let Some(cache_request) = cache.as_ref() {
+        if let Some(cache_request) = cache {
             self.apply_cache_controls(&mut messages, cache_request);
         }
 
@@ -712,7 +714,7 @@ impl OpenRouterClient {
 
         let cacheable_count = messages
             .len()
-            .saturating_sub(cache_request.live_tail_count.min(messages.len()));
+            .saturating_sub(cache_request.incremental.live_tail_count.min(messages.len()));
         if cacheable_count <= 1 {
             return;
         }
