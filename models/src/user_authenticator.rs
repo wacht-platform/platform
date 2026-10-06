@@ -11,5 +11,4 @@ pub struct UserAuthenticator {
     pub user_id: i64,
     #[serde(skip_serializing)]
     pub totp_secret: String,
-    pub otp_url: Option<String>,
 }

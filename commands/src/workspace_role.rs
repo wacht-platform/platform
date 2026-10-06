@@ -213,14 +213,22 @@ impl DeleteWorkspaceRoleCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             DELETE FROM workspace_roles
-            WHERE id = $1 AND workspace_id = $2
+            WHERE id = $1
+              AND workspace_id = $2
+              AND EXISTS (
+                  SELECT 1
+                  FROM workspaces w
+                  JOIN organizations o ON o.id = w.organization_id
+                  WHERE w.id = $2 AND o.deployment_id = $3
+              )
             "#,
-            self.role_id,
-            self.workspace_id
         )
+        .bind(self.role_id)
+        .bind(self.workspace_id)
+        .bind(self.deployment_id)
         .execute(executor)
         .await?;
 

@@ -7,6 +7,31 @@ pub struct DeleteOrganizationCommand {
     pub organization_id: i64,
 }
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn organization_children_are_gated_by_scoped_parent() {
+        let source = include_str!("delete_organization.rs");
+        let sql = source
+            .split("r#\"")
+            .nth(1)
+            .unwrap()
+            .split("\"#")
+            .next()
+            .unwrap();
+        assert!(sql.contains("WHERE deployment_id = $1 AND id = $2"));
+        assert!(!sql.contains("organization_id = $2"));
+        assert_eq!(
+            sql.matches("organization_id IN (SELECT id FROM org)")
+                .count(),
+            9
+        );
+        assert!(sql.contains(
+            "DELETE FROM organizations\n                WHERE id IN (SELECT id FROM org)"
+        ));
+    }
+}
+
 impl DeleteOrganizationCommand {
     pub fn new(deployment_id: i64, organization_id: i64) -> Self {
         Self {
@@ -19,7 +44,7 @@ impl DeleteOrganizationCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let result = sqlx::query!(
+        let org_exists: bool = sqlx::query_scalar(
             r#"
             WITH org AS (
                 SELECT id
@@ -32,7 +57,7 @@ impl DeleteOrganizationCommand {
                 WHERE active_workspace_membership_id IN (
                     SELECT id
                     FROM workspace_memberships
-                    WHERE organization_id = $2
+                    WHERE organization_id IN (SELECT id FROM org)
                 )
             ),
             deleted_workspace_membership_roles AS (
@@ -40,20 +65,20 @@ impl DeleteOrganizationCommand {
                 WHERE workspace_membership_id IN (
                     SELECT id
                     FROM workspace_memberships
-                    WHERE organization_id = $2
+                    WHERE organization_id IN (SELECT id FROM org)
                 )
             ),
             deleted_workspace_memberships AS (
                 DELETE FROM workspace_memberships
-                WHERE organization_id = $2
+                WHERE organization_id IN (SELECT id FROM org)
             ),
             deleted_workspace_roles AS (
                 DELETE FROM workspace_roles
-                WHERE organization_id = $2
+                WHERE organization_id IN (SELECT id FROM org)
             ),
             deleted_workspaces AS (
                 DELETE FROM workspaces
-                WHERE organization_id = $2
+                WHERE organization_id IN (SELECT id FROM org)
             ),
             updated_signins_org AS (
                 UPDATE signins
@@ -61,35 +86,35 @@ impl DeleteOrganizationCommand {
                 WHERE active_organization_membership_id IN (
                     SELECT id
                     FROM organization_memberships
-                    WHERE organization_id = $2
+                    WHERE organization_id IN (SELECT id FROM org)
                 )
             ),
             deleted_org_membership_roles AS (
                 DELETE FROM organization_membership_roles
-                WHERE organization_id = $2
+                WHERE organization_id IN (SELECT id FROM org)
             ),
             deleted_org_memberships AS (
                 DELETE FROM organization_memberships
-                WHERE organization_id = $2
+                WHERE organization_id IN (SELECT id FROM org)
             ),
             deleted_org_roles AS (
                 DELETE FROM organization_roles
-                WHERE organization_id = $2
+                WHERE organization_id IN (SELECT id FROM org)
             ),
             deleted_org AS (
                 DELETE FROM organizations
-                WHERE deployment_id = $1 AND id = $2
+                WHERE id IN (SELECT id FROM org)
             )
-            SELECT EXISTS(SELECT 1 FROM org) AS "org_exists!"
+            SELECT EXISTS(SELECT 1 FROM org)
             "#,
-            self.deployment_id,
-            self.organization_id
         )
+        .bind(self.deployment_id)
+        .bind(self.organization_id)
         .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
-        if !result.org_exists {
+        if !org_exists {
             return Err(AppError::NotFound("Organization not found".to_string()));
         }
 

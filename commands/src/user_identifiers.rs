@@ -1,14 +1,100 @@
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 use common::error::AppError;
 use dto::json::{AddEmailRequest, AddPhoneRequest, UpdateEmailRequest, UpdatePhoneRequest};
 use models::{UserEmailAddress, UserPhoneNumber, VerificationStrategy};
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_identifier_mutation_checks_deployment_ownership() {
+        let source = include_str!("user_identifiers.rs");
+        let implementations: Vec<_> = source
+            .split("impl ")
+            .skip(1)
+            .filter(|part| {
+                part.starts_with("AddUser")
+                    || part.starts_with("UpdateUser")
+                    || part.starts_with("DeleteUser")
+            })
+            .collect();
+        assert_eq!(implementations.len(), 7);
+        for implementation in implementations {
+            assert!(implementation.contains("FROM users") || implementation.contains("JOIN users"));
+            assert!(implementation.contains("deployment_id = $"));
+            assert!(implementation.contains(".bind(self.deployment_id)"));
+        }
+    }
+}
+
 const EMAIL_NOT_FOUND: &str = "Email not found";
 const PHONE_NOT_FOUND: &str = "Phone number not found";
+const USER_NOT_FOUND: &str = "User not found";
+const SOCIAL_CONNECTION_NOT_FOUND: &str = "Social connection not found";
 
 fn require_id(value: Option<i64>, field: &'static str) -> Result<i64, AppError> {
     value.ok_or_else(|| AppError::Validation(format!("{field} is required")))
+}
+
+#[derive(sqlx::FromRow)]
+struct EmailRow {
+    id: i64,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    deployment_id: Option<i64>,
+    user_id: Option<i64>,
+    email: String,
+    is_primary: bool,
+    verified: bool,
+    verified_at: Option<DateTime<Utc>>,
+    verification_strategy: Option<String>,
+}
+
+impl EmailRow {
+    fn into_model(self, deployment_id: i64, user_id: i64) -> UserEmailAddress {
+        UserEmailAddress {
+            id: self.id,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            deployment_id: self.deployment_id.unwrap_or(deployment_id),
+            user_id: self.user_id.unwrap_or(user_id),
+            email: self.email,
+            is_primary: self.is_primary,
+            verified: self.verified,
+            verified_at: self.verified_at.unwrap_or_else(Utc::now),
+            verification_strategy: self
+                .verification_strategy
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(VerificationStrategy::Otp),
+        }
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct PhoneRow {
+    id: i64,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    user_id: Option<i64>,
+    phone_number: String,
+    country_code: String,
+    verified: bool,
+    verified_at: Option<DateTime<Utc>>,
+}
+
+impl PhoneRow {
+    fn into_model(self, user_id: i64) -> UserPhoneNumber {
+        UserPhoneNumber {
+            id: self.id,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            user_id: self.user_id.unwrap_or(user_id),
+            phone_number: self.phone_number,
+            country_code: self.country_code,
+            verified: self.verified,
+            verified_at: self.verified_at.unwrap_or_else(Utc::now),
+        }
+    }
 }
 
 pub struct AddUserEmailCommand {
@@ -42,12 +128,17 @@ impl AddUserEmailCommand {
         let verified = self.request.verified.unwrap_or(false);
         let is_primary = self.request.is_primary.unwrap_or(false);
 
-        let row = sqlx::query!(
+        let row = sqlx::query_as::<_, EmailRow>(
             r#"
-            WITH cleared_primary AS (
+            WITH target_user AS (
+                SELECT id
+                FROM users
+                WHERE id = $5 AND deployment_id = $4
+            ),
+            cleared_primary AS (
                 UPDATE user_email_addresses
                 SET is_primary = false
-                WHERE user_id = $5
+                WHERE user_id IN (SELECT id FROM target_user)
                   AND $7 = true
             ),
             inserted_email AS (
@@ -55,56 +146,45 @@ impl AddUserEmailCommand {
                     id, created_at, updated_at, deployment_id, user_id,
                     email_address, is_primary, verified, verified_at, verification_strategy
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                SELECT $1, $2, $3, $4, id, $6, $7, $8, $9, $10
+                FROM target_user
                 RETURNING
                     id,
                     created_at,
                     updated_at,
                     deployment_id,
                     user_id,
-                    email_address as "email!",
+                    email_address AS email,
                     is_primary,
                     verified,
-                    verified_at as "verified_at!",
-                    verification_strategy as "verification_strategy: VerificationStrategy"
+                    verified_at,
+                    verification_strategy
             ),
             updated_user AS (
                 UPDATE users
                 SET primary_email_address_id = (SELECT id FROM inserted_email)
-                WHERE id = $5
+                WHERE id IN (SELECT id FROM target_user)
                   AND $7 = true
             )
             SELECT *
             FROM inserted_email
             "#,
-            email_id,
-            now,
-            now,
-            self.deployment_id,
-            self.user_id,
-            self.request.email,
-            is_primary,
-            verified,
-            now,
-            "otp"
         )
-        .fetch_one(executor)
-        .await?;
+        .bind(email_id)
+        .bind(now)
+        .bind(now)
+        .bind(self.deployment_id)
+        .bind(self.user_id)
+        .bind(&self.request.email)
+        .bind(is_primary)
+        .bind(verified)
+        .bind(now)
+        .bind("otp")
+        .fetch_optional(executor)
+        .await?
+        .ok_or_else(|| AppError::NotFound(USER_NOT_FOUND.to_string()))?;
 
-        Ok(UserEmailAddress {
-            id: row.id,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            deployment_id: row.deployment_id.unwrap_or(self.deployment_id),
-            user_id: row.user_id.unwrap_or(self.user_id),
-            email: row.email,
-            is_primary: row.is_primary,
-            verified: row.verified,
-            verified_at: row.verified_at,
-            verification_strategy: row
-                .verification_strategy
-                .unwrap_or(VerificationStrategy::Otp),
-        })
+        Ok(row.into_model(self.deployment_id, self.user_id))
     }
 }
 
@@ -135,12 +215,20 @@ impl UpdateUserEmailCommand {
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let is_primary = self.request.is_primary.unwrap_or(false);
-        let row = sqlx::query!(
+        let row = sqlx::query_as::<_, EmailRow>(
             r#"
-            WITH updated_user AS (
+            WITH target_email AS (
+                SELECT e.id, e.user_id
+                FROM user_email_addresses e
+                JOIN users u ON u.id = e.user_id
+                WHERE e.id = $1
+                  AND e.user_id = $2
+                  AND u.deployment_id = $6
+            ),
+            updated_user AS (
                 UPDATE users
                 SET primary_email_address_id = $1
-                WHERE id = $2
+                WHERE id IN (SELECT user_id FROM target_email)
                   AND $5 = true
             ),
             updated_email AS (
@@ -150,90 +238,84 @@ impl UpdateUserEmailCommand {
                     email_address = COALESCE($3, email_address),
                     verified = COALESCE($4, verified),
                     verified_at = CASE WHEN COALESCE($4, false) = true THEN NOW() ELSE verified_at END
-                WHERE id = $1
-                  AND user_id = $2
+                WHERE id IN (SELECT id FROM target_email)
                 RETURNING
                     id,
                     created_at,
                     updated_at,
                     deployment_id,
                     user_id,
-                    email_address as email,
+                    email_address AS email,
                     is_primary,
                     verified,
                     verified_at,
                     verification_strategy
             )
-            SELECT
-                id,
-                created_at,
-                updated_at,
-                deployment_id,
-                user_id,
-                email as "email!",
-                is_primary,
-                verified,
-                verified_at,
-                verification_strategy as "verification_strategy: VerificationStrategy"
+            SELECT *
             FROM updated_email
             "#,
-            self.email_id,
-            self.user_id,
-            self.request.email,
-            self.request.verified,
-            is_primary
         )
+        .bind(self.email_id)
+        .bind(self.user_id)
+        .bind(&self.request.email)
+        .bind(self.request.verified)
+        .bind(is_primary)
+        .bind(self.deployment_id)
         .fetch_optional(executor)
         .await?
         .ok_or_else(|| AppError::NotFound(EMAIL_NOT_FOUND.to_string()))?;
 
-        Ok(UserEmailAddress {
-            id: row.id,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            deployment_id: row.deployment_id.unwrap_or(self.deployment_id),
-            user_id: row.user_id.unwrap_or(self.user_id),
-            email: row.email,
-            is_primary: row.is_primary,
-            verified: row.verified,
-            verified_at: row.verified_at.unwrap_or_else(Utc::now),
-            verification_strategy: row
-                .verification_strategy
-                .unwrap_or(VerificationStrategy::Otp),
-        })
+        Ok(row.into_model(self.deployment_id, self.user_id))
     }
 }
 
 pub struct DeleteUserEmailCommand {
+    deployment_id: i64,
     user_id: i64,
     email_id: i64,
 }
 
 impl DeleteUserEmailCommand {
-    pub fn new(user_id: i64, email_id: i64) -> Self {
-        Self { user_id, email_id }
+    pub fn new(deployment_id: i64, user_id: i64, email_id: i64) -> Self {
+        Self {
+            deployment_id,
+            user_id,
+            email_id,
+        }
     }
 
     pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        sqlx::query!(
+        let result = sqlx::query(
             r#"
-            WITH deleted_social AS (
+            WITH target_email AS (
+                SELECT e.id
+                FROM user_email_addresses e
+                JOIN users u ON u.id = e.user_id
+                WHERE e.id = $2
+                  AND e.user_id = $1
+                  AND u.deployment_id = $3
+            ),
+            deleted_social AS (
                 DELETE FROM social_connections
                 WHERE user_id = $1
-                  AND user_email_address_id = $2
+                  AND user_email_address_id IN (SELECT id FROM target_email)
             )
             DELETE FROM user_email_addresses
-            WHERE id = $2
-              AND user_id = $1
+            WHERE id IN (SELECT id FROM target_email)
             "#,
-            self.user_id,
-            self.email_id
         )
+        .bind(self.user_id)
+        .bind(self.email_id)
+        .bind(self.deployment_id)
         .execute(executor)
         .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(EMAIL_NOT_FOUND.to_string()));
+        }
 
         Ok(())
     }
@@ -270,61 +352,66 @@ impl AddUserPhoneCommand {
         let verified = self.request.verified.unwrap_or(false);
         let is_primary = self.request.is_primary.unwrap_or(false);
 
-        let row = sqlx::query!(
+        let row = sqlx::query_as::<_, PhoneRow>(
             r#"
-            WITH inserted_phone AS (
+            WITH target_user AS (
+                SELECT id
+                FROM users
+                WHERE id = $4 AND deployment_id = $10
+            ),
+            inserted_phone AS (
                 INSERT INTO user_phone_numbers (
                     id, created_at, updated_at, user_id, can_use_for_second_factor,
                     phone_number, country_code, verified, verified_at, deployment_id
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                SELECT $1, $2, $3, id, $5, $6, $7, $8, $9, $10
+                FROM target_user
                 RETURNING id, created_at, updated_at, user_id, phone_number, country_code, verified, verified_at
             ),
             updated_user AS (
                 UPDATE users
                 SET primary_phone_number_id = (SELECT id FROM inserted_phone)
-                WHERE id = $4
+                WHERE id IN (SELECT id FROM target_user)
                   AND $11 = true
             )
             SELECT * FROM inserted_phone
             "#,
-            phone_id,
-            now,
-            now,
-            self.user_id,
-            false,
-            self.request.phone_number,
-            self.request.country_code,
-            verified,
-            if verified { Some(now) } else { None },
-            self.deployment_id,
-            is_primary
         )
-        .fetch_one(executor)
-        .await?;
+        .bind(phone_id)
+        .bind(now)
+        .bind(now)
+        .bind(self.user_id)
+        .bind(false)
+        .bind(&self.request.phone_number)
+        .bind(&self.request.country_code)
+        .bind(verified)
+        .bind(if verified { Some(now) } else { None })
+        .bind(self.deployment_id)
+        .bind(is_primary)
+        .fetch_optional(executor)
+        .await?
+        .ok_or_else(|| AppError::NotFound(USER_NOT_FOUND.to_string()))?;
 
-        Ok(UserPhoneNumber {
-            id: row.id,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            user_id: row.user_id.unwrap_or(self.user_id),
-            phone_number: row.phone_number,
-            country_code: row.country_code,
-            verified: row.verified,
-            verified_at: row.verified_at.unwrap_or_else(Utc::now),
-        })
+        Ok(row.into_model(self.user_id))
     }
 }
 
 pub struct UpdateUserPhoneCommand {
+    deployment_id: i64,
     user_id: i64,
     phone_id: i64,
     request: UpdatePhoneRequest,
 }
 
 impl UpdateUserPhoneCommand {
-    pub fn new(user_id: i64, phone_id: i64, request: UpdatePhoneRequest) -> Self {
+    pub fn new(
+        deployment_id: i64,
+        user_id: i64,
+        phone_id: i64,
+        request: UpdatePhoneRequest,
+    ) -> Self {
         Self {
+            deployment_id,
             user_id,
             phone_id,
             request,
@@ -336,12 +423,20 @@ impl UpdateUserPhoneCommand {
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let is_primary = self.request.is_primary.unwrap_or(false);
-        let row = sqlx::query!(
+        let row = sqlx::query_as::<_, PhoneRow>(
             r#"
-            WITH updated_user AS (
+            WITH target_phone AS (
+                SELECT p.id, p.user_id
+                FROM user_phone_numbers p
+                JOIN users u ON u.id = p.user_id
+                WHERE p.id = $1
+                  AND p.user_id = $2
+                  AND u.deployment_id = $7
+            ),
+            updated_user AS (
                 UPDATE users
                 SET primary_phone_number_id = $1
-                WHERE id = $2
+                WHERE id IN (SELECT user_id FROM target_phone)
                   AND $6 = true
             ),
             updated_phone AS (
@@ -352,71 +447,79 @@ impl UpdateUserPhoneCommand {
                     country_code = COALESCE($4, country_code),
                     verified = COALESCE($5, verified),
                     verified_at = CASE WHEN COALESCE($5, false) = true THEN NOW() ELSE verified_at END
-                WHERE id = $1
-                  AND user_id = $2
+                WHERE id IN (SELECT id FROM target_phone)
                 RETURNING id, created_at, updated_at, user_id, phone_number, country_code, verified, verified_at
             )
             SELECT id, created_at, updated_at, user_id, phone_number, country_code, verified, verified_at
             FROM updated_phone
             "#,
-            self.phone_id,
-            self.user_id,
-            self.request.phone_number,
-            self.request.country_code,
-            self.request.verified,
-            is_primary
         )
+        .bind(self.phone_id)
+        .bind(self.user_id)
+        .bind(&self.request.phone_number)
+        .bind(&self.request.country_code)
+        .bind(self.request.verified)
+        .bind(is_primary)
+        .bind(self.deployment_id)
         .fetch_optional(executor)
         .await?
         .ok_or_else(|| AppError::NotFound(PHONE_NOT_FOUND.to_string()))?;
 
-        Ok(UserPhoneNumber {
-            id: row.id,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            user_id: row.user_id.unwrap_or(self.user_id),
-            phone_number: row.phone_number,
-            country_code: row.country_code,
-            verified: row.verified,
-            verified_at: row.verified_at.unwrap_or_else(Utc::now),
-        })
+        Ok(row.into_model(self.user_id))
     }
 }
 
 pub struct DeleteUserPhoneCommand {
+    deployment_id: i64,
     user_id: i64,
     phone_id: i64,
 }
 
 impl DeleteUserPhoneCommand {
-    pub fn new(user_id: i64, phone_id: i64) -> Self {
-        Self { user_id, phone_id }
+    pub fn new(deployment_id: i64, user_id: i64, phone_id: i64) -> Self {
+        Self {
+            deployment_id,
+            user_id,
+            phone_id,
+        }
     }
 
     pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        sqlx::query!(
-            "DELETE FROM user_phone_numbers WHERE id = $1 AND user_id = $2",
-            self.phone_id,
-            self.user_id
+        let result = sqlx::query(
+            r#"
+            DELETE FROM user_phone_numbers
+            WHERE id = $1
+              AND user_id = $2
+              AND EXISTS (SELECT 1 FROM users WHERE id = $2 AND deployment_id = $3)
+            "#,
         )
+        .bind(self.phone_id)
+        .bind(self.user_id)
+        .bind(self.deployment_id)
         .execute(executor)
         .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(PHONE_NOT_FOUND.to_string()));
+        }
 
         Ok(())
     }
 }
 
 pub struct DeleteUserSocialConnectionCommand {
+    deployment_id: i64,
     user_id: i64,
     connection_id: i64,
 }
 
 impl DeleteUserSocialConnectionCommand {
-    pub fn new(user_id: i64, connection_id: i64) -> Self {
+    pub fn new(deployment_id: i64, user_id: i64, connection_id: i64) -> Self {
         Self {
+            deployment_id,
             user_id,
             connection_id,
         }
@@ -426,13 +529,23 @@ impl DeleteUserSocialConnectionCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        sqlx::query!(
-            "DELETE FROM social_connections WHERE id = $1 AND user_id = $2",
-            self.connection_id,
-            self.user_id
+        let result = sqlx::query(
+            r#"
+            DELETE FROM social_connections
+            WHERE id = $1
+              AND user_id = $2
+              AND EXISTS (SELECT 1 FROM users WHERE id = $2 AND deployment_id = $3)
+            "#,
         )
+        .bind(self.connection_id)
+        .bind(self.user_id)
+        .bind(self.deployment_id)
         .execute(executor)
         .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(SOCIAL_CONNECTION_NOT_FOUND.to_string()));
+        }
 
         Ok(())
     }

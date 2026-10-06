@@ -224,14 +224,17 @@ impl DeleteOrganizationRoleCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             DELETE FROM organization_roles
-            WHERE id = $1 AND organization_id = $2
+            WHERE id = $1
+              AND organization_id = $2
+              AND EXISTS (SELECT 1 FROM organizations WHERE id = $2 AND deployment_id = $3)
             "#,
-            self.role_id,
-            self.organization_id
         )
+        .bind(self.role_id)
+        .bind(self.organization_id)
+        .bind(self.deployment_id)
         .execute(executor)
         .await?;
 
